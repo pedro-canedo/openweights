@@ -4,6 +4,7 @@ import { onNavigate, type Screen } from "./lib/nav";
 import StatusBar from "./components/StatusBar";
 import DownloadsPanel from "./components/DownloadsPanel";
 import Onboarding from "./components/Onboarding";
+import { RiftWordmark } from "./components/RiftLogo";
 import Discover from "./screens/Discover";
 import MyModels from "./screens/MyModels";
 import Chat from "./screens/Chat";
@@ -33,8 +34,8 @@ export default function App() {
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 flex-1">
         <nav className="flex w-52 shrink-0 flex-col border-r border-edge bg-panel">
-          <div className="flex items-center gap-2 px-4 py-4 text-[15px] font-semibold">
-            <span className="text-xl">🦙</span> LlamaRunner
+          <div className="px-4 py-4">
+            <RiftWordmark className="text-[17px]" />
           </div>
           <div className="flex flex-col gap-1 px-2">
             {items.map((s) => (

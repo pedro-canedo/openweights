@@ -69,13 +69,20 @@ fn main() {
             commands::chats_list,
             commands::chat_create,
             commands::chat_delete,
+            commands::chat_rename,
+            commands::chat_set_params,
             commands::messages_list,
             commands::message_add,
+            commands::message_delete,
+            commands::message_update,
+            commands::presets_list,
+            commands::preset_save,
+            commands::preset_delete,
             commands::settings_get,
             commands::settings_set,
         ])
         .build(tauri::generate_context!())
-        .expect("erro ao iniciar o LlamaRunner")
+        .expect("erro ao iniciar o Rift")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 // Sidecars NÃO morrem sozinhos com o app (Tauri #3273):

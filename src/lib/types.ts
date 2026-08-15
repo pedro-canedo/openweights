@@ -140,6 +140,8 @@ export interface ChatRow {
   title: string;
   modelId: string | null;
   createdAt: number;
+  /** JSON de `ChatParams` desta conversa (null = padrões). */
+  paramsJson: string | null;
 }
 
 export interface MessageRow {
@@ -149,4 +151,32 @@ export interface MessageRow {
   content: string;
   createdAt: number;
   tokensPerSec: number | null;
+  /** Tokens gerados na resposta (timings do llama-server). */
+  genTokens: number | null;
+  /** Duração da geração em ms. */
+  genMs: number | null;
 }
+
+export interface PresetRow {
+  id: number;
+  name: string;
+  json: string;
+}
+
+/** Parâmetros de amostragem + system prompt de uma conversa. */
+export interface ChatParams {
+  systemPrompt: string;
+  temperature: number;
+  topP: number;
+  topK: number;
+  /** null = sem limite. */
+  maxTokens: number | null;
+}
+
+export const DEFAULT_CHAT_PARAMS: ChatParams = {
+  systemPrompt: "",
+  temperature: 0.8,
+  topP: 0.95,
+  topK: 40,
+  maxTokens: null,
+};

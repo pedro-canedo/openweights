@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// User-Agent exigido pela API do GitHub (e boa educação nos downloads).
-const USER_AGENT: &str = concat!("LlamaRunner/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("Rift/", env!("CARGO_PKG_VERSION"));
 
 /// Intervalo mínimo entre eventos de progresso.
 const PROGRESS_THROTTLE: Duration = Duration::from_millis(200);
@@ -33,8 +33,11 @@ const PROGRESS_THROTTLE: Duration = Duration::from_millis(200);
 /// inteiro em memória).
 const DOWNLOAD_BUFFER: usize = 1024 * 1024;
 
-/// Sanidade final: um llama-server real sempre passa de 1 MiB.
-const MIN_SERVER_SIZE: u64 = 1024 * 1024;
+/// Sanidade final: o runtime completo (exe + DLLs) sempre passa disso.
+/// ATENÇÃO: o llama-server.exe em si é um launcher de ~9 KB — o código real
+/// mora em llama-server-impl.dll (~10 MB), então o tamanho do EXE sozinho
+/// não diz nada; validamos o conjunto extraído.
+const MIN_INSTALL_SIZE: u64 = 5 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RuntimeError {
@@ -223,12 +226,18 @@ impl RuntimeManager {
         // ---- Sanidade final ---------------------------------------------
         let exe = staging.join(crate::server_exe_name());
         let exe_ok = std::fs::metadata(&exe)
-            .map(|m| m.is_file() && m.len() > MIN_SERVER_SIZE)
+            .map(|m| m.is_file() && m.len() > 0)
             .unwrap_or(false);
         if !exe_ok {
             return Err(RuntimeError::Verification(format!(
-                "{} ausente ou menor que 1 MiB após a extração",
+                "{} ausente após a extração",
                 crate::server_exe_name()
+            )));
+        }
+        let install_size = dir_size(&staging);
+        if install_size < MIN_INSTALL_SIZE {
+            return Err(RuntimeError::Verification(format!(
+                "runtime extraído suspeito de incompleto ({install_size} bytes no total)"
             )));
         }
 
@@ -553,6 +562,26 @@ fn move_files_flat(src: &Path, dst: &Path) -> std::io::Result<()> {
 }
 
 /// Sufixo único para o diretório de sessão no tmp.
+/// Soma recursiva dos tamanhos de arquivo sob `dir` (sanidade pós-extração).
+fn dir_size(dir: &Path) -> u64 {
+    let mut total = 0u64;
+    let mut queue = VecDeque::from([dir.to_path_buf()]);
+    while let Some(d) = queue.pop_front() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                queue.push_back(p);
+            } else if let Ok(m) = e.metadata() {
+                total += m.len();
+            }
+        }
+    }
+    total
+}
+
 fn unique_suffix() -> String {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -711,6 +740,26 @@ mod tests {
             sha256_file(&path).unwrap(),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    /// Regressão: nos pacotes reais o llama-server.exe é um launcher de ~9 KB
+    /// (o código mora em llama-server-impl.dll). A sanidade valida o CONJUNTO
+    /// extraído, nunca o tamanho do exe sozinho.
+    #[test]
+    fn sanity_accepts_tiny_launcher_exe_with_big_impl_dll() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("llama-server.exe"), vec![1u8; 9 * 1024]).unwrap();
+        std::fs::write(
+            dir.path().join("llama-server-impl.dll"),
+            vec![2u8; 6 * 1024 * 1024],
+        )
+        .unwrap();
+        assert!(dir_size(dir.path()) >= MIN_INSTALL_SIZE);
+
+        // Extração truncada (só o launcher) precisa continuar reprovando.
+        let broken = tempfile::tempdir().unwrap();
+        std::fs::write(broken.path().join("llama-server.exe"), vec![1u8; 9 * 1024]).unwrap();
+        assert!(dir_size(broken.path()) < MIN_INSTALL_SIZE);
     }
 
     /// Teste live contra a API do GitHub — roda só com `--ignored`.

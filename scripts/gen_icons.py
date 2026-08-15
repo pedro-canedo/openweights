@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Gera ícones placeholder (PNG + ICO) sem dependências externas.
+"""Gera os ícones do Rift (PNG + ICO) sem dependências externas.
 
-Quadrado arredondado violeta com uma "chama" clara — placeholder até a
-identidade visual real (M5). PNGs gerados: 32, 128, 256 (@2x), 512.
-O .ico embute os PNGs (formato PNG-in-ICO, suportado desde o Vista).
+Identidade visual: fundo escuro (quadrado arredondado) com a FENDA (rift)
+branca vertical — o mesmo traço que substitui o "I" no wordmark R|FT.
+PNGs: 32, 128, 256 (@2x), 512. O .ico embute os PNGs (PNG-in-ICO).
 """
 
 import struct
@@ -12,8 +12,40 @@ from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "src-tauri" / "icons"
 
-ACCENT = (124, 92, 255)  # #7c5cff
-DARK = (23, 18, 48)
+BG_TOP = (16, 20, 29)     # #10141d
+BG_BOTTOM = (5, 7, 11)    # #05070b
+CRACK = (245, 247, 250)   # branco levemente frio
+
+# Linha central da fenda: (x, y, largura), tudo em frações do tamanho.
+# Mesmo desenho do RiftMark em src/components/RiftLogo.tsx.
+SPINE = [
+    (0.500, 0.14, 0.012),
+    (0.455, 0.30, 0.030),
+    (0.535, 0.44, 0.042),
+    (0.460, 0.60, 0.046),
+    (0.525, 0.74, 0.032),
+    (0.480, 0.86, 0.012),
+]
+
+
+def crack_polygon(size: int) -> list[tuple[float, float]]:
+    # Fenda mais grossa nos tamanhos pequenos para não sumir.
+    boost = 1.6 if size <= 48 else 1.2 if size <= 128 else 1.0
+    left = [((cx - w * boost / 2) * size, cy * size) for cx, cy, w in SPINE]
+    right = [((cx + w * boost / 2) * size, cy * size) for cx, cy, w in reversed(SPINE)]
+    return left + right
+
+
+def point_in_poly(x: float, y: float, poly: list[tuple[float, float]]) -> bool:
+    inside = False
+    j = len(poly) - 1
+    for i in range(len(poly)):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
 
 
 def rounded_mask(size: int, x: int, y: int) -> bool:
@@ -24,29 +56,41 @@ def rounded_mask(size: int, x: int, y: int) -> bool:
     return (x - cx) ** 2 + (y - cy) ** 2 <= r * r
 
 
-def pixel(size: int, x: int, y: int):
+def pixel(size: int, x: int, y: int, poly, bbox) -> tuple[int, int, int, int]:
     if not rounded_mask(size, x, y):
         return (0, 0, 0, 0)
-    # Gradiente diagonal do accent para um tom mais escuro.
-    t = (x + y) / (2 * size)
-    r = int(ACCENT[0] * (1 - t) + DARK[0] * t)
-    g = int(ACCENT[1] * (1 - t) + DARK[1] * t)
-    b = int(ACCENT[2] * (1 - t) + DARK[2] * t)
-    # "Chama" clara: círculo deslocado ao alto.
-    dx, dy = x - size * 0.5, y - size * 0.42
-    if dx * dx + dy * dy <= (size * 0.2) ** 2:
-        r = min(255, r + 90)
-        g = min(255, g + 90)
-        b = min(255, b + 60)
+    # Gradiente vertical sutil.
+    t = y / size
+    r = int(BG_TOP[0] * (1 - t) + BG_BOTTOM[0] * t)
+    g = int(BG_TOP[1] * (1 - t) + BG_BOTTOM[1] * t)
+    b = int(BG_TOP[2] * (1 - t) + BG_BOTTOM[2] * t)
+    # Cobertura da fenda com 3x3 subamostras (anti-aliasing); o teste de
+    # polígono só roda dentro do bounding box (economia de ~90% do tempo).
+    hits = 0
+    x0, y0, x1, y1 = bbox
+    if x0 - 1 <= x <= x1 + 1 and y0 - 1 <= y <= y1 + 1:
+        for sx in (0.17, 0.5, 0.83):
+            for sy in (0.17, 0.5, 0.83):
+                if point_in_poly(x + sx, y + sy, poly):
+                    hits += 1
+    if hits:
+        a = hits / 9
+        r = int(r * (1 - a) + CRACK[0] * a)
+        g = int(g * (1 - a) + CRACK[1] * a)
+        b = int(b * (1 - a) + CRACK[2] * a)
     return (r, g, b, 255)
 
 
 def make_png(size: int) -> bytes:
+    poly = crack_polygon(size)
+    xs = [p[0] for p in poly]
+    ys = [p[1] for p in poly]
+    bbox = (min(xs), min(ys), max(xs), max(ys))
     raw = bytearray()
     for y in range(size):
         raw.append(0)  # filtro none
         for x in range(size):
-            raw.extend(pixel(size, x, y))
+            raw.extend(pixel(size, x, y, poly, bbox))
 
     def chunk(tag: bytes, data: bytes) -> bytes:
         return (
@@ -73,9 +117,7 @@ def make_ico(pngs: dict[int, bytes]) -> bytes:
     offset = 6 + 16 * len(entries)
     for size, data in entries:
         s = 0 if size >= 256 else size
-        dir_entries += struct.pack(
-            "<BBBBHHII", s, s, 0, 0, 1, 32, len(data), offset
-        )
+        dir_entries += struct.pack("<BBBBHHII", s, s, 0, 0, 1, 32, len(data), offset)
         blobs += data
         offset += len(data)
     return header + dir_entries + blobs
@@ -90,7 +132,7 @@ def main() -> None:
         (OUT / name).write_bytes(data)
         pngs[size] = data
     (OUT / "icon.ico").write_bytes(make_ico({s: pngs[s] for s in (32, 128, 256)}))
-    print(f"ícones gerados em {OUT}")
+    print(f"ícones do Rift gerados em {OUT}")
 
 
 if __name__ == "__main__":

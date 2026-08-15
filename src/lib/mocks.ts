@@ -7,6 +7,7 @@ import type {
   LocalModel,
   MessageRow,
   ModelSummary,
+  PresetRow,
   QuantView,
   RuntimeState,
   ServerStatus,
@@ -176,6 +177,13 @@ export async function stopServer(): Promise<void> {
 
 const chats: ChatRow[] = [];
 const messages: MessageRow[] = [];
+const presets: PresetRow[] = [
+  {
+    id: 1,
+    name: "Padrão",
+    json: '{"systemPrompt":"","temperature":0.8,"topP":0.95,"topK":40,"maxTokens":null}',
+  },
+];
 
 export async function listChats(): Promise<ChatRow[]> {
   return [...chats].reverse();
@@ -183,10 +191,49 @@ export async function listChats(): Promise<ChatRow[]> {
 
 export async function createChat(title: string): Promise<number> {
   const id = chats.length + 1;
-  chats.push({ id, title, modelId: null, createdAt: Date.now() / 1000 });
+  chats.push({
+    id,
+    title,
+    modelId: null,
+    createdAt: Date.now() / 1000,
+    paramsJson: null,
+  });
   return id;
 }
 
 export async function listMessages(chatId: number): Promise<MessageRow[]> {
   return messages.filter((m) => m.chatId === chatId);
+}
+
+export async function renameChat(chatId: number, title: string): Promise<void> {
+  const c = chats.find((c) => c.id === chatId);
+  if (c) c.title = title;
+}
+
+export async function setChatParams(
+  chatId: number,
+  paramsJson: string,
+): Promise<void> {
+  const c = chats.find((c) => c.id === chatId);
+  if (c) c.paramsJson = paramsJson;
+}
+
+export async function listPresets(): Promise<PresetRow[]> {
+  return [...presets];
+}
+
+export async function savePreset(name: string, json: string): Promise<number> {
+  const existing = presets.find((p) => p.name === name);
+  if (existing) {
+    existing.json = json;
+    return existing.id;
+  }
+  const id = presets.length + 1;
+  presets.push({ id, name, json });
+  return id;
+}
+
+export async function deletePreset(id: number): Promise<void> {
+  const i = presets.findIndex((p) => p.id === id);
+  if (i >= 0) presets.splice(i, 1);
 }

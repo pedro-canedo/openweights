@@ -2274,27 +2274,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
-name = "llamarunner"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "log",
- "lr_advisor",
- "lr_engine",
- "lr_hw",
- "lr_models",
- "lr_runtime",
- "lr_store",
- "lr_types",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tokio",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3374,6 +3353,27 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams 0.5.0",
  "web-sys",
+]
+
+[[package]]
+name = "rift"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "log",
+ "lr_advisor",
+ "lr_engine",
+ "lr_hw",
+ "lr_models",
+ "lr_runtime",
+ "lr_store",
+ "lr_types",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tokio",
 ]
 
 [[package]]

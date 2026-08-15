@@ -1,4 +1,4 @@
-//! Tipos compartilhados entre os crates do LlamaRunner.
+//! Tipos compartilhados entre os crates do Rift.
 //!
 //! Tudo aqui é serializado para o frontend com `camelCase` — mantenha em
 //! sincronia com `src/lib/types.ts`.

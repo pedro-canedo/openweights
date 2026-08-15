@@ -436,6 +436,23 @@ pub fn chat_delete(state: State<'_, AppState>, chat_id: i64) -> CmdResult<()> {
 }
 
 #[tauri::command]
+pub fn chat_rename(state: State<'_, AppState>, chat_id: i64, title: String) -> CmdResult<()> {
+    state.store.rename_chat(chat_id, &title).map_err(err_str)
+}
+
+#[tauri::command]
+pub fn chat_set_params(
+    state: State<'_, AppState>,
+    chat_id: i64,
+    params_json: String,
+) -> CmdResult<()> {
+    state
+        .store
+        .set_chat_params(chat_id, &params_json)
+        .map_err(err_str)
+}
+
+#[tauri::command]
 pub fn messages_list(
     state: State<'_, AppState>,
     chat_id: i64,
@@ -450,11 +467,47 @@ pub fn message_add(
     role: String,
     content: String,
     tokens_per_sec: Option<f64>,
+    gen_tokens: Option<i64>,
+    gen_ms: Option<i64>,
 ) -> CmdResult<i64> {
     state
         .store
-        .add_message(chat_id, &role, &content, tokens_per_sec)
+        .add_message(chat_id, &role, &content, tokens_per_sec, gen_tokens, gen_ms)
         .map_err(err_str)
+}
+
+#[tauri::command]
+pub fn message_delete(state: State<'_, AppState>, message_id: i64) -> CmdResult<()> {
+    state.store.delete_message(message_id).map_err(err_str)
+}
+
+#[tauri::command]
+pub fn message_update(
+    state: State<'_, AppState>,
+    message_id: i64,
+    content: String,
+) -> CmdResult<()> {
+    state
+        .store
+        .update_message_content(message_id, &content)
+        .map_err(err_str)
+}
+
+// -------------------------------------------------------------- presets ---
+
+#[tauri::command]
+pub fn presets_list(state: State<'_, AppState>) -> CmdResult<Vec<lr_store::PresetRow>> {
+    state.store.list_presets().map_err(err_str)
+}
+
+#[tauri::command]
+pub fn preset_save(state: State<'_, AppState>, name: String, json: String) -> CmdResult<i64> {
+    state.store.save_preset(&name, &json).map_err(err_str)
+}
+
+#[tauri::command]
+pub fn preset_delete(state: State<'_, AppState>, id: i64) -> CmdResult<()> {
+    state.store.delete_preset(id).map_err(err_str)
 }
 
 // ------------------------------------------------------------- settings ---

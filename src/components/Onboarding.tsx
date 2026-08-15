@@ -8,6 +8,7 @@ import {
 } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { HardwareProfile, RuntimeEvent } from "../lib/types";
+import { RiftWordmark } from "./RiftLogo";
 
 type Step = "hidden" | "welcome" | "installing" | "ready";
 
@@ -64,11 +65,10 @@ export default function Onboarding() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="w-[480px] rounded-2xl border border-edge bg-panel p-8 shadow-2xl">
-        <div className="text-center text-3xl">🦙</div>
-        <h2 className="mt-3 text-center text-lg font-semibold">
-          {t("onboarding.welcome")}
-        </h2>
-        <p className="mt-1 text-center text-sm text-dim">
+        <div className="flex justify-center">
+          <RiftWordmark className="text-3xl" />
+        </div>
+        <p className="mt-3 text-center text-sm text-dim">
           {t("onboarding.tagline")}
         </p>
 

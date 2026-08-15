@@ -4,19 +4,43 @@
 // que "digita" uma resposta falsa para desenvolver a UI.
 
 import { isTauri } from "./tauri";
+import type { ChatParams } from "./types";
+
+/** Parte de conteúdo multimodal no formato OpenAI (aceito pelo llama-server com --mmproj). */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+/** Mensagem enviada ao endpoint /v1/chat/completions. */
+export interface ChatMessage {
+  role: string;
+  content: string | ContentPart[];
+}
 
 export interface StreamChatOptions {
   baseUrl: string;
   model: string;
-  messages: { role: string; content: string }[];
+  messages: ChatMessage[];
   signal: AbortSignal;
+  /** Parâmetros de amostragem + system prompt da conversa. */
+  params?: ChatParams;
   /** Chamado a cada pedaço de texto recebido (delta.content). */
   onDelta: (text: string) => void;
+  /** Chamado a cada pedaço de raciocínio (reasoning_content ou <think>). */
+  onReasoningDelta?: (text: string) => void;
 }
 
 export interface StreamChatResult {
   content: string;
+  /** Raciocínio do modelo (vazio quando o modelo não é "thinking"). */
+  reasoning: string;
   tokensPerSec: number | null;
+  /** Tokens gerados (timings do servidor ou estimativa por chunks). */
+  genTokens: number | null;
+  /** Duração da geração em ms (timings do servidor ou estimativa). */
+  genMs: number | null;
+  /** Tempo entre o primeiro e o último delta de raciocínio, em ms. */
+  thinkingMs: number | null;
 }
 
 // ------------------------------------------------- mini-store de geração ---
@@ -47,18 +71,85 @@ export const genStats = {
   },
 };
 
+// -------------------------------------------------------- <think> inline ---
+
+/**
+ * Separa tags <think>...</think> embutidas no texto em streaming.
+ * Como uma tag pode chegar dividida entre dois deltas, retemos o maior
+ * sufixo do buffer que ainda pode ser o começo de uma tag.
+ */
+function createThinkSplitter(
+  emitText: (t: string) => void,
+  emitReasoning: (t: string) => void,
+) {
+  const OPEN = "<think>";
+  const CLOSE = "</think>";
+  let pending = "";
+  let inThink = false;
+
+  /** Tamanho do maior sufixo de `s` que é prefixo próprio de `tag`. */
+  const partialSuffix = (s: string, tag: string): number => {
+    const max = Math.min(s.length, tag.length - 1);
+    for (let k = max; k > 0; k--) {
+      if (s.endsWith(tag.slice(0, k))) return k;
+    }
+    return 0;
+  };
+
+  const feed = (delta: string) => {
+    pending += delta;
+    for (;;) {
+      const tag = inThink ? CLOSE : OPEN;
+      const idx = pending.indexOf(tag);
+      if (idx >= 0) {
+        const before = pending.slice(0, idx);
+        if (before) (inThink ? emitReasoning : emitText)(before);
+        pending = pending.slice(idx + tag.length);
+        inThink = !inThink;
+        continue;
+      }
+      const hold = partialSuffix(pending, tag);
+      const out = pending.slice(0, pending.length - hold);
+      if (out) (inThink ? emitReasoning : emitText)(out);
+      pending = pending.slice(pending.length - hold);
+      break;
+    }
+  };
+
+  const flush = () => {
+    if (pending) (inThink ? emitReasoning : emitText)(pending);
+    pending = "";
+  };
+
+  return { feed, flush };
+}
+
 // ------------------------------------------------------------- streaming ---
 
 /** Forma mínima de um chunk SSE do endpoint OpenAI-compatible. */
 interface SseChunk {
-  choices?: { delta?: { content?: string } }[];
-  timings?: { predicted_per_second?: number };
+  choices?: { delta?: { content?: string; reasoning_content?: string } }[];
+  timings?: {
+    predicted_n?: number;
+    predicted_ms?: number;
+    predicted_per_second?: number;
+  };
+}
+
+/** Injeta o system prompt (se houver) como primeira mensagem. */
+function withSystemPrompt(
+  messages: ChatMessage[],
+  params?: ChatParams,
+): ChatMessage[] {
+  const sys = params?.systemPrompt.trim();
+  if (!sys) return messages;
+  return [{ role: "system", content: sys }, ...messages];
 }
 
 /**
  * Envia a conversa ao llama-server e consome a resposta em streaming SSE.
- * Retorna o texto completo e o tok/s (medido pelo servidor quando disponível,
- * senão estimado por nº de chunks / tempo desde o primeiro token).
+ * Retorna texto, raciocínio e métricas (timings do servidor quando
+ * disponíveis, senão estimadas por nº de chunks / tempo desde o 1º token).
  */
 export async function streamChat(
   opts: StreamChatOptions,
@@ -76,17 +167,33 @@ async function streamReal({
   model,
   messages,
   signal,
+  params,
   onDelta,
+  onReasoningDelta,
 }: StreamChatOptions): Promise<StreamChatResult> {
+  const body: Record<string, unknown> = {
+    model,
+    messages: withSystemPrompt(messages, params),
+    stream: true,
+  };
+  if (params) {
+    body.temperature = params.temperature;
+    body.top_p = params.topP;
+    body.top_k = params.topK;
+    if (params.maxTokens != null) body.max_tokens = params.maxTokens;
+  }
+
   const res = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages, stream: true }),
+    body: JSON.stringify(body),
     signal,
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`llama-server HTTP ${res.status}: ${body.slice(0, 300)}`);
+    const errBody = await res.text().catch(() => "");
+    throw new Error(
+      `llama-server HTTP ${res.status}: ${errBody.slice(0, 300)}`,
+    );
   }
   if (!res.body) throw new Error("resposta sem corpo (stream indisponível)");
 
@@ -94,11 +201,30 @@ async function streamReal({
   const decoder = new TextDecoder();
   let buffer = "";
   let content = "";
+  let reasoning = "";
   let chunks = 0;
   let firstTokenAt = 0;
+  let lastTokenAt = 0;
+  let firstReasonAt = 0;
+  let lastReasonAt = 0;
   let lastStatsAt = 0;
   let serverTps: number | null = null;
+  let serverTokens: number | null = null;
+  let serverMs: number | null = null;
   let done = false;
+
+  const emitText = (t: string) => {
+    content += t;
+    onDelta(t);
+  };
+  const emitReasoning = (t: string) => {
+    const now = performance.now();
+    if (firstReasonAt === 0) firstReasonAt = now;
+    lastReasonAt = now;
+    reasoning += t;
+    onReasoningDelta?.(t);
+  };
+  const splitter = createThinkSplitter(emitText, emitReasoning);
 
   const handleLine = (line: string) => {
     const trimmed = line.trim();
@@ -114,15 +240,27 @@ async function streamReal({
     } catch {
       return; // linha parcial/ruído — ignora
     }
-    const tps = chunk.timings?.predicted_per_second;
-    if (typeof tps === "number" && Number.isFinite(tps)) serverTps = tps;
-    const delta = chunk.choices?.[0]?.delta?.content;
-    if (typeof delta === "string" && delta.length > 0) {
+    const timings = chunk.timings;
+    if (timings) {
+      const { predicted_per_second: tps, predicted_n: n, predicted_ms: ms } =
+        timings;
+      if (typeof tps === "number" && Number.isFinite(tps)) serverTps = tps;
+      if (typeof n === "number" && Number.isFinite(n)) serverTokens = n;
+      if (typeof ms === "number" && Number.isFinite(ms)) serverMs = ms;
+    }
+    const delta = chunk.choices?.[0]?.delta;
+    // Modelos thinking com --jinja: raciocínio chega em campo separado.
+    const reasonDelta = delta?.reasoning_content;
+    const textDelta = delta?.content;
+    const gotReason = typeof reasonDelta === "string" && reasonDelta.length > 0;
+    const gotText = typeof textDelta === "string" && textDelta.length > 0;
+    if (gotReason) emitReasoning(reasonDelta);
+    if (gotText) splitter.feed(textDelta);
+    if (gotReason || gotText) {
       const now = performance.now();
       if (chunks === 0) firstTokenAt = now;
+      lastTokenAt = now;
       chunks += 1;
-      content += delta;
-      onDelta(delta);
       // Estimativa ao vivo para a StatusBar (limitada a ~4 Hz).
       if (chunks > 1 && now - lastStatsAt > 250) {
         lastStatsAt = now;
@@ -144,17 +282,82 @@ async function streamReal({
     }
   }
   if (!done && buffer) handleLine(buffer);
+  splitter.flush();
 
+  // Métricas: timings do servidor com fallback estimado.
   let tokensPerSec: number | null = serverTps;
   if (tokensPerSec == null && chunks > 1 && firstTokenAt > 0) {
-    const elapsed = (performance.now() - firstTokenAt) / 1000;
+    const elapsed = (lastTokenAt - firstTokenAt) / 1000;
     tokensPerSec = elapsed > 0 ? (chunks - 1) / elapsed : null;
   }
+  const genTokens = serverTokens ?? (chunks > 0 ? chunks : null);
+  const genMs =
+    serverMs ??
+    (chunks > 0 && firstTokenAt > 0
+      ? Math.round(lastTokenAt - firstTokenAt)
+      : null);
+  const thinkingMs =
+    firstReasonAt > 0 ? Math.max(0, Math.round(lastReasonAt - firstReasonAt)) : null;
+
   setGen({ tokensPerSec });
-  return { content, tokensPerSec };
+  return { content, reasoning, tokensPerSec, genTokens, genMs, thinkingMs };
+}
+
+// ------------------------------------------------------ resposta única ---
+
+/**
+ * Uma completude única (stream: false) — usada para tarefas auxiliares
+ * como o auto-título. Retorna o texto sem tags <think> e sem espaços
+ * nas pontas. No navegador (mock) retorna um título simulado.
+ */
+export async function completeOnce({
+  baseUrl,
+  model,
+  messages,
+  maxTokens,
+  temperature,
+  signal,
+}: {
+  baseUrl: string;
+  model: string;
+  messages: ChatMessage[];
+  maxTokens: number;
+  temperature: number;
+  signal?: AbortSignal;
+}): Promise<string> {
+  if (!isTauri) {
+    await sleep(500);
+    return "Título simulado";
+  }
+  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      messages,
+      stream: false,
+      max_tokens: maxTokens,
+      temperature,
+    }),
+    signal,
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`llama-server HTTP ${res.status}: ${body.slice(0, 300)}`);
+  }
+  const json = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  const raw = json.choices?.[0]?.message?.content ?? "";
+  return raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }
 
 // ------------------------------------------------------- mock (navegador) ---
+
+const MOCK_REASONING =
+  "O usuário quer ver a interface do chat funcionando. Vou montar uma " +
+  "resposta com vários elementos de Markdown para exercitar a renderização. " +
+  "Também simulo este raciocínio para testar o bloco de pensamento da UI.";
 
 const MOCK_REPLY = `Claro! Esta é uma **resposta simulada** do modo navegador (sem Tauri), útil para desenvolver a UI do chat.
 
@@ -187,16 +390,36 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function streamMock({
   signal,
   onDelta,
+  onReasoningDelta,
 }: StreamChatOptions): Promise<StreamChatResult> {
   await sleep(400); // latência fake de "carregar o modelo"
+
+  const throwIfAborted = () => {
+    if (signal.aborted) {
+      throw new DOMException("Geração cancelada", "AbortError");
+    }
+  };
+
+  // Fase de raciocínio simulado (2–3 frases) antes do texto.
+  let reasoning = "";
+  let thinkingMs: number | null = null;
+  if (onReasoningDelta) {
+    const thinkStart = performance.now();
+    for (const part of MOCK_REASONING.match(/\S+\s*/g) ?? []) {
+      throwIfAborted();
+      await sleep(10 + Math.random() * 25);
+      reasoning += part;
+      onReasoningDelta(part);
+    }
+    thinkingMs = Math.round(performance.now() - thinkStart);
+  }
+
   const parts = MOCK_REPLY.match(/\S+\s*/g) ?? [];
   const start = performance.now();
   let content = "";
   let emitted = 0;
   for (const part of parts) {
-    if (signal.aborted) {
-      throw new DOMException("Geração cancelada", "AbortError");
-    }
+    throwIfAborted();
     await sleep(15 + Math.random() * 35);
     content += part;
     emitted += 1;
@@ -206,8 +429,15 @@ async function streamMock({
       if (elapsed > 0) setGen({ tokensPerSec: emitted / elapsed });
     }
   }
-  const elapsed = (performance.now() - start) / 1000;
-  const tokensPerSec = elapsed > 0 ? emitted / elapsed : null;
+  const genMs = Math.round(performance.now() - start);
+  const tokensPerSec = genMs > 0 ? emitted / (genMs / 1000) : null;
   setGen({ tokensPerSec });
-  return { content, tokensPerSec };
+  return {
+    content,
+    reasoning,
+    tokensPerSec,
+    genTokens: emitted,
+    genMs,
+    thinkingMs,
+  };
 }

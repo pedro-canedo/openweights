@@ -10,6 +10,7 @@ import type {
   LocalModel,
   MessageRow,
   ModelSummary,
+  PresetRow,
   QuantView,
   RuntimeEvent,
   RuntimeState,
@@ -122,10 +123,46 @@ export const addMessage = (
   role: string,
   content: string,
   tokensPerSec: number | null = null,
+  genTokens: number | null = null,
+  genMs: number | null = null,
 ) =>
   isTauri
-    ? invoke<number>("message_add", { chatId, role, content, tokensPerSec })
+    ? invoke<number>("message_add", {
+        chatId,
+        role,
+        content,
+        tokensPerSec,
+        genTokens,
+        genMs,
+      })
     : Promise.resolve(0);
+
+export const renameChat = (chatId: number, title: string) =>
+  isTauri
+    ? invoke<void>("chat_rename", { chatId, title })
+    : mocks.renameChat(chatId, title);
+
+export const setChatParams = (chatId: number, paramsJson: string) =>
+  isTauri
+    ? invoke<void>("chat_set_params", { chatId, paramsJson })
+    : mocks.setChatParams(chatId, paramsJson);
+
+export const deleteMessage = (messageId: number) =>
+  invoke<void>("message_delete", { messageId });
+
+export const updateMessage = (messageId: number, content: string) =>
+  invoke<void>("message_update", { messageId, content });
+
+export const listPresets = () =>
+  isTauri ? invoke<PresetRow[]>("presets_list") : mocks.listPresets();
+
+export const savePreset = (name: string, json: string) =>
+  isTauri
+    ? invoke<number>("preset_save", { name, json })
+    : mocks.savePreset(name, json);
+
+export const deletePreset = (id: number) =>
+  isTauri ? invoke<void>("preset_delete", { id }) : mocks.deletePreset(id);
 
 // ------------------------------------------------------------- settings ---
 

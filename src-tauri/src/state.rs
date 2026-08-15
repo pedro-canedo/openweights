@@ -28,7 +28,7 @@ impl AppState {
         let models_dir = data_dir.join("models");
         std::fs::create_dir_all(&models_dir)?;
 
-        let store = lr_store::Store::open(&data_dir.join("llamarunner.db"))?;
+        let store = lr_store::Store::open(&data_dir.join("rift.db"))?;
         let token = store.get_setting("hf_token").ok().flatten();
 
         Ok(Self {
