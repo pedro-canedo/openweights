@@ -251,7 +251,7 @@ pub struct DownloadManager {
 impl DownloadManager {
     pub fn new(models_dir: PathBuf) -> Self {
         let (events, _) = broadcast::channel(256);
-        let ua = concat!("Rift/", env!("CARGO_PKG_VERSION"));
+        let ua = concat!("OpenWeights/", env!("CARGO_PKG_VERSION"));
         let http = reqwest::Client::builder()
             .user_agent(ua)
             .build()

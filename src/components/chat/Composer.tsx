@@ -2,8 +2,16 @@
 // Durante a geração o botão vira "Parar" (aborta o streaming).
 // Suporta anexos (botão 📎, colar imagem) com chips acima do campo.
 
-import { useEffect, useRef, type ClipboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
+import type { WorkspaceFile } from "../../lib/types";
 import AttachmentChips, { type Attachment } from "./AttachmentChips";
 
 export default function Composer({
@@ -19,6 +27,10 @@ export default function Composer({
   attachError,
   editing,
   onCancelEdit,
+  workspaceFiles = [],
+  startActions,
+  leftActions,
+  rightActions,
 }: {
   draft: string;
   onDraftChange: (text: string) => void;
@@ -33,10 +45,32 @@ export default function Composer({
   /** true quando o composer está editando a última mensagem do usuário. */
   editing: boolean;
   onCancelEdit: () => void;
+  workspaceFiles?: WorkspaceFile[];
+  startActions?: ReactNode;
+  leftActions?: ReactNode;
+  rightActions?: ReactNode;
 }) {
   const { t } = useTranslation();
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const [mentionIdx, setMentionIdx] = useState(0);
+
+  const mention = useMemo(() => {
+    const m = /(?:^|[\s])@([^\s@]*)$/.exec(draft);
+    if (!m || workspaceFiles.length === 0) return null;
+    const q = m[1].toLowerCase();
+    const hits = workspaceFiles
+      .filter(
+        (f) =>
+          f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q),
+      )
+      .slice(0, 8);
+    return { query: m[1], start: m.index + m[0].indexOf("@"), hits };
+  }, [draft, workspaceFiles]);
+
+  useEffect(() => {
+    setMentionIdx(0);
+  }, [mention?.query]);
 
   const canSend =
     !disabled && (draft.trim().length > 0 || attachments.length > 0);
@@ -88,7 +122,32 @@ export default function Composer({
         </div>
       )}
 
-      <div className="mx-auto flex max-w-2xl items-end gap-1 rounded-[28px] border border-edge bg-panel2 px-2.5 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.28)]">
+      <div className="relative mx-auto max-w-2xl">
+        {mention && mention.hits.length > 0 && (
+          <div className="absolute right-0 bottom-full left-0 z-20 mb-2 overflow-hidden rounded-xl border border-edge bg-panel py-1 shadow-xl">
+            {mention.hits.map((f, i) => (
+              <button
+                key={f.path}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const after = draft.slice(
+                    mention.start + 1 + mention.query.length,
+                  );
+                  onDraftChange(
+                    `${draft.slice(0, mention.start)}@${f.path} ${after}`,
+                  );
+                }}
+                className={`flex w-full px-3 py-1.5 text-left text-xs ${
+                  i === mentionIdx ? "bg-panel2 text-ink" : "text-dim"
+                }`}
+              >
+                <span className="truncate">{f.path}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      <div className="flex flex-col rounded-[28px] border border-edge bg-panel2 px-3 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.28)]">
         <input
           ref={fileRef}
           type="file"
@@ -100,27 +159,6 @@ export default function Composer({
             e.target.value = "";
           }}
         />
-        <button
-          onClick={() => fileRef.current?.click()}
-          title={t("chat.attach")}
-          disabled={generating}
-          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-dim transition-colors hover:bg-panel hover:text-ink disabled:opacity-40"
-        >
-          <svg
-            className="h-4.5 w-4.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            viewBox="0 0 24 24"
-          >
-            <rect x="3" y="5" width="18" height="14" rx="2" />
-            <circle cx="8.5" cy="10" r="1.5" />
-            <path d="M21 16l-5-5-8 8" />
-          </svg>
-        </button>
-
         <textarea
           ref={taRef}
           value={draft}
@@ -129,6 +167,36 @@ export default function Composer({
             resize(e.target);
           }}
           onKeyDown={(e) => {
+            if (mention && mention.hits.length > 0) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setMentionIdx((i) => (i + 1) % mention.hits.length);
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setMentionIdx(
+                  (i) => (i - 1 + mention.hits.length) % mention.hits.length,
+                );
+                return;
+              }
+              if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                const hit = mention.hits[mentionIdx] ?? mention.hits[0];
+                const after = draft.slice(
+                  mention.start + 1 + mention.query.length,
+                );
+                onDraftChange(
+                  `${draft.slice(0, mention.start)}@${hit.path} ${after}`,
+                );
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onDraftChange(draft + " ");
+                return;
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               if (!generating && canSend) onSend();
@@ -137,37 +205,65 @@ export default function Composer({
           onPaste={handlePaste}
           placeholder={t("chat.placeholder")}
           rows={1}
-          className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none select-text placeholder:text-dim"
+          className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1.5 py-1.5 text-sm outline-none select-text placeholder:text-dim"
         />
 
-        {generating ? (
-          <button
-            onClick={onStop}
-            title={t("chat.stop")}
-            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-panel text-ink transition-colors hover:bg-bad/20 hover:text-bad"
-          >
-            <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
-          </button>
-        ) : (
-          <button
-            onClick={onSend}
-            disabled={!canSend}
-            title={t("chat.send")}
-            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-bg transition-opacity disabled:opacity-25"
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              viewBox="0 0 24 24"
+        <div className="mt-1 flex items-center gap-1">
+          <div className="flex min-w-0 items-center gap-0.5">
+            <button
+              onClick={() => fileRef.current?.click()}
+              title={t("chat.attach")}
+              disabled={generating}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-dim transition-colors hover:bg-panel hover:text-ink disabled:opacity-40"
             >
-              <path d="M12 19V5M6 11l6-6 6 6" />
-            </svg>
-          </button>
-        )}
+              <svg
+                className="h-[18px] w-[18px]"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                viewBox="0 0 24 24"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </button>
+            {startActions}
+            {leftActions}
+          </div>
+          <div className="ml-auto flex items-center gap-0.5">
+            {rightActions}
+            {generating ? (
+              <button
+                onClick={onStop}
+                title={t("chat.stop")}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-panel text-ink transition-colors hover:bg-bad/20 hover:text-bad"
+              >
+                <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
+              </button>
+            ) : (
+              <button
+                onClick={onSend}
+                disabled={!canSend}
+                title={t("chat.send")}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-ink text-bg transition-opacity disabled:opacity-25"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 19V5M6 11l6-6 6 6" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
       </div>
     </div>
   );

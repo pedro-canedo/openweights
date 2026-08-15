@@ -64,10 +64,10 @@
   },
   "chat": {
     "title": "Chat",
-    "placeholder": "O que você quer saber...",
+    "placeholder": "O que você quer saber...  (@arquivo)",
     "empty": "Selecione um modelo e comece a conversar.",
     "hero": {
-      "welcome": "Bem-vindo ao LlamaRunner.",
+      "welcome": "Bem-vindo ao OpenWeights.",
       "headline": "Como posso ajudar?",
       "write": "Me ajude a escrever",
       "code": "Me ajude a programar",
@@ -85,7 +85,32 @@
     "generating": "Gerando...",
     "loadingModel": "Carregando o modelo na memória (primeira vez demora um pouco)...",
     "history": "Conversas",
+    "historyEmpty": "Nenhuma conversa ainda.",
+    "searchEmpty": "Nada encontrado.",
+    "deleteChat": "Excluir conversa",
+    "deleteChatConfirm": "Excluir \"{{title}}\"?",
     "params": "Parâmetros",
+    "approval": {
+      "manual": "Aprovar manualmente",
+      "auto": "Aprovar automaticamente",
+      "ignore": "Ignorar todas as aprovações",
+      "short": {
+        "manual": "Manual",
+        "auto": "Auto",
+        "ignore": "Ignorar"
+      }
+    },
+    "effort": {
+      "label": "Esforço",
+      "hint": "Mais esforço significa respostas mais completas, mas leva mais tempo e consome mais memória.",
+      "low": "Baixo",
+      "medium": "Médio",
+      "high": "Alto",
+      "extra": "Extra",
+      "max": "Máx",
+      "default": "Padrão",
+      "maxHint": "Sem limite de tokens. Pode ser lento e lotar a VRAM em modelos grandes."
+    },
     "systemPrompt": "Instruções do sistema",
     "systemPromptPlaceholder": "Ex.: Você é um assistente conciso que responde em português.",
     "temperature": "Criatividade (temperature)",
@@ -152,7 +177,7 @@
     "version": "Versão"
   },
   "onboarding": {
-    "welcome": "Bem-vindo ao Rift",
+    "welcome": "Bem-vindo ao OpenWeights",
     "tagline": "Modelos. Sua máquina. Suas regras.",
     "detecting": "Analisando seu computador...",
     "yourMachine": "Seu computador",
@@ -162,6 +187,16 @@
     "skip": "Pular por agora",
     "gpuSummary": "Você pode rodar modelos de até ~{{size}} inteiramente na GPU.",
     "cpuSummary": "Sem GPU dedicada: modelos pequenos rodarão no processador."
+  },
+  "workspace": {
+    "add": "Adicionar pasta",
+    "change": "Trocar",
+    "remove": "Remover pasta da sessão",
+    "search": "Buscar arquivo...",
+    "empty": "Nenhum arquivo de texto nesta pasta.",
+    "fileCount": "{{count}} arquivos",
+    "saved": "Salvo",
+    "discard": "Descartar alterações neste arquivo?"
   },
   "common": {
     "loading": "Carregando...",

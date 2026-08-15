@@ -8,7 +8,7 @@ import {
 } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import type { HardwareProfile, RuntimeEvent } from "../lib/types";
-import { RiftWordmark } from "./RiftLogo";
+import { OwLockup } from "./OpenWeightsLogo";
 
 type Step = "hidden" | "welcome" | "installing" | "ready";
 
@@ -66,7 +66,7 @@ export default function Onboarding() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="w-[480px] rounded-2xl border border-edge bg-panel p-8 shadow-2xl">
         <div className="flex justify-center">
-          <RiftWordmark className="text-3xl" />
+          <OwLockup className="text-2xl" />
         </div>
         <p className="mt-3 text-center text-sm text-dim">
           {t("onboarding.tagline")}

@@ -3,7 +3,7 @@ name = "lr_types"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Tipos compartilhados entre os crates do Rift"
+description = "Tipos compartilhados entre os crates do OpenWeights"
 
 [dependencies]
 serde.workspace = true

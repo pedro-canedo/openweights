@@ -415,7 +415,7 @@ mod tests {
     #[test]
     fn migration_adds_missing_columns() {
         // Esquema ANTIGO à mão, sem params_json/gen_tokens/gen_ms — simula um
-        // rift.db criado por uma versão anterior do app.
+        // banco criado por uma versão anterior do app.
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
             r#"

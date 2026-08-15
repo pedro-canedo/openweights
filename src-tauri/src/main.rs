@@ -4,6 +4,7 @@
 mod commands;
 mod state;
 mod telemetry;
+mod workspace;
 
 use tauri::{Emitter, Manager};
 
@@ -80,9 +81,13 @@ fn main() {
             commands::preset_delete,
             commands::settings_get,
             commands::settings_set,
+            commands::workspace_pick,
+            commands::workspace_list,
+            commands::workspace_read,
+            commands::workspace_write,
         ])
         .build(tauri::generate_context!())
-        .expect("erro ao iniciar o Rift")
+        .expect("erro ao iniciar o OpenWeights")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 // Sidecars NÃO morrem sozinhos com o app (Tauri #3273):

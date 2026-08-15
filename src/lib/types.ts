@@ -163,6 +163,21 @@ export interface PresetRow {
   json: string;
 }
 
+/** Como o chat trata ações que pedem confirmação (ferramentas, no futuro). */
+export type ApprovalMode = "manual" | "auto" | "ignore";
+
+/** Orçamento de geração / raciocínio. `high` é o padrão. */
+export type EffortLevel = "low" | "medium" | "high" | "extra" | "max";
+
+/** Teto de tokens sugerido por nível de esforço (`null` = sem limite). */
+export const EFFORT_MAX_TOKENS: Record<EffortLevel, number | null> = {
+  low: 1024,
+  medium: 2048,
+  high: 4096,
+  extra: 8192,
+  max: null,
+};
+
 /** Parâmetros de amostragem + system prompt de uma conversa. */
 export interface ChatParams {
   systemPrompt: string;
@@ -171,6 +186,16 @@ export interface ChatParams {
   topK: number;
   /** null = sem limite. */
   maxTokens: number | null;
+  approval: ApprovalMode;
+  effort: EffortLevel;
+  /** Pasta anexada à sessão (leitura/edição e @arquivo). */
+  workspaceDir: string | null;
+}
+
+export interface WorkspaceFile {
+  path: string;
+  name: string;
+  bytes: number;
 }
 
 export const DEFAULT_CHAT_PARAMS: ChatParams = {
@@ -178,5 +203,8 @@ export const DEFAULT_CHAT_PARAMS: ChatParams = {
   temperature: 0.8,
   topP: 0.95,
   topK: 40,
-  maxTokens: null,
+  maxTokens: EFFORT_MAX_TOKENS.high,
+  approval: "auto",
+  effort: "high",
+  workspaceDir: null,
 };

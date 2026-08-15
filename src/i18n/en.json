@@ -64,10 +64,10 @@
   },
   "chat": {
     "title": "Chat",
-    "placeholder": "What do you want to know...",
+    "placeholder": "What do you want to know...  (@file)",
     "empty": "Pick a model and start chatting.",
     "hero": {
-      "welcome": "Welcome to LlamaRunner.",
+      "welcome": "Welcome to OpenWeights.",
       "headline": "How can I help?",
       "write": "Help me write",
       "code": "Help me code",
@@ -85,7 +85,32 @@
     "generating": "Generating...",
     "loadingModel": "Loading the model into memory (first time takes a while)...",
     "history": "Chats",
+    "historyEmpty": "No chats yet.",
+    "searchEmpty": "Nothing found.",
+    "deleteChat": "Delete chat",
+    "deleteChatConfirm": "Delete \"{{title}}\"?",
     "params": "Parameters",
+    "approval": {
+      "manual": "Approve manually",
+      "auto": "Approve automatically",
+      "ignore": "Skip all approvals",
+      "short": {
+        "manual": "Manual",
+        "auto": "Auto",
+        "ignore": "Skip"
+      }
+    },
+    "effort": {
+      "label": "Effort",
+      "hint": "More effort means more complete answers, but takes longer and uses more memory.",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "extra": "Extra",
+      "max": "Max",
+      "default": "Default",
+      "maxHint": "No token cap. Can be slow and fill VRAM on large models."
+    },
     "systemPrompt": "System instructions",
     "systemPromptPlaceholder": "E.g.: You are a concise assistant.",
     "temperature": "Creativity (temperature)",
@@ -152,7 +177,7 @@
     "version": "Version"
   },
   "onboarding": {
-    "welcome": "Welcome to Rift",
+    "welcome": "Welcome to OpenWeights",
     "tagline": "Models. Your machine. Your rules.",
     "detecting": "Analyzing your computer...",
     "yourMachine": "Your computer",
@@ -162,6 +187,16 @@
     "skip": "Skip for now",
     "gpuSummary": "You can run models up to ~{{size}} entirely on your GPU.",
     "cpuSummary": "No dedicated GPU: small models will run on the CPU."
+  },
+  "workspace": {
+    "add": "Add folder",
+    "change": "Change",
+    "remove": "Remove folder from session",
+    "search": "Search files...",
+    "empty": "No text files in this folder.",
+    "fileCount": "{{count}} files",
+    "saved": "Saved",
+    "discard": "Discard changes to this file?"
   },
   "common": {
     "loading": "Loading...",

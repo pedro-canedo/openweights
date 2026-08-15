@@ -6,7 +6,9 @@
 //! o que cobre também Ollama e LlamaBarn/"Llama" como adapters futuros.
 //!
 //! Fatos (ago/2026):
-//! - Router mode: subir `llama-server` SEM `-m`; modelos via `--models-dir`;
+//! - Router mode: subir `llama-server` SEM `-m`; `--models-dir` só vê GGUFs
+//!   na raiz (não é recursivo). Modelos em `autor/repo/` entram via
+//!   `--models-preset` (INI gerado em [`write_models_preset`]).
 //!   `GET /models` (status), `POST /models/load`, `POST /models/unload`,
 //!   progresso em `/models/sse`; `--models-max` limita simultâneos;
 //!   `--sleep-idle-seconds` descarrega ociosos.
@@ -17,7 +19,8 @@
 //!   segurança).
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::{Child, Command};
 
@@ -44,6 +47,9 @@ pub struct ServerConfig {
     /// Segundos de ociosidade até descarregar um modelo (0 = nunca).
     pub sleep_idle_seconds: u32,
     pub extra_args: Vec<String>,
+    /// INI do `--models-preset` (modelos em subpastas; `--models-dir` não recorre).
+    #[serde(default)]
+    pub models_preset: Option<PathBuf>,
 }
 
 impl ServerConfig {
@@ -57,6 +63,7 @@ impl ServerConfig {
             api_key: None,
             sleep_idle_seconds: 0,
             extra_args: Vec::new(),
+            models_preset: None,
         }
     }
 
@@ -72,6 +79,10 @@ impl ServerConfig {
             "--models-max".into(),
             self.models_max.to_string(),
         ];
+        if let Some(preset) = &self.models_preset {
+            args.push("--models-preset".into());
+            args.push(preset.to_string_lossy().into_owned());
+        }
         if self.sleep_idle_seconds > 0 {
             args.push("--sleep-idle-seconds".into());
             args.push(self.sleep_idle_seconds.to_string());
@@ -100,6 +111,48 @@ impl ServerConfig {
         };
         format!("http://{host}:{}", self.port)
     }
+}
+
+/// Gera o INI do `--models-preset` para o llama-server.
+///
+/// Cada par `(id, caminho)` vira uma seção: o `id` é o valor de `"model"`
+/// nas requisições OpenAI. Caminhos usam `/` para o parser do llama.cpp
+/// não tratar `\` do Windows como escape.
+pub fn write_models_preset(path: &Path, models: &[(String, PathBuf)]) -> std::io::Result<()> {
+    let mut used = HashSet::new();
+    let mut body = String::from("; gerado automaticamente — não edite\nversion = 1\n\n");
+    for (name, file) in models {
+        let id = unique_preset_id(name, &mut used);
+        let abs = path_for_ini(file);
+        body.push_str(&format!("[{id}]\nmodel = {abs}\n\n"));
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, body)
+}
+
+fn unique_preset_id(name: &str, used: &mut HashSet<String>) -> String {
+    let base = name.replace([']', '\n', '\r'], "_");
+    let base = if base.is_empty() {
+        "model".to_string()
+    } else {
+        base
+    };
+    if used.insert(base.clone()) {
+        return base;
+    }
+    for i in 2.. {
+        let cand = format!("{base}-{i}");
+        if used.insert(cand.clone()) {
+            return cand;
+        }
+    }
+    base
+}
+
+fn path_for_ini(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 /// Processo llama-server gerenciado.
@@ -249,5 +302,41 @@ mod tests {
     fn base_url_formats() {
         let cfg = ServerConfig::new(PathBuf::from("srv"), PathBuf::from("m"), 8081);
         assert_eq!(cfg.base_url(), "http://127.0.0.1:8081");
+    }
+
+    #[test]
+    fn args_include_models_preset() {
+        let mut cfg = ServerConfig::new(PathBuf::from("srv"), PathBuf::from("models"), 9000);
+        cfg.models_preset = Some(PathBuf::from("/tmp/router-models.ini"));
+        let joined = cfg.to_args().join(" ");
+        assert!(joined.contains("--models-preset /tmp/router-models.ini"));
+    }
+
+    #[test]
+    fn writes_preset_ini_with_unique_ids() {
+        let dir = std::env::temp_dir().join(format!("lr-preset-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ini = dir.join("router-models.ini");
+        write_models_preset(
+            &ini,
+            &[
+                (
+                    "Qwen3.8-27B-UD-Q2_K_XL.gguf".into(),
+                    PathBuf::from(r"C:\models\author\repo\Qwen3.8-27B-UD-Q2_K_XL.gguf"),
+                ),
+                (
+                    "Qwen3.8-27B-UD-Q2_K_XL.gguf".into(),
+                    PathBuf::from("/other/Qwen3.8-27B-UD-Q2_K_XL.gguf"),
+                ),
+            ],
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&ini).unwrap();
+        assert!(text.contains("[Qwen3.8-27B-UD-Q2_K_XL.gguf]"));
+        assert!(text.contains("[Qwen3.8-27B-UD-Q2_K_XL.gguf-2]"));
+        assert!(text.contains("model = C:/models/author/repo/Qwen3.8-27B-UD-Q2_K_XL.gguf"));
+        assert!(!text.contains('\\'));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

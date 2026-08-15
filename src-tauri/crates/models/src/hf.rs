@@ -84,7 +84,7 @@ struct ApiLfs {
 impl HfClient {
     pub fn new(token: Option<String>) -> Self {
         let http = reqwest::Client::builder()
-            .user_agent(concat!("Rift/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("OpenWeights/", env!("CARGO_PKG_VERSION")))
             .build()
             .expect("reqwest client");
         Self { http, token }

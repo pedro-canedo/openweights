@@ -4,7 +4,7 @@
 // que "digita" uma resposta falsa para desenvolver a UI.
 
 import { isTauri } from "./tauri";
-import type { ChatParams } from "./types";
+import type { ChatParams, EffortLevel } from "./types";
 
 /** Parte de conteúdo multimodal no formato OpenAI (aceito pelo llama-server com --mmproj). */
 export type ContentPart =
@@ -136,6 +136,21 @@ interface SseChunk {
   };
 }
 
+const REASONING_EFFORT: Record<EffortLevel, "low" | "medium" | "high"> = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  extra: "high",
+  max: "high",
+};
+
+/** Esforço → campos que o llama-server / modelos thinking reconhecem. */
+function applyEffort(body: Record<string, unknown>, effort?: EffortLevel) {
+  if (!effort) return;
+  body.reasoning_effort = REASONING_EFFORT[effort];
+  body.chat_template_kwargs = { enable_thinking: effort !== "low" };
+}
+
 /** Injeta o system prompt (se houver) como primeira mensagem. */
 function withSystemPrompt(
   messages: ChatMessage[],
@@ -181,6 +196,7 @@ async function streamReal({
     body.top_p = params.topP;
     body.top_k = params.topK;
     if (params.maxTokens != null) body.max_tokens = params.maxTokens;
+    applyEffort(body, params.effort);
   }
 
   const res = await fetch(`${baseUrl}/v1/chat/completions`, {

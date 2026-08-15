@@ -3,17 +3,17 @@
 // parâmetros por conversa, raciocínio (thinking), anexos, regenerar/editar
 // e auto-título em background.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import {
   addMessage,
   createChat,
-  deleteChat,
   deleteMessage,
   getServerStatus,
   listChats,
   listLocalModels,
   listMessages,
+  readWorkspaceFile,
   renameChat,
   setChatParams,
   startServer,
@@ -25,12 +25,14 @@ import {
   type ChatMessage,
   type ContentPart,
 } from "../lib/llama";
+import { chatStore } from "../lib/chatStore";
 import { navigate, takePendingChatModel } from "../lib/nav";
 import {
   DEFAULT_CHAT_PARAMS,
   type ChatParams,
   type ChatRow,
   type MessageRow,
+  type WorkspaceFile,
 } from "../lib/types";
 import {
   classifyFile,
@@ -38,8 +40,16 @@ import {
   type Attachment,
 } from "../components/chat/AttachmentChips";
 import ChatHero from "../components/chat/ChatHero";
-import ChatSidebar from "../components/chat/ChatSidebar";
+import {
+  ApprovalSelect,
+  EffortSelect,
+} from "../components/chat/ChatProperties";
 import Composer from "../components/chat/Composer";
+import {
+  WorkspaceFiles,
+  WorkspaceHost,
+  WorkspaceTrigger,
+} from "../components/chat/WorkspacePanel";
 import MessageList, { type UiMessage } from "../components/chat/MessageList";
 import ModelSelect from "../components/chat/ModelSelect";
 import ParamsPanel from "../components/chat/ParamsPanel";
@@ -66,6 +76,38 @@ async function loadModelOptions(): Promise<string[]> {
     return (await listLocalModels()).map((m) => m.name);
   } catch {
     return [];
+  }
+}
+
+/** Casa o nome da biblioteca local com o `id` que o llama-server realmente expõe. */
+function matchServerModel(wanted: string, ids: string[]): string {
+  if (ids.includes(wanted)) return wanted;
+  const stem = wanted.replace(/\.gguf$/i, "");
+  const hit = ids.find((id) => {
+    const idStem = id.replace(/\.gguf$/i, "");
+    return (
+      id === stem ||
+      idStem === stem ||
+      id.endsWith(`/${wanted}`) ||
+      id.endsWith(`/${stem}`) ||
+      idStem.endsWith(`/${stem}`)
+    );
+  });
+  return hit ?? wanted;
+}
+
+async function resolveServerModel(
+  baseUrl: string,
+  wanted: string,
+): Promise<{ model: string; ids: string[] }> {
+  try {
+    const res = await fetch(`${baseUrl}/v1/models`);
+    if (!res.ok) return { model: wanted, ids: [] };
+    const json = (await res.json()) as { data?: { id: string }[] };
+    const ids = (json.data ?? []).map((d) => d.id);
+    return { model: matchServerModel(wanted, ids), ids };
+  } catch {
+    return { model: wanted, ids: [] };
   }
 }
 
@@ -138,8 +180,11 @@ function toDbContent(text: string, reasoning: string): string {
 
 export default function Chat() {
   const { t } = useTranslation();
+  const { chats, openId, openNew } = useSyncExternalStore(
+    chatStore.subscribe,
+    chatStore.get,
+  );
 
-  const [chats, setChats] = useState<ChatRow[]>([]);
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [models, setModels] = useState<string[] | null>(null);
@@ -153,6 +198,7 @@ export default function Chat() {
   const [attachError, setAttachError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
@@ -173,7 +219,7 @@ export default function Chat() {
     let cancelled = false;
     void listChats()
       .then((rows) => {
-        if (!cancelled) setChats(rows);
+        if (!cancelled) chatStore.setChats(rows);
       })
       .catch(() => {});
 
@@ -191,6 +237,10 @@ export default function Chat() {
       abortRef.current?.abort();
     };
   }, []);
+
+  useEffect(() => {
+    chatStore.setActive(activeChatId);
+  }, [activeChatId]);
 
   // Persistência dos parâmetros da conversa ativa (debounce ~500 ms).
   useEffect(() => {
@@ -253,49 +303,25 @@ export default function Chat() {
     // Conversa nova usa o estado atual do painel de parâmetros.
   };
 
-  const removeChat = async (chat: ChatRow) => {
-    // Sem chave i18n dedicada para confirmação de exclusão de conversa.
-    if (!window.confirm(`Excluir "${chat.title}"?`)) return;
-    try {
-      await deleteChat(chat.id);
-    } catch {
-      // mock do navegador não implementa — remove só da UI
+  useEffect(() => {
+    if (openNew) {
+      chatStore.clearPending();
+      newChat();
+      return;
     }
-    deletedChatsRef.current.add(chat.id);
-    setChats((prev) => prev.filter((c) => c.id !== chat.id));
-    if (chat.id === activeChatId) {
-      convEpochRef.current++;
-      abortRef.current?.abort();
-      setActiveChatId(null);
-      setMessages([]);
-      resetComposer();
-    }
-  };
+    if (openId == null) return;
+    const row = chats.find((c) => c.id === openId);
+    if (!row) return;
+    chatStore.clearPending();
+    void selectChat(row);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId, openNew, chats]);
 
-  const handleRename = async (chat: ChatRow, title: string) => {
-    try {
-      await renameChat(chat.id, title);
-    } catch (e) {
-      console.error("falha ao renomear conversa:", e);
-    }
-    void listChats()
-      .then(setChats)
-      .catch(() => {});
-  };
-
-  // Exporta o chat ativo como Markdown para a área de transferência.
-  const exportChat = async (chat: ChatRow) => {
-    const md = [
-      `# ${chat.title}`,
-      ...messages
-        .filter((m) => !m.error)
-        .map(
-          (m) =>
-            `### ${m.role === "user" ? "Você" : "Assistente"}\n\n${m.content}`,
-        ),
-    ].join("\n\n");
-    await navigator.clipboard.writeText(md);
-  };
+  useEffect(() => {
+    if (activeChatId == null) return;
+    if (chats.some((c) => c.id === activeChatId)) return;
+    deletedChatsRef.current.add(activeChatId);
+  }, [chats, activeChatId]);
 
   // ------------------------------------------------------------- anexos ---
 
@@ -329,6 +355,7 @@ export default function Chat() {
   const autoTitleChat = async (
     chatId: number,
     baseUrl: string,
+    model: string,
     history: UiMessage[],
     assistantText: string,
   ) => {
@@ -344,7 +371,7 @@ export default function Chat() {
       ];
       const raw = await completeOnce({
         baseUrl,
-        model: selectedModel,
+        model,
         messages: msgs,
         maxTokens: 24,
         temperature: 0.3,
@@ -353,7 +380,7 @@ export default function Chat() {
       if (!title || deletedChatsRef.current.has(chatId)) return;
       await renameChat(chatId, title);
       void listChats()
-        .then(setChats)
+        .then(chatStore.setChats)
         .catch(() => {});
     } catch (e) {
       console.warn("auto-título falhou:", e);
@@ -416,13 +443,23 @@ export default function Chat() {
       if (!status.baseUrl) throw new Error(t("server.needRuntime"));
       const baseUrl = status.baseUrl;
 
+      const resolved = await resolveServerModel(baseUrl, selectedModel);
+      if (resolved.ids.length > 0) {
+        setModels((cur) => {
+          const extra = (cur ?? []).filter((m) => !resolved.ids.includes(m));
+          return [...resolved.ids, ...extra];
+        });
+      }
+      const model = resolved.model;
+      if (model !== selectedModel) setSelectedModel(model);
+
       // Router mode: a 1ª resposta de um modelo recém-selecionado demora
       // (carga na memória) — avisa quando passar de 2 s sem nenhum delta.
       slowTimer = window.setTimeout(() => setLoadingModel(true), 2000);
 
       const result = await streamChat({
         baseUrl,
-        model: selectedModel,
+        model,
         messages: toApiMessages(history),
         params,
         signal: ac.signal,
@@ -470,7 +507,7 @@ export default function Chat() {
 
       // Auto-título em background após a 1ª resposta de um chat recém-criado.
       if (opts.autoTitle && canPersistId(chatId)) {
-        void autoTitleChat(chatId, baseUrl, history, assistantText);
+        void autoTitleChat(chatId, baseUrl, model, history, assistantText);
       }
     } catch (err) {
       if (isAbortError(err)) {
@@ -530,6 +567,20 @@ export default function Chat() {
     const textAtts = attachments.filter((a) => a.kind === "text");
     const imageAtts = attachments.filter((a) => a.kind === "image");
     let composed = text;
+    if (params.workspaceDir) {
+      const seen = new Set<string>();
+      for (const m of text.matchAll(/@([^\s@]+)/g)) {
+        const rel = m[1];
+        if (seen.has(rel)) continue;
+        seen.add(rel);
+        try {
+          const body = await readWorkspaceFile(params.workspaceDir, rel);
+          composed += `\n\n\`\`\`\n[arquivo: ${rel}]\n${body}\n\`\`\``;
+        } catch {
+          // @sem arquivo correspondente — envia só a menção
+        }
+      }
+    }
     for (const a of textAtts) {
       composed += `\n\n\`\`\`\n[arquivo: ${a.name}]\n${a.data}\n\`\`\``;
     }
@@ -602,7 +653,7 @@ export default function Chat() {
           // Persiste os parâmetros atuais do painel na conversa nova.
           void setChatParams(chatId, JSON.stringify(params)).catch(() => {});
           void listChats()
-            .then(setChats)
+            .then(chatStore.setChats)
             .catch(() => {});
         }
         if (canPersistId(chatId)) {
@@ -691,16 +742,6 @@ export default function Chat() {
 
   return (
     <div className="flex h-full">
-      <ChatSidebar
-        chats={chats}
-        activeId={activeChatId}
-        onSelect={(c) => void selectChat(c)}
-        onNew={newChat}
-        onDelete={(c) => void removeChat(c)}
-        onRename={(c, title) => void handleRename(c, title)}
-        onExport={exportChat}
-      />
-
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex min-h-0 flex-1">
           <div
@@ -776,15 +817,17 @@ export default function Chat() {
             )}
 
             {!noModels && (
+              <WorkspaceHost
+                dir={params.workspaceDir}
+                onDirChange={(workspaceDir) =>
+                  setParams((p) => ({ ...p, workspaceDir }))
+                }
+                files={workspaceFiles}
+                onFiles={setWorkspaceFiles}
+                disabled={generating}
+              >
               <div className="shrink-0">
-                <div className="flex justify-center pb-2">
-                  <ModelSelect
-                    models={models ?? []}
-                    value={selectedModel}
-                    onChange={setSelectedModel}
-                    disabled={generating}
-                  />
-                </div>
+                <WorkspaceFiles />
                 <Composer
                   draft={draft}
                   onDraftChange={setDraft}
@@ -800,8 +843,33 @@ export default function Chat() {
                   attachError={attachError}
                   editing={editingIdx != null}
                   onCancelEdit={resetComposer}
+                  workspaceFiles={workspaceFiles}
+                  startActions={<WorkspaceTrigger />}
+                  leftActions={
+                    <ApprovalSelect
+                      params={params}
+                      onChange={setParams}
+                      disabled={generating}
+                    />
+                  }
+                  rightActions={
+                    <>
+                      <ModelSelect
+                        models={models ?? []}
+                        value={selectedModel}
+                        onChange={setSelectedModel}
+                        disabled={generating}
+                      />
+                      <EffortSelect
+                        params={params}
+                        onChange={setParams}
+                        disabled={generating}
+                      />
+                    </>
+                  }
                 />
               </div>
+              </WorkspaceHost>
             )}
           </div>
 

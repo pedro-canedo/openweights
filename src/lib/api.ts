@@ -16,6 +16,7 @@ import type {
   RuntimeState,
   ServerStatus,
   Telemetry,
+  WorkspaceFile,
 } from "./types";
 import * as mocks from "./mocks";
 
@@ -180,3 +181,23 @@ export const setSetting = (key: string, value: string) =>
 
 export const onTelemetry = (h: (t: Telemetry) => void) =>
   listen<Telemetry>("telemetry", h);
+
+// ----------------------------------------------------------- workspace ---
+
+export const pickWorkspace = () =>
+  isTauri ? invoke<string | null>("workspace_pick") : Promise.resolve(null);
+
+export const listWorkspace = (root: string) =>
+  isTauri
+    ? invoke<WorkspaceFile[]>("workspace_list", { root })
+    : Promise.resolve([]);
+
+export const readWorkspaceFile = (root: string, rel: string) =>
+  isTauri
+    ? invoke<string>("workspace_read", { root, rel })
+    : Promise.reject(new Error("indisponível no navegador"));
+
+export const writeWorkspaceFile = (root: string, rel: string, content: string) =>
+  isTauri
+    ? invoke<void>("workspace_write", { root, rel, content })
+    : Promise.reject(new Error("indisponível no navegador"));

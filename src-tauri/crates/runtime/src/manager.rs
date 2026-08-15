@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 /// User-Agent exigido pela API do GitHub (e boa educação nos downloads).
-const USER_AGENT: &str = concat!("Rift/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("OpenWeights/", env!("CARGO_PKG_VERSION"));
 
 /// Intervalo mínimo entre eventos de progresso.
 const PROGRESS_THROTTLE: Duration = Duration::from_millis(200);

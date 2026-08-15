@@ -315,6 +315,18 @@ pub async fn server_start(
         cfg.api_key = api_key;
         cfg.models_max = models_max;
 
+        // --models-dir do llama.cpp não é recursivo; a biblioteca mora em
+        // autor/repo/. O INI registra cada GGUF com o nome que a UI já usa.
+        let preset_path = state.data_dir.join("router-models.ini");
+        let preset_models: Vec<(String, std::path::PathBuf)> = lr_models::scan_local(
+            &state.models_dir,
+        )
+        .into_iter()
+        .map(|a| (a.name, a.primary_path))
+        .collect();
+        lr_engine::write_models_preset(&preset_path, &preset_models).map_err(err_str)?;
+        cfg.models_preset = Some(preset_path);
+
         let mut srv = lr_engine::LlamaServer::new(cfg);
         srv.spawn().map_err(err_str)?;
 
@@ -525,4 +537,26 @@ pub async fn settings_set(state: State<'_, AppState>, key: String, value: String
         *state.hf.lock().await = lr_models::HfClient::new(token);
     }
     Ok(())
+}
+
+// ----------------------------------------------------------- workspace ---
+
+#[tauri::command]
+pub async fn workspace_pick() -> CmdResult<Option<String>> {
+    Ok(crate::workspace::pick_folder().await)
+}
+
+#[tauri::command]
+pub fn workspace_list(root: String) -> CmdResult<Vec<crate::workspace::WorkspaceFile>> {
+    crate::workspace::list_files(&root).map_err(err_str)
+}
+
+#[tauri::command]
+pub fn workspace_read(root: String, rel: String) -> CmdResult<String> {
+    crate::workspace::read_file(&root, &rel).map_err(err_str)
+}
+
+#[tauri::command]
+pub fn workspace_write(root: String, rel: String, content: String) -> CmdResult<()> {
+    crate::workspace::write_file(&root, &rel, &content).map_err(err_str)
 }

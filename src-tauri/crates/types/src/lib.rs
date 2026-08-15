@@ -1,4 +1,4 @@
-//! Tipos compartilhados entre os crates do Rift.
+//! Tipos compartilhados entre os crates do OpenWeights.
 //!
 //! Tudo aqui é serializado para o frontend com `camelCase` — mantenha em
 //! sincronia com `src/lib/types.ts`.
