@@ -201,3 +201,8 @@ export const writeWorkspaceFile = (root: string, rel: string, content: string) =
   isTauri
     ? invoke<void>("workspace_write", { root, rel, content })
     : Promise.reject(new Error("indisponível no navegador"));
+
+export const revealWorkspace = (root: string, rel?: string | null) =>
+  isTauri
+    ? invoke<void>("workspace_reveal", { root, rel: rel ?? null })
+    : Promise.reject(new Error("indisponível no navegador"));

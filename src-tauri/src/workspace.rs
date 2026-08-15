@@ -104,6 +104,61 @@ pub fn write_file(root: &str, rel: &str, content: &str) -> WsResult<()> {
     Ok(())
 }
 
+/// Abre a pasta (ou revela o arquivo) no Explorer / Finder / xdg-open.
+pub fn reveal(root: &str, rel: Option<&str>) -> WsResult<()> {
+    let path = match rel.filter(|s| !s.is_empty()) {
+        Some(rel) => resolve_under(Path::new(root), rel)?,
+        None => {
+            let root = PathBuf::from(root);
+            if !root.is_dir() {
+                return Err(WorkspaceError::Msg("pasta não encontrada".into()));
+            }
+            std::fs::canonicalize(&root)?
+        }
+    };
+    open_in_file_manager(&path)
+}
+
+fn open_in_file_manager(path: &Path) -> WsResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = std::process::Command::new("explorer");
+        if path.is_file() {
+            cmd.arg(format!("/select,{}", path.display()));
+        } else {
+            cmd.arg(path);
+        }
+        cmd.spawn()?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = std::process::Command::new("open");
+        if path.is_file() {
+            cmd.args(["-R", &path.to_string_lossy()]);
+        } else {
+            cmd.arg(path);
+        }
+        cmd.spawn()?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let target = if path.is_file() {
+            path.parent().unwrap_or(path)
+        } else {
+            path
+        };
+        std::process::Command::new("xdg-open").arg(target).spawn()?;
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = path;
+        return Err(WorkspaceError::Msg(
+            "abrir no gerenciador de arquivos não é suportado nesta plataforma".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn resolve_under(root: &Path, rel: &str) -> WsResult<PathBuf> {
     if rel.is_empty() || rel.contains('\0') {
         return Err(WorkspaceError::Msg("caminho inválido".into()));

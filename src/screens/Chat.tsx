@@ -40,14 +40,12 @@ import {
   type Attachment,
 } from "../components/chat/AttachmentChips";
 import ChatHero from "../components/chat/ChatHero";
-import {
-  ApprovalSelect,
-  EffortSelect,
-} from "../components/chat/ChatProperties";
+import { ApprovalSelect } from "../components/chat/ChatProperties";
 import Composer from "../components/chat/Composer";
 import {
-  WorkspaceFiles,
+  WorkspaceExplorer,
   WorkspaceHost,
+  WorkspaceToggle,
   WorkspaceTrigger,
 } from "../components/chat/WorkspacePanel";
 import MessageList, { type UiMessage } from "../components/chat/MessageList";
@@ -743,6 +741,15 @@ export default function Chat() {
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
+        <WorkspaceHost
+          dir={params.workspaceDir}
+          onDirChange={(workspaceDir) =>
+            setParams((p) => ({ ...p, workspaceDir }))
+          }
+          files={workspaceFiles}
+          onFiles={setWorkspaceFiles}
+          disabled={generating}
+        >
         <div className="flex min-h-0 flex-1">
           <div
             className="relative flex min-w-0 flex-1 flex-col"
@@ -770,28 +777,31 @@ export default function Chat() {
               </div>
             )}
 
-            <button
-              onClick={() => setParamsOpen((o) => !o)}
-              title={t("chat.params")}
-              className={`absolute top-3 right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
-                paramsOpen
-                  ? "border-accent text-accent"
-                  : "border-edge text-dim hover:border-accent hover:text-ink"
-              }`}
-            >
-              <svg
-                className="h-4 w-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                viewBox="0 0 24 24"
+            <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
+              <WorkspaceToggle />
+              <button
+                onClick={() => setParamsOpen((o) => !o)}
+                title={t("chat.params")}
+                className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
+                  paramsOpen
+                    ? "border-accent text-accent"
+                    : "border-edge text-dim hover:border-accent hover:text-ink"
+                }`}
               >
-                <circle cx="12" cy="12" r="3" />
-                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
-              </svg>
-            </button>
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  viewBox="0 0 24 24"
+                >
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+                </svg>
+              </button>
+            </div>
 
             {noModels ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-dim">
@@ -817,17 +827,7 @@ export default function Chat() {
             )}
 
             {!noModels && (
-              <WorkspaceHost
-                dir={params.workspaceDir}
-                onDirChange={(workspaceDir) =>
-                  setParams((p) => ({ ...p, workspaceDir }))
-                }
-                files={workspaceFiles}
-                onFiles={setWorkspaceFiles}
-                disabled={generating}
-              >
               <div className="shrink-0">
-                <WorkspaceFiles />
                 <Composer
                   draft={draft}
                   onDraftChange={setDraft}
@@ -853,28 +853,24 @@ export default function Chat() {
                     />
                   }
                   rightActions={
-                    <>
-                      <ModelSelect
-                        models={models ?? []}
-                        value={selectedModel}
-                        onChange={setSelectedModel}
-                        disabled={generating}
-                      />
-                      <EffortSelect
-                        params={params}
-                        onChange={setParams}
-                        disabled={generating}
-                      />
-                    </>
+                    <ModelSelect
+                      models={models ?? []}
+                      value={selectedModel}
+                      onChange={setSelectedModel}
+                      params={params}
+                      onParamsChange={setParams}
+                      disabled={generating}
+                    />
                   }
                 />
               </div>
-              </WorkspaceHost>
             )}
           </div>
 
+          <WorkspaceExplorer />
           {paramsOpen && <ParamsPanel params={params} onChange={setParams} />}
         </div>
+        </WorkspaceHost>
       </div>
     </div>
   );

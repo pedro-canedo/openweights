@@ -82,6 +82,7 @@
     "stop": "Parar",
     "newChat": "Nova conversa",
     "modelSelect": "Modelo",
+    "moreModels": "Mais modelos",
     "generating": "Gerando...",
     "loadingModel": "Carregando o modelo na memória (primeira vez demora um pouco)...",
     "history": "Conversas",
@@ -129,6 +130,14 @@
     "thinking": "Pensando...",
     "thought": "Pensou por {{seconds}}s",
     "attach": "Anexar arquivo ou imagem",
+    "plus": {
+      "open": "Adicionar",
+      "attach": "Adicionar arquivos ou fotos",
+      "skills": "Habilidades",
+      "connectors": "Conectores",
+      "plugins": "Adicionar plugins...",
+      "soon": "Em breve"
+    },
     "attachTooBig": "Arquivo grande demais (máx. {{max}})",
     "attachUnsupported": "Formato não suportado",
     "imageNote": "Imagens exigem um modelo multimodal.",
@@ -196,7 +205,18 @@
     "empty": "Nenhum arquivo de texto nesta pasta.",
     "fileCount": "{{count}} arquivos",
     "saved": "Salvo",
-    "discard": "Descartar alterações neste arquivo?"
+    "discard": "Descartar alterações neste arquivo?",
+    "explorer": "Arquivos",
+    "openExplorer": "Abrir explorador de arquivos",
+    "closeExplorer": "Fechar explorador",
+    "noFolder": "Nenhuma pasta nesta sessão.",
+    "editor": "Editor",
+    "unsaved": "Não salvo",
+    "lineCol": "Ln {{line}}, Col {{col}}",
+    "revealExplorer": "Abrir no Explorer",
+    "revealFinder": "Abrir no Finder",
+    "revealFolder": "Abrir no gerenciador de arquivos",
+    "revealFile": "Mostrar no gerenciador de arquivos"
   },
   "common": {
     "loading": "Carregando...",

@@ -85,6 +85,7 @@ fn main() {
             commands::workspace_list,
             commands::workspace_read,
             commands::workspace_write,
+            commands::workspace_reveal,
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o OpenWeights")

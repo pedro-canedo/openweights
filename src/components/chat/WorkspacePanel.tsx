@@ -1,21 +1,25 @@
-// Pasta da sessão: anexar diretório, listar arquivos, abrir no editor
-// e gravar de volta no disco.
+// Pasta da sessão: ícone no composer, explorador à direita (estilo VS)
+// e editor em modal ao abrir um arquivo.
 
 import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
+  type UIEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
   listWorkspace,
   pickWorkspace,
   readWorkspaceFile,
+  revealWorkspace,
   writeWorkspaceFile,
 } from "../../lib/api";
-import { formatBytes } from "../../lib/format";
 import type { WorkspaceFile } from "../../lib/types";
 
 function folderName(dir: string): string {
@@ -40,15 +44,95 @@ function FolderPlusIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+function revealFolderLabel(t: (key: string) => string): string {
+  const p = navigator.platform.toLowerCase();
+  if (p.includes("mac")) return t("workspace.revealFinder");
+  if (p.includes("win")) return t("workspace.revealExplorer");
+  return t("workspace.revealFolder");
+}
+
+function ExternalIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      viewBox="0 0 24 24"
+    >
+      <path d="M14 5h5v5" />
+      <path d="M10 14L19 5" />
+      <path d="M19 13v5a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1h5" />
+    </svg>
+  );
+}
+
+function SidebarIcon() {
+  return (
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      viewBox="0 0 24 24"
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+    </svg>
+  );
+}
+
+type TreeNode = {
+  name: string;
+  file?: WorkspaceFile;
+  children?: TreeNode[];
+};
+
+function buildTree(files: WorkspaceFile[]): TreeNode[] {
+  const root: TreeNode[] = [];
+  for (const file of files) {
+    const parts = file.path.split(/[\\/]/).filter(Boolean);
+    let level = root;
+    parts.forEach((part, i) => {
+      const isFile = i === parts.length - 1;
+      let node = level.find((n) => n.name === part);
+      if (!node) {
+        node = isFile
+          ? { name: part, file }
+          : { name: part, children: [] };
+        level.push(node);
+      }
+      if (!isFile) level = node.children ?? (node.children = []);
+    });
+  }
+  const sortNodes = (nodes: TreeNode[]) => {
+    nodes.sort((a, b) => {
+      const ad = a.children ? 0 : 1;
+      const bd = b.children ? 0 : 1;
+      return ad - bd || a.name.localeCompare(b.name);
+    });
+    nodes.forEach((n) => n.children && sortNodes(n.children));
+  };
+  sortNodes(root);
+  return root;
+}
+
 type WorkspaceCtx = {
   dir: string | null;
   files: WorkspaceFile[];
   disabled?: boolean;
+  explorerOpen: boolean;
+  setExplorerOpen: (open: boolean) => void;
   addFolder: () => Promise<void>;
   removeFolder: () => void;
   query: string;
   setQuery: (q: string) => void;
   openPath: string | null;
+  editorOpen: boolean;
   draft: string;
   setDraft: (s: string) => void;
   dirty: boolean;
@@ -58,7 +142,9 @@ type WorkspaceCtx = {
   saved: boolean;
   visible: WorkspaceFile[];
   openFile: (f: WorkspaceFile) => Promise<void>;
+  closeEditor: () => void;
   save: () => Promise<void>;
+  reveal: (rel?: string | null) => Promise<void>;
 };
 
 const WorkspaceContext = createContext<WorkspaceCtx | null>(null);
@@ -66,7 +152,7 @@ const WorkspaceContext = createContext<WorkspaceCtx | null>(null);
 function useWorkspace(): WorkspaceCtx {
   const ctx = useContext(WorkspaceContext);
   if (!ctx) {
-    throw new Error("WorkspaceTrigger/Files precisam estar em WorkspaceHost");
+    throw new Error("Workspace precisa estar em WorkspaceHost");
   }
   return ctx;
 }
@@ -89,6 +175,8 @@ export function WorkspaceHost({
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [openPath, setOpenPath] = useState<string | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [explorerOpen, setExplorerOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -99,6 +187,7 @@ export function WorkspaceHost({
     if (!dir) {
       onFiles([]);
       setOpenPath(null);
+      setEditorOpen(false);
       return;
     }
     void listWorkspace(dir)
@@ -110,26 +199,51 @@ export function WorkspaceHost({
   const addFolder = async () => {
     setError(null);
     const picked = await pickWorkspace().catch(() => null);
-    if (picked) onDirChange(picked);
+    if (picked) {
+      onDirChange(picked);
+      setExplorerOpen(true);
+    }
   };
 
   const removeFolder = () => {
     if (dirty && !window.confirm(t("workspace.discard"))) return;
     onDirChange(null);
     setOpenPath(null);
+    setEditorOpen(false);
     setDraft("");
     setDirty(false);
   };
 
   const openFile = async (file: WorkspaceFile) => {
     if (!dir) return;
-    if (dirty && !window.confirm(t("workspace.discard"))) return;
+    if (dirty && openPath !== file.path && !window.confirm(t("workspace.discard"))) {
+      return;
+    }
     setError(null);
     try {
       const text = await readWorkspaceFile(dir, file.path);
       setOpenPath(file.path);
       setDraft(text);
       setDirty(false);
+      setEditorOpen(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const closeEditor = () => {
+    if (dirty && !window.confirm(t("workspace.discard"))) return;
+    setEditorOpen(false);
+    setOpenPath(null);
+    setDraft("");
+    setDirty(false);
+  };
+
+  const reveal = async (rel?: string | null) => {
+    if (!dir) return;
+    setError(null);
+    try {
+      await revealWorkspace(dir, rel);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -165,11 +279,14 @@ export function WorkspaceHost({
         dir,
         files,
         disabled,
+        explorerOpen,
+        setExplorerOpen,
         addFolder,
         removeFolder,
         query,
         setQuery,
         openPath,
+        editorOpen,
         draft,
         setDraft,
         dirty,
@@ -179,10 +296,13 @@ export function WorkspaceHost({
         saved,
         visible,
         openFile,
+        closeEditor,
         save,
+        reveal,
       }}
     >
       {children}
+      <WorkspaceEditor />
     </WorkspaceContext.Provider>
   );
 }
@@ -208,108 +328,326 @@ export function WorkspaceTrigger() {
   );
 }
 
-export function WorkspaceFiles() {
+export function WorkspaceToggle() {
+  const { t } = useTranslation();
+  const { explorerOpen, setExplorerOpen, dir } = useWorkspace();
+
+  return (
+    <button
+      type="button"
+      onClick={() => setExplorerOpen(!explorerOpen)}
+      title={
+        explorerOpen ? t("workspace.closeExplorer") : t("workspace.openExplorer")
+      }
+      className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
+        explorerOpen
+          ? "border-accent text-accent"
+          : dir
+            ? "border-edge text-ink hover:border-accent"
+            : "border-edge text-dim hover:border-accent hover:text-ink"
+      }`}
+    >
+      <SidebarIcon />
+    </button>
+  );
+}
+
+function FileTree({
+  nodes,
+  depth,
+}: {
+  nodes: TreeNode[];
+  depth: number;
+}) {
+  const { openPath, openFile } = useWorkspace();
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  return (
+    <>
+      {nodes.map((node) => {
+        const key = `${depth}-${node.name}`;
+        if (node.children) {
+          const closed = collapsed[key] === true;
+          return (
+            <div key={key}>
+              <button
+                type="button"
+                onClick={() =>
+                  setCollapsed((cur) => ({ ...cur, [key]: !closed }))
+                }
+                style={{ paddingLeft: 8 + depth * 12 }}
+                className="flex w-full items-center gap-1.5 py-1 pr-2 text-left text-[12px] text-dim hover:bg-panel2 hover:text-ink"
+              >
+                <span className="w-3 shrink-0 text-[10px]">
+                  {closed ? "▸" : "▾"}
+                </span>
+                <span className="truncate">{node.name}</span>
+              </button>
+              {!closed && (
+                <FileTree nodes={node.children} depth={depth + 1} />
+              )}
+            </div>
+          );
+        }
+        const active = openPath === node.file?.path;
+        return (
+          <button
+            key={node.file?.path ?? key}
+            type="button"
+            onClick={() => node.file && void openFile(node.file)}
+            style={{ paddingLeft: 20 + depth * 12 }}
+            className={`flex w-full items-center py-1 pr-2 text-left text-[12px] hover:bg-panel2 ${
+              active ? "bg-panel2 text-ink" : "text-dim"
+            }`}
+          >
+            <span className="truncate">{node.name}</span>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+export function WorkspaceExplorer() {
   const { t } = useTranslation();
   const {
     dir,
+    explorerOpen,
+    setExplorerOpen,
+    addFolder,
     removeFolder,
+    reveal,
     query,
     setQuery,
-    openPath,
-    draft,
-    setDraft,
-    dirty,
-    setDirty,
-    busy,
-    error,
-    saved,
     visible,
-    openFile,
-    save,
+    error,
   } = useWorkspace();
 
-  if (!dir && !error) return null;
+  const tree = useMemo(() => buildTree(visible), [visible]);
+
+  if (!explorerOpen) return null;
 
   return (
-    <div className="px-6">
-    <div className="mx-auto mb-2 flex w-full max-w-2xl flex-col gap-2">
-      {dir && (
-        <div className="overflow-hidden rounded-2xl border border-edge bg-panel">
-          <div className="flex items-center gap-2 border-b border-edge px-3 py-1.5">
-            <span className="min-w-0 flex-1 truncate text-xs text-ink" title={dir}>
-              {folderName(dir)}
-            </span>
+    <aside className="flex w-64 shrink-0 flex-col border-l border-edge bg-panel">
+      <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
+        <span className="min-w-0 flex-1 truncate text-[11px] font-medium tracking-wide text-dim uppercase">
+          {dir ? folderName(dir) : t("workspace.explorer")}
+        </span>
+        {dir && (
+          <>
+            <button
+              type="button"
+              onClick={() => void reveal()}
+              title={revealFolderLabel(t)}
+              className="flex h-5 w-5 items-center justify-center rounded text-dim hover:text-ink"
+            >
+              <ExternalIcon />
+            </button>
             <button
               type="button"
               onClick={removeFolder}
               title={t("workspace.remove")}
-              className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-dim hover:bg-bad/20 hover:text-bad"
+              className="flex h-5 w-5 items-center justify-center rounded text-dim hover:bg-bad/20 hover:text-bad"
             >
               ×
             </button>
-          </div>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={() => setExplorerOpen(false)}
+          title={t("workspace.closeExplorer")}
+          className="flex h-5 w-5 items-center justify-center rounded text-dim hover:text-ink"
+        >
+          ▸
+        </button>
+      </div>
+
+      {dir ? (
+        <>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("workspace.search")}
             className="w-full border-b border-edge bg-transparent px-3 py-2 text-xs outline-none placeholder:text-dim"
           />
-          <div className="max-h-36 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto py-1">
             {visible.length === 0 ? (
-              <p className="px-3 py-3 text-center text-[11px] text-dim">
+              <p className="px-3 py-6 text-center text-[11px] text-dim">
                 {t("workspace.empty")}
               </p>
             ) : (
-              visible.map((f) => (
-                <button
-                  key={f.path}
-                  type="button"
-                  onClick={() => void openFile(f)}
-                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-panel2 ${
-                    openPath === f.path ? "bg-panel2 text-ink" : "text-dim"
-                  }`}
-                >
-                  <span className="min-w-0 flex-1 truncate">{f.path}</span>
-                  <span className="shrink-0 tabular-nums text-[10px]">
-                    {formatBytes(f.bytes)}
-                  </span>
-                </button>
-              ))
+              <FileTree nodes={tree} depth={0} />
             )}
           </div>
-
-          {openPath && (
-            <div className="border-t border-edge">
-              <div className="flex items-center gap-2 px-3 py-1.5">
-                <span className="min-w-0 flex-1 truncate text-[11px] text-ink">
-                  {openPath}
-                  {dirty ? " ·" : ""}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void save()}
-                  disabled={busy || !dirty}
-                  className="rounded-md bg-accent px-2 py-0.5 text-[11px] font-medium text-white disabled:opacity-40"
-                >
-                  {saved ? t("workspace.saved") : t("common.save")}
-                </button>
-              </div>
-              <textarea
-                value={draft}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  setDirty(true);
-                }}
-                spellCheck={false}
-                className="max-h-48 min-h-28 w-full resize-y bg-panel2 px-3 py-2 font-mono text-[12px] leading-relaxed outline-none select-text"
-              />
-            </div>
-          )}
+        </>
+      ) : (
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
+          <p className="text-[12px] text-dim">{t("workspace.noFolder")}</p>
+          <button
+            type="button"
+            onClick={() => void addFolder()}
+            className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white"
+          >
+            {t("workspace.add")}
+          </button>
         </div>
       )}
 
-      {error && <p className="text-[11px] text-bad">{error}</p>}
-    </div>
+      {error && (
+        <p className="border-t border-edge px-3 py-2 text-[11px] text-bad">
+          {error}
+        </p>
+      )}
+    </aside>
+  );
+}
+
+function WorkspaceEditor() {
+  const { t } = useTranslation();
+  const {
+    editorOpen,
+    openPath,
+    draft,
+    setDraft,
+    dirty,
+    setDirty,
+    busy,
+    saved,
+    save,
+    closeEditor,
+    reveal,
+  } = useWorkspace();
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
+  const [cursor, setCursor] = useState({ line: 1, col: 1 });
+
+  const lines = useMemo(() => draft.split("\n"), [draft]);
+
+  useEffect(() => {
+    if (!editorOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void save();
+      }
+      if (e.key === "Escape") closeEditor();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [editorOpen, save, closeEditor]);
+
+  useEffect(() => {
+    if (editorOpen) taRef.current?.focus();
+  }, [editorOpen, openPath]);
+
+  if (!editorOpen || !openPath) return null;
+
+  const syncScroll = (e: UIEvent<HTMLTextAreaElement>) => {
+    if (gutterRef.current) {
+      gutterRef.current.scrollTop = e.currentTarget.scrollTop;
+    }
+  };
+
+  const updateCursor = (el: HTMLTextAreaElement) => {
+    const before = el.value.slice(0, el.selectionStart);
+    const line = before.split("\n").length;
+    const col = before.length - before.lastIndexOf("\n");
+    setCursor({ line, col });
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== "Tab") return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const next = `${draft.slice(0, start)}  ${draft.slice(end)}`;
+    setDraft(next);
+    setDirty(true);
+    requestAnimationFrame(() => {
+      el.selectionStart = el.selectionEnd = start + 2;
+      updateCursor(el);
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) closeEditor();
+      }}
+    >
+      <div className="flex h-[min(86vh,820px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-edge bg-[#1e1e1e] shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-white/90">
+            {openPath}
+            {dirty ? " •" : ""}
+          </span>
+          <button
+            type="button"
+            onClick={() => void reveal(openPath)}
+            title={t("workspace.revealFile")}
+            className="flex h-6 w-6 items-center justify-center rounded text-white/50 hover:bg-white/10 hover:text-white"
+          >
+            <ExternalIcon className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={busy || !dirty}
+            className="rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-40"
+          >
+            {saved ? t("workspace.saved") : t("common.save")}
+          </button>
+          <button
+            type="button"
+            onClick={closeEditor}
+            title={t("common.close")}
+            className="flex h-6 w-6 items-center justify-center rounded text-white/50 hover:bg-white/10 hover:text-white"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="flex min-h-0 flex-1">
+          <div
+            ref={gutterRef}
+            className="shrink-0 overflow-hidden border-r border-white/10 bg-[#1e1e1e] py-3 pr-3 pl-3 text-right font-mono text-[12px] leading-relaxed text-white/25 select-none"
+          >
+            {lines.map((_, i) => (
+              <div key={i}>{i + 1}</div>
+            ))}
+          </div>
+          <textarea
+            ref={taRef}
+            value={draft}
+            spellCheck={false}
+            wrap="off"
+            onScroll={syncScroll}
+            onKeyDown={onKeyDown}
+            onClick={(e) => updateCursor(e.currentTarget)}
+            onKeyUp={(e) => updateCursor(e.currentTarget)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setDirty(true);
+              updateCursor(e.target);
+            }}
+            className="h-full min-h-0 w-full resize-none bg-[#1e1e1e] px-3 py-3 font-mono text-[12px] leading-relaxed text-[#d4d4d4] outline-none select-text"
+          />
+        </div>
+
+        <div className="flex items-center justify-between border-t border-white/10 px-3 py-1.5 text-[11px] text-white/40">
+          <span>{t("workspace.editor")}</span>
+          <span>
+            {t("workspace.lineCol", {
+              line: cursor.line,
+              col: cursor.col,
+            })}
+            {dirty ? ` · ${t("workspace.unsaved")}` : ""}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

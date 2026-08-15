@@ -1,16 +1,10 @@
-// Aprovação e esforço como controles independentes na barra do composer.
+// Aprovação na barra esquerda do composer (esforço fica no seletor de modelo).
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  EFFORT_MAX_TOKENS,
-  type ApprovalMode,
-  type ChatParams,
-  type EffortLevel,
-} from "../../lib/types";
+import { type ApprovalMode, type ChatParams } from "../../lib/types";
 
 const APPROVALS: ApprovalMode[] = ["manual", "auto", "ignore"];
-const EFFORTS: EffortLevel[] = ["low", "medium", "high", "extra", "max"];
 
 function Check() {
   return (
@@ -177,71 +171,3 @@ export function ApprovalSelect({
   );
 }
 
-export function EffortSelect({
-  params,
-  onChange,
-  disabled = false,
-}: {
-  params: ChatParams;
-  onChange: (p: ChatParams) => void;
-  disabled?: boolean;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const ref = useDismiss(open, () => setOpen(false));
-
-  return (
-    <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        title={`${t("chat.effort.label")}: ${t(`chat.effort.${params.effort}`)}`}
-        className={`${triggerClass} ${open ? "bg-panel text-ink" : "text-dim hover:text-ink"}`}
-      >
-        <span>{t(`chat.effort.${params.effort}`)}</span>
-        <ChevronDown />
-      </button>
-      {open && (
-        <MenuShell widthClass="w-80" align="right">
-          <p className="px-3 pt-1.5 pb-2 text-[11px] leading-relaxed text-dim">
-            {t("chat.effort.hint")}
-          </p>
-          {EFFORTS.map((level) => (
-            <button
-              key={level}
-              type="button"
-              onClick={() => {
-                onChange({
-                  ...params,
-                  effort: level,
-                  maxTokens: EFFORT_MAX_TOKENS[level],
-                });
-                setOpen(false);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-panel2"
-            >
-              <span>{t(`chat.effort.${level}`)}</span>
-              {level === "high" && (
-                <span className="rounded-md bg-panel2 px-1.5 py-0.5 text-[10px] text-dim">
-                  {t("chat.effort.default")}
-                </span>
-              )}
-              {level === "max" && (
-                <span
-                  title={t("chat.effort.maxHint")}
-                  className="flex h-4 w-4 items-center justify-center rounded-full border border-dim/50 text-[9px] text-dim"
-                >
-                  i
-                </span>
-              )}
-              <span className="ml-auto">
-                {params.effort === level ? <Check /> : null}
-              </span>
-            </button>
-          ))}
-        </MenuShell>
-      )}
-    </div>
-  );
-}

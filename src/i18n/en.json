@@ -82,6 +82,7 @@
     "stop": "Stop",
     "newChat": "New chat",
     "modelSelect": "Model",
+    "moreModels": "More models",
     "generating": "Generating...",
     "loadingModel": "Loading the model into memory (first time takes a while)...",
     "history": "Chats",
@@ -129,6 +130,14 @@
     "thinking": "Thinking...",
     "thought": "Thought for {{seconds}}s",
     "attach": "Attach file or image",
+    "plus": {
+      "open": "Add",
+      "attach": "Add files or photos",
+      "skills": "Skills",
+      "connectors": "Connectors",
+      "plugins": "Add plugins...",
+      "soon": "Coming soon"
+    },
     "attachTooBig": "File too large (max {{max}})",
     "attachUnsupported": "Unsupported format",
     "imageNote": "Images require a multimodal model.",
@@ -196,7 +205,18 @@
     "empty": "No text files in this folder.",
     "fileCount": "{{count}} files",
     "saved": "Saved",
-    "discard": "Discard changes to this file?"
+    "discard": "Discard changes to this file?",
+    "explorer": "Files",
+    "openExplorer": "Open file explorer",
+    "closeExplorer": "Close explorer",
+    "noFolder": "No folder in this session.",
+    "editor": "Editor",
+    "unsaved": "Unsaved",
+    "lineCol": "Ln {{line}}, Col {{col}}",
+    "revealExplorer": "Open in Explorer",
+    "revealFinder": "Open in Finder",
+    "revealFolder": "Open in file manager",
+    "revealFile": "Show in file manager"
   },
   "common": {
     "loading": "Loading...",

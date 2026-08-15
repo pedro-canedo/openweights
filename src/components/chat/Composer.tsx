@@ -12,6 +12,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceFile } from "../../lib/types";
+import AttachMenu from "./AttachMenu";
 import AttachmentChips, { type Attachment } from "./AttachmentChips";
 
 export default function Composer({
@@ -89,6 +90,17 @@ export default function Composer({
       el.setSelectionRange(el.value.length, el.value.length);
     }
   }, [draft]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "u") {
+        e.preventDefault();
+        if (!generating) fileRef.current?.click();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [generating]);
 
   const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
@@ -210,24 +222,10 @@ export default function Composer({
 
         <div className="mt-1 flex items-center gap-1">
           <div className="flex min-w-0 items-center gap-0.5">
-            <button
-              onClick={() => fileRef.current?.click()}
-              title={t("chat.attach")}
+            <AttachMenu
               disabled={generating}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-dim transition-colors hover:bg-panel hover:text-ink disabled:opacity-40"
-            >
-              <svg
-                className="h-[18px] w-[18px]"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                viewBox="0 0 24 24"
-              >
-                <path d="M12 5v14M5 12h14" />
-              </svg>
-            </button>
+              onAttach={() => fileRef.current?.click()}
+            />
             {startActions}
             {leftActions}
           </div>

@@ -1,23 +1,34 @@
-// Identidade OpenWeights: O + W entrelaçados (barra do W corta o anel),
-// como na logo original. viewBox 100×100 para o ícone do app.
+// Identidade OpenWeights: C aberto à direita + visto (branco / cinza).
 
-/** Monograma O+W em `currentColor`. */
+const MARK_C =
+  "M56.1 30.9A27 27 0 1 0 58.1 69.1L68.5 82.2 79.8 52.4";
+const MARK_V = "M79.8 52.4 91.2 27.6";
+
+/** Monograma C+visto em `currentColor`. */
 export function OwMark({ className = "h-7" }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 100 100"
+      viewBox="12 14 80 78"
       className={className}
       aria-hidden="true"
       preserveAspectRatio="xMidYMid meet"
     >
       <path
-        fill="currentColor"
-        fillRule="evenodd"
-        d="M36 16a34 34 0 1 1 0 68 34 34 0 0 1 0-68zm0 14a20 20 0 1 0 0 40 20 20 0 0 0 0-40zM48 78 78 22 68 16 38 72z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="13"
+        strokeLinecap="butt"
+        strokeLinejoin="miter"
+        strokeMiterlimit={2.4}
+        d={MARK_C}
       />
       <path
-        fill="currentColor"
-        d="M46 74 76 18 86 24 56 80zM72 78 98 30 88 24 62 72z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="13"
+        strokeLinecap="butt"
+        opacity="0.4"
+        d={MARK_V}
       />
     </svg>
   );
@@ -27,9 +38,9 @@ export function OwMark({ className = "h-7" }: { className?: string }) {
 export function OwWordmark({ className = "" }: { className?: string }) {
   return (
     <span
-      className={`inline-flex select-none items-center gap-2 font-semibold tracking-tight ${className}`}
+      className={`inline-flex select-none items-center gap-2.5 font-semibold tracking-tight ${className}`}
     >
-      <OwMark className="h-[1.25em] w-auto shrink-0" />
+      <OwMark className="h-[1.15em] w-auto shrink-0" />
       <span>OpenWeights</span>
     </span>
   );
@@ -41,7 +52,7 @@ export function OwLockup({ className = "" }: { className?: string }) {
     <span
       className={`inline-flex select-none flex-col items-center gap-2.5 font-semibold tracking-tight ${className}`}
     >
-      <OwMark className="h-[2.6em] w-auto" />
+      <OwMark className="h-[2.4em] w-auto" />
       <span>OpenWeights</span>
     </span>
   );

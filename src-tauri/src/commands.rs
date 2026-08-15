@@ -560,3 +560,8 @@ pub fn workspace_read(root: String, rel: String) -> CmdResult<String> {
 pub fn workspace_write(root: String, rel: String, content: String) -> CmdResult<()> {
     crate::workspace::write_file(&root, &rel, &content).map_err(err_str)
 }
+
+#[tauri::command]
+pub fn workspace_reveal(root: String, rel: Option<String>) -> CmdResult<()> {
+    crate::workspace::reveal(&root, rel.as_deref()).map_err(err_str)
+}
