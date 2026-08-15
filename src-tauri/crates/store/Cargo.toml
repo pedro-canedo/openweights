@@ -1,0 +1,12 @@
+[package]
+name = "lr_store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Persistência local (SQLite): conversas, presets e configurações"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }

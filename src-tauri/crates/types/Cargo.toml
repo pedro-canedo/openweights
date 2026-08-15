@@ -1,0 +1,9 @@
+[package]
+name = "lr_types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tipos compartilhados entre os crates do LlamaRunner"
+
+[dependencies]
+serde.workspace = true

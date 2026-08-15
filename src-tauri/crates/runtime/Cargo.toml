@@ -1,0 +1,23 @@
+[package]
+name = "lr_runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Baixa, verifica e seleciona os binários prebuilt do llama.cpp"
+
+[dependencies]
+lr_types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+sha2 = "0.10"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+flate2 = "1"
+tar = "0.4"
+futures-util = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

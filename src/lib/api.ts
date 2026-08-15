@@ -1,0 +1,145 @@
+// Camada de API tipada sobre os comandos Tauri.
+// Todas as telas usam ESTE módulo — nunca `invoke` direto.
+
+import { invoke, isTauri, listen } from "./tauri";
+import type {
+  ChatRow,
+  DownloadEvent,
+  DownloadStatus,
+  HardwareProfile,
+  LocalModel,
+  MessageRow,
+  ModelSummary,
+  QuantView,
+  RuntimeEvent,
+  RuntimeState,
+  ServerStatus,
+  Telemetry,
+} from "./types";
+import * as mocks from "./mocks";
+
+// ------------------------------------------------------------ hardware ---
+
+export const getHardwareProfile = () =>
+  invoke<HardwareProfile>("hardware_profile");
+
+export const getAppVersion = () => invoke<string>("app_version");
+
+// ------------------------------------------------------------- runtime ---
+
+export const getRuntimeStatus = () =>
+  isTauri ? invoke<RuntimeState>("runtime_status") : mocks.runtimeStatus();
+
+export const ensureRuntime = () =>
+  isTauri ? invoke<RuntimeState>("runtime_ensure") : mocks.ensureRuntime();
+
+export const onRuntimeEvent = (h: (e: RuntimeEvent) => void) =>
+  listen<RuntimeEvent>("runtime", h);
+
+// -------------------------------------------------------------- modelos ---
+
+export type SearchSort = "trending" | "downloads" | "likes" | "updated";
+
+export const searchModels = (query: string, sort: SearchSort = "trending") =>
+  isTauri
+    ? invoke<ModelSummary[]>("models_search", { query, sort })
+    : mocks.searchModels(query);
+
+export const getModelQuants = (
+  repoId: string,
+  paramsTotal: number | null,
+  ctxLen = 8192,
+) =>
+  isTauri
+    ? invoke<QuantView[]>("models_quants", { repoId, paramsTotal, ctxLen })
+    : mocks.modelQuants(repoId);
+
+// ------------------------------------------------------------ downloads ---
+
+export const startDownload = (repoId: string, artifactName: string) =>
+  isTauri
+    ? invoke<string>("download_start", { repoId, artifactName })
+    : mocks.startDownload(repoId, artifactName);
+
+export const pauseDownload = (id: string) =>
+  invoke<void>("download_pause", { id });
+export const resumeDownload = (id: string) =>
+  invoke<void>("download_resume", { id });
+export const cancelDownload = (id: string) =>
+  invoke<void>("download_cancel", { id });
+
+export const listDownloads = () =>
+  isTauri ? invoke<DownloadStatus[]>("downloads_list") : mocks.listDownloads();
+
+export const onDownloadEvent = (h: (e: DownloadEvent) => void) =>
+  listen<DownloadEvent>("download", h);
+
+// ------------------------------------------------------ biblioteca local ---
+
+export const listLocalModels = () =>
+  isTauri ? invoke<LocalModel[]>("local_models") : mocks.localModels();
+
+export const deleteModel = (repoId: string, name: string) =>
+  invoke<void>("model_delete", { repoId, name });
+
+// -------------------------------------------------------------- servidor ---
+
+export const getServerStatus = () =>
+  isTauri ? invoke<ServerStatus>("server_status") : mocks.serverStatus();
+
+export const startServer = () =>
+  isTauri ? invoke<ServerStatus>("server_start") : mocks.startServer();
+
+export const stopServer = () =>
+  isTauri ? invoke<void>("server_stop") : mocks.stopServer();
+
+export const onServerStatus = (h: (s: ServerStatus) => void) =>
+  listen<ServerStatus>("server-status", h);
+
+export const onServerLog = (h: (line: string) => void) =>
+  listen<string>("server-log", h);
+
+// ----------------------------------------------------------------- chat ---
+
+export const listChats = () =>
+  isTauri ? invoke<ChatRow[]>("chats_list") : mocks.listChats();
+
+export const createChat = (title: string, modelId: string | null) =>
+  isTauri
+    ? invoke<number>("chat_create", { title, modelId })
+    : mocks.createChat(title);
+
+export const deleteChat = (chatId: number) =>
+  invoke<void>("chat_delete", { chatId });
+
+export const listMessages = (chatId: number) =>
+  isTauri
+    ? invoke<MessageRow[]>("messages_list", { chatId })
+    : mocks.listMessages(chatId);
+
+export const addMessage = (
+  chatId: number,
+  role: string,
+  content: string,
+  tokensPerSec: number | null = null,
+) =>
+  isTauri
+    ? invoke<number>("message_add", { chatId, role, content, tokensPerSec })
+    : Promise.resolve(0);
+
+// ------------------------------------------------------------- settings ---
+
+export const getSetting = (key: string) =>
+  isTauri
+    ? invoke<string | null>("settings_get", { key })
+    : Promise.resolve(localStorage.getItem(`mock:${key}`));
+
+export const setSetting = (key: string, value: string) =>
+  isTauri
+    ? invoke<void>("settings_set", { key, value })
+    : Promise.resolve(void localStorage.setItem(`mock:${key}`, value));
+
+// ------------------------------------------------------------ telemetria ---
+
+export const onTelemetry = (h: (t: Telemetry) => void) =>
+  listen<Telemetry>("telemetry", h);
