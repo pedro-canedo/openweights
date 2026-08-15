@@ -2,7 +2,7 @@
 // Durante a geração o botão vira "Parar" (aborta o streaming).
 // Suporta anexos (botão 📎, colar imagem) com chips acima do campo.
 
-import { useRef, type ClipboardEvent } from "react";
+import { useEffect, useRef, type ClipboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import AttachmentChips, { type Attachment } from "./AttachmentChips";
 
@@ -36,9 +36,25 @@ export default function Composer({
 }) {
   const { t } = useTranslation();
   const fileRef = useRef<HTMLInputElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
 
   const canSend =
     !disabled && (draft.trim().length > 0 || attachments.length > 0);
+
+  const resize = (el: HTMLTextAreaElement) => {
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  };
+
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    resize(el);
+    if (draft && document.activeElement !== el) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }, [draft]);
 
   const handlePaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
@@ -51,9 +67,9 @@ export default function Composer({
   };
 
   return (
-    <div className="border-t border-edge p-4">
+    <div className="px-6 pt-1 pb-5">
       {editing && (
-        <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 text-xs text-warn">
+        <div className="mx-auto mb-2 flex max-w-2xl items-center gap-2 text-xs text-warn">
           <span>{t("chat.editResend")}</span>
           <button
             onClick={onCancelEdit}
@@ -67,12 +83,12 @@ export default function Composer({
       <AttachmentChips attachments={attachments} onRemove={onRemoveAttachment} />
 
       {attachError && (
-        <div className="mx-auto mb-2 max-w-3xl text-xs text-bad">
+        <div className="mx-auto mb-2 max-w-2xl text-xs text-bad">
           {attachError}
         </div>
       )}
 
-      <div className="mx-auto flex max-w-3xl items-end gap-2">
+      <div className="mx-auto flex max-w-2xl items-end gap-1 rounded-[28px] border border-edge bg-panel2 px-2.5 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.28)]">
         <input
           ref={fileRef}
           type="file"
@@ -81,14 +97,14 @@ export default function Composer({
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
             if (files.length > 0) onAttachFiles(files);
-            e.target.value = ""; // permite re-anexar o mesmo arquivo
+            e.target.value = "";
           }}
         />
         <button
           onClick={() => fileRef.current?.click()}
           title={t("chat.attach")}
           disabled={generating}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-edge bg-panel text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+          className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-dim transition-colors hover:bg-panel hover:text-ink disabled:opacity-40"
         >
           <svg
             className="h-4.5 w-4.5"
@@ -99,13 +115,19 @@ export default function Composer({
             strokeLinejoin="round"
             viewBox="0 0 24 24"
           >
-            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            <rect x="3" y="5" width="18" height="14" rx="2" />
+            <circle cx="8.5" cy="10" r="1.5" />
+            <path d="M21 16l-5-5-8 8" />
           </svg>
         </button>
 
         <textarea
+          ref={taRef}
           value={draft}
-          onChange={(e) => onDraftChange(e.target.value)}
+          onChange={(e) => {
+            onDraftChange(e.target.value);
+            resize(e.target);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
@@ -115,22 +137,35 @@ export default function Composer({
           onPaste={handlePaste}
           placeholder={t("chat.placeholder")}
           rows={1}
-          className="max-h-40 min-h-11 flex-1 resize-none rounded-xl border border-edge bg-panel px-4 py-3 text-sm outline-none select-text placeholder:text-dim focus:border-accent"
+          className="max-h-40 min-h-10 flex-1 resize-none bg-transparent px-1 py-2 text-sm outline-none select-text placeholder:text-dim"
         />
+
         {generating ? (
           <button
             onClick={onStop}
-            className="h-11 rounded-xl border border-edge bg-panel2 px-5 text-sm font-medium transition-colors hover:border-bad hover:text-bad"
+            title={t("chat.stop")}
+            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-panel text-ink transition-colors hover:bg-bad/20 hover:text-bad"
           >
-            {t("chat.stop")}
+            <span className="h-2.5 w-2.5 rounded-[2px] bg-current" />
           </button>
         ) : (
           <button
             onClick={onSend}
             disabled={!canSend}
-            className="h-11 rounded-xl bg-accent px-5 text-sm font-medium text-white disabled:opacity-40"
+            title={t("chat.send")}
+            className="mb-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-ink text-bg transition-opacity disabled:opacity-25"
           >
-            {t("chat.send")}
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              viewBox="0 0 24 24"
+            >
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
           </button>
         )}
       </div>

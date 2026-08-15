@@ -64,8 +64,18 @@
   },
   "chat": {
     "title": "Chat",
-    "placeholder": "Envie uma mensagem...",
-    "empty": "Selecione um modelo acima e comece a conversar.",
+    "placeholder": "O que você quer saber...",
+    "empty": "Selecione um modelo e comece a conversar.",
+    "hero": {
+      "welcome": "Bem-vindo ao LlamaRunner.",
+      "headline": "Como posso ajudar?",
+      "write": "Me ajude a escrever",
+      "code": "Me ajude a programar",
+      "explain": "Me ajude a entender",
+      "writePrompt": "Escreva um texto claro e direto sobre ",
+      "codePrompt": "Me ajude a escrever ou revisar este código:\n\n",
+      "explainPrompt": "Explique de forma simples: "
+    },
     "noModels": "Você ainda não tem modelos. Baixe um na aba Descobrir.",
     "noServer": "O motor de IA será iniciado automaticamente na primeira mensagem.",
     "send": "Enviar",

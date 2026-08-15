@@ -64,8 +64,18 @@
   },
   "chat": {
     "title": "Chat",
-    "placeholder": "Send a message...",
-    "empty": "Pick a model above and start chatting.",
+    "placeholder": "What do you want to know...",
+    "empty": "Pick a model and start chatting.",
+    "hero": {
+      "welcome": "Welcome to LlamaRunner.",
+      "headline": "How can I help?",
+      "write": "Help me write",
+      "code": "Help me code",
+      "explain": "Help me understand",
+      "writePrompt": "Write a clear, direct text about ",
+      "codePrompt": "Help me write or review this code:\n\n",
+      "explainPrompt": "Explain this simply: "
+    },
     "noModels": "You don't have any models yet. Download one in Discover.",
     "noServer": "The AI engine starts automatically on your first message.",
     "send": "Send",

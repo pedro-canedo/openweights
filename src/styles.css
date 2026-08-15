@@ -60,3 +60,11 @@ body {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+
+.chat-hero-glow {
+  background: radial-gradient(
+    ellipse 55% 42% at 50% 42%,
+    color-mix(in srgb, var(--lr-accent) 22%, transparent),
+    transparent 70%
+  );
+}

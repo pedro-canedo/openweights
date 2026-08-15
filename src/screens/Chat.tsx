@@ -37,6 +37,7 @@ import {
   readAttachment,
   type Attachment,
 } from "../components/chat/AttachmentChips";
+import ChatHero from "../components/chat/ChatHero";
 import ChatSidebar from "../components/chat/ChatSidebar";
 import Composer from "../components/chat/Composer";
 import MessageList, { type UiMessage } from "../components/chat/MessageList";
@@ -701,37 +702,6 @@ export default function Chat() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-3 border-b border-edge px-4 py-2">
-          <ModelSelect
-            models={models ?? []}
-            value={selectedModel}
-            onChange={setSelectedModel}
-            disabled={generating}
-          />
-          <button
-            onClick={() => setParamsOpen((o) => !o)}
-            title={t("chat.params")}
-            className={`ml-auto flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
-              paramsOpen
-                ? "border-accent text-accent"
-                : "border-edge text-dim hover:border-accent hover:text-ink"
-            }`}
-          >
-            <svg
-              className="h-4 w-4"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              viewBox="0 0 24 24"
-            >
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
-            </svg>
-          </button>
-        </header>
-
         <div className="flex min-h-0 flex-1">
           <div
             className="relative flex min-w-0 flex-1 flex-col"
@@ -754,10 +724,33 @@ export default function Chat() {
             }}
           >
             {dragOver && (
-              <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-accent/10 text-sm font-medium text-accent">
+              <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-accent/10 text-sm font-medium text-accent">
                 {t("chat.attach")}
               </div>
             )}
+
+            <button
+              onClick={() => setParamsOpen((o) => !o)}
+              title={t("chat.params")}
+              className={`absolute top-3 right-4 z-10 flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
+                paramsOpen
+                  ? "border-accent text-accent"
+                  : "border-edge text-dim hover:border-accent hover:text-ink"
+              }`}
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                viewBox="0 0 24 24"
+              >
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+              </svg>
+            </button>
 
             {noModels ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-dim">
@@ -770,10 +763,7 @@ export default function Chat() {
                 </button>
               </div>
             ) : messages.length === 0 && !generating && !loadingModel ? (
-              <div className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center text-sm text-dim">
-                <span>{t("chat.empty")}</span>
-                <span className="text-xs">{t("chat.noServer")}</span>
-              </div>
+              <ChatHero onPick={setDraft} />
             ) : (
               <MessageList
                 messages={messages}
@@ -785,22 +775,34 @@ export default function Chat() {
               />
             )}
 
-            <Composer
-              draft={draft}
-              onDraftChange={setDraft}
-              onSend={() => void handleSend()}
-              onStop={() => abortRef.current?.abort()}
-              generating={generating}
-              disabled={!selectedModel}
-              attachments={attachments}
-              onAttachFiles={(files) => void addFiles(files)}
-              onRemoveAttachment={(id) =>
-                setAttachments((prev) => prev.filter((a) => a.id !== id))
-              }
-              attachError={attachError}
-              editing={editingIdx != null}
-              onCancelEdit={resetComposer}
-            />
+            {!noModels && (
+              <div className="shrink-0">
+                <div className="flex justify-center pb-2">
+                  <ModelSelect
+                    models={models ?? []}
+                    value={selectedModel}
+                    onChange={setSelectedModel}
+                    disabled={generating}
+                  />
+                </div>
+                <Composer
+                  draft={draft}
+                  onDraftChange={setDraft}
+                  onSend={() => void handleSend()}
+                  onStop={() => abortRef.current?.abort()}
+                  generating={generating}
+                  disabled={!selectedModel}
+                  attachments={attachments}
+                  onAttachFiles={(files) => void addFiles(files)}
+                  onRemoveAttachment={(id) =>
+                    setAttachments((prev) => prev.filter((a) => a.id !== id))
+                  }
+                  attachError={attachError}
+                  editing={editingIdx != null}
+                  onCancelEdit={resetComposer}
+                />
+              </div>
+            )}
           </div>
 
           {paramsOpen && <ParamsPanel params={params} onChange={setParams} />}
