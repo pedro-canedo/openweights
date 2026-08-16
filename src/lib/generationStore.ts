@@ -9,6 +9,7 @@ import {
   listLoadedModels,
   matchServerModel,
   modelsMax,
+  visionModelFor,
 } from "./serverSession";
 import {
   completeOnce,
@@ -241,7 +242,18 @@ async function runJob(chatId: number): Promise<void> {
     const max = await modelsMax();
     if (finishIfAborted(chatId)) return;
 
-    const resolved = matchServerModel(row.opts.model, loaded);
+    // Mensagem com imagem vai para a entrada que carrega o projetor de
+    // visão, quando ela existe. É o próprio roteador que troca entre as
+    // duas, então o projetor só ocupa a placa quando há imagem.
+    const temImagem = row.opts.messages.some(
+      (m) =>
+        Array.isArray(m.content) &&
+        m.content.some((parte) => parte.type === "image_url"),
+    );
+    const pedido = temImagem
+      ? visionModelFor(row.opts.model, loaded)
+      : row.opts.model;
+    const resolved = matchServerModel(pedido, loaded);
     if (runningJobs(chatId) && mustQueue(resolved, loaded, max)) {
       requeued = true;
       patch(chatId, {

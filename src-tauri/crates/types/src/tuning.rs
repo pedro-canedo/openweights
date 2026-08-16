@@ -67,6 +67,25 @@ impl SpecType {
     }
 }
 
+/// Como o projetor de visão é carregado.
+///
+/// Ele custa memória de vídeo (perto de 1 GB em modelos grandes) e só serve
+/// quando há imagem na conversa. `OnDemand` resolve isso sem recarregar nada
+/// na hora: o motor ganha uma **segunda entrada** do mesmo modelo, com o
+/// projetor, e o roteador troca de uma para a outra quando a conversa passa a
+/// ter imagem — que é exatamente o que ele já faz ao trocar de modelo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum VisionMode {
+    /// Sem visão: o projetor não é carregado nem oferecido.
+    Off,
+    /// Carregado só quando a conversa tem imagem.
+    #[default]
+    OnDemand,
+    /// Sempre carregado junto do modelo.
+    Always,
+}
+
 /// De onde veio a configuração — a interface diz isso à pessoa, e a diferença
 /// entre calculado e medido é a razão de ser do recurso.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -102,6 +121,8 @@ pub struct ModelProfile {
     pub spec: Option<SpecType>,
     /// Projetor de visão a carregar junto (caminho absoluto).
     pub mmproj: Option<String>,
+    /// Quando carregar o projetor. Ausente = o padrão (sob demanda).
+    pub vision: Option<VisionMode>,
     pub source: ProfileSource,
 }
 
@@ -176,7 +197,12 @@ impl ModelProfile {
         {
             push("spec-type", s.as_str().to_string());
         }
-        if let Some(p) = &self.mmproj {
+        // Só a entrada que carrega o projetor recebe a chave. Sob demanda,
+        // quem a recebe é a entrada companheira, montada por quem escreve o
+        // INI — esta aqui continua sendo a leve.
+        if let Some(p) = &self.mmproj
+            && self.vision.unwrap_or_default() == VisionMode::Always
+        {
             push("mmproj", p.replace('\\', "/"));
         }
 
@@ -215,6 +241,7 @@ mod tests {
             threads: Some(8),
             spec: Some(SpecType::Ngram),
             mmproj: Some(r"C:\modelos\mmproj.gguf".into()),
+            vision: Some(VisionMode::Always),
             source: ProfileSource::Recommended,
         };
         let m: std::collections::HashMap<_, _> = p.to_ini_extras().into_iter().collect();
@@ -256,6 +283,30 @@ mod tests {
                 .collect::<std::collections::HashMap<_, _>>()["fit"],
             "off"
         );
+    }
+
+    /// Sob demanda, a entrada principal continua leve: quem carrega o
+    /// projetor é a companheira, e é o roteador que troca entre as duas.
+    #[test]
+    fn on_demand_vision_does_not_weigh_on_the_main_entry() {
+        let p = ModelProfile {
+            mmproj: Some("/m/mmproj.gguf".into()),
+            vision: Some(VisionMode::OnDemand),
+            ..Default::default()
+        };
+        assert!(!p.to_ini_extras().iter().any(|(k, _)| k == "mmproj"));
+
+        let sempre = ModelProfile {
+            vision: Some(VisionMode::Always),
+            ..p.clone()
+        };
+        assert!(sempre.to_ini_extras().iter().any(|(k, _)| k == "mmproj"));
+
+        let desligada = ModelProfile {
+            vision: Some(VisionMode::Off),
+            ..p
+        };
+        assert!(!desligada.to_ini_extras().iter().any(|(k, _)| k == "mmproj"));
     }
 
     #[test]

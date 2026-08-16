@@ -305,21 +305,53 @@ pub(crate) fn profile_for(state: &AppState, name: &str) -> Option<lr_types::tuni
     None
 }
 
+/// Sufixo do id da entrada que carrega o projetor de visão.
+///
+/// Visão sob demanda sem recarregar nada na hora: o motor recebe DUAS
+/// entradas do mesmo arquivo, uma leve e outra com o projetor, e o roteador
+/// troca entre elas quando a conversa passa a ter imagem — que é exatamente o
+/// que ele já faz ao trocar de modelo.
+pub(crate) const VISION_SUFFIX: &str = " (visão)";
+
 /// Reescreve `router-models.ini` com o perfil gravado de cada modelo.
 fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
+    use lr_types::tuning::VisionMode;
+
     let preset_path = state.data_dir.join("router-models.ini");
-    let preset_models: Vec<lr_engine::PresetEntry> = lr_models::scan_local(&state.models_dir)
-        .into_iter()
-        .map(|a| {
-            let mut entry = lr_engine::PresetEntry::new(a.name.clone(), a.primary_path);
-            if let Some(perfil) = profile_for(state, &a.name) {
-                for (chave, valor) in perfil.to_ini_extras() {
-                    entry = entry.with_extra(chave, valor);
+    let mut preset_models: Vec<lr_engine::PresetEntry> = Vec::new();
+
+    for a in lr_models::scan_local(&state.models_dir) {
+        let perfil = profile_for(state, &a.name);
+        let mut entry = lr_engine::PresetEntry::new(a.name.clone(), a.primary_path.clone());
+        if let Some(p) = &perfil {
+            for (chave, valor) in p.to_ini_extras() {
+                entry = entry.with_extra(chave, valor);
+            }
+        }
+        preset_models.push(entry);
+
+        // A companheira com visão, quando há projetor e a pessoa não desligou.
+        let modo = perfil
+            .as_ref()
+            .and_then(|p| p.vision)
+            .unwrap_or(VisionMode::OnDemand);
+        if let Some(projetor) = &a.vision_projector
+            && modo == VisionMode::OnDemand
+        {
+            let mut visao = lr_engine::PresetEntry::new(
+                format!("{}{VISION_SUFFIX}", a.name),
+                a.primary_path.clone(),
+            );
+            if let Some(p) = &perfil {
+                for (chave, valor) in p.to_ini_extras() {
+                    visao = visao.with_extra(chave, valor);
                 }
             }
-            entry
-        })
-        .collect();
+            visao = visao.with_extra("mmproj", projetor.to_string_lossy().replace('\\', "/"));
+            preset_models.push(visao);
+        }
+    }
+
     lr_engine::write_models_preset(&preset_path, &preset_models).map_err(err_str)?;
     Ok(preset_path)
 }

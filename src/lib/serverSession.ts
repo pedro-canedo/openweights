@@ -75,6 +75,26 @@ export function matchServerModel(wanted: string, ids: string[]): string {
   return hit ?? wanted;
 }
 
+/** Sufixo do id da entrada que carrega o projetor de visão. */
+export const VISION_SUFFIX = " (visão)";
+
+/**
+ * Id a usar quando a mensagem tem imagem.
+ *
+ * O motor recebe duas entradas do mesmo arquivo — uma leve e outra com o
+ * projetor — e trocar de uma para a outra é a mesma troca de modelo que ele
+ * já sabe fazer. Assim o projetor só ocupa memória de vídeo quando há imagem,
+ * sem recarregar nada na hora de enviar.
+ *
+ * Sem a entrada com visão (modelo sem projetor, ou visão desligada), devolve
+ * o próprio modelo: mandar a imagem para um modelo que não a lê dá um erro
+ * claro do motor, melhor do que a tela inventar um id que não existe.
+ */
+export function visionModelFor(model: string, loaded: string[]): string {
+  const alvo = `${model}${VISION_SUFFIX}`;
+  return loaded.includes(alvo) ? alvo : matchServerModel(alvo, loaded) === alvo ? alvo : model;
+}
+
 /**
  * Teto de modelos carregados ao mesmo tempo (`--models-max`; padrão 1).
  *

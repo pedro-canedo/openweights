@@ -30,7 +30,11 @@ import { generationStore } from "../lib/generationStore";
 import { isRunActive, runStore, type RunView } from "../lib/agent/runStore";
 import { plansFirst, type WorkMode } from "../lib/agent/scout";
 import type { RunMode } from "../lib/agent/types";
-import { listLoadedModels, matchServerModel } from "../lib/serverSession";
+import {
+  listLoadedModels,
+  matchServerModel,
+  VISION_SUFFIX,
+} from "../lib/serverSession";
 import { navigate, takePendingChatModel } from "../lib/nav";
 import {
   DEFAULT_CHAT_PARAMS,
@@ -91,10 +95,14 @@ async function loadModelOptions(): Promise<string[]> {
   } catch {
     local = [];
   }
-  const out = [...ids];
+  // As entradas de visão são companheiras internas do mesmo arquivo: quem
+  // escolhe entre elas é a mensagem (tem imagem ou não), não a pessoa.
+  const visiveis = ids.filter((id) => !id.endsWith(VISION_SUFFIX));
+
+  const out = [...visiveis];
   for (const name of local) {
     // O id do Router pode ser o nome sem `.gguf` — não duplicar o modelo.
-    if (!ids.includes(matchServerModel(name, ids))) out.push(name);
+    if (!visiveis.includes(matchServerModel(name, visiveis))) out.push(name);
   }
   return out;
 }

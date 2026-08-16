@@ -24,7 +24,7 @@ const JANELAS: [u32; 5] = [8192, 16384, 32768, 65536, 131_072];
 pub const MARGEM_VRAM_BYTES: u64 = 768 * 1024 * 1024;
 
 /// O que a pessoa quer desta máquina. Não é gosto escondido no código: são
-/// duas respostas defensáveis para o mesmo hardware, e a tela mostra as duas.
+/// respostas defensáveis para o mesmo hardware, e a tela mostra todas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Intent {
@@ -32,6 +32,21 @@ pub enum Intent {
     Balanced,
     /// Mais janela, aceitando comprimir o KV cache para pagar por ela.
     MoreContext,
+    /// Velocidade: janela curta e KV leve, porque KV grande custa banda de
+    /// memória a cada token gerado.
+    Fast,
+    /// Pegada mínima, para deixar a placa livre para o resto do computador.
+    LowMemory,
+}
+
+impl Intent {
+    /// Todos, na ordem em que a tela os mostra.
+    pub const ALL: [Intent; 4] = [
+        Intent::Fast,
+        Intent::Balanced,
+        Intent::MoreContext,
+        Intent::LowMemory,
+    ];
 }
 
 /// Um candidato antes de ser medido.
@@ -85,6 +100,20 @@ pub fn candidates(budget: &MemoryBudget, meta: &ModelMeta, file_size_bytes: u64)
         // a única que roda inteira na placa.
         (None, Some(a)) => out.push(base(a, Some(KvType::Q8_0), Intent::Balanced)),
         _ => {}
+    }
+
+    // Rápida: a menor janela útil com KV leve. Contexto grande não é de
+    // graça nem quando cabe — o KV é lido a cada token gerado.
+    if let Some(&menor) = JANELAS.first()
+        && equilibrada.is_some_and(|e| e > menor)
+    {
+        out.push(base(menor, Some(KvType::Q8_0), Intent::Fast));
+    }
+
+    // Pouca memória: o mínimo de tudo, para deixar a placa livre para o
+    // resto do computador (um jogo, um editor de vídeo, outro modelo).
+    if equilibrada.is_some() {
+        out.push(base(JANELAS[0], Some(KvType::Q4_0), Intent::LowMemory));
     }
 
     // Nada coube na placa: o modelo ainda roda partido, e é melhor dizer com
@@ -289,6 +318,30 @@ mod tests {
         };
         let c = candidates(&budget, &modelo_8b(), 5 * GIB);
         assert_eq!(c[0].profile.flash_attn, None);
+    }
+
+    /// Quatro perfis não são quatro gostos: são quatro perguntas diferentes
+    /// sobre a mesma placa, e cada uma tem resposta com número.
+    #[test]
+    fn the_four_profiles_answer_four_different_questions() {
+        let c = candidates(&placa(16), &modelo_8b(), 5 * GIB);
+        let por_intencao = |i: Intent| c.iter().find(|x| x.intent == i);
+
+        let rapida = por_intencao(Intent::Fast).expect("rápida");
+        let equilibrada = por_intencao(Intent::Balanced).expect("equilibrada");
+        let pouca = por_intencao(Intent::LowMemory).expect("pouca memória");
+
+        // A rápida nunca pede mais janela que a equilibrada.
+        assert!(rapida.profile.ctx.unwrap() <= equilibrada.profile.ctx.unwrap());
+        // A de pouca memória comprime mais que todas.
+        assert_eq!(pouca.profile.kv_k, Some(KvType::Q4_0));
+    }
+
+    /// Numa máquina onde nada cabe, oferecer quatro perfis seria teatro.
+    #[test]
+    fn a_machine_that_cannot_hold_the_model_gets_one_honest_proposal() {
+        let c = candidates(&placa(8), &modelo_8b(), 40 * GIB);
+        assert_eq!(c.len(), 1);
     }
 
     fn medido(ctx: u32, gpu_gib: u64, cabe: bool) -> Measured {
