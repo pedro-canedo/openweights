@@ -84,7 +84,7 @@ export default function AttachmentChips({
   if (attachments.length === 0) return null;
 
   return (
-    <div className="mx-auto mb-2 flex max-w-2xl flex-wrap gap-2">
+    <div className="mx-auto mb-2 flex max-w-3xl flex-wrap gap-2">
       {attachments.map((a) => (
         <div
           key={a.id}

@@ -182,10 +182,12 @@ export default function ModelSelect({
                 .filter(Boolean)
                 .join(" · ")
         }
-        className={`flex max-w-52 items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors disabled:opacity-40 hover:bg-panel ${
+        className={`flex max-w-56 items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors disabled:opacity-40 hover:bg-panel ${
           open ? "bg-panel text-ink" : "text-ink"
         }`}
       >
+        {/* O nome do modelo é o que a pessoa procura aqui; o esforço é
+            informação de canto. */}
         <span className="truncate">
           {empty ? t("chat.modelSelect") : shortModel(value)}
         </span>

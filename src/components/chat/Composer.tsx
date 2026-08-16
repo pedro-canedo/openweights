@@ -1,6 +1,11 @@
 // Caixa de envio de mensagem: Enter envia, Shift+Enter quebra linha.
 // Durante a geração o botão vira "Parar" (aborta o streaming).
 // Anexos (botão + / colar imagem) e ditado por voz (microfone).
+//
+// A barra de baixo tem dois grupos, e a divisão não é estética: à ESQUERDA o
+// que muda o pedido (anexo, pasta, modo de trabalho); à DIREITA o que muda a
+// resposta (modelo, esforço) e as ações de enviar/ditar. Tudo junto, com o
+// mesmo peso, virava uma fileira de sete controles onde nada se achava.
 
 import {
   useEffect,
@@ -116,7 +121,7 @@ export default function Composer({
   return (
     <div className="px-6 pt-1 pb-5">
       {editing && (
-        <div className="mx-auto mb-2 flex max-w-2xl items-center gap-2 text-xs text-warn">
+        <div className="mx-auto mb-2 flex max-w-3xl items-center gap-2 text-xs text-warn">
           <span>{t("chat.editResend")}</span>
           <button
             onClick={onCancelEdit}
@@ -130,12 +135,12 @@ export default function Composer({
       <AttachmentChips attachments={attachments} onRemove={onRemoveAttachment} />
 
       {attachError && (
-        <div className="mx-auto mb-2 max-w-2xl text-xs text-bad">
+        <div className="mx-auto mb-2 max-w-3xl text-xs text-bad">
           {attachError}
         </div>
       )}
 
-      <div className="relative mx-auto max-w-2xl">
+      <div className="relative mx-auto max-w-3xl">
         {mention && mention.hits.length > 0 && (
           <div className="absolute right-0 bottom-full left-0 z-20 mb-2 overflow-hidden rounded-xl border border-edge bg-panel py-1 shadow-xl">
             {mention.hits.map((f, i) => (
@@ -160,7 +165,7 @@ export default function Composer({
             ))}
           </div>
         )}
-      <div className="flex flex-col rounded-[28px] border border-edge bg-panel2 px-3 py-2.5 shadow-[0_8px_32px_rgba(0,0,0,0.28)]">
+      <div className="flex flex-col rounded-[28px] border border-edge bg-panel2 px-3.5 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.28)]">
         <input
           ref={fileRef}
           type="file"
@@ -221,22 +226,22 @@ export default function Composer({
           className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1.5 py-1.5 text-sm outline-none select-text placeholder:text-dim"
         />
 
-        <div className="mt-1 flex items-center gap-1">
-          <div className="flex min-w-0 items-center gap-0.5">
+        <div className="mt-1.5 flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1">
             <AttachMenu
               disabled={generating}
               onAttach={() => fileRef.current?.click()}
             />
+            {startActions}
+            {leftActions}
+          </div>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {rightActions}
             <VoiceButton
               draft={draft}
               onDraftChange={onDraftChange}
               disabled={generating || disabled}
             />
-            {startActions}
-            {leftActions}
-          </div>
-          <div className="ml-auto flex items-center gap-0.5">
-            {rightActions}
             {generating ? (
               <button
                 onClick={onStop}

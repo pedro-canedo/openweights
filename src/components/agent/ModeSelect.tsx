@@ -1,4 +1,4 @@
-// Dois seletores compactos na barra do composer, complementares:
+// UM seletor na barra do composer, com as duas decisões que andam juntas:
 //
 //  - MODO DE TRABALHO (Scout Rule): como o agente encara o pedido —
 //    conversar, só planejar, executar a tarefa ou rodar o plano inteiro em
@@ -6,6 +6,11 @@
 //  - AUTORIZAÇÃO: o que ele pode fazer sozinho (pedir sempre, pedir só para
 //    alterações, automático). Some quando o modo de trabalho não executa
 //    nada — em conversa e em planejamento não há o que autorizar.
+//
+// Eram dois botões lado a lado, e a barra virava uma parede de texto: "Agente
+// · Pedir para alterações" ocupava metade dela. Agora o gatilho mostra o modo
+// por extenso e a autorização como ícone (a cor já grita quando é o
+// automático); a explicação inteira mora no menu.
 //
 // YOLO é o único que muda o contrato de confiança, então exige duas coisas:
 // uma pasta de projeto escolhida (é o limite do "automático") e uma
@@ -122,23 +127,49 @@ function usePopover() {
   return { open, setOpen, ref };
 }
 
-/** Modo de trabalho: conversa, planejamento, agente ou laço. */
-function WorkModeSelect({
+export default function ModeSelect({
   params,
   onChange,
-  disabled,
+  disabled = false,
 }: {
   params: ChatParams;
   onChange: (p: ChatParams) => void;
-  disabled: boolean;
+  disabled?: boolean;
 }) {
   const { t } = useTranslation();
   const { open, setOpen, ref } = usePopover();
-  const mode: WorkMode = params.workMode ?? "agent";
+  const [confirmYolo, setConfirmYolo] = useState(false);
+  const [needWorkspace, setNeedWorkspace] = useState(false);
+
+  const workMode: WorkMode = params.workMode ?? "agent";
+  const auth: RunMode = params.mode ?? "smart";
   // O laço executa o plano inteiro sozinho: só faz sentido com o agente
   // ligado (é ele quem dá as ferramentas).
-  const options =
+  const workOptions =
     params.agent === true ? WORK_MODES : WORK_MODES.filter((m) => m !== "loop");
+  const executa = canExecute(workMode);
+
+  const pickAuth = (next: RunMode) => {
+    if (next === "yolo") {
+      if (!params.workspaceDir) {
+        setNeedWorkspace(true);
+        return;
+      }
+      setNeedWorkspace(false);
+      setConfirmYolo(true);
+      return;
+    }
+    setNeedWorkspace(false);
+    onChange({ ...params, mode: next });
+    setOpen(false);
+  };
+
+  const title = [
+    `${t("plan.title")}: ${t(`plan.mode.${workMode}`)}`,
+    executa ? `${t("agent.mode.label")}: ${t(`agent.mode.${auth}`)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div ref={ref} className="relative shrink-0">
@@ -146,22 +177,27 @@ function WorkModeSelect({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        title={`${t("plan.title")}: ${t(`plan.mode.${mode}`)}`}
-        className={`flex items-center gap-1 rounded-full px-2 py-1 text-xs transition-colors hover:bg-panel disabled:opacity-40 ${
+        title={title}
+        className={`flex items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors hover:bg-panel disabled:opacity-40 ${
           open ? "bg-panel text-ink" : "text-ink"
         }`}
       >
-        <WorkIcon mode={mode} />
-        <span className="max-w-32 truncate">{t(`plan.mode.${mode}`)}</span>
+        <WorkIcon mode={workMode} />
+        <span className="max-w-28 truncate">{t(`plan.mode.${workMode}`)}</span>
+        {executa && (
+          <span className={auth === "yolo" ? "text-warn" : "text-dim"}>
+            <ModeIcon mode={auth} />
+          </span>
+        )}
         <Caret />
       </button>
 
       {open && (
-        <div className="absolute bottom-full left-0 z-30 mb-2 w-80 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+        <div className="absolute bottom-full left-0 z-30 mb-2 max-h-[70vh] w-80 overflow-y-auto rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
           <p className="px-3 pt-1 pb-1.5 text-[11px] tracking-wide text-dim uppercase">
             {t("plan.title")}
           </p>
-          {options.map((option) => (
+          {workOptions.map((option) => (
             <button
               key={option}
               type="button"
@@ -182,99 +218,49 @@ function WorkModeSelect({
                   {t(`plan.mode.${option}Hint`)}
                 </span>
               </span>
-              {mode === option && <Check />}
+              {workMode === option && <Check />}
             </button>
           ))}
+
+          {executa && (
+            <>
+              <p className="mt-1 border-t border-edge px-3 pt-2.5 pb-1.5 text-[11px] tracking-wide text-dim uppercase">
+                {t("agent.mode.label")}
+              </p>
+              {AUTH_MODES.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => pickAuth(option)}
+                  className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-panel2"
+                >
+                  <span
+                    className={`mt-0.5 ${option === "yolo" ? "text-warn" : "text-dim"}`}
+                  >
+                    <ModeIcon mode={option} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] text-ink">
+                      {t(`agent.mode.${option}`)}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-dim">
+                      {t(`agent.mode.${option}Hint`)}
+                    </span>
+                  </span>
+                  {auth === option && <Check />}
+                </button>
+              ))}
+              {needWorkspace && (
+                <p className="border-t border-edge px-3 py-2 text-[11px] text-warn">
+                  {t("agent.yolo.needWorkspace")}
+                </p>
+              )}
+            </>
+          )}
+
           <p className="border-t border-edge px-3 pt-2 pb-1 text-[11px] leading-relaxed text-dim">
             {t("plan.subtitle")}
           </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Nível de autorização: pedir sempre, pedir para alterar ou automático. */
-function AuthSelect({
-  params,
-  onChange,
-  disabled,
-}: {
-  params: ChatParams;
-  onChange: (p: ChatParams) => void;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation();
-  const { open, setOpen, ref } = usePopover();
-  const [confirmYolo, setConfirmYolo] = useState(false);
-  const [needWorkspace, setNeedWorkspace] = useState(false);
-
-  const mode: RunMode = params.mode ?? "smart";
-
-  const pick = (next: RunMode) => {
-    if (next === "yolo") {
-      if (!params.workspaceDir) {
-        setNeedWorkspace(true);
-        return;
-      }
-      setNeedWorkspace(false);
-      setConfirmYolo(true);
-      return;
-    }
-    setNeedWorkspace(false);
-    onChange({ ...params, mode: next });
-    setOpen(false);
-  };
-
-  return (
-    <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        title={`${t("agent.mode.label")}: ${t(`agent.mode.${mode}`)}`}
-        className={`flex items-center gap-1 rounded-full px-2 py-1 text-xs transition-colors hover:bg-panel disabled:opacity-40 ${
-          mode === "yolo" ? "text-warn" : open ? "bg-panel text-ink" : "text-ink"
-        }`}
-      >
-        <ModeIcon mode={mode} />
-        <span className="max-w-32 truncate">{t(`agent.mode.${mode}`)}</span>
-        <Caret />
-      </button>
-
-      {open && (
-        <div className="absolute bottom-full left-0 z-30 mb-2 w-80 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
-          <p className="px-3 pt-1 pb-1.5 text-[11px] tracking-wide text-dim uppercase">
-            {t("agent.mode.label")}
-          </p>
-          {AUTH_MODES.map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => pick(option)}
-              className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-panel2"
-            >
-              <span
-                className={`mt-0.5 ${option === "yolo" ? "text-warn" : "text-dim"}`}
-              >
-                <ModeIcon mode={option} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[13px] text-ink">
-                  {t(`agent.mode.${option}`)}
-                </span>
-                <span className="mt-0.5 block text-[11px] leading-relaxed text-dim">
-                  {t(`agent.mode.${option}Hint`)}
-                </span>
-              </span>
-              {mode === option && <Check />}
-            </button>
-          ))}
-          {needWorkspace && (
-            <p className="border-t border-edge px-3 py-2 text-[11px] text-warn">
-              {t("agent.yolo.needWorkspace")}
-            </p>
-          )}
         </div>
       )}
 
@@ -324,29 +310,5 @@ function AuthSelect({
         </div>
       )}
     </div>
-  );
-}
-
-export default function ModeSelect({
-  params,
-  onChange,
-  disabled = false,
-}: {
-  params: ChatParams;
-  onChange: (p: ChatParams) => void;
-  disabled?: boolean;
-}) {
-  const workMode: WorkMode = params.workMode ?? "agent";
-  return (
-    <>
-      <WorkModeSelect
-        params={params}
-        onChange={onChange}
-        disabled={disabled}
-      />
-      {canExecute(workMode) && (
-        <AuthSelect params={params} onChange={onChange} disabled={disabled} />
-      )}
-    </>
   );
 }

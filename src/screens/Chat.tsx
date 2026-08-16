@@ -249,7 +249,7 @@ function AgentBar({
 
   return (
     <div className="px-6">
-      <div className="mx-auto mb-1.5 flex max-w-2xl flex-wrap items-center gap-2">
+      <div className="mx-auto mb-1.5 flex max-w-3xl flex-wrap items-center gap-2">
         {yolo && (
           <YoloBadge
             workspaceDir={run?.workspaceDir ?? workspaceDir}

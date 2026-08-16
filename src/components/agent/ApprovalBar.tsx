@@ -78,7 +78,7 @@ export default function ApprovalBar({
   };
 
   return (
-    <div className="mx-auto mb-2 max-w-2xl overflow-hidden rounded-2xl border border-warn/40 bg-warn/5">
+    <div className="mx-auto mb-2 max-w-3xl overflow-hidden rounded-2xl border border-warn/40 bg-warn/5">
       <div className="flex items-center gap-2 px-3 pt-2.5 pb-1.5">
         <span className={`shrink-0 ${categoryClass(call.category)}`}>
           <ToolIcon category={call.category} className="h-4 w-4" />
