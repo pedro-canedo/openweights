@@ -116,6 +116,7 @@ function ServerConfig({ running }: { running: boolean }) {
   const [lan, setLan] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [modelsMax, setModelsMax] = useState("1");
+  const [parallel, setParallel] = useState("1");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -123,6 +124,7 @@ function ServerConfig({ running }: { running: boolean }) {
     getSetting("server_lan").then((v) => setLan(v === "true"));
     getSetting("server_api_key").then((v) => v && setApiKey(v));
     getSetting("server_models_max").then((v) => v && setModelsMax(v));
+    getSetting("server_parallel").then((v) => v && setParallel(v));
   }, []);
 
   async function save() {
@@ -131,6 +133,7 @@ function ServerConfig({ running }: { running: boolean }) {
       setSetting("server_lan", String(lan)),
       setSetting("server_api_key", apiKey.trim()),
       setSetting("server_models_max", modelsMax.trim()),
+      setSetting("server_parallel", parallel.trim()),
     ]);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
@@ -168,6 +171,22 @@ function ServerConfig({ running }: { running: boolean }) {
               a placa vai segurar ao mesmo tempo. */}
           <p className="mt-1 text-[11px] leading-relaxed text-dim">
             {t("server.modelsMaxHint")}
+          </p>
+        </div>
+        <div>
+          <div className={label}>{t("server.parallel")}</div>
+          <input
+            type="number"
+            min={1}
+            max={8}
+            value={parallel}
+            onChange={(e) => setParallel(e.target.value)}
+            className={`${input} mt-1`}
+          />
+          {/* Sem esta frase o número parece "quantas abas posso abrir"; ele
+              divide a janela de contexto entre as conversas. */}
+          <p className="mt-1 text-[11px] leading-relaxed text-dim">
+            {t("server.parallelHint")}
           </p>
         </div>
         <div className="col-span-2">

@@ -13,8 +13,8 @@ import {
   lookupModelCtx,
   savePreset,
   setModelCtx,
-  startServer,
-  stopServer,
+  engineBusyReason,
+  restartServer,
 } from "../../lib/api";
 import type { ChatParams, PresetRow } from "../../lib/types";
 import { DEFAULT_CHAT_PARAMS } from "../../lib/types";
@@ -85,6 +85,8 @@ export default function ParamsPanel({
   const [ctxLive, setCtxLive] = useState<number | null>(null);
   const [ctxLoaded, setCtxLoaded] = useState(false);
   const [ctxApplying, setCtxApplying] = useState(false);
+  /// Quem estava usando o motor quando o reinício foi recusado.
+  const [ctxBusyWith, setCtxBusyWith] = useState<string[]>([]);
   const [serverRunning, setServerRunning] = useState(false);
 
   const refreshPresets = () =>
@@ -126,6 +128,7 @@ export default function ParamsPanel({
       next == null ? null : Math.round(Math.min(CTX_MAX, Math.max(CTX_MIN, next)));
     setCtxDraft(value);
     setCtxApplying(true);
+    setCtxBusyWith([]);
     try {
       const stored = await setModelCtx(model, value);
       setCtxSaved(stored);
@@ -133,9 +136,16 @@ export default function ParamsPanel({
       const running = Boolean(status?.running);
       setServerRunning(running);
       if (running && !generating) {
-        await stopServer();
-        await startServer();
-        setServerRunning(true);
+        // Quem decide se dá para derrubar o motor é o backend: ele enxerga a
+        // automação e a indexação, que esta tela não vê.
+        try {
+          await restartServer();
+          setServerRunning(true);
+        } catch (e) {
+          const quem = engineBusyReason(e);
+          if (!quem) throw e;
+          setCtxBusyWith(quem);
+        }
       }
       const props = await getServerProps().catch(() => null);
       setCtxLive(props?.nCtx ?? null);
@@ -347,6 +357,15 @@ export default function ParamsPanel({
               {t("chat.ctx.pending", { n: ctxSaved.toLocaleString() })}
             </p>
           )}
+        {/* A janela nova só vale depois que o motor reinicia, e ele não
+            reinicia por cima de quem está usando. */}
+        {ctxBusyWith.length > 0 && (
+          <p className="text-[11px] leading-relaxed text-warn">
+            {t("server.busyToApply", {
+              who: ctxBusyWith.map((w) => t(`server.busyWith.${w}`)).join(", "),
+            })}
+          </p>
+        )}
         {serverRunning &&
           ctxDraft !== ctxLive &&
           !(ctxDraft == null && ctxSaved == null) && (

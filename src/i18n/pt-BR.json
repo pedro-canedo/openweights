@@ -295,7 +295,14 @@
     "exampleTitle": "Exemplo de uso",
     "modelsLoaded": "Modelos carregados",
     "modelsMaxHint": "Com 1, trocar de modelo descarrega o anterior — é o que cabe na maioria das placas. Acima disso, os modelos ficam carregados juntos e podem não caber na memória de vídeo.",
-    "applyHint": "O motor está rodando: pare e inicie de novo para estes ajustes valerem."
+    "applyHint": "O motor está rodando: pare e inicie de novo para estes ajustes valerem.",
+    "busyToApply": "Não dá para reiniciar o motor agora: {{who}} está usando. Termine ou pare, e aplique de novo.",
+    "busyWith": {
+      "agent": "uma execução do agente",
+      "rag": "a indexação do projeto"
+    },
+    "parallel": "Conversas ao mesmo tempo",
+    "parallelHint": "Cada conversa simultânea leva uma fatia da janela de contexto. Com 1, a janela que você pede é a janela que você recebe."
   },
   "settings": {
     "title": "Configurações",

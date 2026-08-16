@@ -295,7 +295,14 @@
     "exampleTitle": "Usage example",
     "modelsLoaded": "Loaded models",
     "modelsMaxHint": "With 1, switching models unloads the previous one — what most GPUs can take. Above that, models stay loaded together and may not fit in video memory.",
-    "applyHint": "The engine is running: stop and start it again for these settings to apply."
+    "applyHint": "The engine is running: stop and start it again for these settings to apply.",
+    "busyToApply": "Can't restart the engine right now: {{who}} is using it. Finish or stop it, then apply again.",
+    "busyWith": {
+      "agent": "an agent run",
+      "rag": "the project indexing"
+    },
+    "parallel": "Conversations at once",
+    "parallelHint": "Each simultaneous conversation takes a slice of the context window. With 1, the window you ask for is the window you get."
   },
   "settings": {
     "title": "Settings",

@@ -96,6 +96,35 @@ export const startServer = () =>
 export const stopServer = () =>
   isTauri ? invoke<void>("server_stop") : mocks.stopServer();
 
+/** Quem está usando o motor agora: `agent` (execução ou automação), `rag`. */
+export const serverBusy = (): Promise<{ busyWith: string[] }> =>
+  isTauri
+    ? invoke<{ busyWith: string[] }>("server_busy")
+    : Promise.resolve({ busyWith: [] });
+
+/**
+ * Para e sobe o motor de uma vez, com a guarda no backend.
+ *
+ * A tela não enxerga metade de quem usa o servidor — o relógio das automações
+ * dispara execuções sozinho e o índice do projeto pede embeddings ao mesmo
+ * motor. Sem `force`, o comando recusa devolvendo `engine-busy:<quem>`; quem
+ * chama decide se pergunta à pessoa e repete com `force`.
+ */
+export async function restartServer(force = false): Promise<ServerStatus> {
+  if (!isTauri) {
+    await mocks.stopServer();
+    return mocks.startServer();
+  }
+  return invoke<ServerStatus>("server_restart", { force });
+}
+
+/** `true` quando a recusa veio da guarda de ocupação (e diz quem está usando). */
+export function engineBusyReason(e: unknown): string[] | null {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  const hit = msg.match(/engine-busy:([a-z,]+)/);
+  return hit ? hit[1].split(",").filter(Boolean) : null;
+}
+
 /**
  * `GET /props` do llama-server via backend: capacidades do chat template
  * (ferramentas, tool calls paralelos, papel system) do modelo carregado.

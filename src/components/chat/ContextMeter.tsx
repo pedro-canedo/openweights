@@ -5,13 +5,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  engineBusyReason,
   getModelCtxMap,
   getServerProps,
   getServerStatus,
   lookupModelCtx,
+  restartServer,
   setModelCtx,
-  startServer,
-  stopServer,
 } from "../../lib/api";
 import type { Attachment } from "./AttachmentChips";
 import type { UiMessage } from "./MessageList";
@@ -84,6 +84,8 @@ export default function ContextMeter({
   const [limit, setLimit] = useState<number | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
   const [applying, setApplying] = useState(false);
+  /// Quem estava usando o motor quando o reinício foi recusado.
+  const [busyWith, setBusyWith] = useState<string[]>([]);
   const ref = useDismiss(open, () => setOpen(false));
 
   const refreshLimit = async () => {
@@ -141,13 +143,21 @@ export default function ContextMeter({
     const value =
       next == null ? null : Math.round(Math.min(CTX_MAX, Math.max(CTX_MIN, next)));
     setApplying(true);
+    setBusyWith([]);
     try {
       const stored = await setModelCtx(model, value);
       setSaved(stored);
       const status = await getServerStatus().catch(() => null);
       if (status?.running && !generating) {
-        await stopServer();
-        await startServer();
+        // A guarda de quem está usando o motor mora no backend: aqui só
+        // repassamos o motivo quando ele recusa.
+        try {
+          await restartServer();
+        } catch (e) {
+          const quem = engineBusyReason(e);
+          if (!quem) throw e;
+          setBusyWith(quem);
+        }
       }
       await refreshLimit();
     } catch (e) {
@@ -321,6 +331,17 @@ export default function ContextMeter({
             {applying && (
               <p className="mt-1.5 text-[11px] text-dim">
                 {t("chat.ctx.applying")}
+              </p>
+            )}
+            {/* A janela nova só vale depois que o motor reinicia, e o motor
+                não reinicia por cima de quem está usando. */}
+            {busyWith.length > 0 && (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-warn">
+                {t("server.busyToApply", {
+                  who: busyWith
+                    .map((w) => t(`server.busyWith.${w}`))
+                    .join(", "),
+                })}
               </p>
             )}
           </div>

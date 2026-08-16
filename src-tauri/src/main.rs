@@ -81,6 +81,8 @@ fn main() {
             commands::server_status,
             commands::server_start,
             commands::server_stop,
+            commands::server_restart,
+            commands::server_busy,
             commands::server_props,
             commands::model_set_ctx,
             commands::chats_list,

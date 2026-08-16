@@ -418,6 +418,28 @@ async fn write_waits_for_confirmation() {
     handle.cancel();
 }
 
+/// O contador de execuções vivas é o que diz ao app se dá para derrubar o
+/// motor. Se ele mentisse, reiniciar o servidor mataria uma execução no meio.
+#[tokio::test]
+async fn a_finished_run_stops_counting_as_live() {
+    let h = Harness::new();
+    assert_eq!(h.host.live_count(), 0);
+
+    let server = FakeLlama::spawn(vec![vec![text_chunk("Pronto."), done()]]);
+    let status = h.run("diga pronto", RunMode::Yolo, server.endpoint()).await;
+    assert_eq!(status, RunStatus::Done);
+
+    // A remoção acontece na task do run, logo depois do laço terminar.
+    let limite = Instant::now() + Duration::from_secs(5);
+    while h.host.live_count() > 0 {
+        assert!(
+            Instant::now() < limite,
+            "a execução terminou e continua contando como viva"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 /// Negar é uma resposta válida: o agente recebe o motivo e conclui sem
 /// tocar no projeto.
 #[tokio::test]

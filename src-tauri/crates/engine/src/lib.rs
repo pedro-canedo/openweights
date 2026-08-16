@@ -70,6 +70,13 @@ pub struct ServerConfig {
     pub models_dir: PathBuf,
     pub host: String,
     pub port: u16,
+    /// Conversas atendidas ao mesmo tempo (`--parallel`).
+    ///
+    /// Cada uma leva uma fatia da janela de contexto: com 4, quem pedia 32k
+    /// recebia 8k por conversa — e o app anunciava os 32k. Uma por vez é o
+    /// uso real de um app de desktop, e é o que faz o número da tela ser
+    /// verdade.
+    pub parallel: u32,
     /// Quantos modelos o roteador mantém carregados ao mesmo tempo.
     ///
     /// Um. Trocar de modelo no meio da conversa é o caso comum, e o segundo
@@ -94,6 +101,7 @@ impl ServerConfig {
             host: "127.0.0.1".to_string(),
             port,
             models_max: 1,
+            parallel: 1,
             api_key: None,
             sleep_idle_seconds: 0,
             extra_args: Vec::new(),
@@ -112,9 +120,10 @@ impl ServerConfig {
             self.port.to_string(),
             "--models-max".into(),
             self.models_max.to_string(),
-            // Slots de KV no mesmo processo (mesmo load de pesos).
+            // Slots de KV no mesmo processo (mesmo load de pesos). A janela
+            // pedida é dividida entre eles.
             "--parallel".into(),
-            "4".into(),
+            self.parallel.max(1).to_string(),
         ];
         if let Some(preset) = &self.models_preset {
             args.push("--models-preset".into());
@@ -565,7 +574,8 @@ mod tests {
         // Um modelo por vez: trocar de modelo descarrega o anterior em vez
         // de tentar caber os dois na placa.
         assert!(joined.contains("--models-max 1"));
-        assert!(joined.contains("--parallel 4"));
+        // Uma conversa por vez: a janela pedida chega inteira a ela.
+        assert!(joined.contains("--parallel 1"));
         // Router mode = SEM -m.
         assert!(!joined.contains(" -m "));
         assert!(!args.contains(&"-m".to_string()));
@@ -579,6 +589,22 @@ mod tests {
         let joined = cfg.to_args().join(" ");
         assert!(joined.contains("--api-key secreta"));
         assert!(joined.contains("--sleep-idle-seconds 300"));
+    }
+
+    /// A janela pedida é dividida entre as conversas simultâneas: é por isso
+    /// que o padrão é uma só, e é por isso que o número precisa chegar ao
+    /// processo em vez de ficar cravado.
+    #[test]
+    fn parallel_slots_come_from_the_config() {
+        let mut cfg = ServerConfig::new(PathBuf::from("srv"), PathBuf::from("m"), 9000);
+        assert!(cfg.to_args().join(" ").contains("--parallel 1"));
+
+        cfg.parallel = 3;
+        assert!(cfg.to_args().join(" ").contains("--parallel 3"));
+
+        // Zero seria um servidor sem slot nenhum.
+        cfg.parallel = 0;
+        assert!(cfg.to_args().join(" ").contains("--parallel 1"));
     }
 
     #[test]

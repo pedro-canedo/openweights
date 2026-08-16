@@ -244,21 +244,38 @@ pub struct ServerStatusView {
 
 const DEFAULT_PORT: u16 = 11711;
 
-fn server_prefs(state: &AppState) -> (u16, bool, Option<String>, u32) {
+/// Preferências do motor que só valem no boot do processo.
+struct ServerPrefs {
+    port: u16,
+    lan: bool,
+    api_key: Option<String>,
+    models_max: u32,
+    parallel: u32,
+}
+
+fn server_prefs(state: &AppState) -> ServerPrefs {
     let get = |k: &str| state.store.get_setting(k).ok().flatten();
-    (
-        get("server_port")
+    ServerPrefs {
+        port: get("server_port")
             .and_then(|v| v.parse().ok())
             .unwrap_or(DEFAULT_PORT),
-        get("server_lan").as_deref() == Some("true"),
-        get("server_api_key").filter(|v| !v.is_empty()),
+        lan: get("server_lan").as_deref() == Some("true"),
+        api_key: get("server_api_key").filter(|v| !v.is_empty()),
         // Um modelo por vez: o roteador descarrega o menos usado ao bater no
         // teto, então 1 é literalmente "troque o modelo carregado". Com 2, o
         // segundo modelo tentava caber junto do primeiro e a placa recusava.
-        get("server_models_max")
+        models_max: get("server_models_max")
             .and_then(|v| v.parse().ok())
             .unwrap_or(1),
-    )
+        // Conversas atendidas ao mesmo tempo. Cada uma leva uma fatia da
+        // janela de contexto, então 4 significava entregar 8k a quem pediu
+        // 32k — e o app anunciava os 32k. Uma conversa por vez é o uso real
+        // de um app de desktop; quem quiser mais sobe aqui sabendo o preço.
+        parallel: get("server_parallel")
+            .and_then(|v| v.parse().ok())
+            .filter(|n| *n >= 1)
+            .unwrap_or(1),
+    }
 }
 
 /// Janela de contexto por modelo (`--ctx-size` no INI do Router).
@@ -326,7 +343,8 @@ fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
 
 #[tauri::command]
 pub async fn server_status(state: State<'_, AppState>) -> CmdResult<ServerStatusView> {
-    let (port, lan, _, _) = server_prefs(&state);
+    let prefs = server_prefs(&state);
+    let (port, lan) = (prefs.port, prefs.lan);
     let guard = state.server.lock().await;
     Ok(match guard.as_ref() {
         // connect_url, não base_url: em modo LAN o bind é 0.0.0.0, que não é
@@ -359,7 +377,13 @@ pub async fn server_start(
         .server_exe
         .ok_or("runtime do llama.cpp ainda não instalado")?;
 
-    let (port, lan, api_key, models_max) = server_prefs(&state);
+    let ServerPrefs {
+        port,
+        lan,
+        api_key,
+        models_max,
+        parallel,
+    } = server_prefs(&state);
 
     // Spawn + instalação no slot acontecem sob o lock; a espera do /health
     // fica FORA dele para não travar server_status/stop/exit por até 30 s.
@@ -382,6 +406,7 @@ pub async fn server_start(
         }
         cfg.api_key = api_key;
         cfg.models_max = models_max;
+        cfg.parallel = parallel;
 
         // --models-dir do llama.cpp não é recursivo; a biblioteca mora em
         // autor/repo/. O INI registra cada GGUF com o nome que a UI já usa,
@@ -482,7 +507,8 @@ pub async fn server_stop(app: AppHandle, state: State<'_, AppState>) -> CmdResul
     state
         .server_pid
         .store(0, std::sync::atomic::Ordering::SeqCst);
-    let (port, lan, _, _) = server_prefs(&state);
+    let prefs = server_prefs(&state);
+    let (port, lan) = (prefs.port, prefs.lan);
     let _ = app.emit(
         "server-status",
         &ServerStatusView {
@@ -493,6 +519,62 @@ pub async fn server_stop(app: AppHandle, state: State<'_, AppState>) -> CmdResul
         },
     );
     Ok(())
+}
+
+/// Quem está usando o motor agora — vazio quer dizer "pode derrubar".
+///
+/// A guarda mora aqui, e não na tela, porque metade dos usuários do motor não
+/// passa pela tela: o relógio das automações dispara execuções sozinho e o
+/// índice do projeto pede embeddings ao mesmo servidor. Uma guarda no
+/// frontend enxerga só a conversa aberta.
+fn engine_busy_with(state: &AppState) -> Vec<&'static str> {
+    let mut quem = Vec::new();
+    if state.agent.live_count() > 0 {
+        quem.push("agent");
+    }
+    if state.rag.is_indexing() {
+        quem.push("rag");
+    }
+    quem
+}
+
+/// Situação do motor para a interface decidir o que oferecer.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineBusy {
+    /// `agent` (execução do agente ou automação), `rag` (indexação).
+    pub busy_with: Vec<&'static str>,
+}
+
+#[tauri::command]
+pub fn server_busy(state: State<'_, AppState>) -> EngineBusy {
+    EngineBusy {
+        busy_with: engine_busy_with(&state),
+    }
+}
+
+/// Para e sobe o motor de novo, de uma vez só.
+///
+/// Existe porque mudar porta, chave, número de conversas simultâneas ou
+/// qualquer ajuste por modelo exige reler os argumentos e o INI, que só são
+/// lidos no boot. Era feito em dois passos pela tela do chat, sem saber quem
+/// mais estava usando o servidor — e derrubava execução de agente, automação
+/// e indexação no meio.
+///
+/// `force` é a saída para quem sabe o que está fazendo: a interface pergunta
+/// antes, dizendo quem vai ser interrompido.
+#[tauri::command]
+pub async fn server_restart(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> CmdResult<ServerStatusView> {
+    let ocupado = engine_busy_with(&state);
+    if !ocupado.is_empty() && !force.unwrap_or(false) {
+        return Err(format!("engine-busy:{}", ocupado.join(",")));
+    }
+    server_stop(app.clone(), state.clone()).await?;
+    server_start(app, state).await
 }
 
 /// `GET /props` do servidor em execução: capacidades do chat template do

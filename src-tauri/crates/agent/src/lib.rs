@@ -248,6 +248,14 @@ impl AgentHost {
             .clone()
     }
 
+    /// Quantas execuções estão de pé agora.
+    ///
+    /// O mapa só guarda execução viva (cada uma se remove ao terminar), então
+    /// contar é a resposta para "posso derrubar o motor?".
+    pub fn live_count(&self) -> usize {
+        self.runs.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
     pub fn get(&self, id: &str) -> Option<Arc<RunHandle>> {
         self.runs
             .lock()
