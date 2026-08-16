@@ -10,6 +10,7 @@ import { OwWordmark } from "./components/OpenWeightsLogo";
 import Discover from "./screens/Discover";
 import MyModels from "./screens/MyModels";
 import Chat from "./screens/Chat";
+import Activity from "./screens/Activity";
 import LocalServer from "./screens/LocalServer";
 import Settings from "./screens/Settings";
 
@@ -18,6 +19,7 @@ const icons: Record<Screen, string> = {
   models:
     "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4",
   chat: "M8 12h8m-8-4h8m-9 12l-3 3V6a2 2 0 012-2h12a2 2 0 012 2v10a2 2 0 01-2 2H7z",
+  activity: "M3 12h4l3 8 4-16 3 8h4",
   server:
     "M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-5h.01M17 16h.01",
   settings:
@@ -30,7 +32,14 @@ export default function App() {
 
   useEffect(() => onNavigate(setScreen), []);
 
-  const items: Screen[] = ["discover", "models", "chat", "server", "settings"];
+  const items: Screen[] = [
+    "discover",
+    "models",
+    "chat",
+    "activity",
+    "server",
+    "settings",
+  ];
 
   return (
     <div className="flex h-full flex-col">
@@ -74,6 +83,7 @@ export default function App() {
           {screen === "discover" && <Discover />}
           {screen === "models" && <MyModels />}
           {screen === "chat" && <Chat />}
+          {screen === "activity" && <Activity />}
           {screen === "server" && <LocalServer />}
           {screen === "settings" && <Settings />}
         </main>

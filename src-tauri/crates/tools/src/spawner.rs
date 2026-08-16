@@ -215,6 +215,17 @@ pub async fn run(
     };
 
     let pid = child.id();
+
+    // Cancelar o run derruba ESTE futuro no meio. `kill_on_drop` só alcança o
+    // processo direto: o `npm` morria e o `vitest` que ele abriu continuava
+    // comendo CPU para sempre. O guarda abaixo roda no drop — inclusive no
+    // cancelamento — e leva o grupo (Unix) ou o Job (Windows) junto.
+    let _arvore = TreeGuard {
+        pid,
+        #[cfg(windows)]
+        job: job.clone(),
+    };
+
     let (tx, mut rx) = mpsc::unbounded_channel::<(Stream, String)>();
     tokio::spawn(pump(child.stdout.take(), Stream::Out, tx.clone()));
     tokio::spawn(pump(child.stderr.take(), Stream::Err, tx));
@@ -352,6 +363,26 @@ fn take_valid_utf8(buf: &mut Vec<u8>) -> String {
 }
 
 /// Mata o processo e tudo que ele criou.
+/// Mata a árvore quando o futuro do [`run`] é descartado.
+///
+/// Saída normal e timeout já encerram tudo antes de chegar aqui; matar de
+/// novo um processo que já morreu não faz nada. O caso que este guarda existe
+/// para cobrir é o terceiro: alguém cancelou e o futuro sumiu no meio.
+struct TreeGuard {
+    pid: Option<u32>,
+    #[cfg(windows)]
+    job: Option<windows_job::JobHandle>,
+}
+
+impl Drop for TreeGuard {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        kill_tree(self.job.as_ref(), self.pid);
+        #[cfg(not(windows))]
+        kill_tree(self.pid);
+    }
+}
+
 #[cfg(not(windows))]
 fn kill_tree(pid: Option<u32>) {
     let Some(pid) = pid else {
@@ -600,6 +631,39 @@ mod tests {
         assert!(
             !std::path::Path::new(&format!("/proc/{pid}")).exists(),
             "o neto {pid} sobreviveu ao timeout"
+        );
+    }
+
+    /// O gêmeo do teste acima pelo caminho que acontece de verdade: a pessoa
+    /// aperta "Parar". O run é derrubado por `select!`, o futuro do spawner
+    /// some no meio — e o neto não pode continuar rodando.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancelling_also_kills_grandchildren() {
+        let (tx, rx) = tokio::sync::oneshot::channel::<u32>();
+        let cancelar = tokio::time::sleep(Duration::from_millis(400));
+
+        let trabalho = async move {
+            let mut visto = Some(tx);
+            let req = sh("sleep 300 & echo $!; wait").with_timeout(30);
+            run(req, move |linha| {
+                if let (Some(tx), Ok(pid)) = (visto.take(), linha.trim().parse::<u32>()) {
+                    let _ = tx.send(pid);
+                }
+            })
+            .await
+        };
+
+        tokio::select! {
+            _ = trabalho => panic!("o comando deveria durar mais que o cancelamento"),
+            _ = cancelar => {}
+        }
+
+        let pid = rx.await.expect("o neto anunciou o pid");
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert!(
+            !std::path::Path::new(&format!("/proc/{pid}")).exists(),
+            "o neto {pid} continuou vivo depois do cancelamento"
         );
     }
 }

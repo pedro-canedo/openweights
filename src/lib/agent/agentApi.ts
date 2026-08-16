@@ -105,13 +105,41 @@ export function runsList(chatId: number): Promise<RunSummary[]> {
     : mockRunsList(chatId);
 }
 
+/** Linha crua de `run_events`: o evento inteiro mora no `payloadJson`. */
+interface RunEventRow {
+  seq: number;
+  kind: string;
+  payloadJson: string;
+  createdAt: number;
+}
+
+/**
+ * Trilha gravada de uma execução.
+ *
+ * O backend devolve LINHAS de banco, não eventos: o `RunEvent` completo (com
+ * `runId`/`seq`/`tsMs` e os campos do tipo) está serializado dentro de
+ * `payloadJson`. Entregar a linha crua para o `reduceEvent` não estoura nada
+ * — `seq` e `kind` existem nos dois — mas todo o resto chega `undefined`, e a
+ * trilha reaparece vazia depois de qualquer reload. Desempacotar aqui é o que
+ * faz reabrir uma execução mostrar o que aconteceu.
+ */
 export function runEventsList(
   runId: string,
   afterSeq = 0,
 ): Promise<RunEvent[]> {
-  return isTauri
-    ? invoke<RunEvent[]>("run_events_list", { runId, afterSeq })
-    : mockRunEventsList(runId, afterSeq);
+  if (!isTauri) return mockRunEventsList(runId, afterSeq);
+  return invoke<RunEventRow[]>("run_events_list", { runId, afterSeq }).then(
+    (rows) =>
+      rows.flatMap((row) => {
+        try {
+          return [JSON.parse(row.payloadJson) as RunEvent];
+        } catch (e) {
+          // Uma linha estragada não pode levar a trilha inteira junto.
+          console.warn("evento ilegível na trilha:", row.seq, e);
+          return [];
+        }
+      }),
+  );
 }
 
 /**
@@ -127,12 +155,31 @@ export function runPlanGet(runId: string): Promise<TaskPlan | null> {
   return invoke<TaskPlan | null>("run_plan_get", { runId }).catch(() => null);
 }
 
-/** Libera a execução do plano proposto (modo planejamento). */
-export function runPlanApprove(runId: string): Promise<void> {
+/**
+ * Libera a execução do plano proposto (modo planejamento) e devolve o id da
+ * execução NOVA — aprovar abre um run em modo laço com as mesmas etapas.
+ *
+ * Ele precisa do canal como o `run_start`: sem isso o comando nem chega a
+ * rodar (argumento obrigatório faltando), e o plano aprovado ficava parado
+ * para sempre. Devolve `null` quando falha, para a tela poder dizer algo.
+ */
+export async function runPlanApprove(
+  runId: string,
+  onEvent: RunEventHandler,
+): Promise<string | null> {
   if (!isTauri) return mockRunPlanApprove(runId);
-  return invoke<void>("run_plan_approve", { runId }).catch((e) => {
+  try {
+    const { Channel, invoke: rawInvoke } = await core();
+    const ch = new Channel<RunEvent>();
+    ch.onmessage = onEvent;
+    return await rawInvoke<string>("run_plan_approve", {
+      runId,
+      onEvent: ch,
+    });
+  } catch (e) {
     console.warn("run_plan_approve falhou:", e);
-  });
+    return null;
+  }
 }
 
 /** Pede uma nova divisão do mesmo objetivo. */
@@ -214,10 +261,15 @@ export function checkpointsList(
     : mockCheckpointsList(workspaceDir);
 }
 
-/** Restaura o checkpoint e devolve os caminhos dos arquivos alterados. */
+/**
+ * Restaura o checkpoint e devolve os caminhos dos arquivos alterados.
+ *
+ * O nome do argumento é `checkpointId`: o Tauri converte o `checkpoint_id` do
+ * Rust para camelCase, e mandar `id` fazia o desfazer falhar sempre.
+ */
 export function checkpointRestore(id: string): Promise<string[]> {
   return isTauri
-    ? invoke<string[]>("checkpoint_restore", { id })
+    ? invoke<string[]>("checkpoint_restore", { checkpointId: id })
     : mockCheckpointRestore(id);
 }
 
@@ -984,7 +1036,7 @@ function mockRunPlanGet(runId: string): Promise<TaskPlan | null> {
   return Promise.resolve(clonePlan(known));
 }
 
-function mockRunPlanApprove(runId: string): Promise<void> {
+function mockRunPlanApprove(runId: string): Promise<string | null> {
   const plan = mockPlans.get(runId);
   if (plan) plan.approved = true;
   const run = mockRuns.get(runId);
@@ -992,7 +1044,8 @@ function mockRunPlanApprove(runId: string): Promise<void> {
     publishPlan(run);
     run.planGate?.();
   }
-  return Promise.resolve();
+  // Na simulação o mesmo run segue executando, então o id não muda.
+  return Promise.resolve(runId);
 }
 
 function mockRunPlanReplan(runId: string): Promise<void> {

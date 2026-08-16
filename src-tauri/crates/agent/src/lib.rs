@@ -171,7 +171,11 @@ pub struct AgentHost {
     /// pega a foto do catálogo no momento em que começa.
     registry: RwLock<Arc<ToolRegistry>>,
     config: Arc<AgentConfig>,
-    runs: Mutex<HashMap<String, Arc<RunHandle>>>,
+    /// Execuções VIVAS. Cada uma se remove ao terminar: sem isso o mapa
+    /// cresce a sessão inteira segurando `EventSink`, canal da interface e o
+    /// que mais o ouvinte tiver capturado. Ele também é a resposta para
+    /// "esta execução ainda está de pé?".
+    runs: Arc<Mutex<HashMap<String, Arc<RunHandle>>>>,
 }
 
 impl AgentHost {
@@ -180,7 +184,7 @@ impl AgentHost {
             store,
             registry: RwLock::new(registry),
             config: Arc::new(config),
-            runs: Mutex::new(HashMap::new()),
+            runs: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -219,8 +223,14 @@ impl AgentHost {
             config: self.config.clone(),
         };
         let h = handle.clone();
+        let vivos = self.runs.clone();
+        let terminado = h.id.clone();
         tokio::spawn(async move {
             execute_run(req, h, deps).await;
+            vivos
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&terminado);
         });
         Ok(handle)
     }

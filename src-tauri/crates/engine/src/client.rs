@@ -794,12 +794,14 @@ impl StreamAcc {
         }
         let tool_calls = self
             .calls
-            .into_iter()
-            .map(|(index, acc)| ToolCallReq {
-                // Sem `id` (raro, mas acontece) sintetizamos um estável:
-                // ele só precisa parear `assistant.tool_calls` com a
-                // mensagem `role: "tool"` do passo seguinte.
-                id: acc.id.unwrap_or_else(|| format!("call_{index}")),
+            .into_values()
+            .map(|acc| ToolCallReq {
+                // Sem `id` (raro, mas acontece) sintetizamos um. Ele
+                // pareia `assistant.tool_calls` com a mensagem `role:
+                // "tool"` do passo seguinte, mas não pode se repetir entre
+                // passos: o id é chave primária na trilha, e um `call_0` por
+                // passo faria a chamada nova sobrescrever a antiga.
+                id: acc.id.unwrap_or_else(synthetic_id),
                 name: acc.name.unwrap_or_default(),
                 arguments_json: acc.args,
             })
@@ -847,11 +849,10 @@ fn parse_completion(v: &Value) -> ChatOutcome {
         .map(|items| {
             items
                 .iter()
-                .enumerate()
-                .map(|(i, item)| ToolCallReq {
+                .map(|item| ToolCallReq {
                     id: non_empty_str(&item["id"])
                         .map(str::to_string)
-                        .unwrap_or_else(|| format!("call_{i}")),
+                        .unwrap_or_else(synthetic_id),
                     name: item["function"]["name"]
                         .as_str()
                         .unwrap_or_default()
@@ -884,6 +885,16 @@ fn parse_completion(v: &Value) -> ChatOutcome {
 }
 
 // ------------------------------------------------------------- utilidades ---
+
+/// Id de chamada quando o servidor não manda um.
+///
+/// Único no processo: dois passos do mesmo run — ou dois runs — não podem
+/// gerar o mesmo id, senão a linha da trilha de um sobrescreve a do outro.
+fn synthetic_id() -> String {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(1);
+    format!("call_{}", SEQ.fetch_add(1, Ordering::Relaxed))
+}
 
 fn non_empty_str(v: &Value) -> Option<&str> {
     v.as_str().filter(|s| !s.is_empty())

@@ -162,10 +162,14 @@ pub async fn decompose(
     goal: &str,
     budget: WindowBudget,
     context: &str,
+    max_tasks: u32,
 ) -> Result<TaskPlan, String> {
     let per_task = budget.per_task();
     let prompt_tokens = prompt_size(client, model, goal, context).await;
-    let wanted = budget.suggested_tasks(prompt_tokens);
+    // A janela diz quantas etapas cabem em CONTEXTO; `max_tasks` diz quantas
+    // cabem no orçamento de PASSOS que a pessoa deu. Planejar oito entregas
+    // com passos para duas é prometer o que não vai ser cumprido.
+    let wanted = budget.suggested_tasks(prompt_tokens).min(max_tasks.max(1));
 
     let request = decompose_request(model, goal, context, wanted, per_task);
     let outcome = client
@@ -435,6 +439,8 @@ pub(crate) struct PlanRun<'a> {
     /// Observações da investigação (vazio quando não houve).
     pub context: String,
     pub window: WindowBudget,
+    /// Quantas entregas cabem no teto de passos deste run.
+    pub max_tasks: u32,
 }
 
 /// O que o plano inteiro produziu.
@@ -485,6 +491,7 @@ pub(crate) async fn run_plan(
             &ctx.goal,
             ctx.window,
             &ctx.context,
+            ctx.max_tasks,
         )
         .await
         {

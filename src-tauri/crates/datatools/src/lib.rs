@@ -88,7 +88,22 @@ mod tests {
     fn every_tool_reads_by_default() {
         for tool in data_tools() {
             assert_eq!(tool.category(), ToolCategory::Read, "{}", tool.name());
-            assert!(tool.spec().read_only, "{}", tool.name());
+        }
+    }
+
+    /// `read_only` é uma promessa mais forte que a categoria: quem responde
+    /// `true` entra no cardápio do modo planejamento e do ajudante
+    /// explorador, que juram não alterar nada. `sql_query` pode escrever, e
+    /// por isso fica de fora — mesmo aparecendo como leitura no catálogo.
+    #[test]
+    fn only_the_ones_that_can_never_write_promise_read_only() {
+        for tool in data_tools() {
+            let promete = tool.spec().read_only;
+            if tool.name() == "sql_query" {
+                assert!(!promete, "sql_query pode alterar o banco com allow_write");
+            } else {
+                assert!(promete, "{}", tool.name());
+            }
         }
     }
 

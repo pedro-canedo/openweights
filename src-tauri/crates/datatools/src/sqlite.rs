@@ -257,6 +257,13 @@ impl Tool for SqlQuery {
         ToolCategory::Read
     }
 
+    /// Nunca é "só leitura" no sentido do cardápio: com `allow_write` ela
+    /// altera o banco, então não pode ser oferecida ao modo planejamento nem
+    /// a um ajudante explorador, que prometem não mexer em nada.
+    fn read_only(&self) -> bool {
+        false
+    }
+
     /// Com `allow_write`, a chamada é escrita — e é assim que a política
     /// precisa vê-la: confirmação com o motivo certo, foto do banco antes e
     /// nada de valer o "sempre permitir" que a pessoa deu vendo consultas.
@@ -620,6 +627,11 @@ mod tests {
         });
         assert_eq!(SqlQuery.category_for(&leitura), ToolCategory::Read);
         assert_eq!(SqlQuery.category_for(&escrita), ToolCategory::Edit);
+        assert!(
+            !SqlQuery.spec().read_only,
+            "o cardápio do modo planejamento e do ajudante explorador se guia \
+             por isto: uma ferramenta que pode escrever não entra lá"
+        );
         assert!(SqlQuery.within_workspace(&leitura, &ctx));
         assert!(SqlQuery.within_workspace(&escrita, &ctx));
         assert_eq!(SqlQuery.files_at_risk(&escrita, &ctx), ["dados/loja.db"]);

@@ -554,6 +554,11 @@ pub struct RunSummary {
     pub prompt: String,
     pub summary: Option<String>,
     pub workspace_dir: Option<String>,
+    /// Contas da execução, quando ela já terminou. É o que a tela de
+    /// atividade usa para responder "quanto isto custou" — em tempo e em
+    /// tokens, que é o que um modelo local cobra.
+    #[serde(default)]
+    pub usage: Option<UsageStats>,
     pub created_at: i64,
     pub finished_at: Option<i64>,
 }

@@ -210,6 +210,18 @@ pub trait Tool: Send + Sync {
 
     fn category(&self) -> ToolCategory;
 
+    /// Esta ferramenta só lê, em QUALQUER chamada?
+    ///
+    /// É a promessa que o modo planejamento e o ajudante explorador usam para
+    /// montar o cardápio deles — quem responde `true` está dizendo "pode me
+    /// oferecer para quem não tem permissão de alterar nada". Por isso não
+    /// basta olhar a categoria fixa: ferramenta que muda de natureza conforme
+    /// o argumento (veja [`Tool::category_for`]) tem que responder `false`,
+    /// ou escapa dos dois filtros antes de a política ser consultada.
+    fn read_only(&self) -> bool {
+        matches!(self.category(), ToolCategory::Read | ToolCategory::Meta)
+    }
+
     /// Categoria desta chamada específica.
     ///
     /// A mesma ferramenta pode ser leitura ou escrita conforme os
@@ -254,7 +266,7 @@ pub trait Tool: Send + Sync {
             category: self.category(),
             tier: self.tier(),
             origin: lr_types::agent::ToolOrigin::Builtin,
-            read_only: matches!(self.category(), ToolCategory::Read | ToolCategory::Meta),
+            read_only: self.read_only(),
         }
     }
 }

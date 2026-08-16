@@ -230,9 +230,16 @@ fn budget() -> WindowBudget {
 
 async fn decompose_with(reply: String) -> (TaskPlan, FakeServer) {
     let server = one_shot(reply);
-    let plan = decompose(&server.client(), "m", "arrumar o projeto", budget(), "")
-        .await
-        .expect("o servidor respondeu");
+    let plan = decompose(
+        &server.client(),
+        "m",
+        "arrumar o projeto",
+        budget(),
+        "",
+        MAX_TASKS as u32,
+    )
+    .await
+    .expect("o servidor respondeu");
     (plan, server)
 }
 
@@ -335,10 +342,34 @@ async fn decompose_drops_dependencies_that_would_deadlock_the_plan() {
 async fn decompose_reports_a_server_that_did_not_answer() {
     let server =
         FakeServer::spawn(|_| FakeResponse::error(500, "{\"error\":{\"message\":\"caiu\"}}"));
-    let err = decompose(&server.client(), "m", "arrumar", budget(), "")
-        .await
-        .unwrap_err();
+    let err = decompose(
+        &server.client(),
+        "m",
+        "arrumar",
+        budget(),
+        "",
+        MAX_TASKS as u32,
+    )
+    .await
+    .unwrap_err();
     assert!(err.contains("caiu") || err.contains("500"), "{err}");
+}
+
+/// Orçamento apertado não vira plano grande: uma automação que pede doze
+/// passos não pode planejar oito entregas de oito passos cada.
+#[tokio::test]
+async fn a_small_step_budget_asks_for_a_small_plan() {
+    let server = one_shot(plan_json(2));
+    let _ = decompose(&server.client(), "m", "arrumar", budget(), "", 1)
+        .await
+        .unwrap();
+
+    let corpos = server.chat_bodies();
+    let pedido = corpos.last().cloned().unwrap_or_default();
+    assert!(
+        pedido.contains("cerca de 1 entregas") || pedido.contains("cerca de 1 entrega"),
+        "o pedido de divisão precisa carregar o teto: {pedido}"
+    );
 }
 
 #[tokio::test]
@@ -350,6 +381,7 @@ async fn decompose_keeps_the_investigation_notes() {
         "arrumar",
         budget(),
         "o projeto usa pnpm e vitest",
+        MAX_TASKS as u32,
     )
     .await
     .unwrap();
@@ -530,7 +562,8 @@ fn tool_runner(h: &Harness, tools: &PlanTools) -> ToolRunner {
         config: h.config.clone(),
         policy: PolicyEngine::new(Vec::new()),
         overrides: Vec::new(),
-        checkpoint_done: false,
+        snapshotted: Default::default(),
+        full_snapshot: false,
         reads: ReadLedger::default(),
         repeats: RepeatDetector::default(),
         errors: ErrorStreak::default(),
@@ -626,6 +659,7 @@ async fn each_task_runs_with_a_fresh_context_carrying_only_the_handoff() {
         goal: "arrumar o projeto".into(),
         context: String::new(),
         window: budget(),
+        max_tasks: MAX_TASKS as u32,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -699,6 +733,7 @@ async fn a_task_that_fails_twice_is_blocked_and_the_loop_moves_on() {
         goal: "arrumar o projeto".into(),
         context: String::new(),
         window: budget(),
+        max_tasks: MAX_TASKS as u32,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -773,6 +808,7 @@ async fn the_loop_stops_when_the_model_asks_the_person() {
         goal: "arrumar".into(),
         context: String::new(),
         window: budget(),
+        max_tasks: MAX_TASKS as u32,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -830,6 +866,7 @@ async fn task_complete_closes_the_step_with_the_handoff_the_model_wrote() {
         goal: "escrever as notas".into(),
         context: String::new(),
         window: budget(),
+        max_tasks: MAX_TASKS as u32,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -880,6 +917,7 @@ async fn an_empty_plan_is_decomposed_before_the_loop_starts() {
         goal: "fazer tudo".into(),
         context: String::new(),
         window: budget(),
+        max_tasks: MAX_TASKS as u32,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -915,6 +953,7 @@ async fn the_global_step_ceiling_still_wins() {
         goal: "muita coisa".into(),
         context: String::new(),
         window: budget(),
+        max_tasks: MAX_TASKS as u32,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 

@@ -265,7 +265,7 @@ impl Store {
     pub fn list_runs(&self, chat_id: Option<i64>) -> Result<Vec<RunSummary>, StoreError> {
         let conn = self.conn.lock().unwrap();
         let sql = "SELECT id, chat_id, model, mode, status, prompt, summary, workspace_dir,
-                          created_at, finished_at
+                          created_at, finished_at, usage_json
                    FROM runs {WHERE} ORDER BY created_at DESC LIMIT 200";
         let map = |r: &rusqlite::Row<'_>| -> rusqlite::Result<RunSummary> {
             Ok(RunSummary {
@@ -279,6 +279,9 @@ impl Store {
                 workspace_dir: r.get(7)?,
                 created_at: r.get(8)?,
                 finished_at: r.get(9)?,
+                usage: r
+                    .get::<_, Option<String>>(10)?
+                    .and_then(|j| serde_json::from_str(&j).ok()),
             })
         };
         let rows = match chat_id {

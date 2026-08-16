@@ -1,7 +1,13 @@
 // Navegação programática entre telas (ex.: "Conversar" em Meus Modelos
 // leva ao Chat com o modelo já selecionado). O App registra o handler.
 
-export type Screen = "discover" | "models" | "chat" | "server" | "settings";
+export type Screen =
+  | "discover"
+  | "models"
+  | "chat"
+  | "activity"
+  | "server"
+  | "settings";
 
 export interface NavPayload {
   /** Nome do modelo (artifact name) a pré-selecionar no Chat. */

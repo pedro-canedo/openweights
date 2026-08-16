@@ -63,15 +63,30 @@ pub fn spawn_loop(app: AppHandle) {
 }
 
 /// Dispara uma automação pelo id, agora. É o que o botão "rodar agora" usa.
+///
+/// Recusa se a automação já estiver rodando: dois runs na mesma pasta ao
+/// mesmo tempo se atrapalham, e o resultado que sobraria na tela seria o do
+/// que terminasse por último. O relógio já é protegido pelo `next_run_at`;
+/// este caminho não tinha nada.
 pub async fn run_now(app: &AppHandle, task_id: &str) -> Result<String, String> {
-    let task = {
+    let (task, viva) = {
         let state = app.state::<AppState>();
-        state
+        let task = state
             .store
             .scheduled_task(task_id)
             .map_err(|e| e.to_string())?
-            .ok_or("automação não encontrada")?
+            .ok_or("automação não encontrada")?;
+        // O `AgentHost` só guarda execução viva: encontrar o último id lá
+        // significa que ela ainda está de pé.
+        let viva = task
+            .last_run_id
+            .as_deref()
+            .is_some_and(|id| state.agent.get(id).is_some());
+        (task, viva)
     };
+    if viva {
+        return Err("esta automação já está rodando".into());
+    }
     start(app, task).await
 }
 

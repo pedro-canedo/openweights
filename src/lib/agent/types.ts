@@ -220,6 +220,12 @@ export interface RunSummary {
   prompt: string;
   summary: string | null;
   workspaceDir: string | null;
+  /**
+   * Contas da execução, quando ela já terminou. Modelo local cobra em tempo e
+   * tokens — é o que a tela de atividade mostra no lugar de um preço.
+   */
+  usage?: UsageStats | null;
+  /** Epoch em SEGUNDOS (a unidade da tabela `runs`, não a dos eventos). */
   createdAt: number;
   finishedAt: number | null;
 }

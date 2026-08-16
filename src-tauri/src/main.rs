@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod commands_activity;
 mod commands_agent;
 mod commands_automation;
 mod commands_mcp;
@@ -120,6 +121,11 @@ fn main() {
             commands_agent::checkpoints_list,
             commands_agent::checkpoint_restore,
             commands_agent::chat_set_model,
+            // Atividade: o histórico do que o agente fez.
+            commands_activity::activity_runs,
+            commands_activity::activity_calls,
+            commands_activity::activity_run_calls,
+            commands_activity::activity_stats,
             // Automações (tarefas que rodam sozinhas).
             commands_automation::automations_list,
             commands_automation::automation_save,

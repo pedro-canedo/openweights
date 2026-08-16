@@ -3,6 +3,7 @@
     "discover": "Discover",
     "models": "My Models",
     "chat": "Chat",
+    "activity": "Activity",
     "server": "Local Server",
     "settings": "Settings"
   },
@@ -206,6 +207,73 @@
     "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s",
     "speak": "Read aloud",
     "speakStop": "Stop reading"
+  },
+  "activity": {
+    "title": "Activity",
+    "subtitle": "What the agent has done on this machine, what it cost and what you approved.",
+    "noPrice": "A local model charges no money: the cost is your time and the tokens it spends.",
+    "automation": "Automation",
+    "chatGone": "Chat #{{id}}",
+    "period": {
+      "label": "Period",
+      "h24": "24 hours",
+      "d7": "7 days",
+      "all": "All time"
+    },
+    "stats": {
+      "title": "The numbers for this period",
+      "runs": "Runs",
+      "failed": "Did not end well",
+      "calls": "Agent actions",
+      "denied": "Refused actions",
+      "tokens": "Tokens",
+      "tokensSplit": "{{prompt}} in · {{completion}} out",
+      "duration": "Total time"
+    },
+    "status": {
+      "maxSteps": "Stopped at the step limit",
+      "escalated": "Stopped after repeated errors"
+    },
+    "tab": {
+      "runs": "Runs",
+      "calls": "Actions"
+    },
+    "runs": {
+      "none": "No runs in this period.",
+      "noSummary": "This run left no summary.",
+      "workspace": "Folder",
+      "tokens": "{{total}} tokens",
+      "callsTitle": "Actions in this run",
+      "callsNone": "This run used no tools."
+    },
+    "calls": {
+      "none": "No actions in this period.",
+      "filterLabel": "Filter actions",
+      "filter": {
+        "all": "All",
+        "changed": "Changed something",
+        "denied": "Refused"
+      },
+      "limit": "Showing the {{limit}} most recent actions. Open a run to see the rest."
+    },
+    "by": {
+      "user": "You confirmed it",
+      "policy": "A rule allowed it",
+      "yolo": "Automatic mode",
+      "none": "No confirmation needed"
+    },
+    "decision": {
+      "allowOnce": "Allowed once",
+      "allowAlways": "Always allowed",
+      "allowEdited": "Allowed with edits",
+      "deny": "Refused",
+      "denyAlways": "Always refused"
+    },
+    "empty": {
+      "title": "The agent has not done anything on this machine yet.",
+      "body": "As soon as it reads a file, runs a command or touches your project, it all shows up here: every run with what it touched, the time and tokens it cost, and who approved each action — automations included, since those run with nobody watching.",
+      "cta": "Start a chat"
+    }
   },
   "server": {
     "title": "Local Server",

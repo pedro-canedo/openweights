@@ -11,7 +11,7 @@
 // abrir a trilha, ver o que a automação queria fazer e RESPONDER dali mesmo:
 // a gaveta reata à execução, então a confirmação chega a quem está esperando.
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -26,11 +26,10 @@ import {
 } from "../../lib/agent/automation";
 import type { RunMode, RunStatus } from "../../lib/agent/types";
 import { listLocalModels, pickWorkspace } from "../../lib/api";
+import { formatAgo } from "../../lib/format";
 import { errorMessage } from "../../lib/serverSession";
 import { listen } from "../../lib/tauri";
-import { runStore } from "../../lib/agent/runStore";
-import ApprovalBar from "../agent/ApprovalBar";
-import RunTimeline from "../agent/RunTimeline";
+import TraceDrawer from "../agent/TraceDrawer";
 
 /** Os mesmos níveis do chat: "sem ferramentas" não automatizaria nada. */
 const AUTH_MODES: RunMode[] = ["approve", "smart", "yolo"];
@@ -94,16 +93,6 @@ function whenLabel(t: TFunction, lang: string, tsMs: number): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
-}
-
-/** "há 2 h" / "in 3 days" — do próprio navegador, sem biblioteca. */
-function agoLabel(lang: string, tsMs: number): string {
-  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
-  const minutos = Math.round((tsMs - Date.now()) / 60_000);
-  if (Math.abs(minutos) < 60) return rtf.format(minutos, "minute");
-  const horas = Math.round(minutos / 60);
-  if (Math.abs(horas) < 24) return rtf.format(horas, "hour");
-  return rtf.format(Math.round(horas / 24), "day");
 }
 
 function scheduleLabel(t: TFunction, lang: string, task: ScheduledTask): string {
@@ -411,7 +400,7 @@ function TaskRow({
           )}
           {task.lastRunAt != null && (
             <span className="ml-auto shrink-0 pl-2 text-dim">
-              {agoLabel(lang, task.lastRunAt)}
+              {formatAgo(lang, task.lastRunAt)}
             </span>
           )}
         </div>
@@ -697,65 +686,6 @@ function TaskForm({
           {t("common.save")}
         </button>
       </div>
-    </div>
-  );
-}
-
-// ----------------------------------------------------------- trilha do run ---
-
-/**
- * A execução de uma automação não pertence a nenhuma conversa, então o painel
- * de execução do Chat não a alcança. Aqui ele é reaberto por cima da tela,
- * reconstruído a partir dos eventos gravados (`run_events_list`).
- */
-function TraceDrawer({
-  runId,
-  onClose,
-}: {
-  runId: string;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const snap = useSyncExternalStore(runStore.subscribe, runStore.get);
-  const live = snap.runs.find((r) => r.runId === runId) ?? null;
-  const pending = live?.pendingCallId ? live.tools[live.pendingCallId] : null;
-
-  // Reatar é o que traz a execução para o presente: sem isso a gaveta seria
-  // uma foto dos eventos gravados, e a automação parada continuaria parada.
-  useEffect(() => {
-    void runStore.attachToRun(runId);
-  }, [runId]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("agent.run.trace")}
-      className="fixed inset-0 z-50 flex justify-end bg-black/60"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      {pending && (
-        <div className="flex w-96 max-w-[90vw] flex-col justify-end overflow-y-auto border-l border-edge bg-bg px-3 py-3">
-          <ApprovalBar
-            call={pending}
-            workspaceDir={live?.workspaceDir ?? null}
-            onDecide={(decision) =>
-              void runStore.approve(runId, pending.callId, decision)
-            }
-          />
-        </div>
-      )}
-      <RunTimeline run={live} runId={runId} onClose={onClose} />
     </div>
   );
 }

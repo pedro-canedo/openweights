@@ -129,6 +129,47 @@ fn is_huge(root: &Path) -> bool {
     walk(root, &mut n, 0)
 }
 
+/// Teto de arquivos numa foto por cópia do projeto inteiro.
+const MAX_FILES_FOR_COPY: usize = 3_000;
+/// Teto de bytes de UM arquivo copiado. Acima disto quase sempre é binário
+/// gerado, e copiar não paga o custo.
+const MAX_BYTES_PER_FILE: u64 = 2 * 1024 * 1024;
+
+/// Caminhos relativos do projeto que vale a pena fotografar.
+///
+/// Mesmos excludes do git-sombra, mais um teto: uma foto parcial é dita como
+/// parcial (o manifesto guarda o que entrou), e não trava o agente.
+fn collect_workspace(root: &Path) -> Vec<String> {
+    fn walk(root: &Path, dir: &Path, out: &mut Vec<String>, depth: u32) {
+        if out.len() >= MAX_FILES_FOR_COPY || depth > 12 {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in entries.flatten() {
+            if out.len() >= MAX_FILES_FOR_COPY {
+                return;
+            }
+            let name = e.file_name().to_string_lossy().into_owned();
+            if EXCLUDES.contains(&name.as_str()) || name == ".git" {
+                continue;
+            }
+            let path = e.path();
+            if path.is_dir() {
+                walk(root, &path, out, depth + 1);
+            } else if e.metadata().map(|m| m.len()).unwrap_or(u64::MAX) <= MAX_BYTES_PER_FILE
+                && let Ok(rel) = path.strip_prefix(root)
+            {
+                out.push(rel.to_string_lossy().replace('\\', "/"));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, root, &mut out, 0);
+    out
+}
+
 /// Nome estável de pasta para um projeto (evita colisão entre caminhos).
 fn workspace_key(workspace: &Path) -> String {
     let s = workspace.to_string_lossy().to_lowercase();
@@ -310,13 +351,29 @@ impl CheckpointEngine for CopySnapshot {
         "copy"
     }
 
+    /// Fotografa os arquivos indicados — ou o projeto inteiro quando a lista
+    /// vem vazia.
+    ///
+    /// Lista vazia significa "quem chamou não sabe o que vai mudar" (um
+    /// `terminal_run`, um `cargo test` que reescreve arquivos). O git-sombra
+    /// sempre versionou a árvore toda nesse caso; a cópia fingia ter feito
+    /// uma foto e guardava zero arquivo — a pessoa clicava em desfazer e nada
+    /// voltava. Aqui ela varre o projeto, com os mesmos excludes e um teto de
+    /// arquivos e de bytes: melhor uma foto parcial e honesta do que uma
+    /// promessa vazia.
     fn snapshot(&self, label: &str, files: &[String]) -> Result<Checkpoint, CheckpointError> {
         let id = unique_id("cp");
         let dir = self.base.join(&id);
         std::fs::create_dir_all(&dir)?;
 
+        let alvo: Vec<String> = if files.is_empty() {
+            collect_workspace(&self.workspace)
+        } else {
+            files.to_vec()
+        };
+
         let mut saved = Vec::new();
-        for rel in files {
+        for rel in &alvo {
             let src = self.workspace.join(rel);
             // Arquivo ainda não existe (vai ser criado): registramos a
             // ausência para que restaurar signifique apagá-lo.
@@ -485,6 +542,40 @@ mod tests {
         assert_eq!(a, b);
         assert_ne!(a, c);
         assert!(a.starts_with("projeto-"));
+    }
+
+    /// Sem git instalado — o caso comum do público-alvo — uma ferramenta que
+    /// não sabe dizer o que vai mudar (um comando de terminal) ainda precisa
+    /// deixar como voltar atrás.
+    #[test]
+    fn a_copy_snapshot_without_a_file_list_covers_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let ws = dir.path().join("projeto");
+        let store = dir.path().join("dados");
+        std::fs::create_dir_all(&ws).unwrap();
+        write(&ws, "a.txt", "original a");
+        write(&ws, "src/b.rs", "original b");
+        // Pasta pesada não entra na foto.
+        write(&ws, "node_modules/lixo.js", "não me copie");
+
+        let engine = CopySnapshot::new(&ws, &store);
+        let cp = engine.snapshot("antes de terminal_run", &[]).unwrap();
+        assert!(cp.files.iter().any(|f| f == "a.txt"), "{:?}", cp.files);
+        assert!(cp.files.iter().any(|f| f == "src/b.rs"), "{:?}", cp.files);
+        assert!(
+            !cp.files.iter().any(|f| f.contains("node_modules")),
+            "{:?}",
+            cp.files
+        );
+
+        // O comando estraga os dois arquivos.
+        write(&ws, "a.txt", "ESTRAGADO");
+        write(&ws, "src/b.rs", "ESTRAGADO");
+
+        let voltaram = engine.restore(&cp).unwrap();
+        assert_eq!(voltaram.len(), cp.files.len());
+        assert_eq!(read(&ws, "a.txt"), "original a");
+        assert_eq!(read(&ws, "src/b.rs"), "original b");
     }
 
     #[test]

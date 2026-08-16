@@ -3,6 +3,7 @@
     "discover": "Descobrir",
     "models": "Meus Modelos",
     "chat": "Chat",
+    "activity": "Atividade",
     "server": "Servidor Local",
     "settings": "Configurações"
   },
@@ -206,6 +207,73 @@
     "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s",
     "speak": "Ouvir a resposta",
     "speakStop": "Parar de ler"
+  },
+  "activity": {
+    "title": "Atividade",
+    "subtitle": "O que o agente fez nesta máquina, quanto custou e o que você autorizou.",
+    "noPrice": "Modelo local não cobra em dinheiro: o custo é o seu tempo e os tokens gastos.",
+    "automation": "Automação",
+    "chatGone": "Conversa #{{id}}",
+    "period": {
+      "label": "Período",
+      "h24": "24 horas",
+      "d7": "7 dias",
+      "all": "Desde sempre"
+    },
+    "stats": {
+      "title": "As contas do período",
+      "runs": "Execuções",
+      "failed": "Não terminaram bem",
+      "calls": "Ações do agente",
+      "denied": "Ações recusadas",
+      "tokens": "Tokens",
+      "tokensSplit": "{{prompt}} de entrada · {{completion}} de saída",
+      "duration": "Tempo somado"
+    },
+    "status": {
+      "maxSteps": "Parou no limite de passos",
+      "escalated": "Parou após erros seguidos"
+    },
+    "tab": {
+      "runs": "Execuções",
+      "calls": "Ações"
+    },
+    "runs": {
+      "none": "Nenhuma execução neste período.",
+      "noSummary": "Esta execução não deixou resumo.",
+      "workspace": "Pasta",
+      "tokens": "{{total}} tokens",
+      "callsTitle": "Ações desta execução",
+      "callsNone": "Esta execução não usou nenhuma ferramenta."
+    },
+    "calls": {
+      "none": "Nenhuma ação neste período.",
+      "filterLabel": "Filtrar ações",
+      "filter": {
+        "all": "Todas",
+        "changed": "Alteraram algo",
+        "denied": "Recusadas"
+      },
+      "limit": "Mostrando as {{limit}} ações mais recentes. Para ver o resto, abra a execução."
+    },
+    "by": {
+      "user": "Você confirmou",
+      "policy": "Uma regra permitiu",
+      "yolo": "Modo automático",
+      "none": "Não precisou de confirmação"
+    },
+    "decision": {
+      "allowOnce": "Permitido uma vez",
+      "allowAlways": "Permitido sempre",
+      "allowEdited": "Permitido com ajustes",
+      "deny": "Recusado",
+      "denyAlways": "Recusado sempre"
+    },
+    "empty": {
+      "title": "O agente ainda não fez nada nesta máquina.",
+      "body": "Quando ele ler um arquivo, rodar um comando ou mexer no seu projeto, tudo aparece aqui: cada execução com o que ela tocou, o tempo e os tokens que custou, e quem autorizou cada ação — inclusive as automações, que rodam sem ninguém olhando.",
+      "cta": "Começar uma conversa"
+    }
   },
   "server": {
     "title": "Servidor Local",

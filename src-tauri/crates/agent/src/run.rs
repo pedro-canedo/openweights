@@ -71,8 +71,16 @@ pub(crate) struct ToolRunner {
     /// permitir" chega no meio do run.
     pub overrides: Vec<PermissionOverride>,
     pub policy: PolicyEngine,
-    /// Já existe uma foto dos arquivos nesta execução?
-    pub checkpoint_done: bool,
+    /// Arquivos que já entraram numa foto nesta execução.
+    ///
+    /// Era um sim/não, e isso perdia dado: a primeira alteração tirava a
+    /// foto, a segunda mexia num arquivo que nunca foi fotografado, e
+    /// desfazer devolvia só metade. Vazio + `full_snapshot` falso = nada
+    /// fotografado ainda.
+    pub snapshotted: std::collections::HashSet<String>,
+    /// Já houve uma foto do projeto inteiro (ferramenta que não sabe dizer o
+    /// que vai mudar). Depois dela, tudo está coberto.
+    pub full_snapshot: bool,
     pub reads: ReadLedger,
     pub repeats: RepeatDetector,
     pub errors: ErrorStreak,
@@ -345,13 +353,26 @@ impl ToolRunner {
         // arquivos em risco também merece a foto mesmo sendo de outra
         // categoria: `web_download` é de rede e sobrescreve arquivo do
         // projeto. Quem sabe o que vai mudar é a própria ferramenta.
-        if !self.checkpoint_done {
-            let files = builtin
-                .as_ref()
-                .map(|t| t.files_at_risk(&args, &ctx))
-                .unwrap_or_default();
-            if PolicyEngine::needs_checkpoint(&request) || !files.is_empty() {
-                self.take_checkpoint(&name, files).await;
+        let files = builtin
+            .as_ref()
+            .map(|t| t.files_at_risk(&args, &ctx))
+            .unwrap_or_default();
+        if PolicyEngine::needs_checkpoint(&request) || !files.is_empty() {
+            // Só o que ainda não foi fotografado. Quem não declara arquivo
+            // (um comando de terminal, um `cargo test`) manda lista vazia, e
+            // isso significa "fotografe o que puder" — uma vez por run.
+            let novos: Vec<String> = files
+                .iter()
+                .filter(|f| !self.snapshotted.contains(*f))
+                .cloned()
+                .collect();
+            let precisa = if files.is_empty() {
+                !self.full_snapshot
+            } else {
+                !novos.is_empty() && !self.full_snapshot
+            };
+            if precisa {
+                self.take_checkpoint(&name, novos).await;
             }
         }
 
@@ -662,6 +683,7 @@ impl ToolRunner {
         let Some(workspace) = self.workspace.clone() else {
             return;
         };
+        let files_pedidos = files.clone();
         let store_dir = self.config.store_dir.clone();
         let label = format!("Antes de {tool}");
         let label_task = label.clone();
@@ -672,7 +694,10 @@ impl ToolRunner {
 
         match result {
             Ok(Ok(cp)) => {
-                self.checkpoint_done = true;
+                if files_pedidos.is_empty() {
+                    self.full_snapshot = true;
+                }
+                self.snapshotted.extend(cp.files.iter().cloned());
                 let files_json = serde_json::to_string(&cp.files).ok();
                 let _ = self.store.add_checkpoint(
                     &cp.id,
@@ -1147,7 +1172,8 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         config: deps.config.clone(),
         policy: PolicyEngine::new(overrides.clone()),
         overrides,
-        checkpoint_done: false,
+        snapshotted: Default::default(),
+        full_snapshot: false,
         reads: ReadLedger::default(),
         repeats: RepeatDetector::default(),
         errors: ErrorStreak::default(),
@@ -1199,14 +1225,12 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     let mut summary_override: Option<String> = None;
     let mut final_text;
 
-    // No laço, o teto global precisa caber o plano inteiro: um teto pensado
-    // para UM pedido pararia o run no meio da terceira entrega.
-    let max_steps = match work_mode {
-        WorkMode::Loop => opts
-            .max_steps
-            .max(scout::MAX_TASKS as u32 * scout::MAX_STEPS_PER_TASK),
-        _ => opts.max_steps,
-    };
+    // O teto é o que a pessoa (ou a automação) escolheu, e ponto. Antes o
+    // laço o multiplicava para caber um plano de doze entregas — uma
+    // automação que pedia doze passos rodava noventa e seis. Agora quem se
+    // ajusta é o PLANO: com pouco orçamento, poucas entregas.
+    let max_steps = opts.max_steps;
+    let max_tasks = (max_steps / scout::MAX_STEPS_PER_TASK).max(1);
     let mut budget = StepBudget::new(max_steps);
 
     let status = if work_mode == WorkMode::Loop {
@@ -1220,6 +1244,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
             goal: prompt.clone(),
             context: String::new(),
             window,
+            max_tasks,
         };
         let outcome = scout::run_plan(&plan_run, &mut runner, &mut budget).await;
         usage.steps += outcome.steps;
@@ -1255,7 +1280,8 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
 
         // Planejamento entrega o plano, não o trabalho.
         if work_mode == WorkMode::Plan && outcome.status == RunStatus::Done {
-            let proposal = present_plan(&engine, &plan, &prompt, &outcome.text, window).await;
+            let proposal =
+                present_plan(&engine, &plan, &prompt, &outcome.text, window, max_tasks).await;
             if final_text.trim().is_empty() {
                 final_text = proposal;
             }
@@ -1362,15 +1388,24 @@ async fn present_plan(
     goal: &str,
     notes: &str,
     window: WindowBudget,
+    // Quantas entregas cabem no teto de passos de quem for executar.
+    max_tasks: u32,
 ) -> String {
     // O modelo pode ter escrito o plano sozinho com `plan_create`.
     if snapshot(plan).tasks.is_empty() {
-        let built = scout::decompose(engine.client, &engine.opts.model, goal, window, notes)
-            .await
-            .unwrap_or_else(|e| {
-                log::warn!("não consegui dividir o objetivo ({e}); proponho uma entrega só");
-                scout::single_task_plan(goal, window.per_task())
-            });
+        let built = scout::decompose(
+            engine.client,
+            &engine.opts.model,
+            goal,
+            window,
+            notes,
+            max_tasks,
+        )
+        .await
+        .unwrap_or_else(|e| {
+            log::warn!("não consegui dividir o objetivo ({e}); proponho uma entrega só");
+            scout::single_task_plan(goal, window.per_task())
+        });
         *crate::plan_tools::lock_plan(plan) = built;
     }
 

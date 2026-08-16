@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 
+pub mod activity;
 pub mod agent;
 pub mod automation;
 pub mod mcp;

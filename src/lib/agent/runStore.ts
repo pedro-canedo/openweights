@@ -891,7 +891,17 @@ export const runStore = {
       runs.set(run.runId, { ...run, plan: { ...run.plan, approved: true } });
       emit();
     }
-    await runPlanApprove(run.runId);
+    // Aprovar abre uma execução NOVA (mesmo plano, modo laço). Sem amarrar a
+    // conversa a ela, o chat continuaria olhando para o run do planejamento,
+    // que já acabou — e a execução aprovada rodaria invisível.
+    const novo = await runPlanApprove(run.runId, handleEvent);
+    if (novo && novo !== run.runId) {
+      workModeByRun.set(novo, "loop");
+      if (chatId != null) byChat.set(chatId, novo);
+      emit();
+      schedulePlanFetch(novo);
+      return;
+    }
     schedulePlanFetch(run.runId);
   },
 
