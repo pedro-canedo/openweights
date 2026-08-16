@@ -79,7 +79,7 @@ pub fn group_of(spec: &ToolSpec) -> ToolGroup {
         "memory_save" => ToolGroup::Memory,
         "workspace_search" => ToolGroup::Project,
         "todo_update" | "plan_create" | "plan_update" | "task_complete" | "ask_user"
-        | TOOLS_FIND => ToolGroup::Plan,
+        | "agent_delegate" | TOOLS_FIND => ToolGroup::Plan,
         other => guess_group(other, spec.category),
     }
 }

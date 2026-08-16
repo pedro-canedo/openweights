@@ -774,7 +774,30 @@ async function driveMock(run: MockRun): Promise<void> {
     emit(run, { kind: "focus.updated", todoMd: MOCK_FOCUS });
   }
 
-  // 3) O modelo pede ferramentas que não vieram no cardápio inicial e depois
+  // 3) O agente delega uma investigação: o que acontece entre os dois
+  //    marcadores é trabalho do ajudante, e a trilha desenha recuado.
+  const helper = nextCall();
+  emit(run, {
+    kind: "subagent.started",
+    callId: helper,
+    objective: "descobrir onde o roteamento de modelos é decidido",
+    role: "explorer",
+  });
+  emit(run, { kind: "step.started", stepId: "step-sub", index: 90 });
+  await typeOut(
+    run,
+    "step-sub",
+    "Procurei por `router` no projeto: a decisão fica em src/engine/router.rs.",
+  );
+  emit(run, {
+    kind: "subagent.finished",
+    callId: helper,
+    status: "done",
+    steps: 3,
+    summary: "O roteamento vive em src/engine/router.rs, função resolve_model.",
+  });
+
+  // 4) O modelo pede ferramentas que não vieram no cardápio inicial e depois
   //    roda um comando, com a saída em streaming.
   emit(run, {
     kind: "tools.selected",

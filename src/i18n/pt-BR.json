@@ -364,7 +364,13 @@
       "empty": "Nenhuma execução ainda.",
       "usage": "{{steps}} passos · {{tools}} ferramentas · {{seconds}}s",
       "toolsSelected": "{{active}} de {{available}} ferramentas nesta janela",
-      "toolsRequested": "O agente pediu mais ferramentas: {{tools}}"
+      "toolsRequested": "O agente pediu mais ferramentas: {{tools}}",
+      "subagentStarted": {
+        "explorer": "Ajudante investigando: {{objective}}",
+        "coder": "Ajudante trabalhando: {{objective}}"
+      },
+      "subagentDone": "Ajudante concluiu em {{steps}} passo(s)",
+      "subagentStopped": "Ajudante parou antes de concluir ({{steps}} passo(s))"
     },
     "focus": {
       "title": "Plano",
@@ -424,7 +430,8 @@
       "planUpdate": "Atualizar etapa",
       "taskComplete": "Concluir etapa",
       "askUser": "Perguntar à pessoa",
-      "toolsFind": "Procurar ferramentas"
+      "toolsFind": "Procurar ferramentas",
+      "agentDelegate": "Delegar a um ajudante"
     },
     "toolGroups": {
       "title": "Famílias de ferramentas",

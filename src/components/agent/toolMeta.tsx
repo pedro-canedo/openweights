@@ -50,6 +50,7 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   task_complete: "taskComplete",
   ask_user: "askUser",
   tools_find: "toolsFind",
+  agent_delegate: "agentDelegate",
 };
 
 /**

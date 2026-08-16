@@ -364,7 +364,13 @@
       "empty": "No runs yet.",
       "usage": "{{steps}} steps · {{tools}} tools · {{seconds}}s",
       "toolsSelected": "{{active}} of {{available}} tools in this window",
-      "toolsRequested": "The agent asked for more tools: {{tools}}"
+      "toolsRequested": "The agent asked for more tools: {{tools}}",
+      "subagentStarted": {
+        "explorer": "Helper investigating: {{objective}}",
+        "coder": "Helper working on: {{objective}}"
+      },
+      "subagentDone": "Helper finished in {{steps}} step(s)",
+      "subagentStopped": "Helper stopped before finishing ({{steps}} step(s))"
     },
     "focus": {
       "title": "Plan",
@@ -424,7 +430,8 @@
       "planUpdate": "Update step",
       "taskComplete": "Finish step",
       "askUser": "Ask the user",
-      "toolsFind": "Find tools"
+      "toolsFind": "Find tools",
+      "agentDelegate": "Delegate to a helper"
     },
     "toolGroups": {
       "title": "Tool families",

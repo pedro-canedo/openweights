@@ -8,6 +8,9 @@ export type ToolCategory = "read" | "edit" | "execute" | "network" | "mcp" | "me
 
 export type ToolTier = "safe" | "caution" | "danger";
 
+/** Papel de um subagente: `explorer` só lê, `coder` também altera. */
+export type SubagentRole = "explorer" | "coder";
+
 /** Família de ferramentas: a pessoa liga/desliga famílias inteiras. */
 export type ToolGroup =
   | "files"
@@ -162,6 +165,19 @@ export type RunEvent = RunEventBase &
     | { kind: "run.paused"; reason: PauseReason }
     | { kind: "run.resumed" }
     | { kind: "run.error"; message: string; retryable: boolean }
+    | {
+        kind: "subagent.started";
+        callId: string;
+        objective: string;
+        role: SubagentRole;
+      }
+    | {
+        kind: "subagent.finished";
+        callId: string;
+        status: RunStatus;
+        steps: number;
+        summary: string;
+      }
     | {
         kind: "tools.selected";
         available: number;

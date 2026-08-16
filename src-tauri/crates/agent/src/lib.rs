@@ -11,6 +11,7 @@ mod prompt;
 mod reliability;
 mod run;
 mod scout;
+mod subagent;
 mod verify;
 
 use crate::run::{RunDeps, execute_run};

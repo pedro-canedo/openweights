@@ -131,6 +131,27 @@ impl ToolGroup {
     }
 }
 
+/// Papel de um subagente: define o que ele pode fazer.
+///
+/// Delegar existe para poupar a janela do modelo principal — a investigação
+/// que gastaria vinte mil tokens de leitura volta como um resumo de dez
+/// linhas. O papel decide o cardápio do ajudante.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum SubagentRole {
+    /// Só lê: investiga e relata. O padrão, e o caso que mais compensa.
+    #[default]
+    Explorer,
+    /// Lê e altera: executa uma parte do trabalho de ponta a ponta.
+    Coder,
+}
+
+impl SubagentRole {
+    pub fn read_only(&self) -> bool {
+        matches!(self, SubagentRole::Explorer)
+    }
+}
+
 /// Risco padrão, usado para badge na UI e tier inicial de permissão.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -383,6 +404,23 @@ pub enum RunEventKind {
     RunResumed,
     #[serde(rename = "run.error")]
     RunError { message: String, retryable: bool },
+    /// Um ajudante começou a trabalhar. Tudo que vier até
+    /// `subagent.finished` é dele: ele roda dentro da chamada de ferramenta
+    /// do agente principal, um de cada vez.
+    #[serde(rename = "subagent.started")]
+    SubagentStarted {
+        call_id: String,
+        objective: String,
+        role: SubagentRole,
+    },
+    #[serde(rename = "subagent.finished")]
+    SubagentFinished {
+        call_id: String,
+        status: RunStatus,
+        steps: u32,
+        /// O que ele devolveu ao agente principal (já recortado).
+        summary: String,
+    },
     /// O cardápio entregue ao modelo mudou: no começo do run e sempre que
     /// `tools_find` traz uma ferramenta que estava fora.
     #[serde(rename = "tools.selected")]
@@ -439,6 +477,8 @@ impl RunEvent {
             RunEventKind::RunPaused { .. } => "run.paused",
             RunEventKind::RunResumed => "run.resumed",
             RunEventKind::RunError { .. } => "run.error",
+            RunEventKind::SubagentStarted { .. } => "subagent.started",
+            RunEventKind::SubagentFinished { .. } => "subagent.finished",
             RunEventKind::ToolsSelected { .. } => "tools.selected",
             RunEventKind::RunFinished { .. } => "run.finished",
         }

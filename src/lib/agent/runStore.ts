@@ -35,6 +35,7 @@ import type {
   RunMode,
   RunStatus,
   RunSummary,
+  SubagentRole,
   ToolCategory,
   ToolOrigin,
   ToolPreview,
@@ -103,11 +104,33 @@ export interface ToolsItem {
   tsMs: number;
 }
 
+/**
+ * Começo ou fim de um ajudante. São dois itens, e não um só com o conteúdo
+ * dentro: o ajudante roda dentro da chamada de ferramenta do agente, então
+ * tudo que a trilha recebe entre um marcador e o outro é dele — a marcação
+ * em pares é o que deixa a trilha desenhar isso recuado sem cada evento
+ * precisar carregar um identificador de dono.
+ */
+export interface SubagentItem {
+  kind: "subagent";
+  id: string;
+  /** `end` fecha o par aberto pelo `start` de mesmo `callId`. */
+  phase: "start" | "end";
+  callId: string;
+  objective: string;
+  role: SubagentRole;
+  status: RunStatus | null;
+  steps: number;
+  summary: string;
+  tsMs: number;
+}
+
 export type TimelineItem =
   | StepItem
   | { kind: "tool"; id: string }
   | { kind: "checkpoint"; id: string; label: string; backend: string; tsMs: number }
   | ToolsItem
+  | SubagentItem
   | { kind: "note"; id: string; note: NoteKind; detail: string; tsMs: number };
 
 export interface CheckpointMark {
@@ -452,6 +475,42 @@ export function reduceEvent(run: RunView, event: RunEvent): RunView {
           active: event.active,
           available: event.available,
           requested: event.requested,
+          tsMs: event.tsMs,
+        },
+      ];
+      break;
+
+    case "subagent.started":
+      next.items = [
+        ...next.items,
+        {
+          kind: "subagent",
+          id: `sub-${event.callId}`,
+          phase: "start",
+          callId: event.callId,
+          objective: event.objective,
+          role: event.role,
+          status: null,
+          steps: 0,
+          summary: "",
+          tsMs: event.tsMs,
+        },
+      ];
+      break;
+
+    case "subagent.finished":
+      next.items = [
+        ...next.items,
+        {
+          kind: "subagent",
+          id: `sub-${event.callId}-end`,
+          phase: "end",
+          callId: event.callId,
+          objective: "",
+          role: "explorer",
+          status: event.status,
+          steps: event.steps,
+          summary: event.summary,
           tsMs: event.tsMs,
         },
       ];

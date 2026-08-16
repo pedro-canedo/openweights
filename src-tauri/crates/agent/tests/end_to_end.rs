@@ -864,10 +864,15 @@ async fn a_small_window_gets_a_partial_menu_the_model_can_extend() {
         *available >= 14,
         "o catálogo do teste é maior que o recorte"
     );
-    // O recorte respeita o teto (a porta de saída não conta) e o que não tem
-    // relação com o pedido fica de fora — sobra vaga vira enchimento, e tudo
-    // bem: o que não pode é o catálogo inteiro entrar.
-    assert!(active.len() <= *limit as usize + 1, "{active:?}");
+    // O recorte respeita o teto. As ferramentas DO RUN (a porta de saída e a
+    // delegação) ficam fora da conta: são a máquina, não o catálogo. O que
+    // não tem relação com o pedido fica de fora — sobra vaga vira
+    // enchimento, e tudo bem: o que não pode é o catálogo inteiro entrar.
+    let do_catalogo = active
+        .iter()
+        .filter(|n| *n != "tools_find" && *n != "agent_delegate")
+        .count();
+    assert!(do_catalogo <= *limit as usize, "{active:?}");
     let zebras = active.iter().filter(|n| n.starts_with("zebra_")).count();
     assert!(zebras <= 1, "só o que sobrou de vaga: {active:?}");
     assert!(
@@ -885,4 +890,82 @@ async fn a_small_window_gets_a_partial_menu_the_model_can_extend() {
         pedidas.iter().all(|n| n.starts_with("zebra_")),
         "o evento do pedido traz só a novidade: {pedidas:?}"
     );
+}
+
+// --------------------------------------------------------------- ajudante ---
+
+/// Delegar poupa a janela do agente principal: o ajudante lê o que precisar
+/// com contexto próprio e o que sobe é o resumo.
+#[tokio::test]
+async fn the_agent_delegates_and_gets_back_a_summary() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn(vec![
+        // 1) O agente principal entrega a missão.
+        tool_call_chunks(
+            "call_1",
+            "agent_delegate",
+            r#"{"objective":"descubra onde fica a configuração","#,
+            r#""role":"explorer"}"#,
+        ),
+        // 2) O ajudante responde (mesmo servidor, contexto novo).
+        vec![
+            text_chunk("A configuração fica em config/app.toml, seção [server]."),
+            done(),
+        ],
+        // 3) O principal conclui com o que recebeu.
+        vec![
+            text_chunk("A configuração está em config/app.toml."),
+            done(),
+        ],
+    ]);
+
+    let status = h
+        .run(
+            "onde fica a configuração deste projeto?",
+            RunMode::Yolo,
+            server.endpoint(),
+        )
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let kinds = h.kinds();
+    let pos = |k: &str| kinds.iter().position(|x| x == k);
+    assert!(
+        pos("subagent.started") < pos("subagent.finished"),
+        "{kinds:?}"
+    );
+
+    let events = h.events.lock().unwrap().clone();
+    let comeco = events.iter().find_map(|e| match &e.event {
+        RunEventKind::SubagentStarted {
+            call_id, objective, ..
+        } => Some((call_id.clone(), objective.clone())),
+        _ => None,
+    });
+    let fim = events.iter().find_map(|e| match &e.event {
+        RunEventKind::SubagentFinished {
+            call_id,
+            status,
+            summary,
+            ..
+        } => Some((call_id.clone(), *status, summary.clone())),
+        _ => None,
+    });
+    let (id_inicio, objetivo) = comeco.expect("o começo do ajudante");
+    let (id_fim, status_fim, resumo) = fim.expect("o fim do ajudante");
+    assert_eq!(id_inicio, id_fim, "as duas pontas são do mesmo ajudante");
+    assert!(objetivo.contains("configuração"));
+    assert_eq!(status_fim, RunStatus::Done);
+    assert!(resumo.contains("config/app.toml"), "{resumo}");
+
+    // O resumo é o que o agente principal recebeu como resultado.
+    let resultado = events.iter().find_map(|e| match &e.event {
+        RunEventKind::ToolResult { result_preview, .. }
+            if result_preview.contains("config/app.toml") =>
+        {
+            Some(result_preview.clone())
+        }
+        _ => None,
+    });
+    assert!(resultado.is_some(), "eventos: {kinds:?}");
 }

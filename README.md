@@ -9,6 +9,10 @@ OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://gith
 - 🔍 **Hardware no piloto automático** — identifica CPU, RAM, GPU e VRAM e baixa o build do llama.cpp que combina (CUDA, Vulkan ou só CPU).
 - 🤗 **Modelos do Hugging Face, já filtrados** — busca GGUF e recomenda a quantização para o *seu* PC: verde roda inteiro na GPU, amarelo divide com a CPU, cinza fica só no processador.
 - 💬 **Chat local** — streaming, markdown e histórico no disco.
+- 🤖 **Modo agente** — o modelo lê e edita arquivos, roda comandos, usa Git, consulta a internet e analisa dados. Cada ação passa pela sua confirmação (ou não, se você preferir), e uma foto do projeto é tirada antes da primeira alteração: dá para voltar atrás.
+- 🧭 **Feito para modelo pequeno** — o objetivo vira entregas curtas, cada uma com contexto novo, e o cardápio de ferramentas se ajusta à janela do modelo: o que não cabe, ele pede quando precisa.
+- 🧠 **Memória e índice do projeto** — o agente lembra do que aprendeu e busca por significado no seu código.
+- 🧩 **Conectores MCP** — servidores do padrão Model Context Protocol entram como ferramentas, com aprovação por servidor.
 - 🔌 **API compatível com OpenAI** — outros apps apontam para `localhost` e usam o mesmo modelo.
 - 📊 **Uso em tempo real** — CPU, RAM, GPU, VRAM e tokens/s enquanto você conversa.
 - 🪶 **Leve de verdade** — núcleo em Rust + Tauri 2. Instalador de poucos MB, sem Electron.
@@ -101,9 +105,13 @@ IA (build do llama.cpp adequado à sua GPU, ~100–600 MB) — isso acontece uma
 ```
 src/                  frontend React (telas, componentes, i18n pt-BR/en)
 src-tauri/src/        app Tauri (comandos, estado, telemetria)
-src-tauri/crates/     núcleo Rust: hw (hardware), runtime (llama.cpp),
-                      models (Hugging Face + downloads), advisor (quantização),
-                      engine (llama-server), store (SQLite), types
+src-tauri/crates/     núcleo Rust, um crate por assunto:
+                        hw, runtime, models, advisor    hardware e modelos
+                        engine, store, types            llama-server, SQLite, contratos
+                        agent, tools, policy            laço do agente, ferramentas, permissões
+                        checkpoint, mcp, memory, rag    desfazer, conectores, memória, índice
+                        webtools, codetools,            internet, build/teste,
+                        gittools, datatools             Git, CSV/SQLite
 ```
 
 ## Licença

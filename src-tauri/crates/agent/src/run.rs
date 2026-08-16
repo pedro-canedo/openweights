@@ -20,6 +20,7 @@ use crate::reliability::{
     compaction_request, plan_compaction,
 };
 use crate::scout::{self, PlanRun};
+use crate::subagent;
 use crate::verify::{self, CommandRecord};
 use crate::{AgentConfig, RunHandle, StartRun, new_id};
 use lr_engine::{ChatDelta, ChatMessage, ChatRequest, LlamaClient, ServerProps, ToolCallReq};
@@ -1069,6 +1070,51 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         menu.pin_active(tool.spec());
         tool
     });
+
+    let workspace_str = workspace.as_ref().map(|p| p.to_string_lossy().into_owned());
+    let overrides: Vec<PermissionOverride> = deps
+        .store
+        .list_tool_permissions(workspace_str.as_deref())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| PermissionOverride {
+            tool_name: row.tool_name,
+            policy: row.policy,
+            scope: row.scope,
+        })
+        .collect();
+
+    // Delegar existe para poupar a janela: a investigação que gastaria vinte
+    // mil tokens de leitura volta como um resumo de dez linhas. O ajudante
+    // corre com a mesma política e o mesmo handle — confirmar e cancelar
+    // continuam funcionando de dentro dele.
+    let helpers = Arc::new(subagent::Ledger::default());
+    let delegate: Option<SharedTool> = tools_on.then(|| {
+        let tool: SharedTool = Arc::new(subagent::AgentDelegate::new(subagent::SubagentDeps {
+            base_url: endpoint.base_url.clone(),
+            api_key: endpoint.api_key.clone(),
+            registry: deps.registry.clone(),
+            store: deps.store.clone(),
+            config: deps.config.clone(),
+            handle: handle.clone(),
+            sink: sink.clone(),
+            opts: opts.clone(),
+            workspace: workspace.clone(),
+            n_ctx: props.n_ctx,
+            groups: groups.clone(),
+            overrides: overrides.clone(),
+            mode: opts.mode,
+            written: helpers.written.clone(),
+            commands: helpers.commands.clone(),
+            steps: helpers.steps.clone(),
+            tool_calls: helpers.tool_calls.clone(),
+            memory: memory.clone(),
+            user_system: opts.system_prompt.clone(),
+        }));
+        menu.pin_active(tool.spec());
+        tool
+    });
+
     let tools_partial = menu.is_partial();
     let tool_names: Vec<String> = menu.active_names();
 
@@ -1089,19 +1135,6 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
             requested: false,
         });
     }
-
-    let workspace_str = workspace.as_ref().map(|p| p.to_string_lossy().into_owned());
-    let overrides: Vec<PermissionOverride> = deps
-        .store
-        .list_tool_permissions(workspace_str.as_deref())
-        .unwrap_or_default()
-        .into_iter()
-        .map(|row| PermissionOverride {
-            tool_name: row.tool_name,
-            policy: row.policy,
-            scope: row.scope,
-        })
-        .collect();
 
     let mut runner = ToolRunner {
         run_id: run_id.clone(),
@@ -1125,6 +1158,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         local_tools: if tools_on {
             let mut locais = plan_tools.tools.clone();
             locais.extend(finder.clone());
+            locais.extend(delegate.clone());
             locais
         } else {
             Vec::new()
@@ -1229,6 +1263,12 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         outcome.status
     };
 
+    // O que os ajudantes fizeram é trabalho do run: entra na verificação e
+    // na conta de uso, senão o arquivo que um deles escreveu não é conferido
+    // e o custo real fica escondido.
+    helpers.merge_into(&mut runner.written, &mut runner.commands);
+    usage.steps += helpers.steps();
+
     // Verificação barata do que ficou em disco.
     if status == RunStatus::Done
         && let Some(report) =
@@ -1240,7 +1280,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         });
     }
 
-    usage.tool_calls = runner.tool_calls;
+    usage.tool_calls = runner.tool_calls + helpers.tool_calls();
     usage.duration_ms = started_at.elapsed().as_millis() as u64;
 
     // Guarda a resposta na conversa. O laço também guarda quando para no

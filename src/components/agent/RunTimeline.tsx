@@ -10,7 +10,7 @@
 // reconstruído por `run_events_list`. Por isso tudo aqui recebe um
 // `RunView` pronto e não conhece comandos.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -19,6 +19,7 @@ import {
   type NoteKind,
   type RunView,
   type StepItem,
+  type SubagentItem,
   type TimelineItem,
   type ToolsItem,
 } from "../../lib/agent/runStore";
@@ -213,6 +214,44 @@ function ToolsLine({ item }: { item: ToolsItem }) {
   );
 }
 
+/**
+ * Começo e fim de um ajudante. Delegar existe para poupar a janela do modelo
+ * principal: a investigação inteira acontece aqui dentro e o que sobe para o
+ * agente é só o resumo — a trilha mostra as duas coisas.
+ */
+function SubagentLine({ item }: { item: SubagentItem }) {
+  const { t } = useTranslation();
+  const done = item.phase === "end";
+  const ok = item.status === "done";
+  return (
+    <div
+      className={`flex items-start gap-2 text-[11px] ${done && !ok ? "text-warn" : "text-dim"}`}
+    >
+      <svg
+        className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        viewBox="0 0 24 24"
+      >
+        <path d="M12 3a3 3 0 013 3v1a3 3 0 01-6 0V6a3 3 0 013-3zM5.5 21v-2a4 4 0 014-4h5a4 4 0 014 4v2" />
+      </svg>
+      <span className="min-w-0 flex-1 leading-relaxed select-text">
+        {done
+          ? t(ok ? "agent.run.subagentDone" : "agent.run.subagentStopped", {
+              steps: item.steps,
+            })
+          : t(`agent.run.subagentStarted.${item.role}`, {
+              objective: item.objective,
+            })}
+      </span>
+      <span className="shrink-0 tabular-nums">{timeLabel(item.tsMs)}</span>
+    </div>
+  );
+}
+
 function StepBlock({
   step,
   live,
@@ -266,23 +305,50 @@ function RunItems({
   const active = isRunActive(run.status);
   const lastId = run.items[run.items.length - 1]?.id;
 
+  // Tudo que chega entre o começo e o fim de um ajudante é trabalho dele:
+  // recuar deixa isso visível sem precisar de dono em cada evento.
+  let depth = 0;
+  const nested = run.items.map((item) => {
+    if (item.kind === "subagent") {
+      if (item.phase === "start") {
+        depth = 1;
+        return 0;
+      }
+      depth = 0;
+      return 0;
+    }
+    return depth;
+  });
+
   return (
     <>
-      {run.items.map((item) => {
+      {run.items.map((item, i) => {
+        const indent = nested[i] > 0;
+        const wrap = (node: ReactNode) =>
+          indent ? (
+            <div key={item.id} className="border-l border-edge pl-3">
+              {node}
+            </div>
+          ) : (
+            node
+          );
+        if (item.kind === "subagent") {
+          return <SubagentLine key={item.id} item={item} />;
+        }
         if (item.kind === "step") {
-          return (
+          return wrap(
             <StepBlock
               key={item.id}
               step={item}
               live={active && item.id === lastId}
               compact={compact}
-            />
+            />,
           );
         }
         if (item.kind === "tool") {
           const call = run.tools[item.id];
           if (!call) return null;
-          return (
+          return wrap(
             <ToolCallCard
               key={item.id}
               call={call}
@@ -290,31 +356,31 @@ function RunItems({
               // e ficaria escondida atrás de um clique.
               defaultOpen={!compact && call.category === "execute"}
               stale={!active}
-            />
+            />,
           );
         }
         if (item.kind === "checkpoint") {
-          return (
+          return wrap(
             <CheckpointLine
               key={item.id}
               label={item.label}
               backend={item.backend}
               tsMs={item.tsMs}
-            />
+            />,
           );
         }
         if (item.kind === "tools") {
-          return <ToolsLine key={item.id} item={item} />;
+          return wrap(<ToolsLine key={item.id} item={item} />);
         }
         const note = NOTES[item.note];
-        return (
+        return wrap(
           <p
             key={item.id}
             className={`text-[11px] leading-relaxed select-text ${note.className}`}
           >
             {t(note.key)}
             {item.detail ? ` — ${item.detail}` : ""}
-          </p>
+          </p>,
         );
       })}
     </>
