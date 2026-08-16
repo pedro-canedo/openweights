@@ -78,6 +78,9 @@ impl ServerConfig {
             self.port.to_string(),
             "--models-max".into(),
             self.models_max.to_string(),
+            // Slots de KV no mesmo processo (mesmo load de pesos).
+            "--parallel".into(),
+            "4".into(),
         ];
         if let Some(preset) = &self.models_preset {
             args.push("--models-preset".into());
@@ -283,6 +286,7 @@ mod tests {
         assert!(joined.contains("--host 127.0.0.1"));
         assert!(joined.contains("--port 8080"));
         assert!(joined.contains("--models-max 2"));
+        assert!(joined.contains("--parallel 4"));
         // Router mode = SEM -m.
         assert!(!joined.contains(" -m "));
         assert!(!args.contains(&"-m".to_string()));

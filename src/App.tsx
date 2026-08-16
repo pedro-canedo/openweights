@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { onNavigate, type Screen } from "./lib/nav";
 import StatusBar from "./components/StatusBar";
 import DownloadsPanel from "./components/DownloadsPanel";
+import GenerationPanel from "./components/GenerationPanel";
 import Onboarding from "./components/Onboarding";
 import NavConversations from "./components/NavConversations";
 import { OwWordmark } from "./components/OpenWeightsLogo";
@@ -79,6 +80,7 @@ export default function App() {
       </div>
 
       <StatusBar />
+      <GenerationPanel />
       <DownloadsPanel />
       <Onboarding />
     </div>

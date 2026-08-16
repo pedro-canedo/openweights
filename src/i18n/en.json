@@ -52,6 +52,12 @@
     "error": "Error",
     "empty": "No downloads at the moment."
   },
+  "jobs": {
+    "title": "Generating",
+    "running": "Generating",
+    "queued": "Queued",
+    "stop": "Stop"
+  },
   "models": {
     "title": "My Models",
     "empty": "No models downloaded yet. Go to Discover to grab your first one.",

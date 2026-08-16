@@ -8,19 +8,19 @@ const CARDS = [
     key: "write" as const,
     promptKey: "chat.hero.writePrompt",
     titleKey: "chat.hero.write",
-    art: "write",
+    art: "write" as const,
   },
   {
     key: "code" as const,
     promptKey: "chat.hero.codePrompt",
     titleKey: "chat.hero.code",
-    art: "code",
+    art: "code" as const,
   },
   {
     key: "explain" as const,
     promptKey: "chat.hero.explainPrompt",
     titleKey: "chat.hero.explain",
-    art: "explain",
+    art: "explain" as const,
   },
 ];
 

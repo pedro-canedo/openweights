@@ -52,6 +52,12 @@
     "error": "Erro",
     "empty": "Nenhum download no momento."
   },
+  "jobs": {
+    "title": "Gerando",
+    "running": "Gerando",
+    "queued": "Na fila",
+    "stop": "Parar"
+  },
   "models": {
     "title": "Meus Modelos",
     "empty": "Nenhum modelo baixado ainda. Vá em Descobrir para baixar o primeiro.",

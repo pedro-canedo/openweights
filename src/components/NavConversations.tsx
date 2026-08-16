@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { deleteChat, listChats, listMessages, renameChat } from "../lib/api";
 import { chatStore } from "../lib/chatStore";
+import { generationStore } from "../lib/generationStore";
 import { navigate } from "../lib/nav";
 import type { ChatRow } from "../lib/types";
 
@@ -12,6 +13,15 @@ export default function NavConversations() {
   const { chats, activeId } = useSyncExternalStore(
     chatStore.subscribe,
     chatStore.get,
+  );
+  const genSnap = useSyncExternalStore(
+    generationStore.subscribe,
+    generationStore.get,
+  );
+  const busyIds = new Set(
+    genSnap.jobs
+      .filter((j) => j.state === "queued" || j.state === "running")
+      .map((j) => j.chatId),
   );
   const [query, setQuery] = useState("");
   const [renamingId, setRenamingId] = useState<number | null>(null);
@@ -53,6 +63,7 @@ export default function NavConversations() {
     if (!window.confirm(t("chat.deleteChatConfirm", { title: chat.title }))) {
       return;
     }
+    generationStore.markDeleted(chat.id);
     void deleteChat(chat.id).catch(() => {});
     chatStore.setChats(chats.filter((c) => c.id !== chat.id));
     if (chat.id === activeId) chatStore.requestNew();
@@ -159,11 +170,15 @@ export default function NavConversations() {
                     title={c.title}
                     className="flex min-w-0 flex-1 items-center gap-2 px-2.5 py-1.5 text-left"
                   >
-                    <span
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                        c.id === activeId ? "bg-accent" : "bg-edge"
-                      }`}
-                    />
+                    {busyIds.has(c.id) ? (
+                      <span className="h-2.5 w-2.5 shrink-0 animate-spin rounded-full border border-accent border-t-transparent" />
+                    ) : (
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          c.id === activeId ? "bg-accent" : "bg-edge"
+                        }`}
+                      />
+                    )}
                     <span className="truncate text-[13px]">{c.title}</span>
                   </button>
                   <div className="mr-0.5 hidden shrink-0 items-center group-hover:flex">

@@ -53,6 +53,7 @@ export interface GenSnapshot {
 
 let genSnapshot: GenSnapshot = { tokensPerSec: null, generating: false };
 const genListeners = new Set<() => void>();
+let genCount = 0;
 
 function setGen(patch: Partial<GenSnapshot>): void {
   genSnapshot = { ...genSnapshot, ...patch };
@@ -169,11 +170,13 @@ function withSystemPrompt(
 export async function streamChat(
   opts: StreamChatOptions,
 ): Promise<StreamChatResult> {
+  genCount += 1;
   setGen({ generating: true, tokensPerSec: null });
   try {
     return isTauri ? await streamReal(opts) : await streamMock(opts);
   } finally {
-    setGen({ generating: false });
+    genCount = Math.max(0, genCount - 1);
+    setGen({ generating: genCount > 0 });
   }
 }
 

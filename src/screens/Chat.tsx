@@ -14,18 +14,12 @@ import {
   listLocalModels,
   listMessages,
   readWorkspaceFile,
-  renameChat,
   setChatParams,
-  startServer,
   updateMessage,
 } from "../lib/api";
-import {
-  completeOnce,
-  streamChat,
-  type ChatMessage,
-  type ContentPart,
-} from "../lib/llama";
+import { type ChatMessage, type ContentPart } from "../lib/llama";
 import { chatStore } from "../lib/chatStore";
+import { generationStore } from "../lib/generationStore";
 import { navigate, takePendingChatModel } from "../lib/nav";
 import {
   DEFAULT_CHAT_PARAMS,
@@ -77,45 +71,6 @@ async function loadModelOptions(): Promise<string[]> {
   }
 }
 
-/** Casa o nome da biblioteca local com o `id` que o llama-server realmente expõe. */
-function matchServerModel(wanted: string, ids: string[]): string {
-  if (ids.includes(wanted)) return wanted;
-  const stem = wanted.replace(/\.gguf$/i, "");
-  const hit = ids.find((id) => {
-    const idStem = id.replace(/\.gguf$/i, "");
-    return (
-      id === stem ||
-      idStem === stem ||
-      id.endsWith(`/${wanted}`) ||
-      id.endsWith(`/${stem}`) ||
-      idStem.endsWith(`/${stem}`)
-    );
-  });
-  return hit ?? wanted;
-}
-
-async function resolveServerModel(
-  baseUrl: string,
-  wanted: string,
-): Promise<{ model: string; ids: string[] }> {
-  try {
-    const res = await fetch(`${baseUrl}/v1/models`);
-    if (!res.ok) return { model: wanted, ids: [] };
-    const json = (await res.json()) as { data?: { id: string }[] };
-    const ids = (json.data ?? []).map((d) => d.id);
-    return { model: matchServerModel(wanted, ids), ids };
-  } catch {
-    return { model: wanted, ids: [] };
-  }
-}
-
-function isAbortError(e: unknown): boolean {
-  return (
-    (e instanceof DOMException && e.name === "AbortError") ||
-    (e instanceof Error && e.name === "AbortError")
-  );
-}
-
 /** Extrai o prefixo <think>...</think> salvo no DB (raciocínio persistido). */
 function parseThinkPrefix(content: string): {
   reasoning: string | null;
@@ -161,26 +116,15 @@ function toApiMessages(history: UiMessage[]): ChatMessage[] {
   });
 }
 
-/** Limpa aspas e pontuação final do título gerado pelo modelo. */
-function cleanTitle(raw: string): string {
-  return raw
-    .replace(/\s+/g, " ")
-    .replace(/^["'“”‘’«»\s]+/, "")
-    .replace(/["'“”‘’«»\s.!?…:;,]+$/, "")
-    .trim()
-    .slice(0, 80);
-}
-
-/** Conteúdo salvo no DB: raciocínio prefixado em <think> quando existir. */
-function toDbContent(text: string, reasoning: string): string {
-  return reasoning ? `<think>${reasoning}</think>\n${text}` : text;
-}
-
 export default function Chat() {
   const { t } = useTranslation();
   const { chats, openId, openNew } = useSyncExternalStore(
     chatStore.subscribe,
     chatStore.get,
+  );
+  const genSnap = useSyncExternalStore(
+    generationStore.subscribe,
+    generationStore.get,
   );
 
   const [activeChatId, setActiveChatId] = useState<number | null>(null);
@@ -188,8 +132,6 @@ export default function Chat() {
   const [models, setModels] = useState<string[] | null>(null);
   const [selectedModel, setSelectedModel] = useState("");
   const [draft, setDraft] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const [loadingModel, setLoadingModel] = useState(false);
   const [params, setParams] = useState<ChatParams>(DEFAULT_CHAT_PARAMS);
   const [paramsOpen, setParamsOpen] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -198,11 +140,8 @@ export default function Chat() {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
 
-  const abortRef = useRef<AbortController | null>(null);
   const busyRef = useRef(false);
-  // "Época" da conversa exibida: trocar/criar/excluir conversa invalida
-  // qualquer setMessages pendente do streaming anterior (o catch do abort
-  // roda DEPOIS da troca e restauraria a conversa antiga por cima da nova).
+  // "Época" da conversa exibida: troca/criação invalida listMessages stale.
   const convEpochRef = useRef(0);
   // Conversas excluídas na sessão: não persistir mensagens nelas (FK).
   const deletedChatsRef = useRef<Set<number>>(new Set());
@@ -232,7 +171,6 @@ export default function Chat() {
 
     return () => {
       cancelled = true;
-      abortRef.current?.abort();
     };
   }, []);
 
@@ -264,7 +202,6 @@ export default function Chat() {
   const selectChat = async (chat: ChatRow) => {
     convEpochRef.current++;
     const epoch = convEpochRef.current;
-    abortRef.current?.abort();
     setActiveChatId(chat.id);
     resetComposer();
     if (chat.modelId) setSelectedModel(chat.modelId);
@@ -294,7 +231,6 @@ export default function Chat() {
 
   const newChat = () => {
     convEpochRef.current++;
-    abortRef.current?.abort();
     setActiveChatId(null);
     setMessages([]);
     resetComposer();
@@ -319,6 +255,7 @@ export default function Chat() {
     if (activeChatId == null) return;
     if (chats.some((c) => c.id === activeChatId)) return;
     deletedChatsRef.current.add(activeChatId);
+    generationStore.markDeleted(activeChatId);
   }, [chats, activeChatId]);
 
   // ------------------------------------------------------------- anexos ---
@@ -348,216 +285,69 @@ export default function Chat() {
     }
   };
 
-  // ---------------------------------------------------------- auto-título ---
+  const job = genSnap.jobs.find((j) => j.chatId === activeChatId);
+  const generating =
+    job != null && (job.state === "running" || job.state === "queued");
+  const loadingModel = job?.loadingModel ?? false;
 
-  const autoTitleChat = async (
-    chatId: number,
-    baseUrl: string,
-    model: string,
-    history: UiMessage[],
-    assistantText: string,
-  ) => {
-    try {
-      const msgs: ChatMessage[] = [
-        ...toApiMessages(history),
-        { role: "assistant", content: assistantText },
-        {
-          role: "user",
-          content:
-            "Gere um título curto (máximo 5 palavras) para a conversa acima. Responda apenas o título.",
-        },
-      ];
-      const raw = await completeOnce({
-        baseUrl,
-        model,
-        messages: msgs,
-        maxTokens: 24,
-        temperature: 0.3,
-      });
-      const title = cleanTitle(raw);
-      if (!title || deletedChatsRef.current.has(chatId)) return;
-      await renameChat(chatId, title);
-      void listChats()
-        .then(chatStore.setChats)
-        .catch(() => {});
-    } catch (e) {
-      console.warn("auto-título falhou:", e);
+  const displayMessages: UiMessage[] = (() => {
+    if (!job || (job.state !== "running" && job.state !== "queued")) {
+      return messages;
     }
-  };
+    const base =
+      messages[messages.length - 1]?.role === "assistant"
+        ? messages.slice(0, -1)
+        : messages;
+    return [
+      ...base,
+      {
+        role: "assistant" as const,
+        content: job.content,
+        tokensPerSec: job.tokensPerSec,
+        reasoning: job.reasoning || undefined,
+        thinkingMs: job.thinkingMs,
+        genTokens: job.genTokens,
+        genMs: job.genMs,
+      },
+    ];
+  })();
 
-  // ------------------------------------------------------------ streaming ---
-
-  /**
-   * Faz o streaming de uma resposta para `history` (que termina na mensagem
-   * do usuário) cuidando de persistência, raciocínio, métricas e erros.
-   * `epoch` deve ser capturado pelo chamador ANTES de qualquer await.
-   */
-  const generate = async (
-    history: UiMessage[],
-    chatId: number | null,
-    epoch: number,
-    opts: { autoTitle?: boolean } = {},
-  ) => {
-    setGenerating(true);
-    const ac = new AbortController();
-    abortRef.current = ac;
-    let slowTimer = 0;
-
-    const safeSetMessages = (m: UiMessage[]) => {
-      if (convEpochRef.current === epoch) setMessages(m);
-    };
-
-    let assistantText = "";
-    let assistantReasoning = "";
-    let firstReasonAt = 0;
-    let lastReasonAt = 0;
-
-    const paint = (extra: Partial<UiMessage> = {}) => {
-      safeSetMessages([
-        ...history,
-        {
-          role: "assistant",
-          content: assistantText,
-          tokensPerSec: null,
-          reasoning: assistantReasoning || undefined,
-          // Estimativa ao vivo — o valor final vem dos timings do stream.
-          thinkingMs:
-            firstReasonAt > 0
-              ? Math.round(lastReasonAt - firstReasonAt)
-              : null,
-          ...extra,
-        },
-      ]);
-    };
-    paint();
-
-    try {
-      // Servidor parado? Inicia automaticamente antes de conversar.
-      let status = await getServerStatus();
-      if (!status.running || !status.baseUrl) {
-        setLoadingModel(true);
-        status = await startServer();
-      }
-      if (!status.baseUrl) throw new Error(t("server.needRuntime"));
-      const baseUrl = status.baseUrl;
-
-      const resolved = await resolveServerModel(baseUrl, selectedModel);
-      if (resolved.ids.length > 0) {
-        setModels((cur) => {
-          const extra = (cur ?? []).filter((m) => !resolved.ids.includes(m));
-          return [...resolved.ids, ...extra];
-        });
-      }
-      const model = resolved.model;
-      if (model !== selectedModel) setSelectedModel(model);
-
-      // Router mode: a 1ª resposta de um modelo recém-selecionado demora
-      // (carga na memória) — avisa quando passar de 2 s sem nenhum delta.
-      slowTimer = window.setTimeout(() => setLoadingModel(true), 2000);
-
-      const result = await streamChat({
-        baseUrl,
-        model,
-        messages: toApiMessages(history),
-        params,
-        signal: ac.signal,
-        onDelta: (delta) => {
-          assistantText += delta;
-          window.clearTimeout(slowTimer);
-          setLoadingModel(false);
-          paint();
-        },
-        onReasoningDelta: (delta) => {
-          const now = performance.now();
-          if (firstReasonAt === 0) firstReasonAt = now;
-          lastReasonAt = now;
-          assistantReasoning += delta;
-          window.clearTimeout(slowTimer);
-          setLoadingModel(false);
-          paint();
-        },
-      });
-
-      assistantText = result.content;
-      assistantReasoning = result.reasoning;
-      const thinkingMs =
-        result.thinkingMs ??
-        (firstReasonAt > 0 ? Math.round(lastReasonAt - firstReasonAt) : null);
-      const finalPatch: Partial<UiMessage> = {
-        tokensPerSec: result.tokensPerSec,
-        genTokens: result.genTokens,
-        genMs: result.genMs,
-        thinkingMs,
-      };
-      paint(finalPatch);
-
-      if (canPersistId(chatId)) {
-        const rowId = await addMessage(
-          chatId,
-          "assistant",
-          toDbContent(assistantText, assistantReasoning),
-          result.tokensPerSec,
-          result.genTokens,
-          result.genMs,
-        ).catch(() => 0);
-        if (rowId > 0) paint({ ...finalPatch, rowId });
-      }
-
-      // Auto-título em background após a 1ª resposta de um chat recém-criado.
-      if (opts.autoTitle && canPersistId(chatId)) {
-        void autoTitleChat(chatId, baseUrl, model, history, assistantText);
-      }
-    } catch (err) {
-      if (isAbortError(err)) {
-        // Parada manual: preserva o texto/raciocínio parcial (se houver).
-        if (assistantText || assistantReasoning) {
-          const thinkingMs =
-            firstReasonAt > 0
-              ? Math.round(lastReasonAt - firstReasonAt)
-              : null;
-          let rowId: number | undefined;
-          if (canPersistId(chatId)) {
-            const id = await addMessage(
-              chatId,
-              "assistant",
-              toDbContent(assistantText, assistantReasoning),
-              null,
-            ).catch(() => 0);
-            if (id > 0) rowId = id;
-          }
-          paint({ thinkingMs, rowId });
+  useEffect(() => {
+    if (!job || !activeChatId) return;
+    if (job.state !== "done" && job.state !== "error") return;
+    const epoch = convEpochRef.current;
+    const errorOnly = Boolean(job.error && !job.content && !job.rowId);
+    const errorText = job.error;
+    void (async () => {
+      try {
+        const rows = await listMessages(activeChatId);
+        if (convEpochRef.current !== epoch) return;
+        const ui = rows.map(rowToUi);
+        if (errorOnly && errorText) {
+          setMessages([
+            ...ui,
+            {
+              role: "assistant",
+              content: `${t("common.error")}: ${errorText}`,
+              tokensPerSec: null,
+              error: true,
+            },
+          ]);
         } else {
-          safeSetMessages(history);
+          setMessages(ui);
         }
-      } else {
-        const detail =
-          typeof err === "string"
-            ? err
-            : err instanceof Error
-              ? err.message
-              : String(err);
-        safeSetMessages([
-          ...history,
-          {
-            role: "assistant",
-            content: `${t("common.error")}: ${detail}`,
-            tokensPerSec: null,
-            error: true,
-          },
-        ]);
+      } catch {
+        // listMessages falhou — o overlay já mostrou o snapshot
       }
-    } finally {
-      window.clearTimeout(slowTimer);
-      setLoadingModel(false);
-      setGenerating(false);
-      abortRef.current = null;
-    }
-  };
+      if (convEpochRef.current === epoch) generationStore.dismiss(activeChatId);
+    })();
+  }, [job?.id, job?.state, activeChatId, t]);
 
   // --------------------------------------------------------------- envio ---
 
   const handleSend = async () => {
     if (busyRef.current || !selectedModel) return;
+    if (generationStore.isBusy(activeChatId)) return;
     const text = draft.trim();
     if (!text && attachments.length === 0) return;
 
@@ -594,7 +384,6 @@ export default function Chat() {
         ? imageAtts.map((a) => ({ name: a.name, dataUrl: a.data }))
         : undefined;
     resetComposer();
-    setGenerating(true);
 
     try {
       let chatId = activeChatId;
@@ -606,7 +395,6 @@ export default function Chat() {
         const prev = messages;
         const original = prev[wasEditing];
         if (!original || original.role !== "user") {
-          setGenerating(false);
           return;
         }
         const edited: UiMessage = {
@@ -627,6 +415,7 @@ export default function Chat() {
           }
         }
         history = [...prev.slice(0, wasEditing), edited];
+        if (convEpochRef.current === epoch) setMessages(history);
       } else {
         const userMsg: UiMessage = {
           role: "user",
@@ -635,11 +424,7 @@ export default function Chat() {
           images,
         };
         history = [...messages, userMsg];
-        // Mostra a mensagem do usuário imediatamente (antes dos awaits).
-        setMessages([
-          ...history,
-          { role: "assistant", content: "", tokensPerSec: null },
-        ]);
+        if (convEpochRef.current === epoch) setMessages(history);
 
         // Conversa é criada na primeira mensagem; título = início do texto.
         if (chatId == null) {
@@ -664,14 +449,19 @@ export default function Chat() {
         }
       }
 
-      await generate(history, chatId, epoch, { autoTitle: created });
+      if (!canPersistId(chatId)) return;
+      generationStore.start({
+        chatId,
+        messages: toApiMessages(history),
+        model: selectedModel,
+        params,
+        autoTitle: created,
+      });
     } catch (err) {
-      // Erro na preparação (criação do chat/persistência) — o streaming em
-      // si trata os próprios erros dentro de generate().
       const detail = err instanceof Error ? err.message : String(err);
       if (convEpochRef.current === epoch) {
         setMessages((prev) => [
-          ...prev.filter((m) => !(m.role === "assistant" && m.content === "")),
+          ...prev.filter((m) => !(m.role === "assistant" && !m.rowId && !m.content)),
           {
             role: "assistant",
             content: `${t("common.error")}: ${detail}`,
@@ -680,7 +470,6 @@ export default function Chat() {
           },
         ]);
       }
-      setGenerating(false);
     } finally {
       busyRef.current = false;
     }
@@ -703,8 +492,14 @@ export default function Chat() {
       if (last.rowId != null && canPersistId(chatId)) {
         await deleteMessage(last.rowId).catch(() => {});
       }
-      // Re-stream usando o histórico até a última user (sem re-persisti-la).
-      await generate(history, chatId, epoch);
+      if (convEpochRef.current === epoch) setMessages(history);
+      if (!canPersistId(chatId)) return;
+      generationStore.start({
+        chatId,
+        messages: toApiMessages(history),
+        model: selectedModel,
+        params,
+      });
     } finally {
       busyRef.current = false;
     }
@@ -813,11 +608,11 @@ export default function Chat() {
                   {t("nav.discover")}
                 </button>
               </div>
-            ) : messages.length === 0 && !generating && !loadingModel ? (
+            ) : displayMessages.length === 0 && !generating && !loadingModel ? (
               <ChatHero onPick={setDraft} />
             ) : (
               <MessageList
-                messages={messages}
+                messages={displayMessages}
                 generating={generating}
                 loadingModel={loadingModel}
                 onRegenerate={() => void regenerate()}
@@ -832,7 +627,7 @@ export default function Chat() {
                   draft={draft}
                   onDraftChange={setDraft}
                   onSend={() => void handleSend()}
-                  onStop={() => abortRef.current?.abort()}
+                  onStop={() => generationStore.cancel(activeChatId)}
                   generating={generating}
                   disabled={!selectedModel}
                   attachments={attachments}
