@@ -77,6 +77,22 @@ pub struct GgufArtifact {
 /// Agrupa a árvore de um repo em artefatos GGUF baixáveis: arquivos soltos
 /// viram artefatos de 1 arquivo; shards `-NNNNN-of-NNNNN` viram um artefato
 /// com todos os pedaços (incompletos são descartados).
+/// Este arquivo é um projetor de visão, e não um modelo?
+///
+/// Ele é `.gguf` como qualquer outro e o nome costuma carregar um rótulo de
+/// quantização (`mmproj-F16.gguf`), então sem esta checagem ele virava uma
+/// "quantização recomendada" — pequena, portanto "cabe inteiro na placa" —,
+/// entrava no catálogo do motor e falhava ao carregar. É acessório do modelo,
+/// não alternativa a ele.
+pub fn is_vision_projector(path: &str) -> bool {
+    let base = path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(path)
+        .to_lowercase();
+    base.starts_with("mmproj") || base.contains("mmproj-") || base.contains("-mmproj")
+}
+
 pub fn group_artifacts(files: &[RepoFile]) -> Vec<GgufArtifact> {
     use std::collections::BTreeMap;
 
@@ -84,7 +100,7 @@ pub fn group_artifacts(files: &[RepoFile]) -> Vec<GgufArtifact> {
     let mut sharded: BTreeMap<(String, u32), Vec<(u32, RepoFile)>> = BTreeMap::new();
 
     for f in files {
-        if !f.path.to_lowercase().ends_with(".gguf") {
+        if !f.path.to_lowercase().ends_with(".gguf") || is_vision_projector(&f.path) {
             continue;
         }
         match parse_shard(&f.path) {
@@ -129,6 +145,20 @@ pub fn group_artifacts(files: &[RepoFile]) -> Vec<GgufArtifact> {
     singles
 }
 
+/// Projetores de visão do repositório, do menor para o maior.
+///
+/// Ficam separados dos modelos: são o que a visão sob demanda vai carregar
+/// junto quando houver imagem.
+pub fn vision_projectors(files: &[RepoFile]) -> Vec<RepoFile> {
+    let mut out: Vec<RepoFile> = files
+        .iter()
+        .filter(|f| f.path.to_lowercase().ends_with(".gguf") && is_vision_projector(&f.path))
+        .cloned()
+        .collect();
+    out.sort_by_key(|f| f.size_bytes);
+    out
+}
+
 /// Reconhece `<base>-00001-of-00003.gguf` → (base, 1, 3).
 fn parse_shard(path: &str) -> Option<(String, u32, u32)> {
     let stem = path
@@ -168,6 +198,34 @@ mod tests {
         );
         assert_eq!(parse_shard("model-Q4_K_M.gguf"), None);
         assert_eq!(parse_shard("model-00001-of-abc.gguf"), None);
+    }
+
+    /// O projetor de visão é `.gguf`, é pequeno e o nome traz um rótulo de
+    /// quantização: sem separá-lo, ele virava a "quantização recomendada" de
+    /// todo repositório multimodal e um modelo que não carrega.
+    #[test]
+    fn the_vision_projector_is_not_a_model() {
+        let arquivos = [
+            f("gemma-3-27b-it-Q4_K_M.gguf", 17_000_000_000),
+            f("mmproj-F16.gguf", 931_000_000),
+            f("mmproj-model-f16.gguf", 900_000_000),
+            f("subpasta/gemma-3-mmproj-BF16.gguf", 800_000_000),
+        ];
+        let modelos = group_artifacts(&arquivos);
+        assert_eq!(modelos.len(), 1, "{modelos:?}");
+        assert_eq!(modelos[0].name, "gemma-3-27b-it-Q4_K_M.gguf");
+
+        let projetores = vision_projectors(&arquivos);
+        assert_eq!(projetores.len(), 3);
+        // Do menor para o maior: é o que a visão sob demanda vai preferir.
+        assert_eq!(projetores[0].path, "subpasta/gemma-3-mmproj-BF16.gguf");
+    }
+
+    #[test]
+    fn a_model_named_after_something_else_is_still_a_model() {
+        assert!(!is_vision_projector("Qwen3-8B-Q4_K_M.gguf"));
+        assert!(!is_vision_projector("modelo-projecao.gguf"));
+        assert!(is_vision_projector("MMPROJ-F16.GGUF"));
     }
 
     #[test]

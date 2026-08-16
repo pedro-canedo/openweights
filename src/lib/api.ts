@@ -164,6 +164,9 @@ export const addMessage = (
   tokensPerSec: number | null = null,
   genTokens: number | null = null,
   genMs: number | null = null,
+  /** Modelo que gerou a resposta: o backend usa para carimbar a
+   *  configuração vigente, e é o que torna os tokens/s comparáveis depois. */
+  model: string | null = null,
 ) =>
   isTauri
     ? invoke<number>("message_add", {
@@ -173,6 +176,7 @@ export const addMessage = (
         tokensPerSec,
         genTokens,
         genMs,
+        model,
       })
     : Promise.resolve(0);
 

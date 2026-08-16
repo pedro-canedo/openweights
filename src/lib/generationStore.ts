@@ -177,6 +177,8 @@ async function persistAssistant(
   tokensPerSec: number | null,
   genTokens: number | null,
   genMs: number | null,
+  /** Modelo que gerou — o backend carimba a configuração vigente dele. */
+  model: string | null = null,
 ): Promise<number | undefined> {
   if (!canPersist(chatId) || (!text && !reasoning)) return undefined;
   const id = await addMessage(
@@ -186,6 +188,7 @@ async function persistAssistant(
     tokensPerSec,
     genTokens,
     genMs,
+    model,
   ).catch(() => 0);
   return id > 0 ? id : undefined;
 }
@@ -316,6 +319,7 @@ async function runJob(chatId: number): Promise<void> {
       result.tokensPerSec,
       result.genTokens,
       result.genMs,
+      resolved,
     );
     patch(chatId, {
       state: "done",
@@ -356,6 +360,7 @@ async function runJob(chatId: number): Promise<void> {
         cur?.public.tokensPerSec ?? null,
         null,
         genMs,
+        cur?.public.model ?? null,
       );
       if (cur) {
         patch(chatId, {
@@ -382,6 +387,7 @@ async function runJob(chatId: number): Promise<void> {
           cur.public.tokensPerSec,
           null,
           null,
+          cur.public.model ?? null,
         );
         patch(chatId, { state: "error", error: detail, loadingModel: false, rowId });
       } else {

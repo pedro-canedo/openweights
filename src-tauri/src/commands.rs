@@ -5,7 +5,6 @@ use lr_advisor as advisor;
 use lr_models::{DownloadRequest, DownloadStatus, ModelSummary, SortBy};
 use lr_types::HardwareProfile;
 use serde::Serialize;
-use serde_json::{Map, Value};
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::AsyncBufReadExt;
 
@@ -278,9 +277,6 @@ fn server_prefs(state: &AppState) -> ServerPrefs {
     }
 }
 
-/// Janela de contexto por modelo (`--ctx-size` no INI do Router).
-/// `null`/ausente = deixar o llama.cpp ajustar à VRAM (`--fit on`).
-const MODEL_CTX_SETTING: &str = "model_ctx_sizes";
 const CTX_MIN: u32 = 512;
 const CTX_MAX: u32 = 262_144;
 
@@ -294,47 +290,34 @@ fn model_stem(name: &str) -> &str {
         .unwrap_or(name)
 }
 
-fn read_ctx_map(store: &lr_store::Store) -> Map<String, Value> {
-    store
-        .get_setting(MODEL_CTX_SETTING)
-        .ok()
-        .flatten()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
-}
-
-fn ctx_len_for(map: &Map<String, Value>, name: &str) -> Option<u32> {
+/// Perfil de um modelo, tolerando a chave com e sem `.gguf`.
+///
+/// O nome que a interface manda nem sempre é o nome do arquivo — o seletor do
+/// chat usa o id do Router, que às vezes perde a extensão.
+fn profile_for(state: &AppState, name: &str) -> Option<lr_types::tuning::ModelProfile> {
     let stem = model_stem(name);
     let with_ext = format!("{stem}.gguf");
     for key in [name, stem, with_ext.as_str()] {
-        if let Some(n) = map.get(key).and_then(Value::as_u64)
-            && let Some(n) = u32::try_from(n).ok().filter(|v| *v > 0)
-        {
-            return Some(clamp_ctx(n));
+        if let Ok(Some(p)) = state.store.model_profile(key) {
+            return Some(p);
         }
     }
     None
 }
 
-fn preset_with_ctx(mut entry: lr_engine::PresetEntry, ctx: Option<u32>) -> lr_engine::PresetEntry {
-    if let Some(n) = ctx {
-        // `fit = off` senão o llama.cpp volta a encolher `-c` à VRAM.
-        entry = entry
-            .with_extra("ctx-size", n.to_string())
-            .with_extra("fit", "off");
-    }
-    entry
-}
-
-/// Reescreve `router-models.ini` com o `ctx-size` gravado por modelo.
+/// Reescreve `router-models.ini` com o perfil gravado de cada modelo.
 fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
-    let map = read_ctx_map(&state.store);
     let preset_path = state.data_dir.join("router-models.ini");
     let preset_models: Vec<lr_engine::PresetEntry> = lr_models::scan_local(&state.models_dir)
         .into_iter()
         .map(|a| {
-            let ctx = ctx_len_for(&map, &a.name);
-            preset_with_ctx(lr_engine::PresetEntry::new(a.name, a.primary_path), ctx)
+            let mut entry = lr_engine::PresetEntry::new(a.name.clone(), a.primary_path);
+            if let Some(perfil) = profile_for(state, &a.name) {
+                for (chave, valor) in perfil.to_ini_extras() {
+                    entry = entry.with_extra(chave, valor);
+                }
+            }
+            entry
         })
         .collect();
     lr_engine::write_models_preset(&preset_path, &preset_models).map_err(err_str)?;
@@ -617,23 +600,15 @@ pub fn model_set_ctx(
     if model.is_empty() {
         return Err("modelo vazio".into());
     }
-    let mut map = read_ctx_map(&state.store);
-    let stored = match ctx_len {
-        Some(n) => {
-            let n = clamp_ctx(n);
-            map.insert(model.to_string(), Value::from(n));
-            Some(n)
-        }
-        None => {
-            map.remove(model);
-            map.remove(model_stem(model));
-            None
-        }
-    };
-    let raw = serde_json::to_string(&map).map_err(err_str)?;
+    let mut perfil = profile_for(&state, model).unwrap_or_default();
+    let stored = ctx_len.map(clamp_ctx);
+    perfil.ctx = stored;
+    // Mexer na janela na mão é escolha da pessoa, e a etiqueta precisa dizer
+    // isso: um perfil recomendado deixa de ser recomendado quando é editado.
+    perfil.source = lr_types::tuning::ProfileSource::Manual;
     state
         .store
-        .set_setting(MODEL_CTX_SETTING, &raw)
+        .set_model_profile(model, &perfil)
         .map_err(err_str)?;
     write_router_preset(&state)?;
     Ok(stored)
@@ -689,6 +664,7 @@ pub fn messages_list(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub fn message_add(
     state: State<'_, AppState>,
     chat_id: i64,
@@ -697,10 +673,29 @@ pub fn message_add(
     tokens_per_sec: Option<f64>,
     gen_tokens: Option<i64>,
     gen_ms: Option<i64>,
+    model: Option<String>,
 ) -> CmdResult<i64> {
+    // A configuração não vem da tela: ela é lida aqui, do que está gravado
+    // para este modelo. Assim o carimbo nunca discorda do que o motor
+    // recebeu — e os tokens/s que já gravávamos passam a ter a que
+    // configuração pertencem.
+    let modelo = model.as_deref().map(str::trim).filter(|m| !m.is_empty());
+    let chave = modelo
+        .and_then(|m| profile_for(&state, m))
+        .and_then(|p| p.key());
+
     state
         .store
-        .add_message(chat_id, &role, &content, tokens_per_sec, gen_tokens, gen_ms)
+        .add_message(
+            chat_id,
+            &role,
+            &content,
+            tokens_per_sec,
+            gen_tokens,
+            gen_ms,
+            modelo,
+            chave.as_deref(),
+        )
         .map_err(err_str)
 }
 

@@ -1321,6 +1321,10 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
                 None,
                 Some(usage.completion_tokens as i64),
                 Some(usage.duration_ms as i64),
+                Some(&opts.model),
+                // A configuração é resolvida por quem conhece o catálogo de
+                // modelos; o laço só sabe o nome.
+                None,
             );
         }
     };

@@ -14,6 +14,7 @@ pub mod agent;
 pub mod automation;
 pub mod mcp;
 pub mod memory;
+pub mod tuning;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -131,12 +132,19 @@ impl Store {
         // Harness agêntico: a resposta final de um run vira mensagem normal,
         // com ponteiro para o trace completo.
         ensure_column(&conn, "messages", "run_id", "TEXT")?;
+        // Com que modelo e com que configuração esta resposta foi gerada.
+        // É a medição passiva de desempenho: os tokens/s já eram gravados,
+        // faltava saber a que configuração eles pertencem.
+        ensure_column(&conn, "messages", "model_id", "TEXT")?;
+        ensure_column(&conn, "messages", "profile_key", "TEXT")?;
         agent::init(&conn)?;
         // Plano de trabalho (Scout Rule) de execuções já existentes.
         ensure_column(&conn, "runs", "plan_json", "TEXT")?;
         mcp::init(&conn)?;
         memory::init(&conn)?;
         automation::init(&conn)?;
+        // Depois das outras: a migração da janela por modelo lê `settings`.
+        tuning::init(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -215,6 +223,7 @@ impl Store {
 
     // ---------------------------------------------------------- messages --
 
+    #[allow(clippy::too_many_arguments)]
     pub fn add_message(
         &self,
         chat_id: i64,
@@ -223,11 +232,13 @@ impl Store {
         tokens_per_sec: Option<f64>,
         gen_tokens: Option<i64>,
         gen_ms: Option<i64>,
+        model_id: Option<&str>,
+        profile_key: Option<&str>,
     ) -> Result<i64, StoreError> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO messages (chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO messages (chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, model_id, profile_key)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 chat_id,
                 role,
@@ -235,7 +246,9 @@ impl Store {
                 Self::now(),
                 tokens_per_sec,
                 gen_tokens,
-                gen_ms
+                gen_ms,
+                model_id,
+                profile_key
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -351,7 +364,7 @@ mod tests {
         let chat = s
             .create_chat("Primeira conversa", Some("qwen3-8b"))
             .unwrap();
-        s.add_message(chat, "user", "Olá!", None, None, None)
+        s.add_message(chat, "user", "Olá!", None, None, None, None, None)
             .unwrap();
         s.add_message(
             chat,
@@ -360,6 +373,8 @@ mod tests {
             Some(42.5),
             Some(128),
             Some(3012),
+            Some("Qwen3-8B-Q4_K_M.gguf"),
+            Some("abc123"),
         )
         .unwrap();
 
@@ -401,10 +416,10 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         let chat = s.create_chat("Conversa", None).unwrap();
         let m1 = s
-            .add_message(chat, "user", "rascunho", None, None, None)
+            .add_message(chat, "user", "rascunho", None, None, None, None, None)
             .unwrap();
         let m2 = s
-            .add_message(chat, "assistant", "resposta", None, None, None)
+            .add_message(chat, "assistant", "resposta", None, None, None, None, None)
             .unwrap();
 
         s.update_message_content(m1, "versão final").unwrap();
@@ -509,6 +524,8 @@ mod tests {
             Some(10.0),
             Some(7),
             Some(700),
+            None,
+            None,
         )
         .unwrap();
         let chats = s.list_chats().unwrap();

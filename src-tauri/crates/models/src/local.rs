@@ -3,7 +3,7 @@
 //! Layout esperado: `<models_dir>/<author>/<repo>/<arquivo>.gguf`, com
 //! suporte a arquivos soltos na raiz (importados manualmente pelo usuário).
 
-use crate::{RepoFile, group_artifacts};
+use crate::{RepoFile, group_artifacts, vision_projectors};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -15,6 +15,13 @@ pub struct LocalArtifact {
     pub name: String,
     /// Arquivo que o llama.cpp abre (primeiro shard ou único).
     pub primary_path: PathBuf,
+    /// Projetor de visão que veio junto no mesmo repositório, quando há.
+    ///
+    /// Não é um modelo (por isso não aparece na lista), mas é o que dá olhos
+    /// a este aqui — guardar o caminho agora evita ter de varrer o disco de
+    /// novo quando a visão sob demanda existir.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vision_projector: Option<PathBuf>,
     pub total_bytes: u64,
     pub files: Vec<PathBuf>,
 }
@@ -67,6 +74,10 @@ fn scan_dir(dir: &Path, repo_id: &str, out: &mut Vec<LocalArtifact>) {
             });
         }
     }
+    // O menor projetor da pasta serve a todas as quantizações do mesmo
+    // modelo — elas dividem o mesmo repositório.
+    let projetor = vision_projectors(&files).first().map(|f| dir.join(&f.path));
+
     for art in group_artifacts(&files) {
         out.push(LocalArtifact {
             repo_id: repo_id.to_string(),
@@ -74,6 +85,7 @@ fn scan_dir(dir: &Path, repo_id: &str, out: &mut Vec<LocalArtifact>) {
             primary_path: dir.join(&art.files[0].path),
             total_bytes: art.total_bytes,
             files: art.files.iter().map(|f| dir.join(&f.path)).collect(),
+            vision_projector: projetor.clone(),
         });
     }
 }
@@ -85,6 +97,29 @@ mod tests {
     fn touch(path: &Path, size: usize) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, vec![0u8; size]).unwrap();
+    }
+
+    /// O projetor não entra na lista de modelos, mas fica anotado no modelo
+    /// que ele acompanha.
+    #[test]
+    fn the_projector_rides_along_without_becoming_a_model() {
+        let dir = std::env::temp_dir().join(format!("lr-mmproj-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        touch(&dir.join("google/gemma-3-GGUF/gemma-3-Q4_K_M.gguf"), 30);
+        touch(&dir.join("google/gemma-3-GGUF/mmproj-F16.gguf"), 5);
+
+        let achados = scan_local(&dir);
+        assert_eq!(achados.len(), 1, "{achados:?}");
+        assert_eq!(achados[0].name, "gemma-3-Q4_K_M.gguf");
+        assert!(
+            achados[0]
+                .vision_projector
+                .as_ref()
+                .is_some_and(|p| p.ends_with("mmproj-F16.gguf")),
+            "{:?}",
+            achados[0].vision_projector
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
