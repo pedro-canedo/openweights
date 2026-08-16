@@ -461,5 +461,46 @@
       "empty": "Este projeto ainda não foi indexado.",
       "searchPlaceholder": "Buscar no projeto..."
     }
+  },
+  "plan": {
+    "title": "Plano de trabalho",
+    "subtitle": "Tarefas grandes viram entregas pequenas que cabem na janela do modelo.",
+    "goal": "Objetivo",
+    "progress": "{{done}} de {{total}} entregas",
+    "empty": "Nenhum plano ainda.",
+    "planning": "Dividindo a tarefa...",
+    "approve": "Aprovar plano",
+    "approveHint": "Nada é executado antes de você aprovar.",
+    "approved": "Plano aprovado",
+    "replan": "Refazer plano",
+    "addTask": "Adicionar etapa",
+    "editTask": "Editar etapa",
+    "removeTask": "Remover etapa",
+    "doneWhen": "Pronto quando",
+    "handoff": "O que passou adiante",
+    "dependsOn": "Depende de",
+    "files": "Arquivos",
+    "status": {
+      "pending": "Na fila",
+      "running": "Em andamento",
+      "done": "Concluída",
+      "blocked": "Bloqueada",
+      "failed": "Falhou",
+      "skipped": "Pulada"
+    },
+    "taskOf": "Etapa {{n}} de {{total}}",
+    "blockedReason": "Precisa de você para continuar",
+    "contextFresh": "Contexto reiniciado para esta etapa",
+    "windowHint": "Janela do modelo: {{ctx}} tokens — entregas de até {{perTask}}",
+    "mode": {
+      "chat": "Conversa",
+      "plan": "Planejamento",
+      "agent": "Agente",
+      "loop": "Laço",
+      "chatHint": "Só responde, não usa ferramentas.",
+      "planHint": "Investiga e propõe o plano. Não altera nada até você aprovar.",
+      "agentHint": "Executa a tarefa pedida, um passo por vez.",
+      "loopHint": "Executa o plano inteiro, conferindo cada entrega antes de seguir."
+    }
   }
 }

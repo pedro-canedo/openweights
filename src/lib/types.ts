@@ -2,6 +2,7 @@
 // Mantenha em sincronia com src-tauri/crates/*/src e src-tauri/src/commands.rs.
 
 import type { RunMode } from "./agent/types";
+import type { WorkMode } from "./agent/scout";
 
 export type GpuVendor = "nvidia" | "amd" | "intel" | "apple" | "other";
 
@@ -207,6 +208,13 @@ export interface ChatParams {
   agent?: boolean;
   /** Nível de autorização do agente. Ausente = `"smart"`. */
   mode?: RunMode;
+  /**
+   * Como o agente trabalha (Scout Rule), independente da autorização:
+   * conversar, só planejar, executar o pedido ou rodar o plano inteiro em
+   * laço. Opcional para não quebrar os `paramsJson` já gravados —
+   * ausente = `"agent"`.
+   */
+  workMode?: WorkMode;
 }
 
 export interface WorkspaceFile {
@@ -227,4 +235,5 @@ export const DEFAULT_CHAT_PARAMS: ChatParams = {
   model: null,
   agent: false,
   mode: "smart",
+  workMode: "agent",
 };

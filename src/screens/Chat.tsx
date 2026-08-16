@@ -28,6 +28,7 @@ import { type ChatMessage, type ContentPart } from "../lib/llama";
 import { chatStore } from "../lib/chatStore";
 import { generationStore } from "../lib/generationStore";
 import { isRunActive, runStore, type RunView } from "../lib/agent/runStore";
+import { plansFirst, type WorkMode } from "../lib/agent/scout";
 import type { RunMode } from "../lib/agent/types";
 import { listLoadedModels, matchServerModel } from "../lib/serverSession";
 import { navigate, takePendingChatModel } from "../lib/nav";
@@ -48,6 +49,7 @@ import ApprovalBar from "../components/agent/ApprovalBar";
 import FocusChip from "../components/agent/FocusChip";
 import ModeSelect from "../components/agent/ModeSelect";
 import RunTimeline, { RunTrail } from "../components/agent/RunTimeline";
+import TaskBoard from "../components/agent/TaskBoard";
 import YoloBadge from "../components/agent/YoloBadge";
 import ChatHero from "../components/chat/ChatHero";
 import { ApprovalSelect } from "../components/chat/ChatProperties";
@@ -544,6 +546,7 @@ export default function Chat() {
   // Tudo derivado do snapshot (nada de ler o Map do store durante o render).
   const agentOn = params.agent === true;
   const agentMode: RunMode = params.mode ?? "smart";
+  const workMode: WorkMode = params.workMode ?? "agent";
   const runId = activeChatId != null ? runSnap.byChat[activeChatId] : undefined;
   const run = runId ? runSnap.runs.find((r) => r.runId === runId) : undefined;
   const runActive = run != null && isRunActive(run.status);
@@ -561,6 +564,13 @@ export default function Chat() {
   // Run antigo para o painel quando não há mais run corrente na conversa.
   const traceRunId =
     !run && lastTrace?.chatId === activeChatId ? lastTrace.runId : null;
+
+  // Quadro do plano (Scout Rule): aparece quando há plano e, nos modos que
+  // planejam antes de agir, já durante a divisão da tarefa.
+  const boardMode: WorkMode = run?.workMode ?? workMode;
+  const showBoard =
+    run != null &&
+    (run.plan != null || (isRunActive(run.status) && plansFirst(boardMode)));
 
   const openTrace = () => {
     setTraceOpen(true);
@@ -824,6 +834,7 @@ export default function Chat() {
           model: selectedModel,
           params: sendParams,
           mode: agentMode,
+          workMode,
           maxSteps: AGENT_MAX_STEPS,
         });
         return;
@@ -1033,7 +1044,22 @@ export default function Chat() {
                 onEditResend={startEdit}
                 onDeleteMsg={(i) => void removeMessage(i)}
                 trail={
-                  run ? <RunTrail run={run} onOpenTrace={openTrace} /> : null
+                  run ? (
+                    <>
+                      {showBoard && (
+                        <TaskBoard
+                          plan={run.plan}
+                          planning={run.plan == null}
+                          canApprove={plansFirst(boardMode)}
+                          onApprove={() =>
+                            void runStore.approvePlan(activeChatId)
+                          }
+                          onReplan={() => void runStore.replan(activeChatId)}
+                        />
+                      )}
+                      <RunTrail run={run} onOpenTrace={openTrace} />
+                    </>
+                  ) : null
                 }
               />
             )}

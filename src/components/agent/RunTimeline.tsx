@@ -21,9 +21,11 @@ import {
   type StepItem,
   type TimelineItem,
 } from "../../lib/agent/runStore";
+import { plansFirst } from "../../lib/agent/scout";
 import { errorMessage } from "../../lib/serverSession";
 import Markdown from "../chat/Markdown";
 import ThinkingBlock from "../chat/ThinkingBlock";
+import TaskBoard from "./TaskBoard";
 import ToolCallCard from "./ToolCallCard";
 
 /** Avisos da trilha → chave de i18n e cor. */
@@ -358,6 +360,13 @@ export default function RunTimeline({
 
   const view = run ?? loaded;
   const now = useNow(view != null && isRunActive(view.status));
+  // Quadro do plano só para consulta: aprovar/refazer moram no fluxo do chat.
+  const planning =
+    view != null &&
+    view.plan == null &&
+    isRunActive(view.status) &&
+    plansFirst(view.workMode);
+  const showBoard = view != null && (view.plan != null || planning);
 
   return (
     <aside className="flex w-80 shrink-0 flex-col border-l border-edge bg-panel">
@@ -386,8 +395,11 @@ export default function RunTimeline({
               {t(`agent.mode.${view.mode}`)}
             </span>
           </div>
-          <div className="text-[11px] tabular-nums text-dim">
-            {usageLabel(t, view, now)}
+          <div className="flex items-center gap-2 text-[11px] text-dim">
+            <span className="tabular-nums">{usageLabel(t, view, now)}</span>
+            <span className="ml-auto truncate">
+              {t(`plan.mode.${view.workMode}`)}
+            </span>
           </div>
           {view.model && (
             <div className="truncate text-[11px] text-dim" title={view.model}>
@@ -402,7 +414,12 @@ export default function RunTimeline({
           <p className="px-3 py-4 text-[11px] text-dim">{t("common.loading")}</p>
         )}
         {error && <p className="px-3 py-4 text-[11px] text-bad">{error}</p>}
-        {!loading && !error && (!view || view.items.length === 0) && (
+        {showBoard && view && (
+          <div className="border-b border-edge">
+            <TaskBoard plan={view.plan} planning={planning} compact />
+          </div>
+        )}
+        {!loading && !error && !showBoard && (!view || view.items.length === 0) && (
           <p className="px-3 py-6 text-center text-[11px] text-dim">
             {t("agent.run.empty")}
           </p>

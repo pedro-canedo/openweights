@@ -13,6 +13,8 @@
 // resumo → fim.
 
 import { invoke, isTauri } from "../tauri";
+import { isTaskFinished } from "./scout";
+import type { Task, TaskPlan, WorkMode } from "./scout";
 import type {
   ApprovalDecision,
   CheckpointRow,
@@ -27,6 +29,13 @@ import type {
 } from "./types";
 
 export type RunEventHandler = (event: RunEvent) => void;
+
+/**
+ * `RunOptions` mais o modo de trabalho da Scout Rule. Campo aditivo: o
+ * backend cai em `"agent"` quando ele não vem, então conversas antigas (e
+ * builds sem o H1c no Rust) continuam funcionando.
+ */
+export type RunStartOptions = RunOptions & { workMode?: WorkMode };
 
 /**
  * Corpo de um `RunEvent` sem o envelope. O `T extends unknown` é o que faz o
@@ -46,7 +55,7 @@ async function core() {
 /** Inicia um run e devolve o `runId`. Os eventos chegam por `onEvent`. */
 export async function runStart(
   prompt: string,
-  opts: RunOptions,
+  opts: RunStartOptions,
   onEvent: RunEventHandler,
 ): Promise<string> {
   if (!isTauri) return mockRunStart(prompt, opts, onEvent);
@@ -104,6 +113,35 @@ export function runEventsList(
     : mockRunEventsList(runId, afterSeq);
 }
 
+/**
+ * Plano estruturado do run (Scout Rule). O `focus.updated` só carrega o
+ * markdown; o quadro precisa dos campos (status, handoff, arquivos), que
+ * ficam gravados em `runs.plan_json`.
+ *
+ * Nunca lança: run sem plano, comando ausente (build antiga) ou erro do
+ * banco viram `null` — o quadro simplesmente não aparece.
+ */
+export function runPlanGet(runId: string): Promise<TaskPlan | null> {
+  if (!isTauri) return mockRunPlanGet(runId);
+  return invoke<TaskPlan | null>("run_plan_get", { runId }).catch(() => null);
+}
+
+/** Libera a execução do plano proposto (modo planejamento). */
+export function runPlanApprove(runId: string): Promise<void> {
+  if (!isTauri) return mockRunPlanApprove(runId);
+  return invoke<void>("run_plan_approve", { runId }).catch((e) => {
+    console.warn("run_plan_approve falhou:", e);
+  });
+}
+
+/** Pede uma nova divisão do mesmo objetivo. */
+export function runPlanReplan(runId: string): Promise<void> {
+  if (!isTauri) return mockRunPlanReplan(runId);
+  return invoke<void>("run_plan_replan", { runId }).catch((e) => {
+    console.warn("run_plan_replan falhou:", e);
+  });
+}
+
 export function toolPermissionsList(
   workspaceDir: string | null,
 ): Promise<ToolPermissionRow[]> {
@@ -151,6 +189,7 @@ interface MockRun {
   chatId: number;
   model: string;
   mode: RunMode;
+  workMode: WorkMode;
   prompt: string;
   workspaceDir: string | null;
   events: RunEvent[];
@@ -163,6 +202,8 @@ interface MockRun {
   cancelled: boolean;
   /** Resolve a espera de aprovação da ferramenta corrente. */
   gate: ((decision: ApprovalDecision) => void) | null;
+  /** Resolve a espera da aprovação do plano (modo planejamento). */
+  planGate: (() => void) | null;
 }
 
 /** Unwind do roteiro simulado quando o usuário aperta Parar. */
@@ -170,6 +211,10 @@ class MockCancelled extends Error {}
 
 const mockRuns = new Map<string, MockRun>();
 const mockCheckpoints: CheckpointRow[] = [];
+/** Plano por run: o roteiro simulado mexe nele a cada entrega concluída. */
+const mockPlans = new Map<string, TaskPlan>();
+/** Runs cujo plano é movido pelo roteiro (os outros andam a cada consulta). */
+const mockDrivenPlans = new Set<string>();
 let mockPermissions: ToolPermissionRow[] = [];
 let mockRunSeq = 0;
 let mockCheckpointSeq = 0;
@@ -318,6 +363,199 @@ function finish(
   });
 }
 
+// ------------------------------------------------- plano simulado (Scout) ---
+
+function mockTask(
+  id: string,
+  title: string,
+  instruction: string,
+  doneWhen: string,
+  dependsOn: number[],
+  estTokens: number,
+): Task {
+  return {
+    id,
+    title,
+    instruction,
+    doneWhen,
+    status: "pending",
+    handoff: null,
+    files: [],
+    dependsOn,
+    estTokens,
+    error: null,
+  };
+}
+
+/**
+ * Divisão que acompanha o roteiro simulado (ler → escrever → conferir →
+ * fechar). `variant` 1 é a resposta ao "Refazer plano": as mesmas entregas
+ * quebradas ainda menores.
+ */
+function buildMockPlan(goal: string, variant: number, approved: boolean): TaskPlan {
+  const tasks =
+    variant === 0
+      ? [
+          mockTask(
+            "t1",
+            "Ler o README e mapear o projeto",
+            "Abrir o README.md e anotar stack, entrypoints e o que já existe.",
+            "Resumo do stack anotado em uma frase.",
+            [],
+            2400,
+          ),
+          mockTask(
+            "t2",
+            "Escrever notas.md com o resumo",
+            "Criar notas.md com o resumo do projeto e a lista de próximos passos.",
+            "Arquivo notas.md existe com resumo e próximos passos.",
+            [0],
+            3200,
+          ),
+          mockTask(
+            "t3",
+            "Conferir a pasta depois da alteração",
+            "Listar a pasta do projeto e confirmar que notas.md está lá.",
+            "A listagem mostra notas.md na raiz.",
+            [1],
+            1800,
+          ),
+          mockTask(
+            "t4",
+            "Fechar com o resumo do que mudou",
+            "Responder ao usuário contando o que foi feito e como desfazer.",
+            "Resposta final entregue com o checkpoint citado.",
+            [2],
+            1200,
+          ),
+        ]
+      : [
+          mockTask(
+            "r1",
+            "Ler o README",
+            "Abrir o README.md e extrair só o parágrafo de apresentação.",
+            "Parágrafo de apresentação copiado.",
+            [],
+            1600,
+          ),
+          mockTask(
+            "r2",
+            "Levantar os próximos passos",
+            "Listar de 2 a 3 pendências reais a partir do que foi lido.",
+            "Lista de pendências fechada.",
+            [0],
+            1600,
+          ),
+          mockTask(
+            "r3",
+            "Escrever notas.md",
+            "Criar notas.md juntando o resumo e as pendências.",
+            "Arquivo notas.md existe com as duas seções.",
+            [1],
+            2600,
+          ),
+          mockTask(
+            "r4",
+            "Conferir a pasta",
+            "Listar a pasta e confirmar o arquivo criado.",
+            "A listagem mostra notas.md na raiz.",
+            [2],
+            1400,
+          ),
+          mockTask(
+            "r5",
+            "Fechar com o resumo",
+            "Responder ao usuário com o que mudou.",
+            "Resposta final entregue.",
+            [3],
+            1000,
+          ),
+        ];
+  return {
+    goal: goal.length > 90 ? `${goal.slice(0, 90)}…` : goal,
+    tasks,
+    current: 0,
+    notes:
+      "Cada entrega roda com contexto novo e recebe só o resumo da anterior.",
+    approved,
+  };
+}
+
+/** Markdown do plano no formato que o `FocusChip` entende. */
+function planToMarkdown(plan: TaskPlan): string {
+  const lines = plan.tasks.map(
+    (task) => `- [${isTaskFinished(task.status) ? "x" : " "}] ${task.title}`,
+  );
+  return `${lines.join("\n")}\n`;
+}
+
+function clonePlan(plan: TaskPlan): TaskPlan {
+  return JSON.parse(JSON.stringify(plan)) as TaskPlan;
+}
+
+/** Grava o estado novo e avisa a UI — o quadro recarrega no `focus.updated`. */
+function publishPlan(run: MockRun): void {
+  const plan = mockPlans.get(run.id);
+  if (!plan) return;
+  emit(run, { kind: "focus.updated", todoMd: planToMarkdown(plan) });
+}
+
+/** Começa a primeira entrega (depois do plano aprovado). */
+function beginPlan(run: MockRun): void {
+  const plan = mockPlans.get(run.id);
+  if (!plan || plan.tasks.length === 0) return;
+  plan.current = 0;
+  plan.tasks[0].status = "running";
+  publishPlan(run);
+}
+
+/** Fecha a entrega corrente com o handoff e abre a próxima. */
+function stepPlan(plan: TaskPlan, handoff: string, files: string[]): void {
+  const task = plan.tasks[plan.current];
+  if (task && task.status === "running") {
+    task.status = "done";
+    task.handoff = handoff;
+    task.files = files;
+  }
+  const next = plan.tasks.findIndex((x) => x.status === "pending");
+  if (next >= 0) {
+    plan.current = next;
+    plan.tasks[next].status = "running";
+  } else {
+    plan.current = plan.tasks.length - 1;
+  }
+}
+
+function advancePlan(run: MockRun, handoff: string, files: string[]): void {
+  const plan = mockPlans.get(run.id);
+  if (!plan) return;
+  stepPlan(plan, handoff, files);
+  publishPlan(run);
+}
+
+/** Entrega travada por uma negação do usuário. */
+function blockPlan(run: MockRun, reason: string): void {
+  const plan = mockPlans.get(run.id);
+  if (!plan) return;
+  const task = plan.tasks[plan.current];
+  if (task) {
+    task.status = "blocked";
+    task.error = reason;
+  }
+  publishPlan(run);
+}
+
+/** Espera o usuário aprovar o plano proposto (modo planejamento). */
+async function waitPlanApproval(run: MockRun): Promise<void> {
+  emit(run, { kind: "run.paused", reason: "user" });
+  await new Promise<void>((resolve) => {
+    run.planGate = resolve;
+  });
+  run.planGate = null;
+  if (run.cancelled) throw new MockCancelled();
+  emit(run, { kind: "run.resumed" });
+}
+
 async function driveMock(run: MockRun): Promise<void> {
   const yolo = run.mode === "yolo";
   const dir = run.workspaceDir ?? "C:/projetos/exemplo";
@@ -336,6 +574,21 @@ async function driveMock(run: MockRun): Promise<void> {
     workspaceDir: dir,
     tools: MOCK_TOOLS,
   });
+
+  // 0) Scout Rule: antes de agir, o objetivo vira entregas pequenas. Em
+  // planejamento o run PARA aqui até o usuário aprovar o plano.
+  const planned = run.workMode !== "chat";
+  if (planned) {
+    await tick(run, 900);
+    mockPlans.set(
+      run.id,
+      buildMockPlan(run.prompt, 0, run.workMode !== "plan"),
+    );
+    mockDrivenPlans.add(run.id);
+    publishPlan(run);
+    if (!mockPlans.get(run.id)?.approved) await waitPlanApproval(run);
+    beginPlan(run);
+  }
 
   // 1) Leitura (auto-aprovada em smart/yolo).
   emit(run, { kind: "step.started", stepId: "step-1", index: 0 });
@@ -359,6 +612,7 @@ async function driveMock(run: MockRun): Promise<void> {
     requiresApproval: asksRead,
   });
   if (!(await gate(run, readCall, asksRead))) {
+    blockPlan(run, "Leitura do README negada.");
     emit(run, { kind: "step.started", stepId: "step-x", index: 1 });
     await typeOut(
       run,
@@ -379,6 +633,13 @@ async function driveMock(run: MockRun): Promise<void> {
     bytesTotal: 4312,
     durationMs: 41,
   });
+  if (planned) {
+    advancePlan(
+      run,
+      "Stack: Tauri 2 + Rust + React 19 (Tailwind v4); o laço do agente vive no Rust e a UI só desenha os eventos.",
+      ["README.md"],
+    );
+  }
 
   // 2) Escrita com diff (pede confirmação fora do YOLO).
   emit(run, { kind: "step.started", stepId: "step-2", index: 1 });
@@ -414,6 +675,7 @@ async function driveMock(run: MockRun): Promise<void> {
     requiresApproval: asksWrite,
   });
   if (!(await gate(run, writeCall, asksWrite))) {
+    blockPlan(run, "Criação de notas.md negada.");
     emit(run, { kind: "step.started", stepId: "step-3", index: 2 });
     await typeOut(
       run,
@@ -450,7 +712,13 @@ async function driveMock(run: MockRun): Promise<void> {
     bytesTotal: 241,
     durationMs: 63,
   });
-  emit(run, { kind: "focus.updated", todoMd: MOCK_FOCUS });
+  if (planned) {
+    advancePlan(run, "notas.md criado (241 bytes) com o resumo e 1 pendência.", [
+      "notas.md",
+    ]);
+  } else {
+    emit(run, { kind: "focus.updated", todoMd: MOCK_FOCUS });
+  }
 
   // 3) Comando de terminal com saída em streaming.
   emit(run, { kind: "step.started", stepId: "step-3", index: 2 });
@@ -480,6 +748,7 @@ async function driveMock(run: MockRun): Promise<void> {
     requiresApproval: asksWrite,
   });
   if (!(await gate(run, runCall, asksWrite))) {
+    blockPlan(run, "Conferência da pasta negada.");
     emit(run, { kind: "step.started", stepId: "step-4", index: 3 });
     await typeOut(
       run,
@@ -508,6 +777,9 @@ async function driveMock(run: MockRun): Promise<void> {
     passed: true,
     notes: "notas.md existe e tem conteúdo.",
   });
+  if (planned) {
+    advancePlan(run, "Listagem confirma notas.md na raiz do projeto.", []);
+  }
 
   // 4) Resumo final.
   emit(run, { kind: "step.started", stepId: "step-4", index: 3 });
@@ -517,12 +789,15 @@ async function driveMock(run: MockRun): Promise<void> {
     "step-4",
     "Pronto: criei **notas.md** com o resumo do projeto e confirmei pela listagem da pasta. Um checkpoint foi criado antes da alteração, então dá para desfazer a qualquer momento.",
   );
+  if (planned) {
+    advancePlan(run, "Resumo entregue ao usuário com o checkpoint citado.", []);
+  }
   finish(run, "done", "notas.md criado e verificado.", 4, 3);
 }
 
 function mockRunStart(
   prompt: string,
-  opts: RunOptions,
+  opts: RunStartOptions,
   onEvent: RunEventHandler,
 ): Promise<string> {
   const id = `run-${++mockRunSeq}`;
@@ -531,6 +806,7 @@ function mockRunStart(
     chatId: opts.chatId,
     model: opts.model,
     mode: opts.mode ?? "smart",
+    workMode: opts.workMode ?? "agent",
     prompt,
     workspaceDir: opts.workspaceDir ?? null,
     events: [],
@@ -542,6 +818,7 @@ function mockRunStart(
     finishedAt: null,
     cancelled: false,
     gate: null,
+    planGate: null,
   };
   mockRuns.set(id, run);
   void driveMock(run).catch((err) => {
@@ -595,6 +872,51 @@ function mockRunCancel(runId: string): Promise<void> {
   run.cancelled = true;
   // Parado enquanto espera aprovação: destrava o roteiro para ele encerrar.
   run.gate?.({ kind: "deny", reason: null });
+  run.planGate?.();
+  return Promise.resolve();
+}
+
+/**
+ * Plano simulado. Quando o roteiro do run cuida do plano, devolve o estado
+ * corrente; senão (run reconstruído, sem roteiro) o plano anda uma entrega
+ * a cada consulta — é o suficiente para ver o quadro avançando.
+ */
+function mockRunPlanGet(runId: string): Promise<TaskPlan | null> {
+  const run = mockRuns.get(runId);
+  const known = mockPlans.get(runId);
+  if (!known) {
+    if (!run || run.workMode === "chat") return Promise.resolve(null);
+    const fresh = buildMockPlan(run.prompt, 0, true);
+    fresh.tasks[0].status = "running";
+    mockPlans.set(runId, fresh);
+    return Promise.resolve(clonePlan(fresh));
+  }
+  // Sem `publishPlan` aqui: o `focus.updated` é o que dispara esta consulta,
+  // e reemiti-lo viraria laço infinito.
+  if (!mockDrivenPlans.has(runId)) {
+    stepPlan(known, "Entrega concluída (simulação).", []);
+  }
+  return Promise.resolve(clonePlan(known));
+}
+
+function mockRunPlanApprove(runId: string): Promise<void> {
+  const plan = mockPlans.get(runId);
+  if (plan) plan.approved = true;
+  const run = mockRuns.get(runId);
+  if (run) {
+    publishPlan(run);
+    run.planGate?.();
+  }
+  return Promise.resolve();
+}
+
+function mockRunPlanReplan(runId: string): Promise<void> {
+  const run = mockRuns.get(runId);
+  if (!run) return Promise.resolve();
+  const previous = mockPlans.get(runId);
+  const variant = previous && previous.tasks.length === 4 ? 1 : 0;
+  mockPlans.set(runId, buildMockPlan(run.prompt, variant, false));
+  publishPlan(run);
   return Promise.resolve();
 }
 

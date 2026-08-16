@@ -20,15 +20,19 @@ import {
   runAttach,
   runCancel,
   runEventsList,
+  runPlanApprove,
+  runPlanGet,
+  runPlanReplan,
   runStart,
   runsList,
+  type RunStartOptions,
 } from "./agentApi";
+import type { TaskPlan, WorkMode } from "./scout";
 import type {
   ApprovalDecision,
   ApprovalSource,
   RunEvent,
   RunMode,
-  RunOptions,
   RunStatus,
   RunSummary,
   ToolCategory,
@@ -101,6 +105,8 @@ export interface RunView {
   chatId: number;
   model: string;
   mode: RunMode;
+  /** Como o agente trabalha neste run (Scout Rule). */
+  workMode: WorkMode;
   yolo: boolean;
   workspaceDir: string | null;
   /** Ferramentas expostas ao modelo neste run. */
@@ -112,6 +118,12 @@ export interface RunView {
   /** Ferramenta esperando decisão do usuário (alimenta a ApprovalBar). */
   pendingCallId: string | null;
   focusMd: string;
+  /**
+   * Plano estruturado (Scout Rule). O evento só traz o markdown; os campos
+   * que o quadro precisa vêm do `run_plan_get`, buscado com throttle a cada
+   * `focus.updated`. `null` = ainda não há plano.
+   */
+  plan: TaskPlan | null;
   checkpoints: CheckpointMark[];
   usage: UsageStats | null;
   summary: string;
@@ -138,6 +150,8 @@ export interface StartRunOpts {
   model: string;
   params: ChatParams;
   mode: RunMode;
+  /** Modo de trabalho da Scout Rule. Ausente = `"agent"`. */
+  workMode?: WorkMode;
   maxSteps?: number;
 }
 
@@ -154,6 +168,7 @@ function emptyRun(runId: string, chatId: number): RunView {
     chatId,
     model: "",
     mode: "smart",
+    workMode: "agent",
     yolo: false,
     workspaceDir: null,
     toolNames: [],
@@ -163,6 +178,7 @@ function emptyRun(runId: string, chatId: number): RunView {
     tools: {},
     pendingCallId: null,
     focusMd: "",
+    plan: null,
     checkpoints: [],
     usage: null,
     summary: "",
@@ -464,10 +480,18 @@ export function buildRunView(runId: string, events: RunEvent[]): RunView {
   return view;
 }
 
-/** Carrega um run antigo (usado pelo painel de execução). Não vira ativo. */
+/**
+ * Carrega um run antigo (usado pelo painel de execução). Não vira ativo.
+ *
+ * O modo de trabalho não viaja nos eventos: vem da memória da sessão
+ * (`workModeByRun`) e cai no padrão depois de um reload do app.
+ */
 export async function loadRunView(runId: string): Promise<RunView> {
   const events = await runEventsList(runId, 0);
-  return buildRunView(runId, events);
+  const view = buildRunView(runId, events);
+  view.workMode = workModeByRun.get(runId) ?? view.workMode;
+  view.plan = await runPlanGet(runId).catch(() => null);
+  return view;
 }
 
 // ------------------------------------------------------------------ store ---
@@ -480,6 +504,10 @@ const deletedChats = new Set<number>();
 const attaching = new Set<string>();
 /** Parar apertado antes de o `run_start` responder. */
 const cancelPending = new Set<number>();
+/** Modo de trabalho escolhido na conversa (o evento `run.started` não traz). */
+const workModeByChat = new Map<number, WorkMode>();
+/** O mesmo por run, para o painel de execução reabrir com o modo certo. */
+const workModeByRun = new Map<string, WorkMode>();
 
 let snap: RunSnapshot = {
   runs: [],
@@ -504,9 +532,18 @@ function emit(): void {
 
 function handleEvent(event: RunEvent): void {
   const known = runs.get(event.runId);
-  const base =
+  let base =
     known ??
     emptyRun(event.runId, event.kind === "run.started" ? event.chatId : -1);
+  if (!known) {
+    const chosen =
+      workModeByRun.get(base.runId) ??
+      (base.chatId >= 0 ? workModeByChat.get(base.chatId) : undefined);
+    if (chosen) {
+      base = { ...base, workMode: chosen };
+      workModeByRun.set(base.runId, chosen);
+    }
+  }
   const next = reduceEvent(base, event);
   if (known && next === known) return; // seq repetido
   next.attached = true;
@@ -515,6 +552,52 @@ function handleEvent(event: RunEvent): void {
     byChat.set(next.chatId, next.runId);
   }
   emit();
+  // O plano mudou de forma (etapa começou/terminou): recarrega o estruturado.
+  if (event.kind === "focus.updated" || event.kind === "run.finished") {
+    schedulePlanFetch(next.runId);
+  }
+}
+
+// ------------------------------------------------------- plano (Scout) ---
+
+/** Janela mínima entre duas leituras do plano do mesmo run. */
+const PLAN_THROTTLE_MS = 500;
+
+const planTimers = new Map<string, number>();
+const planFetchedAt = new Map<string, number>();
+
+async function fetchPlan(runId: string): Promise<void> {
+  const plan = await runPlanGet(runId).catch(() => null);
+  // Sem plano (run comum, comando ausente): mantém o que já estava na tela.
+  if (!plan) return;
+  const run = runs.get(runId);
+  if (!run) return;
+  runs.set(runId, { ...run, plan });
+  emit();
+}
+
+/**
+ * Agenda a leitura do plano respeitando a janela de throttle. Vários
+ * `focus.updated` seguidos viram UMA busca — e a última sempre acontece,
+ * porque a chamada pendente é agendada, não descartada.
+ */
+function schedulePlanFetch(runId: string): void {
+  if (planTimers.has(runId)) return;
+  const elapsed = Date.now() - (planFetchedAt.get(runId) ?? 0);
+  const wait = Math.max(0, PLAN_THROTTLE_MS - elapsed);
+  const timer = window.setTimeout(() => {
+    planTimers.delete(runId);
+    planFetchedAt.set(runId, Date.now());
+    void fetchPlan(runId);
+  }, wait);
+  planTimers.set(runId, timer);
+}
+
+function forgetPlan(runId: string): void {
+  const timer = planTimers.get(runId);
+  if (timer) window.clearTimeout(timer);
+  planTimers.delete(runId);
+  planFetchedAt.delete(runId);
 }
 
 function patchRun(runId: string, patch: Partial<RunView>): void {
@@ -589,6 +672,11 @@ export const runStore = {
     emit();
   },
 
+  /** Plano estruturado do run corrente da conversa. */
+  planFor(chatId: number | null): TaskPlan | null {
+    return this.runFor(chatId)?.plan ?? null;
+  },
+
   /** Ferramenta aguardando decisão do usuário nesta conversa. */
   pendingApproval(chatId: number | null): ToolCallView | null {
     const run = this.runFor(chatId);
@@ -606,6 +694,8 @@ export const runStore = {
     starting.add(chatId);
     startErrors.delete(chatId);
     cancelPending.delete(chatId);
+    const workMode: WorkMode = opts.workMode ?? "agent";
+    workModeByChat.set(chatId, workMode);
     // Run anterior sai da tela quando um novo começa nesta conversa.
     const previous = byChat.get(chatId);
     if (previous) {
@@ -619,10 +709,11 @@ export const runStore = {
       const { baseUrl } = await ensureServer();
       const loaded = await listLoadedModels(baseUrl);
       const model = matchServerModel(opts.model, loaded);
-      const runOptions: RunOptions = {
+      const runOptions: RunStartOptions = {
         chatId,
         model,
         mode: opts.mode,
+        workMode,
         workspaceDir: opts.params.workspaceDir,
         temperature: opts.params.temperature,
         topP: opts.params.topP,
@@ -632,11 +723,18 @@ export const runStore = {
         maxSteps: opts.maxSteps,
       };
       const runId = await runStart(opts.prompt, runOptions, handleEvent);
-      if (!runs.has(runId)) {
+      workModeByRun.set(runId, workMode);
+      const started = runs.get(runId);
+      if (started) {
+        // O `run.started` chegou antes da resposta do comando: só carimba o
+        // modo de trabalho, que não viaja no evento.
+        runs.set(runId, { ...started, workMode });
+      } else {
         // O primeiro evento pode chegar depois da resposta do comando.
         const view = emptyRun(runId, chatId);
         view.model = model;
         view.mode = opts.mode;
+        view.workMode = workMode;
         view.yolo = opts.mode === "yolo";
         view.workspaceDir = opts.params.workspaceDir;
         view.attached = true;
@@ -684,6 +782,31 @@ export const runStore = {
     }
   },
 
+  /**
+   * Libera a execução do plano proposto (modo planejamento). Otimista: o
+   * quadro já mostra "aprovado" antes da confirmação do backend.
+   */
+  async approvePlan(chatId: number | null): Promise<void> {
+    const run = this.runFor(chatId);
+    if (!run) return;
+    if (run.plan && !run.plan.approved) {
+      runs.set(run.runId, { ...run, plan: { ...run.plan, approved: true } });
+      emit();
+    }
+    await runPlanApprove(run.runId);
+    schedulePlanFetch(run.runId);
+  },
+
+  /** Pede outra divisão do mesmo objetivo (volta para "dividindo a tarefa"). */
+  async replan(chatId: number | null): Promise<void> {
+    const run = this.runFor(chatId);
+    if (!run) return;
+    runs.set(run.runId, { ...run, plan: null });
+    emit();
+    await runPlanReplan(run.runId);
+    schedulePlanFetch(run.runId);
+  },
+
   /** Parar: cancela o run em curso (ou o start ainda em preparação). */
   cancel(chatId: number | null): void {
     if (chatId == null) return;
@@ -703,6 +826,7 @@ export const runStore = {
     if (run && isRunActive(run.status)) return;
     byChat.delete(chatId);
     if (run) runs.delete(runId);
+    forgetPlan(runId);
     emit();
   },
 
@@ -711,7 +835,9 @@ export const runStore = {
     const runId = byChat.get(chatId);
     starting.delete(chatId);
     startErrors.delete(chatId);
+    workModeByChat.delete(chatId);
     if (runId) {
+      forgetPlan(runId);
       const run = runs.get(runId);
       if (run && isRunActive(run.status)) {
         void runCancel(runId).catch(() => {});
@@ -743,9 +869,12 @@ export const runStore = {
     const events = await runEventsList(active.id, 0).catch(() => [] as RunEvent[]);
     const view = buildRunView(active.id, events);
     view.chatId = chatId;
+    view.workMode = workModeByChat.get(chatId) ?? view.workMode;
     runs.set(view.runId, view);
     byChat.set(chatId, view.runId);
     emit();
+    // Reload do app: o plano não vem nos eventos, só do banco.
+    schedulePlanFetch(view.runId);
     await attachTo(view);
   },
 };

@@ -461,5 +461,46 @@
       "empty": "This project has not been indexed yet.",
       "searchPlaceholder": "Search the project..."
     }
+  },
+  "plan": {
+    "title": "Work plan",
+    "subtitle": "Big tasks become small deliveries that fit the model's window.",
+    "goal": "Goal",
+    "progress": "{{done}} of {{total}} deliveries",
+    "empty": "No plan yet.",
+    "planning": "Splitting the task...",
+    "approve": "Approve plan",
+    "approveHint": "Nothing runs before you approve.",
+    "approved": "Plan approved",
+    "replan": "Redo plan",
+    "addTask": "Add step",
+    "editTask": "Edit step",
+    "removeTask": "Remove step",
+    "doneWhen": "Done when",
+    "handoff": "Passed along",
+    "dependsOn": "Depends on",
+    "files": "Files",
+    "status": {
+      "pending": "Queued",
+      "running": "In progress",
+      "done": "Done",
+      "blocked": "Blocked",
+      "failed": "Failed",
+      "skipped": "Skipped"
+    },
+    "taskOf": "Step {{n}} of {{total}}",
+    "blockedReason": "Needs you to continue",
+    "contextFresh": "Context reset for this step",
+    "windowHint": "Model window: {{ctx}} tokens — deliveries up to {{perTask}}",
+    "mode": {
+      "chat": "Chat",
+      "plan": "Planning",
+      "agent": "Agent",
+      "loop": "Loop",
+      "chatHint": "Answers only, no tools.",
+      "planHint": "Investigates and proposes the plan. Changes nothing until you approve.",
+      "agentHint": "Runs the requested task, one step at a time.",
+      "loopHint": "Runs the whole plan, checking each delivery before moving on."
+    }
   }
 }

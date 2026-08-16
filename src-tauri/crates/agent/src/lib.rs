@@ -5,9 +5,11 @@
 
 mod checkpoint;
 mod events;
+mod plan_tools;
 mod prompt;
 mod reliability;
 mod run;
+mod scout;
 mod verify;
 
 use crate::run::{RunDeps, execute_run};
@@ -15,6 +17,7 @@ use lr_engine::ChatMessage;
 use lr_store::Store;
 use lr_tools::ToolRegistry;
 use lr_types::agent::{ApprovalDecision, RunOptions};
+use lr_types::scout::WorkMode;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -24,8 +27,10 @@ use tokio::sync::{Notify, oneshot};
 
 pub use checkpoint::{checkpoint_from_row, restore_blocking};
 pub use events::{EventCallback, EventSink, now_ms};
+pub use plan_tools::{AskUser, PlanCreate, PlanTools, PlanUpdate, SharedPlan, TaskComplete};
 pub use prompt::{PromptContext, build_system_prompt};
 pub use run::{append_prompt, history_from_messages};
+pub use scout::{MAX_STEPS_PER_TASK, MAX_TASKS, decompose, menu_for, single_task_plan};
 
 /// Identificador com prefixo, único o bastante para um processo local.
 pub fn new_id(prefix: &str) -> String {
@@ -72,6 +77,14 @@ pub struct StartRun {
     pub memory: Vec<String>,
     pub options: RunOptions,
     pub endpoint: Endpoint,
+    /// Como o agente trabalha nesta conversa (Scout Rule).
+    ///
+    /// Mora aqui, e não em `RunOptions`, porque `lr_types` está congelado
+    /// nesta fase. `WorkMode::Agent` é o comportamento de sempre.
+    pub work_mode: WorkMode,
+    /// Plano já pronto (a pessoa aprovou o que o modo planejamento propôs).
+    /// Com ele, o laço executa direto em vez de dividir o objetivo de novo.
+    pub plan: Option<lr_types::scout::TaskPlan>,
 }
 
 /// Controle de uma execução em andamento.

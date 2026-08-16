@@ -10,6 +10,7 @@ use lr_store::agent::{CheckpointRow, RunEventRow, ToolPermissionRow};
 use lr_types::agent::{
     ApprovalDecision, PolicyScope, RunEvent, RunOptions, RunSummary, ToolPolicy,
 };
+use lr_types::scout::{TaskPlan, TaskStatus, WorkMode};
 use std::sync::Arc;
 use tauri::State;
 use tauri::ipc::Channel;
@@ -31,27 +32,45 @@ fn channel_sink(channel: Channel<RunEvent>) -> lr_agent::EventCallback {
     })
 }
 
+/// Opções de `run_start`.
+///
+/// `RunOptions` (compartilhado com a interface) traz o nível de autorização;
+/// o modo de trabalho (conversa/planejamento/agente/laço) vem junto no mesmo
+/// objeto e é lido aqui. Ausente = agente, o comportamento de sempre.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartOptions {
+    #[serde(flatten)]
+    pub options: RunOptions,
+    #[serde(default)]
+    pub work_mode: WorkMode,
+}
+
 /// Começa uma execução do agente na conversa indicada.
 #[tauri::command]
 pub async fn run_start(
     state: State<'_, AppState>,
     prompt: String,
-    opts: RunOptions,
+    opts: StartOptions,
     on_event: Channel<RunEvent>,
 ) -> CmdResult<String> {
+    let StartOptions { options, work_mode } = opts;
     let endpoint = state.agent_endpoint().await?;
 
     // Histórico da conversa (o laço trabalha por cima dele).
     let mut history = Vec::new();
-    if opts.chat_id > 0 {
-        let rows = state.store.list_messages(opts.chat_id).map_err(err_str)?;
+    if options.chat_id > 0 {
+        let rows = state
+            .store
+            .list_messages(options.chat_id)
+            .map_err(err_str)?;
         history = lr_agent::history_from_messages(&rows, 40);
     }
 
     // Fatos memorizados entram no prompt do sistema (memória semântica).
     let memory = state
         .store
-        .list_memory_facts(opts.workspace_dir.as_deref())
+        .list_memory_facts(options.workspace_dir.as_deref())
         .map(|facts| facts.into_iter().map(|f| f.content).collect::<Vec<_>>())
         .unwrap_or_default();
 
@@ -62,8 +81,11 @@ pub async fn run_start(
                 prompt,
                 history,
                 memory,
-                options: opts,
+                options,
                 endpoint,
+                work_mode,
+                // Sem plano pronto: quem planeja é o próprio run.
+                plan: None,
             },
             Some(channel_sink(on_event)),
         )
@@ -156,6 +178,113 @@ pub fn run_events_list(
         .store
         .list_run_events(&run_id, after_seq)
         .map_err(err_str)
+}
+
+/// Plano de trabalho (Scout Rule) de uma execução.
+///
+/// A trilha entrega o plano em markdown para leitura rápida; aqui vai a
+/// estrutura completa, que é o que o quadro de tarefas desenha.
+#[tauri::command]
+pub fn run_plan_get(
+    state: State<'_, AppState>,
+    run_id: String,
+) -> CmdResult<Option<lr_types::scout::TaskPlan>> {
+    let raw = state.store.get_run_plan(&run_id).map_err(err_str)?;
+    Ok(raw.and_then(|json| match serde_json::from_str(&json) {
+        Ok(plan) => Some(plan),
+        Err(e) => {
+            log::warn!("plano do run {run_id} ilegível: {e}");
+            None
+        }
+    }))
+}
+
+/// Aprova o plano proposto e começa a executá-lo.
+///
+/// O modo planejamento entrega o plano e para. Aprovar abre uma execução
+/// nova em modo laço com as MESMAS etapas — sem dividir o objetivo de novo,
+/// para não perder o que a pessoa acabou de revisar.
+#[tauri::command]
+pub async fn run_plan_approve(
+    state: State<'_, AppState>,
+    run_id: String,
+    on_event: Channel<RunEvent>,
+) -> CmdResult<String> {
+    let run = state
+        .store
+        .get_run(&run_id)
+        .map_err(err_str)?
+        .ok_or("execução não encontrada")?;
+    let raw = state
+        .store
+        .get_run_plan(&run_id)
+        .map_err(err_str)?
+        .ok_or("esta execução não tem plano")?;
+    let mut plan: TaskPlan = serde_json::from_str(&raw).map_err(err_str)?;
+
+    plan.approved = true;
+    // Etapas que ficaram pela metade voltam para a fila.
+    for task in &mut plan.tasks {
+        if task.status == TaskStatus::Running {
+            task.status = TaskStatus::Pending;
+        }
+    }
+    // Guarda a aprovação no plano antigo (fica no histórico) e leva a cópia
+    // para o run novo.
+    if let Ok(json) = serde_json::to_string(&plan) {
+        let _ = state.store.set_run_plan(&run_id, &json);
+    }
+
+    let endpoint = state.agent_endpoint().await?;
+    let chat_id = run.chat_id.unwrap_or(0);
+    let history = if chat_id > 0 {
+        let rows = state.store.list_messages(chat_id).map_err(err_str)?;
+        lr_agent::history_from_messages(&rows, 40)
+    } else {
+        Vec::new()
+    };
+    let memory = state
+        .store
+        .list_memory_facts(run.workspace_dir.as_deref())
+        .map(|f| f.into_iter().map(|x| x.content).collect())
+        .unwrap_or_default();
+
+    let handle = state
+        .agent
+        .start(
+            lr_agent::StartRun {
+                prompt: run.prompt.clone(),
+                history,
+                memory,
+                options: RunOptions {
+                    chat_id,
+                    model: run.model.clone(),
+                    mode: run.mode,
+                    workspace_dir: run.workspace_dir.clone(),
+                    // O teto do laço é recalculado no crate do agente a
+                    // partir do tamanho do plano.
+                    max_steps: 24,
+                    mcp_servers: Vec::new(),
+                    temperature: None,
+                    top_p: None,
+                    top_k: None,
+                    max_tokens: None,
+                    system_prompt: None,
+                },
+                endpoint,
+                work_mode: WorkMode::Loop,
+                plan: Some(plan),
+            },
+            Some(channel_sink(on_event)),
+        )
+        .map_err(err_str)?;
+    Ok(handle.id.clone())
+}
+
+/// Descarta o plano proposto para que a próxima execução divida de novo.
+#[tauri::command]
+pub fn run_plan_replan(state: State<'_, AppState>, run_id: String) -> CmdResult<()> {
+    state.store.set_run_plan(&run_id, "").map_err(err_str)
 }
 
 // ------------------------------------------------------------ permissões ---

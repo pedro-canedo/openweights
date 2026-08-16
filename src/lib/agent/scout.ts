@@ -1,0 +1,70 @@
+// Espelho TS da Scout Rule.
+// Fonte da verdade: src-tauri/crates/types/src/scout.rs (serde camelCase).
+//
+// A ideia: modelo local com janela curta não aguenta uma tarefa grande de
+// uma vez. O plano quebra o objetivo em entregas pequenas e cada uma roda
+// com contexto novo, recebendo só um resumo do que veio antes.
+
+/** Como o agente trabalha (independe do nível de autorização). */
+export type WorkMode = "chat" | "plan" | "agent" | "loop";
+
+export type TaskStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "blocked"
+  | "failed"
+  | "skipped";
+
+export interface Task {
+  id: string;
+  title: string;
+  instruction: string;
+  /** Como saber que a etapa terminou. */
+  doneWhen: string;
+  status: TaskStatus;
+  /** Resumo do que a etapa produziu, escrito para a próxima. */
+  handoff: string | null;
+  files: string[];
+  dependsOn: number[];
+  estTokens: number;
+  error: string | null;
+}
+
+export interface TaskPlan {
+  goal: string;
+  tasks: Task[];
+  current: number;
+  notes: string;
+  approved: boolean;
+}
+
+export type PlanEvent =
+  | { kind: "plan.created"; plan: TaskPlan }
+  | { kind: "plan.updated"; plan: TaskPlan }
+  | { kind: "plan.approved" }
+  | { kind: "task.started"; index: number; task: Task }
+  | { kind: "task.finished"; index: number; task: Task };
+
+/** Quantas etapas já terminaram. */
+export function planProgress(plan: TaskPlan): { done: number; total: number } {
+  return {
+    done: plan.tasks.filter((t) => t.status === "done" || t.status === "skipped")
+      .length,
+    total: plan.tasks.length,
+  };
+}
+
+export function isTaskFinished(status: TaskStatus): boolean {
+  return status === "done" || status === "skipped";
+}
+
+/** Modos em que o agente pode alterar alguma coisa. */
+export function canExecute(mode: WorkMode): boolean {
+  return mode === "agent" || mode === "loop";
+}
+
+/** Modos que produzem um plano antes de agir. */
+export function plansFirst(mode: WorkMode): boolean {
+  return mode === "plan" || mode === "loop";
+}

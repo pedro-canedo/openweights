@@ -12,24 +12,30 @@
 
 use crate::checkpoint;
 use crate::events::EventSink;
+use crate::plan_tools::{PlanTools, SharedPlan, shared_plan, snapshot};
 use crate::prompt::{PromptContext, build_system_prompt};
 use crate::reliability::{
     ContextBudget, ErrorStreak, ReadLedger, Repeat, RepeatDetector, StepBudget, apply_compaction,
     compaction_request, plan_compaction,
 };
+use crate::scout::{self, PlanRun};
 use crate::verify::{self, CommandRecord};
 use crate::{AgentConfig, RunHandle, StartRun, new_id};
-use lr_engine::{ChatDelta, ChatMessage, ChatRequest, LlamaClient, ToolCallReq, tool_specs_to_api};
+use lr_engine::{
+    ChatDelta, ChatMessage, ChatRequest, LlamaClient, ServerProps, ToolCallReq, tool_specs_to_api,
+};
 use lr_policy::{Decision, PermissionOverride, PolicyEngine, ToolRequest, classify};
 use lr_store::Store;
-use lr_tools::{ToolContext, ToolRegistry};
+use lr_tools::{SharedTool, ToolContext, ToolOutput, ToolRegistry, ToolResult};
 use lr_types::agent::{
-    ApprovalDecision, ApprovalSource, PolicyScope, RunEventKind, RunMode, RunStatus, ToolCategory,
-    ToolOrigin, ToolPolicy, ToolSpec, ToolTier, UsageStats,
+    ApprovalDecision, ApprovalSource, PolicyScope, RunEventKind, RunMode, RunOptions, RunStatus,
+    ToolCategory, ToolOrigin, ToolPolicy, ToolSpec, ToolTier, UsageStats,
 };
+use lr_types::scout::{TaskPlan, WindowBudget, WorkMode};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 /// Ferramenta interna que mantém o plano do run.
@@ -75,6 +81,13 @@ pub(crate) struct ToolRunner {
     pub commands: Vec<CommandRecord>,
     pub focus_md: Option<String>,
     pub tool_calls: u32,
+    /// Ferramentas que existem só neste run (as meta do plano). Ficam fora do
+    /// registro compartilhado porque carregam o plano DESTE run; são
+    /// procuradas antes dele.
+    pub local_tools: Vec<SharedTool>,
+    /// Levantado por uma ferramenta meta quando o trecho de laço atual acabou
+    /// (etapa concluída, plano escrito ou pergunta para a pessoa).
+    pub halt: Arc<AtomicBool>,
 }
 
 impl ToolRunner {
@@ -82,6 +95,47 @@ impl ToolRunner {
         self.workspace
             .as_ref()
             .map(|p| p.to_string_lossy().into_owned())
+    }
+
+    /// Ferramenta local com este nome, se houver.
+    fn local(&self, name: &str) -> Option<SharedTool> {
+        self.local_tools
+            .iter()
+            .find(|t| t.name() == name)
+            .map(Arc::clone)
+    }
+
+    /// Metadados da ferramenta: local primeiro, registro depois.
+    async fn spec_for(&self, name: &str) -> Option<ToolSpec> {
+        match self.local(name) {
+            Some(tool) => Some(tool.spec()),
+            None => self.registry.spec_of(name).await,
+        }
+    }
+
+    /// Executa pela ferramenta local ou pelo registro.
+    async fn dispatch(&self, name: &str, args: Value, ctx: &ToolContext) -> ToolResult<ToolOutput> {
+        match self.local(name) {
+            Some(tool) => tool.execute(args, ctx).await,
+            None => self.registry.execute(name, args, ctx).await,
+        }
+    }
+
+    /// Uma ferramenta meta pediu para encerrar o trecho atual. Lê e desarma.
+    pub(crate) fn take_halt(&self) -> bool {
+        self.halt.swap(false, Ordering::SeqCst)
+    }
+
+    /// Esquece o que era memória de UM contexto.
+    ///
+    /// Cada etapa do plano recomeça com histórico vazio: acusar o modelo de
+    /// reler um arquivo "que já está no histórico" seria mentira, porque o
+    /// histórico não existe mais. O que atravessa (arquivos escritos,
+    /// comandos, checkpoint) fica.
+    pub(crate) fn reset_task_memory(&mut self) {
+        self.reads = ReadLedger::default();
+        self.repeats = RepeatDetector::default();
+        self.errors = ErrorStreak::default();
     }
 
     fn tool_context(&self, call_id: &str) -> ToolContext {
@@ -102,7 +156,7 @@ impl ToolRunner {
         let name = tc.name.clone();
 
         // Ferramenta inexistente: erro acionável, sem passar pela política.
-        let Some(spec) = self.registry.spec_of(&name).await else {
+        let Some(spec) = self.spec_for(&name).await else {
             let message =
                 format!("A ferramenta `{name}` não existe. Use apenas as ferramentas listadas.");
             self.trace_rejection(step_id, &call_id, &name, &tc.arguments_json, None, &message);
@@ -188,7 +242,9 @@ impl ToolRunner {
         }
 
         let ctx = self.tool_context(&call_id);
-        let builtin = self.registry.get(&name).cloned();
+        let builtin = self
+            .local(&name)
+            .or_else(|| self.registry.get(&name).cloned());
         let preview = match &builtin {
             Some(tool) => tool.preview(&args, &ctx).await,
             None => None,
@@ -305,7 +361,7 @@ impl ToolRunner {
                 let _ = self.store.finish_tool_call(call_id, false, "", 0, Some("cancelado"));
                 return CallFlow::Cancelled;
             }
-            r = self.registry.execute(name, args.clone(), &ctx) => r,
+            r = self.dispatch(name, args.clone(), &ctx) => r,
         };
         let duration_ms = started.elapsed().as_millis() as u64;
 
@@ -667,7 +723,7 @@ fn args_hash(args: &Value) -> String {
     format!("{hash:016x}")
 }
 
-fn head_chars(s: &str, max: usize) -> String {
+pub(crate) fn head_chars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
     }
@@ -711,11 +767,205 @@ pub(crate) struct RunDeps {
     pub config: Arc<AgentConfig>,
 }
 
+/// Monta o prompt de sistema com o plano atual dentro (quando há um).
+///
+/// `Send + Sync` porque o run inteiro vive numa task do tokio: o fecho
+/// atravessa `await`s enquanto o laço do plano roda.
+pub(crate) type SystemPrompt<'a> = dyn Fn(Option<&String>) -> String + Send + Sync + 'a;
+
+/// Motor de passos: pensar → agir → ler o resultado, até o modelo responder
+/// sem pedir ferramenta.
+///
+/// Serve para o run inteiro (modo agente) e para UMA etapa do plano (modo
+/// laço). A diferença está só no histórico que entra: no plano ele recomeça
+/// vazio a cada etapa, e é isso que mantém a janela do modelo pequena.
+pub(crate) struct StepEngine<'a> {
+    pub client: &'a LlamaClient,
+    pub sink: Arc<EventSink>,
+    pub handle: Arc<RunHandle>,
+    pub store: Arc<Store>,
+    pub run_id: String,
+    pub opts: &'a RunOptions,
+    /// Cardápio já no formato da API (vazio quando não há ferramentas).
+    pub api_tools: Vec<Value>,
+    pub tools_on: bool,
+    pub context: ContextBudget,
+}
+
+/// O que um trecho de laço produziu.
+pub(crate) struct StepOutcome {
+    pub status: RunStatus,
+    /// Resposta final em texto (vazia quando o trecho não chegou lá).
+    pub text: String,
+    pub escalation: Option<String>,
+    pub steps: u32,
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+}
+
+impl StepEngine<'_> {
+    /// Roda o laço até uma resposta final, o teto de passos ou uma parada.
+    ///
+    /// `max_local_steps` é o teto DESTE trecho (uma etapa do plano); o
+    /// `budget` é o teto do run inteiro e continua valendo por cima.
+    pub(crate) async fn drive(
+        &self,
+        runner: &mut ToolRunner,
+        messages: &mut Vec<ChatMessage>,
+        budget: &mut StepBudget,
+        max_local_steps: u32,
+        build_system: &SystemPrompt<'_>,
+    ) -> StepOutcome {
+        let mut out = StepOutcome {
+            status: RunStatus::Done,
+            text: String::new(),
+            escalation: None,
+            steps: 0,
+            prompt_tokens: 0,
+            completion_tokens: 0,
+        };
+        // O prompt já foi montado com o plano que o runner conhece: começar
+        // igual evita reconstruí-lo à toa no primeiro passo.
+        let mut last_focus = runner.focus_md.clone();
+        let mut local: u32 = 0;
+
+        let status = 'run: loop {
+            if self.handle.is_cancelled() {
+                break RunStatus::Cancelled;
+            }
+            if local >= max_local_steps {
+                break RunStatus::MaxSteps;
+            }
+            let Some(index) = budget.start_step() else {
+                break RunStatus::MaxSteps;
+            };
+            local += 1;
+
+            // O plano entrou/mudou: o prompt de sistema acompanha.
+            if runner.focus_md != last_focus {
+                last_focus = runner.focus_md.clone();
+                messages[0] = ChatMessage::system(build_system(last_focus.as_ref()));
+            }
+
+            let step_id = new_id("step");
+            let _ = self.store.create_step(&step_id, &self.run_id, index);
+            self.sink.emit(RunEventKind::StepStarted {
+                step_id: step_id.clone(),
+                index,
+            });
+
+            let mut request = chat_request(self.opts, messages, &self.api_tools);
+            if self.context.limit().is_some() {
+                compact_if_needed(
+                    self.client,
+                    &self.sink,
+                    &self.context,
+                    self.opts,
+                    &self.api_tools,
+                    messages,
+                )
+                .await;
+                request = chat_request(self.opts, messages, &self.api_tools);
+            }
+
+            let outcome = {
+                let sink_delta = self.sink.clone();
+                let step = step_id.clone();
+                let mut on_delta = move |delta: ChatDelta| match delta {
+                    ChatDelta::Text(text) => {
+                        sink_delta.emit(RunEventKind::AssistantDelta {
+                            step_id: step.clone(),
+                            text,
+                        });
+                    }
+                    ChatDelta::Reasoning(text) => {
+                        sink_delta.emit(RunEventKind::ReasoningDelta {
+                            step_id: step.clone(),
+                            text,
+                        });
+                    }
+                    // Fragmentos de tool call viram eventos completos depois.
+                    ChatDelta::ToolCall { .. } => {}
+                };
+                tokio::select! {
+                    biased;
+                    _ = self.handle.cancelled() => break RunStatus::Cancelled,
+                    r = self.client.chat_stream(&request, &mut on_delta) => match r {
+                        Ok(outcome) => outcome,
+                        Err(e) => {
+                            self.sink.emit(RunEventKind::RunError {
+                                message: format!("O modelo não respondeu: {e}"),
+                                retryable: true,
+                            });
+                            break RunStatus::Error;
+                        }
+                    },
+                }
+            };
+
+            out.steps += 1;
+            let (prompt_n, predicted_n) = match &outcome.timings {
+                Some(t) => (t.prompt_n, t.predicted_n),
+                None => (None, None),
+            };
+            out.prompt_tokens += prompt_n.unwrap_or(0);
+            out.completion_tokens += predicted_n.unwrap_or(0);
+            let _ = self.store.finish_step(
+                &step_id,
+                &outcome.content,
+                &outcome.reasoning,
+                prompt_n,
+                predicted_n,
+            );
+            self.sink.emit(RunEventKind::AssistantMessage {
+                step_id: step_id.clone(),
+                content: outcome.content.clone(),
+                reasoning: outcome.reasoning.clone(),
+            });
+
+            // Sem ferramentas pedidas: é a resposta final.
+            if !self.tools_on || !outcome.wants_tools() {
+                out.text = outcome.content.clone();
+                break RunStatus::Done;
+            }
+
+            messages.push(outcome.to_assistant_message());
+            for tc in &outcome.tool_calls {
+                match runner.call(&step_id, index, tc).await {
+                    CallFlow::Result(msg) => messages.push(msg),
+                    CallFlow::Cancelled => break 'run RunStatus::Cancelled,
+                    CallFlow::Escalate(reason) => {
+                        out.escalation = Some(reason);
+                        break 'run RunStatus::Escalated;
+                    }
+                }
+            }
+
+            // Uma ferramenta meta fechou a etapa (ou parou para perguntar):
+            // não há mais nada a decidir neste trecho.
+            if runner.take_halt() {
+                out.text = outcome.content.clone();
+                break RunStatus::Done;
+            }
+        };
+        out.status = status;
+        out
+    }
+}
+
 /// Roda a execução inteira. Só retorna quando o run termina.
 pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: RunDeps) {
+    let StartRun {
+        prompt,
+        history,
+        memory,
+        options: opts,
+        endpoint,
+        work_mode,
+        plan: approved_plan,
+    } = req;
     let sink = handle.sink();
     let run_id = handle.id.clone();
-    let opts = req.options;
     let workspace = opts
         .workspace_dir
         .clone()
@@ -723,8 +973,8 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         .map(PathBuf::from);
     let started_at = Instant::now();
 
-    let client = LlamaClient::new(&req.endpoint.base_url)
-        .with_optional_api_key(req.endpoint.api_key.clone());
+    let client =
+        LlamaClient::new(&endpoint.base_url).with_optional_api_key(endpoint.api_key.clone());
 
     // Capacidades do modelo carregado. Se o servidor não responder, seguimos
     // sem ferramentas em vez de derrubar o run.
@@ -732,15 +982,30 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         Ok(p) => p,
         Err(e) => {
             log::warn!("/props indisponível ({e}); executando sem ferramentas");
-            lr_engine::ServerProps::default()
+            ServerProps::default()
         }
     };
-    let tools_on = props.supports_tools() && opts.mode != RunMode::Chat;
-    let specs = if tools_on {
-        deps.registry.specs().await
+    let tools_on =
+        props.supports_tools() && opts.mode != RunMode::Chat && work_mode != WorkMode::Chat;
+
+    // Cardápio: o modo de trabalho manda no que o modelo pode usar.
+    let mut specs = if tools_on {
+        scout::menu_for(work_mode, deps.registry.specs().await)
     } else {
         Vec::new()
     };
+    // Plano do run + ferramentas meta que o conduzem (vazias fora dos modos
+    // que planejam).
+    // Um plano já aprovado (o laço que continua um planejamento) entra
+    // pronto: `run_plan` só divide o objetivo quando não há etapas.
+    let plan = shared_plan(approved_plan.unwrap_or(TaskPlan {
+        goal: prompt.trim().to_string(),
+        ..Default::default()
+    }));
+    let plan_tools = PlanTools::for_mode(work_mode, plan.clone());
+    if tools_on {
+        specs.extend(plan_tools.specs());
+    }
     let tool_names: Vec<String> = specs.iter().map(|s| s.name.clone()).collect();
     let api_tools = tool_specs_to_api(&specs);
 
@@ -785,129 +1050,107 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         commands: Vec::new(),
         focus_md: None,
         tool_calls: 0,
+        local_tools: if tools_on {
+            plan_tools.tools.clone()
+        } else {
+            Vec::new()
+        },
+        halt: plan_tools.halt.clone(),
     };
 
     let build_prompt = |focus: Option<&String>| {
         build_system_prompt(&PromptContext {
             workspace: workspace_str.as_deref(),
             focus_md: focus.map(String::as_str),
-            memory: &req.memory,
+            memory: &memory,
             tools: &tool_names,
             user_system: opts.system_prompt.as_deref(),
             mode: opts.mode,
         })
     };
 
-    let mut messages = vec![ChatMessage::system(build_prompt(None))];
-    messages.extend(req.history);
-    append_prompt(&mut messages, &req.prompt);
+    let engine = StepEngine {
+        client: &client,
+        sink: sink.clone(),
+        handle: handle.clone(),
+        store: deps.store.clone(),
+        run_id: run_id.clone(),
+        opts: &opts,
+        api_tools,
+        tools_on,
+        context: ContextBudget::new(props.n_ctx, deps.config.context_ratio),
+    };
+    let window = props.n_ctx.map(WindowBudget::new).unwrap_or_default();
 
-    let mut budget = StepBudget::new(opts.max_steps);
-    let context = ContextBudget::new(props.n_ctx, deps.config.context_ratio);
     let mut usage = UsageStats::default();
-    let mut last_focus: Option<String> = None;
-    let mut final_text = String::new();
     let mut escalation: Option<String> = None;
+    // Frase pronta do modo laço/planejamento; nos demais o resumo sai do
+    // texto final.
+    let mut summary_override: Option<String> = None;
+    let mut final_text;
 
-    let status = 'run: loop {
-        if handle.is_cancelled() {
-            break RunStatus::Cancelled;
-        }
-        let Some(index) = budget.start_step() else {
-            break RunStatus::MaxSteps;
+    // No laço, o teto global precisa caber o plano inteiro: um teto pensado
+    // para UM pedido pararia o run no meio da terceira entrega.
+    let max_steps = match work_mode {
+        WorkMode::Loop => opts
+            .max_steps
+            .max(scout::MAX_TASKS as u32 * scout::MAX_STEPS_PER_TASK),
+        _ => opts.max_steps,
+    };
+    let mut budget = StepBudget::new(max_steps);
+
+    let status = if work_mode == WorkMode::Loop {
+        // Divide o objetivo e executa entrega por entrega, cada uma com
+        // contexto novo.
+        let plan_run = PlanRun {
+            engine: &engine,
+            build_system: &build_prompt,
+            plan: plan.clone(),
+            workspace: workspace.clone(),
+            goal: prompt.clone(),
+            context: String::new(),
+            window,
         };
-
-        // O plano entrou/mudou: o prompt de sistema acompanha.
-        if runner.focus_md != last_focus {
-            last_focus = runner.focus_md.clone();
-            messages[0] = ChatMessage::system(build_prompt(last_focus.as_ref()));
+        let outcome = scout::run_plan(&plan_run, &mut runner, &mut budget).await;
+        usage.steps += outcome.steps;
+        usage.prompt_tokens += outcome.prompt_tokens;
+        usage.completion_tokens += outcome.completion_tokens;
+        final_text = outcome.summary.clone();
+        summary_override = Some(outcome.summary);
+        outcome.status
+    } else {
+        let mut messages = vec![ChatMessage::system(build_prompt(None))];
+        if work_mode == WorkMode::Plan {
+            // Segunda mensagem de sistema: a reconstrução do prompt a cada
+            // passo troca só a primeira, então esta sobrevive ao plano mudar.
+            messages.push(ChatMessage::system(scout::PLAN_MODE_BRIEF));
         }
+        messages.extend(history);
+        append_prompt(&mut messages, &prompt);
 
-        let step_id = new_id("step");
-        let _ = deps.store.create_step(&step_id, &run_id, index);
-        sink.emit(RunEventKind::StepStarted {
-            step_id: step_id.clone(),
-            index,
-        });
+        let outcome = engine
+            .drive(
+                &mut runner,
+                &mut messages,
+                &mut budget,
+                max_steps,
+                &build_prompt,
+            )
+            .await;
+        usage.steps += outcome.steps;
+        usage.prompt_tokens += outcome.prompt_tokens;
+        usage.completion_tokens += outcome.completion_tokens;
+        final_text = outcome.text.clone();
+        escalation = outcome.escalation;
 
-        let mut request = chat_request(&opts, &messages, &api_tools);
-        if context.limit().is_some() {
-            compact_if_needed(&client, &sink, &context, &opts, &api_tools, &mut messages).await;
-            request = chat_request(&opts, &messages, &api_tools);
-        }
-
-        let outcome = {
-            let sink_delta = sink.clone();
-            let step = step_id.clone();
-            let mut on_delta = move |delta: ChatDelta| match delta {
-                ChatDelta::Text(text) => {
-                    sink_delta.emit(RunEventKind::AssistantDelta {
-                        step_id: step.clone(),
-                        text,
-                    });
-                }
-                ChatDelta::Reasoning(text) => {
-                    sink_delta.emit(RunEventKind::ReasoningDelta {
-                        step_id: step.clone(),
-                        text,
-                    });
-                }
-                // Fragmentos de tool call viram eventos completos depois.
-                ChatDelta::ToolCall { .. } => {}
-            };
-            tokio::select! {
-                biased;
-                _ = handle.cancelled() => break RunStatus::Cancelled,
-                r = client.chat_stream(&request, &mut on_delta) => match r {
-                    Ok(outcome) => outcome,
-                    Err(e) => {
-                        sink.emit(RunEventKind::RunError {
-                            message: format!("O modelo não respondeu: {e}"),
-                            retryable: true,
-                        });
-                        break RunStatus::Error;
-                    }
-                },
-            }
-        };
-
-        usage.steps += 1;
-        let (prompt_n, predicted_n) = match &outcome.timings {
-            Some(t) => (t.prompt_n, t.predicted_n),
-            None => (None, None),
-        };
-        usage.prompt_tokens += prompt_n.unwrap_or(0);
-        usage.completion_tokens += predicted_n.unwrap_or(0);
-        let _ = deps.store.finish_step(
-            &step_id,
-            &outcome.content,
-            &outcome.reasoning,
-            prompt_n,
-            predicted_n,
-        );
-        sink.emit(RunEventKind::AssistantMessage {
-            step_id: step_id.clone(),
-            content: outcome.content.clone(),
-            reasoning: outcome.reasoning.clone(),
-        });
-
-        // Sem ferramentas pedidas: é a resposta final.
-        if !tools_on || !outcome.wants_tools() {
-            final_text = outcome.content.clone();
-            break RunStatus::Done;
-        }
-
-        messages.push(outcome.to_assistant_message());
-        for tc in &outcome.tool_calls {
-            match runner.call(&step_id, index, tc).await {
-                CallFlow::Result(msg) => messages.push(msg),
-                CallFlow::Cancelled => break 'run RunStatus::Cancelled,
-                CallFlow::Escalate(reason) => {
-                    escalation = Some(reason);
-                    break 'run RunStatus::Escalated;
-                }
+        // Planejamento entrega o plano, não o trabalho.
+        if work_mode == WorkMode::Plan && outcome.status == RunStatus::Done {
+            let proposal = present_plan(&engine, &plan, &prompt, &outcome.text, window).await;
+            if final_text.trim().is_empty() {
+                final_text = proposal;
             }
         }
+        outcome.status
     };
 
     // Verificação barata do que ficou em disco.
@@ -924,25 +1167,44 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     usage.tool_calls = runner.tool_calls;
     usage.duration_ms = started_at.elapsed().as_millis() as u64;
 
+    // Guarda a resposta na conversa. O laço também guarda quando para no
+    // meio: o motivo da parada (uma pergunta, uma etapa travada) é o que a
+    // pessoa precisa ler.
+    let keep_in_chat = |text: &str| {
+        if !text.trim().is_empty() && opts.chat_id > 0 {
+            let _ = deps.store.add_message(
+                opts.chat_id,
+                "assistant",
+                text,
+                None,
+                Some(usage.completion_tokens as i64),
+                Some(usage.duration_ms as i64),
+            );
+        }
+    };
+
     let summary = match status {
         RunStatus::Done => {
-            if !final_text.trim().is_empty() && opts.chat_id > 0 {
-                let _ = deps.store.add_message(
-                    opts.chat_id,
-                    "assistant",
-                    &final_text,
-                    None,
-                    Some(usage.completion_tokens as i64),
-                    Some(usage.duration_ms as i64),
-                );
-            }
-            head_chars(final_text.trim(), 280)
+            keep_in_chat(&final_text);
+            summary_override.unwrap_or_else(|| head_chars(final_text.trim(), 280))
         }
-        RunStatus::MaxSteps => format!(
-            "Parei no limite de {} passos sem terminar a tarefa.",
-            budget.max()
-        ),
-        RunStatus::Escalated => escalation.unwrap_or_else(|| "Execução interrompida.".into()),
+        RunStatus::MaxSteps => match summary_override {
+            Some(plan_summary) => {
+                keep_in_chat(&plan_summary);
+                plan_summary
+            }
+            None => format!(
+                "Parei no limite de {} passos sem terminar a tarefa.",
+                budget.max()
+            ),
+        },
+        RunStatus::Escalated => match summary_override {
+            Some(plan_summary) => {
+                keep_in_chat(&plan_summary);
+                plan_summary
+            }
+            None => escalation.unwrap_or_else(|| "Execução interrompida.".into()),
+        },
         RunStatus::Cancelled => "Execução cancelada.".to_string(),
         _ => "A execução falhou.".to_string(),
     };
@@ -958,11 +1220,48 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     });
 }
 
-fn chat_request(
-    opts: &lr_types::agent::RunOptions,
-    messages: &[ChatMessage],
-    tools: &[Value],
-) -> ChatRequest {
+/// Fecha o modo planejamento: garante um plano gravado e devolve o texto que
+/// vai para a conversa.
+///
+/// O plano fica com `approved = false` — nada executa até a pessoa aprovar.
+async fn present_plan(
+    engine: &StepEngine<'_>,
+    plan: &SharedPlan,
+    goal: &str,
+    notes: &str,
+    window: WindowBudget,
+) -> String {
+    // O modelo pode ter escrito o plano sozinho com `plan_create`.
+    if snapshot(plan).tasks.is_empty() {
+        let built = scout::decompose(engine.client, &engine.opts.model, goal, window, notes)
+            .await
+            .unwrap_or_else(|e| {
+                log::warn!("não consegui dividir o objetivo ({e}); proponho uma entrega só");
+                scout::single_task_plan(goal, window.per_task())
+            });
+        *crate::plan_tools::lock_plan(plan) = built;
+    }
+
+    let saved = {
+        let mut current = crate::plan_tools::lock_plan(plan);
+        current.approved = false;
+        if current.goal.is_empty() {
+            current.goal = goal.trim().to_string();
+        }
+        current.clone()
+    };
+    if let Ok(json) = serde_json::to_string(&saved) {
+        let _ = engine.store.set_run_plan(&engine.run_id, &json);
+    }
+    let md = saved.to_markdown();
+    let _ = engine.store.set_run_focus(&engine.run_id, &md);
+    engine.sink.emit(RunEventKind::FocusUpdated {
+        todo_md: md.clone(),
+    });
+    md
+}
+
+fn chat_request(opts: &RunOptions, messages: &[ChatMessage], tools: &[Value]) -> ChatRequest {
     let mut req = ChatRequest::new(&opts.model, messages.to_vec());
     if !tools.is_empty() {
         req = req.with_tools(tools.to_vec());

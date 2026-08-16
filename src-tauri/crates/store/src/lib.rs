@@ -130,6 +130,8 @@ impl Store {
         // com ponteiro para o trace completo.
         ensure_column(&conn, "messages", "run_id", "TEXT")?;
         agent::init(&conn)?;
+        // Plano de trabalho (Scout Rule) de execuções já existentes.
+        ensure_column(&conn, "runs", "plan_json", "TEXT")?;
         mcp::init(&conn)?;
         memory::init(&conn)?;
         Ok(Self {

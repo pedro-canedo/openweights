@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS runs (
     summary TEXT,
     focus_md TEXT,
     usage_json TEXT,
+    plan_json TEXT,
     created_at INTEGER NOT NULL,
     finished_at INTEGER
 );
@@ -236,6 +237,28 @@ impl Store {
             params![run_id, focus_md],
         )?;
         Ok(())
+    }
+
+    /// Guarda o plano de trabalho (Scout Rule) do run.
+    pub fn set_run_plan(&self, run_id: &str, plan_json: &str) -> Result<(), StoreError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE runs SET plan_json = ?2 WHERE id = ?1",
+            params![run_id, plan_json],
+        )?;
+        Ok(())
+    }
+
+    /// Plano de trabalho do run, se houver.
+    pub fn get_run_plan(&self, run_id: &str) -> Result<Option<String>, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let plan = conn
+            .query_row("SELECT plan_json FROM runs WHERE id = ?1", [run_id], |r| {
+                r.get::<_, Option<String>>(0)
+            })
+            .optional()?
+            .flatten();
+        Ok(plan)
     }
 
     /// Runs de uma conversa (mais recentes primeiro). `None` = todos.
