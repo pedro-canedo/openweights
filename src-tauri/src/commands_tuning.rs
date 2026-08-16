@@ -414,3 +414,52 @@ impl Drop for MedindoGuard {
         MEDINDO.store(false, Ordering::SeqCst);
     }
 }
+
+/// Mede especulação (MTP e n-grama) nesta máquina.
+///
+/// É o eixo do pedido original, e o único que não dá para responder sem gerar
+/// de verdade: especulação é configuração do servidor, então cada braço exige
+/// o motor de pé — e um reinício entre eles. Custa mais que o `llama-bench`,
+/// e por isso é um botão à parte.
+///
+/// Não aplica nada: devolve os números e deixa a decisão para a tela.
+#[tauri::command]
+pub async fn tune_spec_bench(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    model: String,
+    profile: ModelProfile,
+    force: Option<bool>,
+) -> CmdResult<crate::spec_bench::SpecOutcome> {
+    let ocupado = crate::commands::engine_busy_with(&state);
+    if !ocupado.is_empty() && !force.unwrap_or(false) {
+        return Err(format!("engine-busy:{}", ocupado.join(",")));
+    }
+    if MEDINDO.swap(true, Ordering::SeqCst) {
+        return Err("já existe uma medição em andamento".into());
+    }
+    let _fim = MedindoGuard;
+
+    let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
+    // MTP só faz sentido quando o arquivo traz as camadas; oferecê-lo a um
+    // GGUF comum seria medir um erro de carga.
+    let mut candidatos = vec![
+        lr_types::tuning::SpecType::None,
+        lr_types::tuning::SpecType::Ngram,
+    ];
+    if artefato.name.to_lowercase().contains("mtp") {
+        candidatos.push(lr_types::tuning::SpecType::Mtp);
+    }
+
+    let anterior = profile_for(&state, &model);
+    let resultado =
+        crate::spec_bench::measure(&app, &state, &artefato.name, &profile, &candidatos).await;
+
+    // A medição mexe no perfil a cada braço: o que estava valendo tem de
+    // voltar, dê certo ou dê errado.
+    let volta = anterior.unwrap_or_default();
+    let _ = state.store.set_model_profile(model.trim(), &volta);
+    let _ = restart_engine(&app, &state, true).await;
+
+    resultado
+}

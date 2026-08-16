@@ -20,9 +20,11 @@ import {
   tuneApply,
   tuneBench,
   tuneBenchCancel,
+  tuneSpecBench,
   type BenchProgress,
   type BenchResult,
   type ModelProfile,
+  type SpecOutcome,
   type TuneAdvice,
   type TuneOption,
 } from "../../lib/tuning";
@@ -120,6 +122,9 @@ export default function TunePanel({
   const [medidos, setMedidos] = useState<(BenchResult | null)[]>([]);
   const [medindo, setMedindo] = useState<BenchProgress | null>(null);
   const [suspeito, setSuspeito] = useState(false);
+  /// Medição de especulação (o eixo MTP/n-grama).
+  const [spec, setSpec] = useState<SpecOutcome | null>(null);
+  const [medindoSpec, setMedindoSpec] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -181,6 +186,24 @@ export default function TunePanel({
       else setResultado(errorMessage(e));
     } finally {
       setMedindo(null);
+    }
+  }
+
+  async function medirSpec(force = false) {
+    if (!advice) return;
+    setMedindoSpec(true);
+    setOcupado([]);
+    setResultado(null);
+    try {
+      setSpec(
+        await tuneSpecBench(model, advice.options[escolhido].profile, force),
+      );
+    } catch (e) {
+      const quem = engineBusyReason(e);
+      if (quem) setOcupado(quem);
+      else setResultado(errorMessage(e));
+    } finally {
+      setMedindoSpec(false);
     }
   }
 
@@ -317,6 +340,56 @@ export default function TunePanel({
               </span>
             )}
           </div>
+
+          {/* Especulação: só aparece quando há o que medir, e o resultado é
+              dito como ele é — inclusive "não muda nada aqui". */}
+          {(advice.facts.includes("mtp") || spec) && (
+            <div className="mt-2.5 rounded-lg border border-edge px-2.5 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] text-dim">
+                  {t("tune.spec.title")}
+                </span>
+                <button
+                  type="button"
+                  disabled={medindoSpec || !!medindo}
+                  onClick={() => void medirSpec()}
+                  title={t("tune.spec.hint")}
+                  className="rounded-lg border border-edge px-2 py-1 text-[11px] text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+                >
+                  {medindoSpec ? t("tune.spec.measuring") : t("tune.spec.measure")}
+                </button>
+              </div>
+              {spec && (
+                <ul className="mt-1.5 flex flex-col gap-0.5">
+                  {spec.arms.map((a, i) => (
+                    <li
+                      key={a.spec}
+                      className={`text-[11px] tabular-nums ${
+                        i === spec.best && !spec.inconclusive
+                          ? "text-ok"
+                          : "text-dim"
+                      }`}
+                    >
+                      {t(`tune.spec.arm.${a.spec}`)}
+                      {": "}
+                      {a.byPrompt
+                        .map(
+                          ([tipo, tps]) =>
+                            `${t(`tune.spec.prompt.${tipo}`)} ${tps.toFixed(1)}`,
+                        )
+                        .join(" · ")}
+                      {" tok/s"}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {spec?.inconclusive && (
+                <p className="mt-1 text-[11px] leading-relaxed text-dim">
+                  {t("tune.spec.inconclusive")}
+                </p>
+              )}
+            </div>
+          )}
 
           {suspeito && (
             <p className="mt-2 text-[11px] leading-relaxed text-warn">

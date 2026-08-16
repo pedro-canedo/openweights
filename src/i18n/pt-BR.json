@@ -779,6 +779,22 @@
     "benchStarting": "Preparando a medição…",
     "benchProgress": "Medindo {{step}} de {{total}}…",
     "benchSuspect": "A placa esquentou durante a medição, então a comparação entre as configurações pode estar torta. Vale repetir com a máquina fria.",
-    "tested": "{{tps}} tok/s medidos aqui"
+    "tested": "{{tps}} tok/s medidos aqui",
+    "spec": {
+      "title": "Especulação",
+      "measure": "Medir MTP e n-grama",
+      "measuring": "Medindo…",
+      "hint": "Prevê tokens à frente para acelerar. Quanto rende depende da máquina e do tipo de texto, então medimos em vez de supor. Reinicia o motor entre cada teste.",
+      "inconclusive": "A diferença é pequena demais para valer mexer na configuração. Aqui, especulação não muda nada.",
+      "arm": {
+        "none": "Sem especulação",
+        "mtp": "MTP",
+        "ngram": "N-grama"
+      },
+      "prompt": {
+        "code": "código",
+        "prose": "prosa"
+      }
+    }
   }
 }

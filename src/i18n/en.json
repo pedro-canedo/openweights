@@ -779,6 +779,22 @@
     "benchStarting": "Preparing the measurement…",
     "benchProgress": "Measuring {{step}} of {{total}}…",
     "benchSuspect": "The GPU heated up during the run, so the comparison between configurations may be skewed. Worth repeating on a cold machine.",
-    "tested": "{{tps}} tok/s measured here"
+    "tested": "{{tps}} tok/s measured here",
+    "spec": {
+      "title": "Speculation",
+      "measure": "Measure MTP and n-gram",
+      "measuring": "Measuring…",
+      "hint": "Predicts tokens ahead to go faster. How much it pays depends on the machine and the kind of text, so we measure instead of assuming. Restarts the engine between tests.",
+      "inconclusive": "The difference is too small to be worth changing the setup. Here, speculation makes no difference.",
+      "arm": {
+        "none": "No speculation",
+        "mtp": "MTP",
+        "ngram": "N-gram"
+      },
+      "prompt": {
+        "code": "code",
+        "prose": "prose"
+      }
+    }
   }
 }

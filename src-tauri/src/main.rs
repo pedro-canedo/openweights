@@ -11,6 +11,7 @@ mod commands_rag;
 mod commands_tuning;
 mod desktop_host;
 mod scheduler;
+mod spec_bench;
 mod state;
 mod telemetry;
 #[cfg(windows)]
@@ -91,6 +92,7 @@ fn main() {
             commands_tuning::tune_apply,
             commands_tuning::tune_bench,
             commands_tuning::tune_bench_cancel,
+            commands_tuning::tune_spec_bench,
             commands::chats_list,
             commands::chat_create,
             commands::chat_delete,

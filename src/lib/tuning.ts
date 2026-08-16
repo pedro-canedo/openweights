@@ -241,3 +241,48 @@ function mockBench(model: string, profiles: ModelProfile[]): BenchOutcome {
     suspect: false,
   };
 }
+
+// ---------------------------------------------------------- especulação ---
+
+/** O que um braço da medição de especulação rendeu. */
+export interface SpecArm {
+  spec: SpecType;
+  /** Tokens por segundo por tipo de texto (`code`, `prose`). */
+  byPrompt: [string, number][];
+  avgTps: number;
+}
+
+export interface SpecOutcome {
+  model: string;
+  arms: SpecArm[];
+  best: number | null;
+  /** A diferença é pequena demais para valer uma mudança de configuração. */
+  inconclusive: boolean;
+}
+
+/**
+ * Mede especulação (MTP e n-grama) nesta máquina.
+ *
+ * É o eixo que não dá para responder sem gerar de verdade: cada braço exige o
+ * motor de pé com aquela configuração, e um reinício entre eles. Custa mais
+ * que o teste comum, por isso é um botão à parte. Não aplica nada — devolve
+ * os números.
+ */
+export function tuneSpecBench(
+  model: string,
+  profile: ModelProfile,
+  force = false,
+): Promise<SpecOutcome> {
+  if (!isTauri) {
+    return Promise.resolve({
+      model,
+      arms: [
+        { spec: "none", byPrompt: [["code", 40], ["prose", 38]], avgTps: 39 },
+        { spec: "ngram", byPrompt: [["code", 71], ["prose", 33]], avgTps: 52 },
+      ],
+      best: 1,
+      inconclusive: false,
+    });
+  }
+  return invoke<SpecOutcome>("tune_spec_bench", { model, profile, force });
+}
