@@ -344,7 +344,7 @@ impl Tool for AgentDelegate {
             opts: &self.deps.opts,
             menu: menu.clone(),
             groups: self.deps.groups.clone(),
-            tools_on: true,
+            tools_on: std::sync::atomic::AtomicBool::new(true),
             context: ContextBudget::new(self.deps.n_ctx, self.deps.config.context_ratio),
         };
 

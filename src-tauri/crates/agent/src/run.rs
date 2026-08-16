@@ -29,7 +29,8 @@ use lr_store::Store;
 use lr_tools::{SharedTool, ToolContext, ToolOutput, ToolRegistry, ToolResult};
 use lr_types::agent::{
     ApprovalDecision, ApprovalSource, PolicyScope, RunEventKind, RunMode, RunOptions, RunStatus,
-    ToolCategory, ToolGroup, ToolOrigin, ToolPolicy, ToolSpec, ToolTier, UsageStats,
+    ToolCategory, ToolGroup, ToolOrigin, ToolPolicy, ToolSpec, ToolTier, ToolsOffReason,
+    UsageStats,
 };
 use lr_types::scout::{TaskPlan, WindowBudget, WorkMode};
 use serde_json::{Value, json};
@@ -837,8 +838,19 @@ pub(crate) struct StepEngine<'a> {
     pub menu: Arc<menu::MenuState>,
     /// Famílias habilitadas pela pessoa (a recuragem precisa delas).
     pub groups: Vec<ToolGroup>,
-    pub tools_on: bool,
+    /// Ferramentas em jogo neste run.
+    ///
+    /// É atômico e não `bool` porque pode CAIR no meio do caminho: quando o
+    /// app tenta com ferramentas sem ter conseguido ler o template e o
+    /// servidor recusa, o passo é refeito sem elas e o resto do run já sabe.
+    pub tools_on: AtomicBool,
     pub context: ContextBudget,
+}
+
+impl StepEngine<'_> {
+    fn tools_on(&self) -> bool {
+        self.tools_on.load(Ordering::Relaxed)
+    }
 }
 
 /// O que um trecho de laço produziu.
@@ -858,7 +870,7 @@ impl StepEngine<'_> {
     /// A instrução da etapa é a melhor pista que existe sobre o que faz falta
     /// agora — melhor do que o objetivo geral, que já ficou para trás.
     pub(crate) fn refocus_menu(&self, goal: &str) {
-        if !self.tools_on || !self.menu.refocus(goal, &self.groups) {
+        if !self.tools_on() || !self.menu.refocus(goal, &self.groups) {
             return;
         }
         self.sink.emit(RunEventKind::ToolsSelected {
@@ -953,19 +965,47 @@ impl StepEngine<'_> {
                     // Fragmentos de tool call viram eventos completos depois.
                     ChatDelta::ToolCall { .. } => {}
                 };
-                tokio::select! {
+                let primeira = tokio::select! {
                     biased;
                     _ = self.handle.cancelled() => break RunStatus::Cancelled,
-                    r = self.client.chat_stream(&request, &mut on_delta) => match r {
-                        Ok(outcome) => outcome,
-                        Err(e) => {
-                            self.sink.emit(RunEventKind::RunError {
-                                message: format!("O modelo não respondeu: {e}"),
-                                retryable: true,
-                            });
-                            break RunStatus::Error;
+                    r = self.client.chat_stream(&request, &mut on_delta) => r,
+                };
+                match primeira {
+                    Ok(outcome) => outcome,
+                    Err(e) => {
+                        // Pode ter sido a própria lista de ferramentas: há
+                        // template que não sabe renderizar `tools` e o
+                        // servidor recusa o pedido inteiro. Como o app agora
+                        // TENTA com ferramentas quando não conseguiu ler as
+                        // capacidades, essa recusa não pode custar o run —
+                        // refazemos o passo sem elas, uma vez.
+                        let segunda = if self.tools_on() && !api_tools.is_empty() {
+                            let sem_tools = chat_request(self.opts, messages, &[]);
+                            tokio::select! {
+                                biased;
+                                _ = self.handle.cancelled() => break RunStatus::Cancelled,
+                                r = self.client.chat_stream(&sem_tools, &mut on_delta) => r.ok(),
+                            }
+                        } else {
+                            None
+                        };
+                        match segunda {
+                            Some(outcome) => {
+                                self.tools_on.store(false, Ordering::Relaxed);
+                                self.sink.emit(RunEventKind::ToolsOff {
+                                    reason: ToolsOffReason::Rejected,
+                                });
+                                outcome
+                            }
+                            None => {
+                                self.sink.emit(RunEventKind::RunError {
+                                    message: format!("O modelo não respondeu: {e}"),
+                                    retryable: true,
+                                });
+                                break RunStatus::Error;
+                            }
                         }
-                    },
+                    }
                 }
             };
 
@@ -990,7 +1030,7 @@ impl StepEngine<'_> {
             });
 
             // Sem ferramentas pedidas: é a resposta final.
-            if !self.tools_on || !outcome.wants_tools() {
+            if !self.tools_on() || !outcome.wants_tools() {
                 out.text = outcome.content.clone();
                 break RunStatus::Done;
             }
@@ -1042,17 +1082,39 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     let client =
         LlamaClient::new(&endpoint.base_url).with_optional_api_key(endpoint.api_key.clone());
 
-    // Capacidades do modelo carregado. Se o servidor não responder, seguimos
-    // sem ferramentas em vez de derrubar o run.
-    let props = match client.props().await {
-        Ok(p) => p,
+    // Capacidades do modelo DESTE run — perguntadas pelo nome dele.
+    //
+    // Sem o `?model=`, o roteador responde por si mesmo (`role: "router"`,
+    // sem `chat_template_caps`), e o harness lia isso como "o modelo não
+    // suporta ferramentas". Resultado: o modo agente rodava como chat comum
+    // com qualquer modelo, sem uma linha na tela dizendo por quê.
+    let props = match client.props_for(Some(&opts.model)).await {
+        Ok(p) if p.describes_model() => Some(p),
+        Ok(_) => {
+            log::warn!(
+                "/props respondeu pelo roteador, não pelo modelo {}",
+                opts.model
+            );
+            None
+        }
         Err(e) => {
-            log::warn!("/props indisponível ({e}); executando sem ferramentas");
-            ServerProps::default()
+            log::warn!("/props indisponível ({e}); capacidades desconhecidas");
+            None
         }
     };
-    let tools_on =
-        props.supports_tools() && opts.mode != RunMode::Chat && work_mode != WorkMode::Chat;
+    let quer_ferramentas = opts.mode != RunMode::Chat && work_mode != WorkMode::Chat;
+    // Agent-first: sem conseguir ler o template, o app TENTA com ferramentas.
+    // Errar para o lado de tentar custa uma recusa do servidor (tratada no
+    // laço, que refaz o passo sem elas); errar para o lado de desistir custa
+    // o recurso inteiro, e a pessoa nunca fica sabendo.
+    let caps_lidas = props.is_some();
+    let tools_on = quer_ferramentas && props.as_ref().is_none_or(ServerProps::supports_tools);
+    if quer_ferramentas && caps_lidas && !tools_on {
+        sink.emit(RunEventKind::ToolsOff {
+            reason: ToolsOffReason::Unsupported,
+        });
+    }
+    let props = props.unwrap_or_default();
 
     // Cardápio: o modo de trabalho manda no que o modelo PODE usar; a
     // curadoria decide o que cabe na janela DESTE modelo.
@@ -1213,7 +1275,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         opts: &opts,
         menu: menu.clone(),
         groups,
-        tools_on,
+        tools_on: AtomicBool::new(tools_on),
         context: ContextBudget::new(props.n_ctx, deps.config.context_ratio),
     };
     let window = props.n_ctx.map(WindowBudget::new).unwrap_or_default();

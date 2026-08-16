@@ -456,7 +456,9 @@
         "coder": "Ajudante trabalhando: {{objective}}"
       },
       "subagentDone": "Ajudante concluiu em {{steps}} passo(s)",
-      "subagentStopped": "Ajudante parou antes de concluir ({{steps}} passo(s))"
+      "subagentStopped": "Ajudante parou antes de concluir ({{steps}} passo(s))",
+      "toolsUnsupported": "Sem ferramentas: o template deste modelo não sabe recebê-las.",
+      "toolsRejected": "O servidor recusou o pedido com ferramentas — segui sem elas."
     },
     "focus": {
       "title": "Plano",

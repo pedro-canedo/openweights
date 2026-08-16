@@ -705,14 +705,26 @@ pub(crate) async fn restart_engine(
     start_engine(app, state).await
 }
 
-/// `GET /props` do servidor em execução: capacidades do chat template do
-/// modelo carregado.
+/// `GET /props` do servidor em execução: capacidades do chat template.
 ///
 /// É a ÚNICA fonte de verdade sobre suporte a ferramentas — decidir por nome
 /// de modelo dá falso positivo (e o agente trava pedindo tools que o template
 /// não sabe renderizar).
+///
+/// Duas armadilhas do modo Router, ambas tratadas aqui:
+///
+/// - **Sem dizer o modelo, quem responde é o roteador**, com um payload que
+///   parece "modelo sem nenhuma capacidade". Por isso o `model`.
+/// - **Perguntar por um modelo o CARREGA.** Uma tela desenhando um selo não
+///   pode despejar o modelo em uso, então só perguntamos pelo nome quando ele
+///   já está carregado. Quando não está, volta a resposta do roteador — e
+///   `describesModel` falso é o que diz à tela "ainda não sei", em vez de
+///   "não suporta".
 #[tauri::command]
-pub async fn server_props(state: State<'_, AppState>) -> CmdResult<lr_engine::ServerProps> {
+pub async fn server_props(
+    state: State<'_, AppState>,
+    model: Option<String>,
+) -> CmdResult<lr_engine::ServerProps> {
     // O lock sai de cena antes do HTTP: /props pode demorar e o loop de
     // readiness do server_start disputa o mesmo mutex.
     let (url, api_key) = {
@@ -724,11 +736,19 @@ pub async fn server_props(state: State<'_, AppState>) -> CmdResult<lr_engine::Se
             _ => return Err("servidor não está rodando".to_string()),
         }
     };
-    lr_engine::LlamaClient::new(url)
-        .with_optional_api_key(api_key)
-        .props()
-        .await
-        .map_err(err_str)
+    let client = lr_engine::LlamaClient::new(url).with_optional_api_key(api_key);
+    let pedido = model.as_deref().map(str::trim).filter(|m| !m.is_empty());
+    let carregado = match pedido {
+        Some(m) => client
+            .loaded_models()
+            .await
+            .unwrap_or_default()
+            .iter()
+            .any(|id| id == m)
+            .then_some(m),
+        None => None,
+    };
+    client.props_for(carregado).await.map_err(err_str)
 }
 
 /// Grava a janela de contexto de um modelo e atualiza o INI do Router.

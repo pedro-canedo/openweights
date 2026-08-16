@@ -30,10 +30,22 @@ struct FakeLlama {
     addr: SocketAddr,
     stop: Arc<AtomicBool>,
     calls: Arc<AtomicUsize>,
+    /// Corpo de cada pedido de chat, na ordem — é onde se vê se as
+    /// ferramentas foram mesmo oferecidas ao modelo.
+    bodies: Arc<Mutex<Vec<String>>>,
 }
+
+/// `/props` de um llama-server comum: fala do modelo e suporta ferramentas.
+const PROPS_MODELO: &str = r#"{"model_path":"/m/a.gguf",
+    "chat_template_caps":{"supports_tools":true},
+    "default_generation_settings":{"n_ctx":8192}}"#;
 
 impl FakeLlama {
     fn spawn(chat_replies: Vec<Vec<String>>) -> Self {
+        Self::spawn_with_props(chat_replies, PROPS_MODELO)
+    }
+
+    fn spawn_with_props(chat_replies: Vec<Vec<String>>, props: &str) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = listener.local_addr().expect("addr");
         listener.set_nonblocking(true).expect("nonblocking");
@@ -42,16 +54,20 @@ impl FakeLlama {
         let calls = Arc::new(AtomicUsize::new(0));
         let (flag, counter) = (stop.clone(), calls.clone());
         let replies = Arc::new(Mutex::new(chat_replies));
+        let bodies: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let vistos = bodies.clone();
+        let props_json = props.to_string();
 
         std::thread::spawn(move || {
             while !flag.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         let _ = stream.set_nonblocking(false);
-                        let Some((path, _body)) = read_request(&mut stream) else {
+                        let Some((path, body)) = read_request(&mut stream) else {
                             continue;
                         };
                         if path.contains("/chat/completions") && !path.contains("input_tokens") {
+                            vistos.lock().unwrap().push(body);
                             let idx = counter.fetch_add(1, Ordering::SeqCst);
                             let chunks = replies
                                 .lock()
@@ -62,11 +78,7 @@ impl FakeLlama {
                                 .unwrap_or_else(|| vec![text_chunk("Pronto."), done()]);
                             write_sse(&mut stream, &chunks);
                         } else if path.contains("/props") {
-                            write_json(
-                                &mut stream,
-                                r#"{"chat_template_caps":{"supports_tools":true},
-                                    "default_generation_settings":{"n_ctx":8192}}"#,
-                            );
+                            write_json(&mut stream, &props_json);
                         } else {
                             write_json(&mut stream, r#"{"count":10}"#);
                         }
@@ -79,7 +91,22 @@ impl FakeLlama {
             }
         });
 
-        Self { addr, stop, calls }
+        Self {
+            addr,
+            stop,
+            calls,
+            bodies,
+        }
+    }
+
+    /// Corpo do n-ésimo pedido de chat.
+    fn body(&self, n: usize) -> String {
+        self.bodies
+            .lock()
+            .unwrap()
+            .get(n)
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn endpoint(&self) -> Endpoint {
@@ -990,4 +1017,75 @@ async fn the_agent_delegates_and_gets_back_a_summary() {
         _ => None,
     });
     assert!(resultado.is_some(), "eventos: {kinds:?}");
+}
+
+/// **O bug que fazia o modo agente ser um chat com outro nome.**
+///
+/// No modo Router, `GET /props` sem `?model=` é respondido pelo próprio
+/// roteador: `role: "router"`, `model_path: "none"`, sem `chat_template_caps`.
+/// O harness lia isso como "o modelo não suporta ferramentas" e rodava o run
+/// inteiro sem nenhuma — com qualquer modelo, sem dizer nada. Na tela, o
+/// resultado era o modelo respondendo "não tenho ferramentas de busca".
+///
+/// Agora as capacidades são pedidas pelo nome do modelo; e quando ainda assim
+/// vier a resposta do roteador, o app **tenta com ferramentas** em vez de
+/// desistir por falta de informação.
+#[tokio::test]
+async fn a_router_answering_about_itself_does_not_disarm_the_agent() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn_with_props(
+        vec![vec![text_chunk("Pronto."), done()]],
+        r#"{"role":"router","max_instances":1,"model_path":"none",
+            "default_generation_settings":{"params":null,"n_ctx":0}}"#,
+    );
+
+    let status = h
+        .run(
+            "pesquise o resultado de ontem",
+            RunMode::Yolo,
+            server.endpoint(),
+        )
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let pedido = server.body(0);
+    assert!(
+        pedido.contains("\"tools\""),
+        "o pedido ao modelo tem de levar as ferramentas: {pedido}"
+    );
+    assert!(
+        !h.has("tools.off"),
+        "não houve recusa: nada a avisar — {:?}",
+        h.kinds()
+    );
+}
+
+/// O contrário: quando dá para ler o template E ele não aceita ferramentas,
+/// o run roda sem elas — mas **avisa**. Sem esse aviso, a mesma tela de
+/// "não tenho acesso a nada" volta a parecer culpa do modelo.
+#[tokio::test]
+async fn a_model_that_cannot_take_tools_says_so_in_the_trail() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn_with_props(
+        vec![vec![text_chunk("Não consigo pesquisar."), done()]],
+        r#"{"model_path":"/m/sem-tools.gguf",
+            "chat_template_caps":{"supports_tools":false},
+            "default_generation_settings":{"n_ctx":8192}}"#,
+    );
+
+    let status = h
+        .run(
+            "pesquise o resultado de ontem",
+            RunMode::Yolo,
+            server.endpoint(),
+        )
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let pedido = server.body(0);
+    assert!(
+        !pedido.contains("\"tools\""),
+        "template que não aceita não recebe: {pedido}"
+    );
+    assert!(h.has("tools.off"), "faltou dizer por quê: {:?}", h.kinds());
 }

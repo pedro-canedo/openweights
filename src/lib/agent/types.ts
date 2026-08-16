@@ -190,6 +190,12 @@ export type RunEvent = RunEventBase &
         requested: boolean;
       }
     | {
+        kind: "tools.off";
+        /** `unsupported`: o template do modelo não renderiza `tools`.
+         *  `rejected`: o servidor recusou o pedido com ferramentas. */
+        reason: "unsupported" | "rejected";
+      }
+    | {
         kind: "run.finished";
         status: RunStatus;
         summary: string;
@@ -324,4 +330,18 @@ export interface ServerProps {
   chatTemplateCaps: ChatTemplateCaps;
   nCtx: number | null;
   modalities: string[];
+  /** `"router"` quando quem respondeu foi o roteador, não um modelo. */
+  role: string | null;
+}
+
+/**
+ * Esta resposta fala de um modelo?
+ *
+ * No modo Router, `/props` sem `?model=` devolve as props do ROTEADOR — e
+ * elas parecem um modelo sem capacidade nenhuma. Quem lê `supportsTools`
+ * precisa passar por aqui antes, senão "ainda não sei" vira "não suporta" e
+ * a tela desabilita o modo agente sozinha.
+ */
+export function describesModel(p: ServerProps | null): p is ServerProps {
+  return p != null && p.role !== "router" && p.modelPath != null;
 }

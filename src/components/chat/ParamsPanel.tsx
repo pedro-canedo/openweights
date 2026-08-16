@@ -16,6 +16,7 @@ import {
   engineBusyReason,
   restartServer,
 } from "../../lib/api";
+import { describesModel } from "../../lib/agent/types";
 import type { ChatParams, PresetRow } from "../../lib/types";
 import { DEFAULT_CHAT_PARAMS } from "../../lib/types";
 
@@ -104,14 +105,14 @@ export default function ParamsPanel({
     void (async () => {
       const [map, props, status] = await Promise.all([
         getModelCtxMap().catch(() => ({})),
-        getServerProps().catch(() => null),
+        getServerProps(model).catch(() => null),
         getServerStatus().catch(() => null),
       ]);
       if (cancelled) return;
       const saved = lookupModelCtx(map, model);
       setCtxSaved(saved);
       setCtxDraft(saved);
-      setCtxLive(props?.nCtx ?? null);
+      setCtxLive(describesModel(props) ? props.nCtx : null);
       setServerRunning(Boolean(status?.running));
       setCtxLoaded(true);
     })();
@@ -147,8 +148,8 @@ export default function ParamsPanel({
           setCtxBusyWith(quem);
         }
       }
-      const props = await getServerProps().catch(() => null);
-      setCtxLive(props?.nCtx ?? null);
+      const props = await getServerProps(model).catch(() => null);
+      setCtxLive(describesModel(props) ? props.nCtx : null);
     } catch (e) {
       console.error("falha ao gravar janela de contexto:", e);
     } finally {

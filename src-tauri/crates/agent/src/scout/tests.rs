@@ -589,7 +589,7 @@ fn engine<'a>(h: &Harness, client: &'a LlamaClient, opts: &'a RunOptions) -> Ste
             0,
         )),
         groups: lr_types::agent::ToolGroup::ALL.to_vec(),
-        tools_on: true,
+        tools_on: std::sync::atomic::AtomicBool::new(true),
         context: crate::reliability::ContextBudget::new(Some(8_192), 0.85),
     }
 }

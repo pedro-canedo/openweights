@@ -13,6 +13,7 @@ import {
   restartServer,
   setModelCtx,
 } from "../../lib/api";
+import { describesModel } from "../../lib/agent/types";
 import type { Attachment } from "./AttachmentChips";
 import type { UiMessage } from "./MessageList";
 
@@ -90,12 +91,13 @@ export default function ContextMeter({
 
   const refreshLimit = async () => {
     const [props, map] = await Promise.all([
-      getServerProps().catch(() => null),
+      getServerProps(model).catch(() => null),
       getModelCtxMap().catch(() => ({})),
     ]);
     const configured = lookupModelCtx(map, model);
     setSaved(configured);
-    setLimit(props?.nCtx ?? configured);
+    // `nCtx` do roteador é 0 e não descreve janela nenhuma.
+    setLimit((describesModel(props) ? props.nCtx : null) ?? configured);
   };
 
   useEffect(() => {

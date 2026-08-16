@@ -456,7 +456,9 @@
         "coder": "Helper working on: {{objective}}"
       },
       "subagentDone": "Helper finished in {{steps}} step(s)",
-      "subagentStopped": "Helper stopped before finishing ({{steps}} step(s))"
+      "subagentStopped": "Helper stopped before finishing ({{steps}} step(s))",
+      "toolsUnsupported": "No tools: this model's chat template can't take them.",
+      "toolsRejected": "The server refused the request with tools — carried on without them."
     },
     "focus": {
       "title": "Plan",

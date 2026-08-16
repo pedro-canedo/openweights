@@ -38,6 +38,8 @@ const NOTES: Record<NoteKind, { key: string; className: string }> = {
   verifyFailed: { key: "agent.run.verifyFailed", className: "text-warn" },
   error: { key: "agent.run.error", className: "text-bad" },
   elicitation: { key: "agent.mcp.elicitation", className: "text-accent" },
+  toolsUnsupported: { key: "agent.run.toolsUnsupported", className: "text-warn" },
+  toolsRejected: { key: "agent.run.toolsRejected", className: "text-warn" },
 };
 
 function timeLabel(tsMs: number): string {
@@ -543,7 +545,7 @@ export default function RunTimeline({
         {error && <p className="px-3 py-4 text-[11px] text-bad">{error}</p>}
         {showBoard && view && (
           <div className="border-b border-edge">
-            <TaskBoard plan={view.plan} planning={planning} compact />
+            <TaskBoard plan={view.plan} model={view.model} planning={planning} compact />
           </div>
         )}
         {!loading && !error && !showBoard && (!view || view.items.length === 0) && (

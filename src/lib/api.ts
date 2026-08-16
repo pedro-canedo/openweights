@@ -127,11 +127,20 @@ export function engineBusyReason(e: unknown): string[] | null {
 
 /**
  * `GET /props` do llama-server via backend: capacidades do chat template
- * (ferramentas, tool calls paralelos, papel system) do modelo carregado.
+ * (ferramentas, tool calls paralelos, papel system) de um modelo.
+ *
+ * **Passe o modelo.** Sem ele, no modo Router quem responde é o roteador, e a
+ * resposta lida cruamente diz "não suporta nada". O backend só pergunta pelo
+ * nome quando o modelo já está carregado (perguntar carrega), então a
+ * resposta pode ser a do roteador mesmo assim — use `describesModel` antes de
+ * concluir qualquer coisa.
+ *
  * Rejeita quando o servidor está fora do ar — quem chama decide o fallback.
  */
-export const getServerProps = () =>
-  isTauri ? invoke<ServerProps>("server_props") : mocks.serverProps();
+export const getServerProps = (model?: string | null) =>
+  isTauri
+    ? invoke<ServerProps>("server_props", { model: model ?? null })
+    : mocks.serverProps();
 
 export const onServerStatus = (h: (s: ServerStatus) => void) =>
   listen<ServerStatus>("server-status", h);

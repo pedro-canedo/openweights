@@ -209,6 +209,7 @@ export async function serverProps(): Promise<ServerProps> {
     },
     nCtx: 40_960,
     modalities: [],
+    role: null,
   };
 }
 

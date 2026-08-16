@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { getServerProps } from "../../lib/api";
+import { describesModel } from "../../lib/agent/types";
 import {
   EFFORT_MAX_TOKENS,
   type ChatParams,
@@ -126,9 +127,12 @@ export default function ModelSelect({
     let cancelled = false;
     setSupportsTools(null);
     if (!value) return;
-    void getServerProps()
+    void getServerProps(value)
       .then((props) => {
-        if (!cancelled) setSupportsTools(props.chatTemplateCaps.supportsTools);
+        if (cancelled) return;
+        setSupportsTools(
+          describesModel(props) ? props.chatTemplateCaps.supportsTools : null,
+        );
       })
       .catch(() => {
         if (!cancelled) setSupportsTools(null);

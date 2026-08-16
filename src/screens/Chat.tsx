@@ -1057,6 +1057,7 @@ export default function Chat() {
                       {showBoard && (
                         <TaskBoard
                           plan={run.plan}
+                          model={run.model}
                           planning={run.plan == null}
                           canApprove={plansFirst(boardMode)}
                           onApprove={() =>

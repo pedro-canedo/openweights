@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getServerProps } from "../../lib/api";
+import { describesModel } from "../../lib/agent/types";
 import {
   isTaskFinished,
   planProgress,
@@ -53,14 +54,15 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-/** Janela do modelo carregado (GET /props). `null` = desconhecida. */
-function useWindowTokens(): number | null {
+/** Janela do modelo (GET /props). `null` = desconhecida. */
+function useWindowTokens(model?: string | null): number | null {
   const [nCtx, setNCtx] = useState<number | null>(null);
   useEffect(() => {
     let cancelled = false;
-    void getServerProps()
+    void getServerProps(model)
       .then((props) => {
-        if (!cancelled) setNCtx(props.nCtx);
+        // Sem `describesModel`, a janela do roteador (0) viraria a do modelo.
+        if (!cancelled) setNCtx(describesModel(props) ? props.nCtx : null);
       })
       .catch(() => {
         if (!cancelled) setNCtx(null);
@@ -68,7 +70,7 @@ function useWindowTokens(): number | null {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [model]);
   return nCtx;
 }
 
@@ -248,6 +250,7 @@ export default function TaskBoard({
   compact = false,
   onApprove,
   onReplan,
+  model,
 }: {
   plan: TaskPlan | null;
   /** O modelo ainda está dividindo a tarefa (mostra o esqueleto). */
@@ -258,13 +261,15 @@ export default function TaskBoard({
   compact?: boolean;
   onApprove?: () => void;
   onReplan?: () => void;
+  /** Modelo do run — a janela mostrada é a dele. */
+  model?: string | null;
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState<Set<string>>(() => new Set());
   // O selo "plano aprovado" só faz sentido depois de o plano ter esperado
   // por você: em laço/agente ele já nasce liberado.
   const [wasPending, setWasPending] = useState(false);
-  const nCtx = useWindowTokens();
+  const nCtx = useWindowTokens(model);
 
   const pending = plan != null && canApprove && !plan.approved;
   useEffect(() => {

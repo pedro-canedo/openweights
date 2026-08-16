@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getServerProps } from "../../lib/api";
+import { describesModel } from "../../lib/agent/types";
 import type { ChatParams } from "../../lib/types";
 
 export default function AgentToggle({
@@ -32,9 +33,14 @@ export default function AgentToggle({
     let cancelled = false;
     setSupportsTools(null);
     if (!model) return;
-    void getServerProps()
+    void getServerProps(model)
       .then((props) => {
-        if (!cancelled) setSupportsTools(props.chatTemplateCaps.supportsTools);
+        // Resposta do roteador não fala deste modelo: continua desconhecido,
+        // e desconhecido NÃO desabilita o botão.
+        if (cancelled) return;
+        setSupportsTools(
+          describesModel(props) ? props.chatTemplateCaps.supportsTools : null,
+        );
       })
       .catch(() => {
         if (!cancelled) setSupportsTools(null);

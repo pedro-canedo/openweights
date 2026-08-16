@@ -4,6 +4,15 @@
 //! nome do arquivo. Quem manda é o `chat_template_caps` que o llama-server
 //! deriva do template Jinja do GGUF carregado.
 //!
+//! Segunda regra, aprendida em campo: **no modo Router, `/props` sem
+//! `?model=` não fala do modelo — fala do roteador.** A resposta é
+//! `{"role":"router","model_path":"none",…}`, sem `chat_template_caps`, e
+//! isso vale mesmo com um modelo já carregado. Lida como se fosse do modelo,
+//! ela significa "não suporta ferramentas", e o modo agente se desliga
+//! inteiro, em silêncio, com qualquer modelo. Por isso [`ServerProps::role`]
+//! existe: quem pergunta precisa poder distinguir "o modelo não suporta" de
+//! "eu perguntei para o interlocutor errado".
+//!
 //! O payload de `/props` muda entre builds do llama.cpp (campos entram, saem
 //! e mudam de lugar), então o parse aqui é **defensivo por projeto**: tudo é
 //! opcional, formatos alternativos são aceitos e nada dá erro — na pior das
@@ -43,12 +52,33 @@ pub struct ServerProps {
     pub n_ctx: Option<u32>,
     /// Modalidades extras do modelo (`vision`, `audio`), sempre ordenadas.
     pub modalities: Vec<String>,
+    /// `"router"` quando quem respondeu foi o roteador, e não um modelo.
+    pub role: Option<String>,
 }
 
 impl ServerProps {
     /// Atalho de legibilidade nos call sites do harness.
     pub fn supports_tools(&self) -> bool {
         self.chat_template_caps.supports_tools
+    }
+
+    /// Esta resposta descreve um modelo?
+    ///
+    /// `false` quando quem respondeu foi o roteador — o que acontece sempre
+    /// que se pede `/props` sem dizer o modelo no modo Router. Nesse caso
+    /// **nada** aqui dentro pode ser lido como característica do modelo:
+    /// `supports_tools` falso significa "não perguntei direito", não "não
+    /// suporta".
+    pub fn describes_model(&self) -> bool {
+        if self.role.as_deref() == Some("router") {
+            return false;
+        }
+        // Um roteador de build antigo pode não se anunciar pelo `role`: o que
+        // sobra dele é uma resposta sem caminho, sem janela e sem capacidade
+        // nenhuma. Servidor de modelo único sempre traz ao menos uma das três.
+        self.model_path.is_some()
+            || self.n_ctx.is_some()
+            || self.chat_template_caps != ChatTemplateCaps::default()
     }
 
     pub fn has_modality(&self, name: &str) -> bool {
@@ -130,10 +160,13 @@ pub fn parse_props(v: &Value) -> ServerProps {
         .or_else(|| u32_at(v, "n_ctx"))
         .filter(|n| *n > 0);
 
+    // O roteador se anuncia com `model_path: "none"` — string literal, não
+    // ausência. Sem este filtro ele passaria por "modelo carregado".
     let model_path = string_at(v, "model_path")
         .or_else(|| string_at(v, "model"))
         .or_else(|| string_at(defaults, "model_path"))
-        .or_else(|| string_at(defaults, "model"));
+        .or_else(|| string_at(defaults, "model"))
+        .filter(|p| p != "none");
 
     let mut modalities = parse_modalities(&v["modalities"]);
     if modalities.is_empty() {
@@ -145,6 +178,7 @@ pub fn parse_props(v: &Value) -> ServerProps {
         chat_template_caps,
         n_ctx,
         modalities,
+        role: string_at(v, "role"),
     }
 }
 
@@ -182,6 +216,66 @@ mod tests {
         assert_eq!(p.modalities, vec!["vision".to_string()]);
         assert!(p.has_modality("vision"));
         assert!(!p.has_modality("audio"));
+    }
+
+    /// Resposta real do `/props` no modo Router quando não se diz o modelo
+    /// (build b10441) — inclusive com um modelo JÁ carregado.
+    ///
+    /// Este payload custou caro: lido como se fosse do modelo, ele desliga o
+    /// modo agente inteiro. O teste existe para que ninguém volte a
+    /// confundir "o roteador respondeu" com "o modelo não suporta".
+    #[test]
+    fn the_router_answering_for_itself_is_not_a_model() {
+        let v = json!({
+            "role": "router",
+            "max_instances": 1,
+            "models_autoload": true,
+            "model_alias": "llama-server",
+            "model_path": "none",
+            "default_generation_settings": { "params": null, "n_ctx": 0 },
+            "build_info": "b10441-0177dcc73"
+        });
+        let p = parse_props(&v);
+        assert!(!p.describes_model(), "isto não fala de modelo nenhum");
+        assert_eq!(p.model_path, None, "`none` é ausência, não caminho");
+        assert_eq!(p.n_ctx, None, "n_ctx 0 não é janela");
+        assert!(!p.supports_tools());
+    }
+
+    /// Servidor de modelo único (sem roteador) não manda `role`, e às vezes
+    /// nem `model_path` — mas o que ele diz é do modelo, e não pode ser
+    /// jogado fora.
+    #[test]
+    fn a_plain_server_without_a_role_field_still_describes_its_model() {
+        let v = json!({
+            "chat_template_caps": { "supports_tools": true },
+            "default_generation_settings": { "n_ctx": 8192 }
+        });
+        let p = parse_props(&v);
+        assert!(p.describes_model());
+        assert!(p.supports_tools());
+        assert_eq!(p.n_ctx, Some(8192));
+    }
+
+    /// A mesma pergunta com `?model=` volta descrevendo o modelo.
+    #[test]
+    fn asking_for_a_named_model_answers_about_that_model() {
+        let v = json!({
+            "model_path": "C:/models/Qwen3.5-9B-MTP-Q4_K_M.gguf",
+            "chat_template_caps": {
+                "supports_tools": true,
+                "supports_tool_calls": true,
+                "supports_parallel_tool_calls": true,
+                "supports_system_role": true
+            },
+            "modalities": { "vision": false, "audio": false },
+            "default_generation_settings": { "n_ctx": 238848 }
+        });
+        let p = parse_props(&v);
+        assert!(p.describes_model());
+        assert!(p.supports_tools());
+        assert_eq!(p.n_ctx, Some(238_848));
+        assert!(p.modalities.is_empty(), "vision:false não é modalidade");
     }
 
     /// Sem `chat_template_caps`: tudo `false` (conservador — desliga tools).
@@ -251,6 +345,7 @@ mod tests {
             },
             n_ctx: Some(1024),
             modalities: vec!["vision".into()],
+            role: None,
         };
         let v = serde_json::to_value(&p).unwrap();
         assert_eq!(v["modelPath"], "/m.gguf");

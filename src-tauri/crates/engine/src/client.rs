@@ -442,6 +442,10 @@ pub struct LlamaClient {
 /// Requisições curtas (props/tokenize/embeddings) não podem pendurar o loop.
 const SHORT_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Pedir as props de um modelo específico faz o roteador CARREGAR o modelo.
+/// O relógio aqui é o do disco e da placa, não o de uma consulta.
+const LOAD_TIMEOUT: Duration = Duration::from_secs(300);
+
 impl LlamaClient {
     pub fn new(base_url: impl Into<String>) -> Self {
         let base = base_url.into().trim_end_matches('/').to_string();
@@ -484,20 +488,74 @@ impl LlamaClient {
         }
     }
 
-    /// `GET /props` → capacidades do modelo carregado.
+    /// `GET /props` sem dizer o modelo.
+    ///
+    /// **No modo Router isto NÃO descreve modelo nenhum** — devolve as props
+    /// do roteador (veja [`ServerProps::describes_model`]). Serve para saber
+    /// se o servidor está de pé; para decidir qualquer coisa sobre um modelo,
+    /// use [`LlamaClient::props_for`].
     ///
     /// Erro de status vira `Err`, nunca um `ServerProps` vazio: um default
     /// silencioso seria lido como "modelo não suporta ferramentas" e a UI
     /// mostraria o badge errado em vez de avisar que o servidor caiu.
     pub async fn props(&self) -> Result<ServerProps, EngineError> {
-        let mut res = self
-            .auth(self.http.get(self.url("/props")))
-            .timeout(SHORT_TIMEOUT)
+        self.props_for(None).await
+    }
+
+    /// `GET /props?model=…` → capacidades daquele modelo.
+    ///
+    /// Duas coisas que o call site precisa saber:
+    ///
+    /// - **Sem o `model`, o roteador responde por si mesmo.** Era o que
+    ///   acontecia no laço do agente, e o efeito era o modo agente rodar sem
+    ///   ferramenta nenhuma, calado, com qualquer modelo.
+    /// - **Perguntar CARREGA o modelo** (autoload do roteador). Por isso o
+    ///   timeout aqui é de carga, não o curto: numa placa ocupada, subir um
+    ///   modelo de 9B passa folgado dos 30 s.
+    pub async fn props_for(&self, model: Option<&str>) -> Result<ServerProps, EngineError> {
+        let modelo = model.map(str::trim).filter(|m| !m.is_empty());
+        let mut rb = self.auth(self.http.get(self.url("/props")));
+        if let Some(m) = modelo {
+            rb = rb.query(&[("model", m)]);
+        }
+        let mut res = rb
+            .timeout(if modelo.is_some() {
+                LOAD_TIMEOUT
+            } else {
+                SHORT_TIMEOUT
+            })
             .send()
             .await?;
         ensure_ok(&mut res).await?;
         let v: Value = read_json(res).await?;
         Ok(parse_props(&v))
+    }
+
+    /// `GET /v1/models` → nomes dos modelos **já carregados**.
+    ///
+    /// Existe para quem quer as capacidades de um modelo sem pagar por elas:
+    /// [`LlamaClient::props_for`] carrega o modelo que não está no ar, e com
+    /// `models-max = 1` isso despeja o que estava carregado. Uma tela que só
+    /// quer desenhar um selo não pode causar isso.
+    pub async fn loaded_models(&self) -> Result<Vec<String>, EngineError> {
+        let mut res = self
+            .auth(self.http.get(self.url("/v1/models")))
+            .timeout(SHORT_TIMEOUT)
+            .send()
+            .await?;
+        ensure_ok(&mut res).await?;
+        let v: Value = read_json(res).await?;
+        Ok(v["data"]
+            .as_array()
+            .map(|itens| {
+                itens
+                    .iter()
+                    .filter(|m| m["status"]["value"].as_str() == Some("loaded"))
+                    .filter_map(|m| m["id"].as_str())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     /// `POST /v1/chat/completions` com `stream: true`.

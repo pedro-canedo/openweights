@@ -78,7 +78,11 @@ export type NoteKind =
   | "verified"
   | "verifyFailed"
   | "error"
-  | "elicitation";
+  | "elicitation"
+  /** O run está sem ferramentas porque o template do modelo não as aceita. */
+  | "toolsUnsupported"
+  /** O servidor recusou o pedido com ferramentas; seguiu sem elas. */
+  | "toolsRejected";
 
 export interface StepItem {
   kind: "step";
@@ -478,6 +482,20 @@ export function reduceEvent(run: RunView, event: RunEvent): RunView {
           tsMs: event.tsMs,
         },
       ];
+      break;
+
+    // Sem ferramentas o agente vira um chat, e a diferença precisa estar
+    // ESCRITA: senão a pessoa lê "não tenho acesso à internet" e conclui que
+    // o modelo é ruim, quando pode ter sido o app.
+    case "tools.off":
+      next.toolNames = [];
+      next.items = note(
+        next.items,
+        `tools-off-${event.seq}`,
+        event.reason === "rejected" ? "toolsRejected" : "toolsUnsupported",
+        "",
+        event.tsMs,
+      );
       break;
 
     case "subagent.started":

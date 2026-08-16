@@ -440,12 +440,31 @@ pub enum RunEventKind {
         /// `true` quando foi o modelo que pediu (`tools_find`).
         requested: bool,
     },
+    /// Este run vai rodar **sem ferramentas**, e por quê.
+    ///
+    /// O silêncio aqui sai caro: um agente sem ferramentas responde "não
+    /// tenho acesso à internet" e a conclusão de quem lê é "o modelo é
+    /// ruim" — quando o que houve pode ter sido o app perguntar as
+    /// capacidades ao interlocutor errado. Se o harness desliga o que
+    /// promete, ele diz.
+    #[serde(rename = "tools.off")]
+    ToolsOff { reason: ToolsOffReason },
     #[serde(rename = "run.finished")]
     RunFinished {
         status: RunStatus,
         summary: String,
         usage: UsageStats,
     },
+}
+
+/// Por que um run ficou sem ferramentas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ToolsOffReason {
+    /// O template de chat do modelo não sabe renderizar `tools`.
+    Unsupported,
+    /// O servidor recusou o pedido COM ferramentas; o run seguiu sem elas.
+    Rejected,
 }
 
 /// Envelope entregue à UI (Channel) e persistido em `run_events`.
@@ -485,6 +504,7 @@ impl RunEvent {
             RunEventKind::SubagentStarted { .. } => "subagent.started",
             RunEventKind::SubagentFinished { .. } => "subagent.finished",
             RunEventKind::ToolsSelected { .. } => "tools.selected",
+            RunEventKind::ToolsOff { .. } => "tools.off",
             RunEventKind::RunFinished { .. } => "run.finished",
         }
     }
