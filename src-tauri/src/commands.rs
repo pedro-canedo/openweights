@@ -317,13 +317,13 @@ pub async fn server_start(
 
         // --models-dir do llama.cpp não é recursivo; a biblioteca mora em
         // autor/repo/. O INI registra cada GGUF com o nome que a UI já usa.
+        // Sem extras por enquanto: embedding/reranker (pooling = mean) entram
+        // aqui quando o RAG chegar.
         let preset_path = state.data_dir.join("router-models.ini");
-        let preset_models: Vec<(String, std::path::PathBuf)> = lr_models::scan_local(
-            &state.models_dir,
-        )
-        .into_iter()
-        .map(|a| (a.name, a.primary_path))
-        .collect();
+        let preset_models: Vec<lr_engine::PresetEntry> = lr_models::scan_local(&state.models_dir)
+            .into_iter()
+            .map(|a| lr_engine::PresetEntry::new(a.name, a.primary_path))
+            .collect();
         lr_engine::write_models_preset(&preset_path, &preset_models).map_err(err_str)?;
         cfg.models_preset = Some(preset_path);
 
@@ -421,6 +421,32 @@ pub async fn server_stop(app: AppHandle, state: State<'_, AppState>) -> CmdResul
         },
     );
     Ok(())
+}
+
+/// `GET /props` do servidor em execução: capacidades do chat template do
+/// modelo carregado.
+///
+/// É a ÚNICA fonte de verdade sobre suporte a ferramentas — decidir por nome
+/// de modelo dá falso positivo (e o agente trava pedindo tools que o template
+/// não sabe renderizar).
+#[tauri::command]
+pub async fn server_props(state: State<'_, AppState>) -> CmdResult<lr_engine::ServerProps> {
+    // O lock sai de cena antes do HTTP: /props pode demorar e o loop de
+    // readiness do server_start disputa o mesmo mutex.
+    let (url, api_key) = {
+        let guard = state.server.lock().await;
+        match guard.as_ref() {
+            Some(srv) if srv.is_spawned() => {
+                (srv.config().connect_url(), srv.config().api_key.clone())
+            }
+            _ => return Err("servidor não está rodando".to_string()),
+        }
+    };
+    lr_engine::LlamaClient::new(url)
+        .with_optional_api_key(api_key)
+        .props()
+        .await
+        .map_err(err_str)
 }
 
 // ---------------------------------------------------------------- chats ---
@@ -542,8 +568,8 @@ pub async fn settings_set(state: State<'_, AppState>, key: String, value: String
 // ----------------------------------------------------------- workspace ---
 
 #[tauri::command]
-pub async fn workspace_pick() -> CmdResult<Option<String>> {
-    Ok(crate::workspace::pick_folder().await)
+pub async fn workspace_pick(window: tauri::WebviewWindow) -> CmdResult<Option<String>> {
+    Ok(crate::workspace::pick_folder(Some(window)).await)
 }
 
 #[tauri::command]

@@ -190,6 +190,13 @@ export interface ChatParams {
   effort: EffortLevel;
   /** Pasta anexada à sessão (leitura/edição e @arquivo). */
   workspaceDir: string | null;
+  /**
+   * Modelo escolhido nesta conversa. `chats.model_id` só é gravado na
+   * criação (não há `chat_set_model` ainda), então trocar de modelo no meio
+   * da conversa se perdia ao reabrir; aqui o valor acompanha os params.
+   * Ausente/`null` = cair para `ChatRow.modelId`.
+   */
+  model?: string | null;
 }
 
 export interface WorkspaceFile {
@@ -207,4 +214,5 @@ export const DEFAULT_CHAT_PARAMS: ChatParams = {
   approval: "auto",
   effort: "high",
   workspaceDir: null,
+  model: null,
 };

@@ -18,6 +18,16 @@
 //!   chamado em `RunEvent::Exit` (e temos kill-on-drop como cinto de
 //!   segurança).
 
+pub mod client;
+pub mod props;
+
+pub use client::{
+    ChatDelta, ChatMessage, ChatOutcome, ChatRequest, ContentPart, FunctionCallMsg, ImageUrl,
+    LlamaClient, MessageContent, NamedFunction, NamedToolChoice, Timings, ToolCallMsg, ToolCallReq,
+    ToolChoice, tool_specs_to_api,
+};
+pub use props::{ChatTemplateCaps, ServerProps, parse_props};
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -32,6 +42,12 @@ pub enum EngineError {
     Network(#[from] reqwest::Error),
     #[error("engine não está rodando")]
     NotRunning,
+    /// O servidor respondeu, mas com status de erro (corpo já resumido).
+    #[error("HTTP {status} do engine: {body}")]
+    Http { status: u16, body: String },
+    /// Resposta bem-sucedida porém fora do formato esperado.
+    #[error("resposta inesperada do engine: {0}")]
+    Protocol(String),
 }
 
 /// Configuração de inicialização do llama-server em Router mode.
@@ -116,18 +132,57 @@ impl ServerConfig {
     }
 }
 
+/// Uma seção do INI do `--models-preset`.
+///
+/// `extras` são pares `chave = valor` gravados junto do `model` na mesma
+/// seção — é assim que um modelo de embedding recebe `pooling = mean` e um
+/// reranker recebe `reranking = true` sem afetar os modelos de chat, que
+/// dividem o mesmo processo em Router mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PresetEntry {
+    /// Valor que a UI/API manda no campo `model`.
+    pub id: String,
+    pub path: PathBuf,
+    pub extras: Vec<(String, String)>,
+}
+
+impl PresetEntry {
+    pub fn new(id: impl Into<String>, path: impl Into<PathBuf>) -> Self {
+        Self {
+            id: id.into(),
+            path: path.into(),
+            extras: Vec::new(),
+        }
+    }
+
+    pub fn with_extra(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.extras.push((key.into(), value.into()));
+        self
+    }
+}
+
+impl From<(String, PathBuf)> for PresetEntry {
+    fn from((id, path): (String, PathBuf)) -> Self {
+        Self::new(id, path)
+    }
+}
+
 /// Gera o INI do `--models-preset` para o llama-server.
 ///
-/// Cada par `(id, caminho)` vira uma seção: o `id` é o valor de `"model"`
-/// nas requisições OpenAI. Caminhos usam `/` para o parser do llama.cpp
-/// não tratar `\` do Windows como escape.
-pub fn write_models_preset(path: &Path, models: &[(String, PathBuf)]) -> std::io::Result<()> {
+/// Cada entrada vira uma seção: o `id` é o valor de `"model"` nas
+/// requisições OpenAI. Caminhos usam `/` para o parser do llama.cpp não
+/// tratar `\` do Windows como escape.
+pub fn write_models_preset(path: &Path, entries: &[PresetEntry]) -> std::io::Result<()> {
     let mut used = HashSet::new();
     let mut body = String::from("; gerado automaticamente — não edite\nversion = 1\n\n");
-    for (name, file) in models {
-        let id = unique_preset_id(name, &mut used);
-        let abs = path_for_ini(file);
-        body.push_str(&format!("[{id}]\nmodel = {abs}\n\n"));
+    for entry in entries {
+        let id = unique_preset_id(&entry.id, &mut used);
+        let abs = path_for_ini(&entry.path);
+        body.push_str(&format!("[{id}]\nmodel = {abs}\n"));
+        for (key, value) in &entry.extras {
+            body.push_str(&format!("{key} = {value}\n"));
+        }
+        body.push('\n');
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -316,22 +371,29 @@ mod tests {
         assert!(joined.contains("--models-preset /tmp/router-models.ini"));
     }
 
-    #[test]
-    fn writes_preset_ini_with_unique_ids() {
-        let dir = std::env::temp_dir().join(format!("lr-preset-{}", std::process::id()));
+    /// Pasta temporária isolada por teste (o id do processo é o mesmo para
+    /// todos os testes do binário).
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("lr-preset-{}-{tag}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn writes_preset_ini_with_unique_ids() {
+        let dir = temp_dir("ids");
         let ini = dir.join("router-models.ini");
         write_models_preset(
             &ini,
             &[
-                (
-                    "Qwen3.8-27B-UD-Q2_K_XL.gguf".into(),
-                    PathBuf::from(r"C:\models\author\repo\Qwen3.8-27B-UD-Q2_K_XL.gguf"),
+                PresetEntry::new(
+                    "Qwen3.8-27B-UD-Q2_K_XL.gguf",
+                    r"C:\models\author\repo\Qwen3.8-27B-UD-Q2_K_XL.gguf",
                 ),
-                (
-                    "Qwen3.8-27B-UD-Q2_K_XL.gguf".into(),
-                    PathBuf::from("/other/Qwen3.8-27B-UD-Q2_K_XL.gguf"),
+                PresetEntry::new(
+                    "Qwen3.8-27B-UD-Q2_K_XL.gguf",
+                    "/other/Qwen3.8-27B-UD-Q2_K_XL.gguf",
                 ),
             ],
         )
@@ -342,5 +404,39 @@ mod tests {
         assert!(text.contains("model = C:/models/author/repo/Qwen3.8-27B-UD-Q2_K_XL.gguf"));
         assert!(!text.contains('\\'));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Extras viram linhas `chave = valor` DENTRO da seção do modelo —
+    /// é o que permite subir chat + embedding no mesmo processo.
+    #[test]
+    fn writes_preset_extras_inside_the_section() {
+        let dir = temp_dir("extras");
+        let ini = dir.join("router-models.ini");
+        write_models_preset(
+            &ini,
+            &[
+                PresetEntry::new("chat.gguf", "/m/chat.gguf"),
+                PresetEntry::new("bge-m3.gguf", "/m/bge-m3.gguf")
+                    .with_extra("embedding", "true")
+                    .with_extra("pooling", "mean"),
+            ],
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&ini).unwrap();
+        assert_eq!(
+            text,
+            "; gerado automaticamente — não edite\nversion = 1\n\n\
+             [chat.gguf]\nmodel = /m/chat.gguf\n\n\
+             [bge-m3.gguf]\nmodel = /m/bge-m3.gguf\nembedding = true\npooling = mean\n\n"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O formato antigo `(id, caminho)` ainda converte em uma linha.
+    #[test]
+    fn preset_entry_from_tuple() {
+        let e: PresetEntry = ("m.gguf".to_string(), PathBuf::from("/m/m.gguf")).into();
+        assert_eq!(e, PresetEntry::new("m.gguf", "/m/m.gguf"));
+        assert!(e.extras.is_empty());
     }
 }

@@ -250,6 +250,13 @@ export default function MessageList({
   };
 
   const last = messages[messages.length - 1];
+  // A bolha do assistente já mostra o próprio indicador enquanto o 1º token
+  // não chega; sem esta checagem apareceriam dois "carregando" na tela.
+  const waitingFirstToken =
+    generating &&
+    last?.role === "assistant" &&
+    last.content === "" &&
+    !last.reasoning;
 
   return (
     <div

@@ -20,6 +20,7 @@ import {
 import { type ChatMessage, type ContentPart } from "../lib/llama";
 import { chatStore } from "../lib/chatStore";
 import { generationStore } from "../lib/generationStore";
+import { listLoadedModels, matchServerModel } from "../lib/serverSession";
 import { navigate, takePendingChatModel } from "../lib/nav";
 import {
   DEFAULT_CHAT_PARAMS,
@@ -47,28 +48,36 @@ import ModelSelect from "../components/chat/ModelSelect";
 import ParamsPanel from "../components/chat/ParamsPanel";
 
 /**
- * Opções do seletor: se o servidor está rodando, usa GET /v1/models
- * (fonte da verdade do Router mode); senão, os nomes da biblioteca local.
+ * Opções do seletor: ids servidos pelo Router (GET /v1/models) PRIMEIRO,
+ * seguidos do resto da biblioteca local.
+ *
+ * A união importa: o catálogo do Router é o INI escrito uma vez no
+ * `server_start`, então um modelo baixado com o servidor no ar não aparecia
+ * em /v1/models — e o código antigo, ao ver o servidor rodando, descartava a
+ * biblioteca local inteira e sumia com ele do seletor.
  */
 async function loadModelOptions(): Promise<string[]> {
+  let ids: string[] = [];
   try {
     const status = await getServerStatus();
     if (status.running && status.baseUrl) {
-      const res = await fetch(`${status.baseUrl}/v1/models`);
-      if (res.ok) {
-        const json = (await res.json()) as { data?: { id: string }[] };
-        const ids = (json.data ?? []).map((d) => d.id);
-        if (ids.length > 0) return ids;
-      }
+      ids = await listLoadedModels(status.baseUrl);
     }
   } catch {
-    // servidor inacessível — cai para a biblioteca local
+    // servidor inacessível — fica só a biblioteca local
   }
+  let local: string[] = [];
   try {
-    return (await listLocalModels()).map((m) => m.name);
+    local = (await listLocalModels()).map((m) => m.name);
   } catch {
-    return [];
+    local = [];
   }
+  const out = [...ids];
+  for (const name of local) {
+    // O id do Router pode ser o nome sem `.gguf` — não duplicar o modelo.
+    if (!ids.includes(matchServerModel(name, ids))) out.push(name);
+  }
+  return out;
 }
 
 /** Extrai o prefixo <think>...</think> salvo no DB (raciocínio persistido). */
@@ -100,11 +109,21 @@ function rowToUi(r: MessageRow): UiMessage {
 
 const IMAGE_MARKER_RE = /\n*\[imagem: [^\]\n]+\]/g;
 
-/** Mensagens da UI → formato da API (multimodal quando há imagens). */
+/**
+ * Mensagens da UI → formato da API (multimodal quando há imagens).
+ *
+ * O marcador `[imagem: nome]` é escrito no conteúdo persistido só para a
+ * exibição: os bytes da imagem não vão para o SQLite (débito conhecido). Ao
+ * recarregar uma conversa antiga ele voltava como texto e era reenviado ao
+ * modelo — poluindo o contexto e, em multimodal, prometendo uma imagem que
+ * não existe mais. Por isso o marcador é removido SEMPRE aqui (e só aqui:
+ * na tela a mensagem continua igual ao que foi enviado).
+ */
 function toApiMessages(history: UiMessage[]): ChatMessage[] {
   return history.map((m) => {
-    if (m.role === "user" && m.images && m.images.length > 0) {
-      const text = m.content.replace(IMAGE_MARKER_RE, "").trim();
+    if (m.role !== "user") return { role: m.role, content: m.content };
+    const text = m.content.replace(IMAGE_MARKER_RE, "").trim();
+    if (m.images && m.images.length > 0) {
       const parts: ContentPart[] = [];
       if (text) parts.push({ type: "text", text });
       for (const img of m.images) {
@@ -112,7 +131,7 @@ function toApiMessages(history: UiMessage[]): ChatMessage[] {
       }
       return { role: m.role, content: parts };
     }
-    return { role: m.role, content: m.content };
+    return { role: m.role, content: text };
   });
 }
 
@@ -127,7 +146,12 @@ export default function Chat() {
     generationStore.get,
   );
 
-  const [activeChatId, setActiveChatId] = useState<number | null>(null);
+  // Sair do Chat DESMONTA esta tela (App renderiza por condicional): sem
+  // semear o id daqui, voltar de "Meus Modelos" abria uma conversa em branco
+  // e as mensagens pareciam ter sumido. O `chatStore` é a memória.
+  const [activeChatId, setActiveChatId] = useState<number | null>(
+    () => chatStore.get().activeId,
+  );
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [models, setModels] = useState<string[] | null>(null);
   const [selectedModel, setSelectedModel] = useState("");
@@ -148,8 +172,16 @@ export default function Chat() {
   // Ids já vistos na lista — um id novo (ainda não listado) não é exclusão.
   const seenChatIdsRef = useRef<Set<number>>(new Set());
   // Pula o persist com debounce quando os params acabaram de ser CARREGADOS.
-  const paramsSkipRef = useRef(false);
+  // Começa `true`: a primeira execução do efeito é a montagem, com os
+  // padrões — persistir ali sobrescreveria os params salvos da conversa
+  // restaurada antes mesmo de ela ser lida do banco.
+  const paramsSkipRef = useRef(true);
   const attachErrTimerRef = useRef(0);
+  // Recarregar a conversa semeada pelo chatStore acontece uma única vez.
+  const restoredRef = useRef(false);
+  // Modelo vindo de "Conversar" em Meus Modelos: vence o modelo salvo da
+  // conversa restaurada (é uma escolha explícita do usuário), uma vez só.
+  const pendingModelRef = useRef<string | null>(null);
 
   const canPersistId = (id: number | null): id is number =>
     id != null && !deletedChatsRef.current.has(id);
@@ -163,12 +195,15 @@ export default function Chat() {
       .catch(() => {});
 
     const pending = takePendingChatModel();
+    pendingModelRef.current = pending ?? null;
     void loadModelOptions().then((list) => {
       if (cancelled) return;
       const options =
         pending && !list.includes(pending) ? [pending, ...list] : list;
       setModels(options);
-      setSelectedModel((cur) => cur || pending || options[0] || "");
+      setSelectedModel(
+        (cur) => pendingModelRef.current || cur || options[0] || "",
+      );
     });
 
     return () => {
@@ -206,7 +241,6 @@ export default function Chat() {
     const epoch = convEpochRef.current;
     setActiveChatId(chat.id);
     resetComposer();
-    if (chat.modelId) setSelectedModel(chat.modelId);
 
     // Parâmetros da conversa (paramsJson) — carregar não deve re-persistir.
     paramsSkipRef.current = true;
@@ -222,6 +256,12 @@ export default function Chat() {
       }
     }
     setParams(loaded);
+    // `chats.model_id` só é gravado na criação: o modelo atual da conversa
+    // mora nos params (fallback para o da criação).
+    const pending = pendingModelRef.current;
+    pendingModelRef.current = null;
+    const restoredModel = pending ?? loaded.model ?? chat.modelId;
+    if (restoredModel) setSelectedModel(restoredModel);
 
     try {
       const rows = await listMessages(chat.id);
@@ -252,6 +292,25 @@ export default function Chat() {
     void selectChat(row);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openId, openNew, chats]);
+
+  // Remontagem da tela: recarrega mensagens/params da conversa semeada.
+  useEffect(() => {
+    if (restoredRef.current) return;
+    if (openNew || openId != null || activeChatId == null) {
+      restoredRef.current = true;
+      return;
+    }
+    const row = chats.find((c) => c.id === activeChatId);
+    if (row) {
+      restoredRef.current = true;
+      void selectChat(row);
+    } else if (chats.length > 0) {
+      // Conversa sumiu (excluída em outra tela) — abre em branco.
+      restoredRef.current = true;
+      newChat();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chats, openId, openNew, activeChatId]);
 
   useEffect(() => {
     for (const c of chats) seenChatIdsRef.current.add(c.id);
@@ -327,6 +386,7 @@ export default function Chat() {
     if (!job || !activeChatId) return;
     if (job.state !== "done" && job.state !== "error") return;
     const epoch = convEpochRef.current;
+    const jobId = job.id;
     const errorOnly = Boolean(job.error && !job.content && !job.rowId);
     const errorText = job.error;
     const thinkingMs = job.thinkingMs;
@@ -334,6 +394,10 @@ export default function Chat() {
       try {
         const rows = await listMessages(activeChatId);
         if (convEpochRef.current !== epoch) return;
+        // Uma geração nova já começou nesta conversa enquanto líamos o DB:
+        // aplicar esta lista apagaria da tela a mensagem recém-enviada.
+        const current = generationStore.jobFor(activeChatId);
+        if (current && current.id !== jobId) return;
         const ui = rows.map(rowToUi);
         if (thinkingMs != null) {
           for (let i = ui.length - 1; i >= 0; i--) {
@@ -403,6 +467,12 @@ export default function Chat() {
       imageAtts.length > 0
         ? imageAtts.map((a) => ({ name: a.name, dataUrl: a.data }))
         : undefined;
+    // O modelo em uso viaja nos params (é o que a conversa reabre depois).
+    const sendParams: ChatParams =
+      params.model === selectedModel
+        ? params
+        : { ...params, model: selectedModel };
+    if (sendParams !== params) setParams(sendParams);
     resetComposer();
 
     try {
@@ -458,12 +528,12 @@ export default function Chat() {
               title,
               modelId: selectedModel,
               createdAt: Date.now(),
-              paramsJson: JSON.stringify(params),
+              paramsJson: JSON.stringify(sendParams),
             },
             ...chats.filter((c) => c.id !== chatId),
           ]);
           if (convEpochRef.current === epoch) setActiveChatId(chatId);
-          void setChatParams(chatId, JSON.stringify(params)).catch(() => {});
+          void setChatParams(chatId, JSON.stringify(sendParams)).catch(() => {});
           void listChats()
             .then(chatStore.setChats)
             .catch(() => {});
@@ -473,7 +543,10 @@ export default function Chat() {
             () => 0,
           );
           if (rowId > 0) {
+            // Sem o rowId no estado, editar/apagar esta mensagem não chegaria
+            // ao DB (e a versão antiga voltaria ao reabrir a conversa).
             history = [...messages, { ...userMsg, rowId }];
+            if (convEpochRef.current === epoch) setMessages(history);
           }
         }
       }
@@ -483,7 +556,7 @@ export default function Chat() {
         chatId,
         messages: toApiMessages(history),
         model: selectedModel,
-        params,
+        params: sendParams,
         autoTitle: created,
       });
     } catch (err) {
@@ -680,7 +753,14 @@ export default function Chat() {
                     <ModelSelect
                       models={models ?? []}
                       value={selectedModel}
-                      onChange={setSelectedModel}
+                      onChange={(model) => {
+                        setSelectedModel(model);
+                        // Trocar de modelo no meio da conversa precisa ficar
+                        // gravado (os params são salvos por conversa).
+                        setParams((p) =>
+                          p.model === model ? p : { ...p, model },
+                        );
+                      }}
                       params={params}
                       onParamsChange={setParams}
                       disabled={generating}

@@ -20,9 +20,9 @@ const MAX_DEPTH: usize = 5;
 const MAX_BYTES: u64 = 300 * 1024;
 
 const TEXT_EXTS: &[&str] = &[
-    "txt", "md", "markdown", "json", "js", "ts", "tsx", "jsx", "py", "rs", "toml",
-    "yaml", "yml", "css", "html", "htm", "c", "cpp", "h", "hpp", "java", "go",
-    "rb", "php", "sh", "sql", "csv", "log", "xml", "svg", "env", "ini", "cfg",
+    "txt", "md", "markdown", "json", "js", "ts", "tsx", "jsx", "py", "rs", "toml", "yaml", "yml",
+    "css", "html", "htm", "c", "cpp", "h", "hpp", "java", "go", "rb", "php", "sh", "sql", "csv",
+    "log", "xml", "svg", "env", "ini", "cfg",
 ];
 
 #[derive(Debug)]
@@ -56,9 +56,16 @@ pub struct WorkspaceFile {
     pub bytes: u64,
 }
 
-pub async fn pick_folder() -> Option<String> {
-    rfd::AsyncFileDialog::new()
-        .set_title("Adicionar pasta à sessão")
+/// Abre o seletor de pastas.
+///
+/// `parent` amarra o diálogo à janela do app: sem isso, no Windows ele abre
+/// ATRÁS da janela principal e dá a impressão de que nada aconteceu.
+pub async fn pick_folder(parent: Option<tauri::WebviewWindow>) -> Option<String> {
+    let mut dialog = rfd::AsyncFileDialog::new().set_title("Adicionar pasta à sessão");
+    if let Some(window) = parent.as_ref() {
+        dialog = dialog.set_parent(window);
+    }
+    dialog
         .pick_folder()
         .await
         .map(|h| h.path().to_string_lossy().into_owned())
@@ -185,12 +192,16 @@ fn resolve_under(root: &Path, rel: &str) -> WsResult<PathBuf> {
             .ok_or_else(|| WorkspaceError::Msg("caminho inválido".into()))?;
         let parent = std::fs::canonicalize(parent)?;
         if !parent.starts_with(&root) {
-            return Err(WorkspaceError::Msg("arquivo fora da pasta da sessão".into()));
+            return Err(WorkspaceError::Msg(
+                "arquivo fora da pasta da sessão".into(),
+            ));
         }
         parent.join(joined.file_name().unwrap_or_default())
     };
     if !canon.starts_with(&root) {
-        return Err(WorkspaceError::Msg("arquivo fora da pasta da sessão".into()));
+        return Err(WorkspaceError::Msg(
+            "arquivo fora da pasta da sessão".into(),
+        ));
     }
     Ok(canon)
 }

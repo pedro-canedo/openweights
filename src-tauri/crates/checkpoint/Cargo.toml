@@ -1,0 +1,15 @@
+[package]
+name = "lr_checkpoint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Pontos de restauração dos arquivos do projeto antes das alterações do agente"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

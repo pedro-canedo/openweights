@@ -74,7 +74,9 @@ export default function ParamsPanel({
     if (!row) return;
     try {
       const parsed = JSON.parse(row.json) as Partial<ChatParams>;
-      onChange({ ...DEFAULT_CHAT_PARAMS, ...parsed });
+      // `model` é da conversa, não do preset: aplicar um preset não pode
+      // trocar o modelo escolhido pelo usuário.
+      onChange({ ...DEFAULT_CHAT_PARAMS, ...parsed, model: params.model });
     } catch {
       // preset corrompido — ignora
     }
@@ -84,7 +86,10 @@ export default function ParamsPanel({
     const name = presetName.trim();
     if (!name) return;
     try {
-      const id = await savePreset(name, JSON.stringify(params));
+      const id = await savePreset(
+        name,
+        JSON.stringify({ ...params, model: null }),
+      );
       setNaming(false);
       setPresetName("");
       await refreshPresets();

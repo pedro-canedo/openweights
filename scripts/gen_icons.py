@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Ícones OpenWeights: O+W entrelaçados (logo original) em squircle escuro."""
+"""Ícones do OpenWeights.
+
+A marca é um "W" de duas metades separadas por uma fenda no vértice central:
+a primeira sólida, a segunda mais clara (pesos de intensidades diferentes) —
+a fenda é o "open". Mesma geometria de src/components/OpenWeightsLogo.tsx.
+
+Gera PNGs (32/128/256/512), o .ico da barra de tarefas e o favicon SVG.
+Sem dependências externas: rasteriza por distância aos segmentos, com
+anti-aliasing por subamostragem.
+"""
 
 from __future__ import annotations
 
@@ -8,42 +17,48 @@ import struct
 import zlib
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent.parent / "src-tauri" / "icons"
-PUBLIC = Path(__file__).resolve().parent.parent / "public"
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "src-tauri" / "icons"
+PUBLIC = ROOT / "public"
 
 BG_TOP = (18, 22, 32)
 BG_BOTTOM = (8, 10, 16)
 MARK = (248, 249, 252)
+# Opacidade da segunda metade do W (igual ao SVG do app).
+SECOND_ALPHA = 0.5
 
-CX, CY = 36.0, 50.0
-R_OUT, R_IN = 34.0, 20.0
-BAR1 = (46.0, 74.0, 76.0, 18.0)
-BAR2 = (72.0, 78.0, 98.0, 30.0)
-BAR_W = 12.0
-GAP_W = 16.0
+# Traços no mesmo sistema de coordenadas do SVG (viewBox 10 14 84 72).
+STROKE_A = [(19, 23), (35, 77), (48, 47)]
+STROKE_B = [(57, 47), (69, 77), (85, 23)]
+STROKE_W = 14.0
+
+VIEW = (10.0, 14.0, 84.0, 72.0)  # x, y, largura, altura
 
 
-def dist_to_seg(px: float, py: float, x1: float, y1: float, x2: float, y2: float) -> float:
+def in_butt_segment(
+    px: float, py: float, x1: float, y1: float, x2: float, y2: float, half_w: float
+) -> bool:
+    """Traço com as duas pontas cortadas em reta (equivale a stroke-linecap
+    butt do SVG): exige a projeção dentro do segmento, não uma cápsula."""
     dx, dy = x2 - x1, y2 - y1
     len2 = dx * dx + dy * dy
     if len2 == 0:
-        return math.hypot(px - x1, py - y1)
-    t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / len2))
-    return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy))
+        return False
+    t = ((px - x1) * dx + (py - y1) * dy) / len2
+    if t < 0.0 or t > 1.0:
+        return False
+    return math.hypot(px - (x1 + t * dx), py - (y1 + t * dy)) <= half_w
 
 
-def in_capsule(px: float, py: float, bar: tuple[float, float, float, float], w: float) -> bool:
-    return dist_to_seg(px, py, *bar) <= w / 2
-
-
-def in_mark(px: float, py: float, size: int) -> bool:
-    boost = 1.25 if size <= 32 else 1.08 if size <= 48 else 1.0
-    w = BAR_W * boost
-    gap = w + 3.5
-    r_in = R_IN / (0.92 + 0.08 * boost)
-    d = math.hypot(px - CX, py - CY)
-    ring = r_in <= d <= R_OUT and not in_capsule(px, py, BAR1, gap)
-    return ring or in_capsule(px, py, BAR1, w) or in_capsule(px, py, BAR2, w)
+def near_polyline(px: float, py: float, pts, half_w: float) -> bool:
+    for i in range(len(pts) - 1):
+        if in_butt_segment(px, py, *pts[i], *pts[i + 1], half_w):
+            return True
+    # Preenche a cunha que sobraria nos vértices internos (junção).
+    for x, y in pts[1:-1]:
+        if math.hypot(px - x, py - y) <= half_w:
+            return True
+    return False
 
 
 def rounded_mask(size: int, x: int, y: int) -> bool:
@@ -54,28 +69,44 @@ def rounded_mask(size: int, x: int, y: int) -> bool:
     return (x - cx) ** 2 + (y - cy) ** 2 <= r * r
 
 
-def to_viewbox(size: int, x: float, y: float) -> tuple[float, float]:
-    pad = size * 0.12
+def to_view(size: int, x: float, y: float) -> tuple[float, float]:
+    """Pixel do ícone → coordenada do viewBox, com margem proporcional."""
+    pad = size * 0.14
     inner = size - 2 * pad
-    return ((x - pad) / inner * 100.0, (y - pad) / inner * 100.0)
+    vx, vy, vw, vh = VIEW
+    scale = max(vw, vh)
+    return (
+        vx + (x - pad) / inner * scale,
+        vy + (y - pad) / inner * scale,
+    )
 
 
 def pixel(size: int, x: int, y: int) -> tuple[int, int, int, int]:
     if not rounded_mask(size, x, y):
         return (0, 0, 0, 0)
+
     t = y / max(size - 1, 1)
     r = int(BG_TOP[0] * (1 - t) + BG_BOTTOM[0] * t)
     g = int(BG_TOP[1] * (1 - t) + BG_BOTTOM[1] * t)
     b = int(BG_TOP[2] * (1 - t) + BG_BOTTOM[2] * t)
-    samples = (0.2, 0.5, 0.8)
-    hits = 0
+
+    # Nos tamanhos pequenos o traço precisa engrossar para não sumir.
+    boost = 1.25 if size <= 32 else 1.1 if size <= 64 else 1.0
+    half = STROKE_W * boost / 2
+
+    samples = (0.17, 0.5, 0.83)
+    hits_a = hits_b = 0
     for sx in samples:
         for sy in samples:
-            vx, vy = to_viewbox(size, x + sx, y + sy)
-            if 0 <= vx <= 100 and 0 <= vy <= 100 and in_mark(vx, vy, size):
-                hits += 1
-    if hits:
-        a = hits / 9
+            vx, vy = to_view(size, x + sx, y + sy)
+            if near_polyline(vx, vy, STROKE_A, half):
+                hits_a += 1
+            elif near_polyline(vx, vy, STROKE_B, half):
+                hits_b += 1
+
+    coverage = (hits_a + hits_b * SECOND_ALPHA) / 9.0
+    if coverage > 0:
+        a = min(1.0, coverage)
         r = int(r * (1 - a) + MARK[0] * a)
         g = int(g * (1 - a) + MARK[1] * a)
         b = int(b * (1 - a) + MARK[2] * a)
@@ -121,9 +152,13 @@ def make_ico(pngs: dict[int, bytes]) -> bytes:
 
 
 def favicon_svg() -> str:
-    return """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <path fill="#e6e9f0" fill-rule="evenodd" d="M36 16a34 34 0 1 1 0 68 34 34 0 0 1 0-68zm0 14a20 20 0 1 0 0 40 20 20 0 0 0 0-40zM48 78 78 22 68 16 38 72z"/>
-  <path fill="#e6e9f0" d="M46 74 76 18 86 24 56 80zM72 78 98 30 88 24 62 72z"/>
+    a = " ".join(f"{'M' if i == 0 else 'L'}{x} {y}" for i, (x, y) in enumerate(STROKE_A))
+    b = " ".join(f"{'M' if i == 0 else 'L'}{x} {y}" for i, (x, y) in enumerate(STROKE_B))
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 14 84 72">
+  <g fill="none" stroke="#e6e9f0" stroke-width="{STROKE_W:.0f}" stroke-linecap="butt" stroke-linejoin="round">
+    <path d="{a}"/>
+    <path d="{b}" opacity="{SECOND_ALPHA}"/>
+  </g>
 </svg>
 """
 
@@ -139,7 +174,7 @@ def main() -> None:
         pngs[size] = data
     (OUT / "icon.ico").write_bytes(make_ico({s: pngs[s] for s in (32, 128, 256)}))
     (PUBLIC / "favicon.svg").write_text(favicon_svg(), encoding="utf-8")
-    print(f"icones OpenWeights gerados em {OUT}")
+    print(f"ícones do OpenWeights gerados em {OUT}")
 
 
 if __name__ == "__main__":

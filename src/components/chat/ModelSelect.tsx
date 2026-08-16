@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { getServerProps } from "../../lib/api";
 import {
   EFFORT_MAX_TOKENS,
   type ChatParams,
@@ -111,10 +112,31 @@ export default function ModelSelect({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<"effort" | "more" | null>(null);
+  // null = desconhecido (servidor fora do ar / comando indisponível): a UI
+  // não mostra nada nesse caso, falha de rede aqui é silenciosa.
+  const [supportsTools, setSupportsTools] = useState<boolean | null>(null);
   const ref = useDismiss(open, () => {
     setOpen(false);
     setPanel(null);
   });
+
+  // Capacidade de ferramentas vem do chat template do modelo carregado
+  // (GET /props), nunca do nome do modelo.
+  useEffect(() => {
+    let cancelled = false;
+    setSupportsTools(null);
+    if (!value) return;
+    void getServerProps()
+      .then((props) => {
+        if (!cancelled) setSupportsTools(props.chatTemplateCaps.supportsTools);
+      })
+      .catch(() => {
+        if (!cancelled) setSupportsTools(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [value]);
 
   const options =
     value && !models.includes(value) ? [value, ...models] : models;
@@ -148,7 +170,17 @@ export default function ModelSelect({
         title={
           empty
             ? t("chat.modelSelect")
-            : `${value} · ${t("chat.effort.label")}: ${t(`chat.effort.${params.effort}`)}`
+            : [
+                value,
+                `${t("chat.effort.label")}: ${t(`chat.effort.${params.effort}`)}`,
+                supportsTools == null
+                  ? null
+                  : supportsTools
+                    ? t("agent.supported")
+                    : t("agent.unsupported"),
+              ]
+                .filter(Boolean)
+                .join(" · ")
         }
         className={`flex max-w-52 items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors disabled:opacity-40 hover:bg-panel ${
           open ? "bg-panel text-ink" : "text-ink"
@@ -162,11 +194,23 @@ export default function ModelSelect({
             {t(`chat.effort.${params.effort}`)}
           </span>
         )}
+        {!empty && supportsTools === false && (
+          <span
+            aria-label={t("agent.unsupportedShort")}
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn"
+          />
+        )}
         <Chevron />
       </button>
 
       {open && (
         <div className="absolute right-0 bottom-full z-30 mb-2 w-80 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+          {supportsTools === false && (
+            <p className="flex items-center gap-1.5 px-3 pt-1 pb-2 text-[11px] text-warn">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-warn" />
+              {t("agent.unsupportedShort")}
+            </p>
+          )}
           {primary.map((m) => (
             <button
               key={m}

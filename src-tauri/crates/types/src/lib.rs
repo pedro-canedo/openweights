@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod agent;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GpuVendor {

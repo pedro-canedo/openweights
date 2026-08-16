@@ -67,6 +67,7 @@ fn main() {
             commands::server_status,
             commands::server_start,
             commands::server_stop,
+            commands::server_props,
             commands::chats_list,
             commands::chat_create,
             commands::chat_delete,

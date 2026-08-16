@@ -1,9 +1,17 @@
-//! Persistência local em SQLite: conversas, mensagens, presets e settings.
+//! Persistência local em SQLite: conversas, mensagens, presets, settings e o
+//! estado do harness agêntico (runs, ferramentas, permissões, MCP, memória).
+//!
+//! Este arquivo é a fachada: os DAOs do harness moram nos submódulos
+//! [`agent`], [`mcp`] e [`memory`], que compartilham a mesma conexão.
 
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
+
+pub mod agent;
+pub mod mcp;
+pub mod memory;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -118,6 +126,12 @@ impl Store {
         ensure_column(&conn, "chats", "params_json", "TEXT")?;
         ensure_column(&conn, "messages", "gen_tokens", "INTEGER")?;
         ensure_column(&conn, "messages", "gen_ms", "INTEGER")?;
+        // Harness agêntico: a resposta final de um run vira mensagem normal,
+        // com ponteiro para o trace completo.
+        ensure_column(&conn, "messages", "run_id", "TEXT")?;
+        agent::init(&conn)?;
+        mcp::init(&conn)?;
+        memory::init(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

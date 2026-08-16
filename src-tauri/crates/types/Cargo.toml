@@ -7,3 +7,4 @@ description = "Tipos compartilhados entre os crates do OpenWeights"
 
 [dependencies]
 serde.workspace = true
+serde_json.workspace = true

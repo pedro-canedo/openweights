@@ -1,0 +1,12 @@
+[package]
+name = "lr_policy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Decide o que o agente pode executar sozinho e o que pede confirmação"
+
+[dependencies]
+lr_types.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true

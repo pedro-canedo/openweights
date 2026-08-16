@@ -1,15 +1,15 @@
 // Jobs de geração em fundo: o stream vive aqui, não no Chat.
 // Trocar de tela/conversa não aborta — só o botão Parar (por chatId).
 
-import {
-  addMessage,
-  getServerStatus,
-  getSetting,
-  listChats,
-  renameChat,
-  startServer,
-} from "./api";
+import { addMessage, listChats, renameChat } from "./api";
 import { chatStore } from "./chatStore";
+import {
+  ensureServer,
+  errorMessage,
+  listLoadedModels,
+  matchServerModel,
+  modelsMax,
+} from "./serverSession";
 import {
   completeOnce,
   streamChat,
@@ -102,43 +102,18 @@ function isAbortError(e: unknown): boolean {
 }
 
 function isRetryable(e: unknown): boolean {
-  const msg = e instanceof Error ? e.message : String(e);
+  const msg = errorMessage(e);
   return /HTTP 503|HTTP 529|no slot|slots? (full|busy)|unavailable|loading|try again/i.test(
     msg,
   );
 }
 
-function matchServerModel(wanted: string, ids: string[]): string {
-  if (ids.includes(wanted)) return wanted;
-  const stem = wanted.replace(/\.gguf$/i, "");
-  const hit = ids.find((id) => {
-    const idStem = id.replace(/\.gguf$/i, "");
-    return (
-      id === stem ||
-      idStem === stem ||
-      id.endsWith(`/${wanted}`) ||
-      id.endsWith(`/${stem}`) ||
-      idStem.endsWith(`/${stem}`)
-    );
-  });
-  return hit ?? wanted;
-}
-
-async function listLoadedModels(baseUrl: string): Promise<string[]> {
-  try {
-    const res = await fetch(`${baseUrl}/v1/models`);
-    if (!res.ok) return [];
-    const json = (await res.json()) as { data?: { id: string }[] };
-    return (json.data ?? []).map((d) => d.id);
-  } catch {
-    return [];
+function runningJobs(chatId?: number): boolean {
+  for (const j of internals.values()) {
+    if (j.public.chatId === chatId) continue;
+    if (j.public.state === "running") return true;
   }
-}
-
-async function modelsMax(): Promise<number> {
-  const raw = await getSetting("server_models_max").catch(() => null);
-  const n = raw ? Number(raw) : 2;
-  return Number.isFinite(n) && n >= 1 ? n : 2;
+  return false;
 }
 
 function runningModels(): Set<string> {
@@ -215,12 +190,25 @@ async function persistAssistant(
   return id > 0 ? id : undefined;
 }
 
+/**
+ * Parar durante a preparação (subir servidor / listar modelos): não há fetch
+ * em voo para o AbortController cancelar, então encerramos o job na mão —
+ * senão ele fica preso em "running" e a conversa nunca destrava.
+ */
+function finishIfAborted(chatId: number): boolean {
+  const row = internals.get(chatId);
+  if (!row || !row.abort.signal.aborted) return false;
+  patch(chatId, { state: "done", loadingModel: false });
+  return true;
+}
+
 async function runJob(chatId: number): Promise<void> {
   const row = internals.get(chatId);
   if (!row || row.public.state === "running") return;
   if (row.abort.signal.aborted) {
     internals.delete(chatId);
     emit();
+    pump();
     return;
   }
 
@@ -235,47 +223,44 @@ async function runJob(chatId: number): Promise<void> {
     genMs: null,
   });
 
-  let status = await getServerStatus();
-  if (!status.running || !status.baseUrl) {
-    status = await startServer();
-  }
-  if (!status.baseUrl) {
-    patch(chatId, {
-      state: "error",
-      loadingModel: false,
-      error: "Servidor local indisponível.",
-    });
-    pump();
-    return;
-  }
-  const baseUrl = status.baseUrl;
-
-  const loaded = await listLoadedModels(baseUrl);
-  const resolved = matchServerModel(row.opts.model, loaded);
-  const max = await modelsMax();
-  const othersRunning = [...internals.values()].some(
-    (j) => j.public.chatId !== chatId && j.public.state === "running",
-  );
-  if (othersRunning && mustQueue(resolved, loaded, max)) {
-    patch(chatId, {
-      state: "queued",
-      model: resolved,
-      loadingModel: false,
-      startedAt: null,
-    });
-    return;
-  }
-
-  patch(chatId, { model: resolved });
-
   let firstReasonAt = 0;
   let lastReasonAt = 0;
-  let slowTimer = window.setTimeout(
-    () => patch(chatId, { loadingModel: true }),
-    2000,
-  );
+  let slowTimer = 0;
+  // Voltou para a fila: quem acorda este job é o término do job concorrente
+  // (ou o `schedulePump` abaixo) — chamar `pump()` aqui seria um ping-pong.
+  let requeued = false;
 
   try {
+    const { baseUrl } = await ensureServer();
+    if (finishIfAborted(chatId)) return;
+
+    const loaded = await listLoadedModels(baseUrl);
+    const max = await modelsMax();
+    if (finishIfAborted(chatId)) return;
+
+    const resolved = matchServerModel(row.opts.model, loaded);
+    if (runningJobs(chatId) && mustQueue(resolved, loaded, max)) {
+      requeued = true;
+      patch(chatId, {
+        state: "queued",
+        model: resolved,
+        loadingModel: false,
+        startedAt: null,
+      });
+      // Corrida: o job concorrente pode ter terminado (e chamado `pump()`)
+      // entre o teste acima e este patch — sem re-agendar, este job ficaria
+      // órfão na fila para sempre.
+      if (!runningJobs()) schedulePump();
+      return;
+    }
+
+    patch(chatId, { model: resolved });
+
+    slowTimer = window.setTimeout(
+      () => patch(chatId, { loadingModel: true }),
+      2000,
+    );
+
     const result = await streamChat({
       baseUrl,
       model: resolved,
@@ -316,6 +301,8 @@ async function runJob(chatId: number): Promise<void> {
           thinkingMs: Math.round(now - thinkStartedAt),
         });
       },
+      // tok/s ao vivo: sem isto a métrica só aparecia no fim do stream.
+      onTokensPerSec: (tps) => patch(chatId, { tokensPerSec: tps }),
     });
 
     window.clearTimeout(slowTimer);
@@ -346,7 +333,10 @@ async function runJob(chatId: number): Promise<void> {
     }
   } catch (err) {
     window.clearTimeout(slowTimer);
-    if (isAbortError(err)) {
+    // `signal.aborted` cobre o Parar que chegou durante uma etapa que não é
+    // o fetch (subir servidor, listar modelos): o erro que borbulha ali não
+    // é AbortError, mas o usuário cancelou — não é falha para exibir.
+    if (isAbortError(err) || row.abort.signal.aborted) {
       const cur = internals.get(chatId);
       const text = cur?.public.content ?? "";
       const reasoning = cur?.public.reasoning ?? "";
@@ -363,7 +353,7 @@ async function runJob(chatId: number): Promise<void> {
         chatId,
         text,
         reasoning,
-        null,
+        cur?.public.tokensPerSec ?? null,
         null,
         genMs,
       );
@@ -378,23 +368,18 @@ async function runJob(chatId: number): Promise<void> {
       }
     } else if (isRetryable(err) && row.retries < MAX_RETRIES) {
       row.retries += 1;
-      patch(chatId, { state: "queued", loadingModel: false });
-      const others = [...internals.values()].some(
-        (j) => j.public.chatId !== chatId && j.public.state === "running",
-      );
-      if (!others) {
-        window.setTimeout(() => void pump(), 2000);
-      }
+      requeued = true;
+      patch(chatId, { state: "queued", loadingModel: false, startedAt: null });
+      if (!runningJobs(chatId)) schedulePump(2000);
     } else {
-      const detail =
-        err instanceof Error ? err.message : typeof err === "string" ? err : String(err);
+      const detail = errorMessage(err);
       const cur = internals.get(chatId);
       if (cur && (cur.public.content || cur.public.reasoning)) {
         const rowId = await persistAssistant(
           chatId,
           cur.public.content,
           cur.public.reasoning,
-          null,
+          cur.public.tokensPerSec,
           null,
           null,
         );
@@ -405,7 +390,7 @@ async function runJob(chatId: number): Promise<void> {
     }
   } finally {
     window.clearTimeout(slowTimer);
-    pump();
+    if (!requeued) pump();
   }
 }
 
@@ -417,23 +402,31 @@ function pickNext(): InternalJob | null {
   return same ?? queued[0];
 }
 
+let pumpTimer = 0;
+
+/**
+ * Um único `pump()` atrasado por vez. Serve às corridas em que ninguém mais
+ * vai acordar a fila (job concorrente terminou cedo demais, retry de 503).
+ */
+function schedulePump(delayMs = 250): void {
+  if (pumpTimer) return;
+  pumpTimer = window.setTimeout(() => {
+    pumpTimer = 0;
+    pump();
+  }, delayMs);
+}
+
 function pump(): void {
   const next = pickNext();
   if (!next) return;
   void (async () => {
-    let status = await getServerStatus();
-    if (!status.baseUrl && !status.running) {
-      status = await startServer().catch(() => status);
-    }
-    const loaded = status.baseUrl ? await listLoadedModels(status.baseUrl) : [];
+    const session = await ensureServer().catch(() => null);
+    const loaded = session ? await listLoadedModels(session.baseUrl) : [];
     const max = await modelsMax();
     const model = matchServerModel(next.opts.model, loaded);
-    if (mustQueue(model, loaded, max)) {
-      const hasRunning = [...internals.values()].some(
-        (j) => j.public.state === "running",
-      );
-      if (hasRunning) return;
-    }
+    // Ainda no teto de modelos: só arrisca se não há mais nada rodando
+    // (senão o job espera o término do concorrente, que chama `pump()`).
+    if (mustQueue(model, loaded, max) && runningJobs()) return;
     void runJob(next.public.chatId);
   })();
 }
@@ -502,6 +495,8 @@ export const generationStore = {
       pump();
       return;
     }
+    // Em "running" o abort corta o fetch; se o stream ainda nem começou
+    // (subindo servidor/modelo), `finishIfAborted` fecha o job na sequência.
     row.abort.abort();
   },
   dismiss(chatId: number): void {
@@ -518,6 +513,8 @@ export const generationStore = {
     row.abort.abort();
     internals.delete(chatId);
     emit();
+    // Excluir a conversa some com o job sem passar pelo `finally` do runJob:
+    // sem este pump, um job em fila esperando por ele ficaria parado.
+    pump();
   },
 };
-

@@ -28,6 +28,8 @@ export interface StreamChatOptions {
   onDelta: (text: string) => void;
   /** Chamado a cada pedaço de raciocínio (reasoning_content ou <think>). */
   onReasoningDelta?: (text: string) => void;
+  /** Estimativa de tok/s durante o stream (~4 Hz), para exibição ao vivo. */
+  onTokensPerSec?: (tokensPerSec: number) => void;
 }
 
 export interface StreamChatResult {
@@ -127,9 +129,22 @@ function createThinkSplitter(
 
 // ------------------------------------------------------------- streaming ---
 
+/** Delta de um chunk SSE. `content` pode vir `null` em chunks de tool call. */
+interface SseDelta {
+  content?: string | null;
+  reasoning_content?: string | null;
+  /**
+   * Deltas de chamada de ferramenta. O chat normal não envia `tools`, mas um
+   * modelo com template de tools pode emitir mesmo assim (e o llama-server
+   * tira o trecho do `content`). Ignoramos de propósito: nada aqui entra no
+   * texto e um chunk só com `tool_calls` não conta como token gerado.
+   */
+  tool_calls?: unknown;
+}
+
 /** Forma mínima de um chunk SSE do endpoint OpenAI-compatible. */
 interface SseChunk {
-  choices?: { delta?: { content?: string; reasoning_content?: string } }[];
+  choices?: { delta?: SseDelta }[];
   timings?: {
     predicted_n?: number;
     predicted_ms?: number;
@@ -188,6 +203,7 @@ async function streamReal({
   params,
   onDelta,
   onReasoningDelta,
+  onTokensPerSec,
 }: StreamChatOptions): Promise<StreamChatResult> {
   const body: Record<string, unknown> = {
     model,
@@ -280,27 +296,42 @@ async function streamReal({
       if (chunks === 0) firstTokenAt = now;
       lastTokenAt = now;
       chunks += 1;
-      // Estimativa ao vivo para a StatusBar (limitada a ~4 Hz).
+      // Estimativa ao vivo para a StatusBar e para a linha da mensagem (~4 Hz).
       if (chunks > 1 && now - lastStatsAt > 250) {
         lastStatsAt = now;
         const elapsed = (now - firstTokenAt) / 1000;
-        if (elapsed > 0) setGen({ tokensPerSec: (chunks - 1) / elapsed });
+        if (elapsed > 0) {
+          const live = (chunks - 1) / elapsed;
+          setGen({ tokensPerSec: live });
+          onTokensPerSec?.(live);
+        }
       }
     }
   };
 
-  while (!done) {
-    const { value, done: eof } = await reader.read();
-    if (eof) break;
-    buffer += decoder.decode(value, { stream: true });
-    let nl: number;
-    while (!done && (nl = buffer.indexOf("\n")) >= 0) {
-      const line = buffer.slice(0, nl);
-      buffer = buffer.slice(nl + 1);
-      handleLine(line);
+  try {
+    while (!done) {
+      const { value, done: eof } = await reader.read();
+      if (eof) break;
+      buffer += decoder.decode(value, { stream: true });
+      let nl: number;
+      while (!done && (nl = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, nl);
+        buffer = buffer.slice(nl + 1);
+        handleLine(line);
+      }
+    }
+    if (!done && buffer) handleLine(buffer);
+  } finally {
+    // Sem isto o corpo fica pendurado depois do `[DONE]` (saímos do laço sem
+    // ler o EOF): o WebView2 mantém a conexão ocupada e, passadas ~6
+    // gerações, os fetches seguintes ficam presos na fila do pool.
+    try {
+      await reader.cancel();
+    } catch {
+      // stream já abortado/errado — nada a liberar
     }
   }
-  if (!done && buffer) handleLine(buffer);
   splitter.flush();
 
   // Métricas: timings do servidor com fallback estimado.
@@ -323,6 +354,20 @@ async function streamReal({
 }
 
 // ------------------------------------------------------ resposta única ---
+
+/**
+ * Remove o raciocínio de uma resposta não-streaming.
+ * Cobre o bloco fechado e também um `<think>` que ficou ABERTO — o caso do
+ * auto-título, em que o teto de tokens corta o modelo no meio do raciocínio
+ * e o título viraria "<think>Ok, o usuário quer…".
+ */
+function stripThink(raw: string): string {
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/<think>[\s\S]*$/, "")
+    .replace(/^[\s\S]*?<\/think>/, "")
+    .trim();
+}
 
 /**
  * Uma completude única (stream: false) — usada para tarefas auxiliares
@@ -357,6 +402,10 @@ export async function completeOnce({
       stream: false,
       max_tokens: maxTokens,
       temperature,
+      // Tarefa auxiliar: raciocinar aqui só gasta o orçamento de tokens e
+      // devolve um "título" que na verdade é o começo do pensamento.
+      reasoning_effort: "low",
+      chat_template_kwargs: { enable_thinking: false },
     }),
     signal,
   });
@@ -365,10 +414,9 @@ export async function completeOnce({
     throw new Error(`llama-server HTTP ${res.status}: ${body.slice(0, 300)}`);
   }
   const json = (await res.json()) as {
-    choices?: { message?: { content?: string } }[];
+    choices?: { message?: { content?: string | null } }[];
   };
-  const raw = json.choices?.[0]?.message?.content ?? "";
-  return raw.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
+  return stripThink(json.choices?.[0]?.message?.content ?? "");
 }
 
 // ------------------------------------------------------- mock (navegador) ---
@@ -410,6 +458,7 @@ async function streamMock({
   signal,
   onDelta,
   onReasoningDelta,
+  onTokensPerSec,
 }: StreamChatOptions): Promise<StreamChatResult> {
   await sleep(400); // latência fake de "carregar o modelo"
 
@@ -445,7 +494,10 @@ async function streamMock({
     onDelta(part);
     if (emitted % 8 === 0) {
       const elapsed = (performance.now() - start) / 1000;
-      if (elapsed > 0) setGen({ tokensPerSec: emitted / elapsed });
+      if (elapsed > 0) {
+        setGen({ tokensPerSec: emitted / elapsed });
+        onTokensPerSec?.(emitted / elapsed);
+      }
     }
   }
   const genMs = Math.round(performance.now() - start);

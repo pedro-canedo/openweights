@@ -6,11 +6,17 @@ license.workspace = true
 description = "Adaptadores de engine de inferência (llama-server em Router mode)"
 
 [dependencies]
+lr_types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 log.workspace = true
 tokio.workspace = true
 # Sem TLS de propósito: o engine só fala HTTP com 127.0.0.1.
+# O streaming SSE usa `Response::chunk()`, que não exige a feature "stream" —
+# por isso nada de futures-util aqui.
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 async-trait = "0.1"
+
+# Os testes sobem um servidor HTTP falso com `std::net` (sem dependência
+# nova) e rodam no runtime que o tokio do crate já traz.

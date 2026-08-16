@@ -1,0 +1,267 @@
+// Espelho TS dos contratos do harness agêntico.
+// Fonte da verdade: src-tauri/crates/types/src/agent.rs (serde camelCase).
+// Qualquer mudança aqui exige a mudança correspondente lá — e vice-versa.
+
+export type RunMode = "chat" | "approve" | "smart" | "yolo";
+
+export type ToolCategory = "read" | "edit" | "execute" | "network" | "mcp" | "meta";
+
+export type ToolTier = "safe" | "caution" | "danger";
+
+export type ToolPolicy = "alwaysAllow" | "ask" | "never";
+
+export type PolicyScope = "global" | "workspace";
+
+export type CommandClass = "readOnly" | "mutating" | "opaque";
+
+export type ApprovalSource = "user" | "policy" | "yolo";
+
+export type ApprovalDecision =
+  | { kind: "allowOnce" }
+  | { kind: "allowAlways"; scope: PolicyScope }
+  | { kind: "deny"; reason: string | null }
+  | { kind: "denyAlways"; scope: PolicyScope }
+  | { kind: "allowEdited"; argsJson: string };
+
+export type ToolOrigin =
+  | { kind: "builtin" }
+  | { kind: "mcp"; serverId: string };
+
+export interface ToolSpec {
+  name: string;
+  description: string;
+  parameters: unknown;
+  category: ToolCategory;
+  tier: ToolTier;
+  origin: ToolOrigin;
+  readOnly: boolean;
+}
+
+export type ToolPreview =
+  | { kind: "diff"; path: string; unified: string; created: boolean }
+  | {
+      kind: "command";
+      program: string;
+      display: string;
+      cwd: string;
+      class: CommandClass;
+    }
+  | { kind: "text"; body: string };
+
+export type RunStatus =
+  | "running"
+  | "waitingApproval"
+  | "done"
+  | "cancelled"
+  | "error"
+  | "maxSteps"
+  | "escalated";
+
+export type PauseReason = "waitingApproval" | "waitingElicitation" | "user";
+
+export interface UsageStats {
+  steps: number;
+  toolCalls: number;
+  promptTokens: number;
+  completionTokens: number;
+  durationMs: number;
+}
+
+/** Envelope: runId/seq/tsMs achatados com os campos do evento. */
+interface RunEventBase {
+  runId: string;
+  seq: number;
+  tsMs: number;
+}
+
+export type RunEvent = RunEventBase &
+  (
+    | {
+        kind: "run.started";
+        chatId: number;
+        model: string;
+        mode: RunMode;
+        yolo: boolean;
+        workspaceDir: string | null;
+        tools: string[];
+      }
+    | { kind: "step.started"; stepId: string; index: number }
+    | { kind: "assistant.delta"; stepId: string; text: string }
+    | { kind: "reasoning.delta"; stepId: string; text: string }
+    | {
+        kind: "assistant.message";
+        stepId: string;
+        content: string;
+        reasoning: string;
+      }
+    | {
+        kind: "tool.requested";
+        callId: string;
+        tool: string;
+        origin: ToolOrigin;
+        category: ToolCategory;
+        tier: ToolTier;
+        argsJson: string;
+        preview: ToolPreview | null;
+        requiresApproval: boolean;
+      }
+    | { kind: "tool.approved"; callId: string; source: ApprovalSource }
+    | { kind: "tool.denied"; callId: string; reason: string }
+    | { kind: "tool.started"; callId: string }
+    | { kind: "tool.output"; callId: string; chunk: string; truncated: boolean }
+    | {
+        kind: "tool.result";
+        callId: string;
+        ok: boolean;
+        resultPreview: string;
+        bytesTotal: number;
+        durationMs: number;
+      }
+    | {
+        kind: "tool.elicitation";
+        callId: string;
+        message: string;
+        schemaJson: string;
+      }
+    | {
+        kind: "checkpoint.created";
+        checkpointId: string;
+        label: string;
+        backend: string;
+      }
+    | { kind: "focus.updated"; todoMd: string }
+    | { kind: "context.compacted"; tokensBefore: number; tokensAfter: number }
+    | { kind: "verification"; passed: boolean; notes: string }
+    | { kind: "run.paused"; reason: PauseReason }
+    | { kind: "run.resumed" }
+    | { kind: "run.error"; message: string; retryable: boolean }
+    | {
+        kind: "run.finished";
+        status: RunStatus;
+        summary: string;
+        usage: UsageStats;
+      }
+  );
+
+export interface RunOptions {
+  chatId: number;
+  model: string;
+  mode?: RunMode;
+  workspaceDir?: string | null;
+  maxSteps?: number;
+  mcpServers?: string[];
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxTokens?: number | null;
+  systemPrompt?: string;
+}
+
+export interface RunSummary {
+  id: string;
+  chatId: number | null;
+  model: string;
+  mode: RunMode;
+  status: RunStatus;
+  prompt: string;
+  summary: string | null;
+  workspaceDir: string | null;
+  createdAt: number;
+  finishedAt: number | null;
+}
+
+// --------------------------------------------------------------- permissões ---
+
+export interface ToolPermissionRow {
+  id: number;
+  scope: PolicyScope;
+  workspaceDir: string | null;
+  toolName: string;
+  policy: ToolPolicy;
+}
+
+export interface CheckpointRow {
+  id: string;
+  runId: string | null;
+  workspaceDir: string;
+  backend: string;
+  label: string | null;
+  createdAt: number;
+}
+
+// --------------------------------------------------------------------- MCP ---
+
+export type McpTransport = "stdio" | "http";
+
+export interface McpServerRow {
+  id: string;
+  name: string;
+  transport: McpTransport;
+  configJson: string;
+  enabled: boolean;
+  /** Hash atual das definições de tools (muda = pede re-aprovação). */
+  toolsHash: string | null;
+  /** Hash que o usuário aprovou. */
+  toolsApprovedHash: string | null;
+}
+
+export interface McpToolView {
+  name: string;
+  description: string;
+  readOnly: boolean;
+  destructive: boolean;
+  openWorld: boolean;
+}
+
+export interface McpServerStatus {
+  id: string;
+  connected: boolean;
+  error: string | null;
+  tools: McpToolView[];
+  needsApproval: boolean;
+}
+
+// ------------------------------------------------------------------ memória ---
+
+export interface MemoryFact {
+  id: number;
+  workspaceDir: string | null;
+  content: string;
+  sourceRunId: string | null;
+  createdAt: number;
+}
+
+// ---------------------------------------------------------------------- RAG ---
+
+export interface RagStatus {
+  workspaceDir: string;
+  indexing: boolean;
+  filesIndexed: number;
+  filesTotal: number;
+  chunks: number;
+  embedModel: string | null;
+  vectorSearch: boolean;
+  error: string | null;
+}
+
+export interface RagHit {
+  path: string;
+  snippet: string;
+  score: number;
+  line: number | null;
+}
+
+// ------------------------------------------------------- props do servidor ---
+
+export interface ChatTemplateCaps {
+  supportsTools: boolean;
+  supportsParallelToolCalls: boolean;
+  supportsSystemRole: boolean;
+}
+
+export interface ServerProps {
+  modelPath: string | null;
+  chatTemplateCaps: ChatTemplateCaps;
+  nCtx: number | null;
+  modalities: string[];
+}

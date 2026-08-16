@@ -1,6 +1,7 @@
 // Mocks para desenvolvimento da UI no navegador (sem Tauri).
 // Dados plausíveis para uma máquina com GPU de 16 GB.
 
+import type { ServerProps } from "./agent/types";
 import type {
   ChatRow,
   DownloadStatus,
@@ -173,6 +174,20 @@ export async function startServer(): Promise<ServerStatus> {
 
 export async function stopServer(): Promise<void> {
   mockServer = { running: false, baseUrl: null, port: 11711, lan: false };
+}
+
+/** No navegador o modelo "suporta ferramentas": não trava a UI de dev. */
+export async function serverProps(): Promise<ServerProps> {
+  return {
+    modelPath: "C:/fake/models/unsloth/Qwen3-8B-GGUF/Qwen3-8B-UD-Q4_K_XL.gguf",
+    chatTemplateCaps: {
+      supportsTools: true,
+      supportsParallelToolCalls: true,
+      supportsSystemRole: true,
+    },
+    nCtx: 40_960,
+    modalities: [],
+  };
 }
 
 const chats: ChatRow[] = [];

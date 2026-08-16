@@ -2,6 +2,7 @@
 // Todas as telas usam ESTE módulo — nunca `invoke` direto.
 
 import { invoke, isTauri, listen } from "./tauri";
+import type { ServerProps } from "./agent/types";
 import type {
   ChatRow,
   DownloadEvent,
@@ -94,6 +95,14 @@ export const startServer = () =>
 
 export const stopServer = () =>
   isTauri ? invoke<void>("server_stop") : mocks.stopServer();
+
+/**
+ * `GET /props` do llama-server via backend: capacidades do chat template
+ * (ferramentas, tool calls paralelos, papel system) do modelo carregado.
+ * Rejeita quando o servidor está fora do ar — quem chama decide o fallback.
+ */
+export const getServerProps = () =>
+  isTauri ? invoke<ServerProps>("server_props") : mocks.serverProps();
 
 export const onServerStatus = (h: (s: ServerStatus) => void) =>
   listen<ServerStatus>("server-status", h);
