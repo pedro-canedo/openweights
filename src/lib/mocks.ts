@@ -213,6 +213,13 @@ export async function serverProps(): Promise<ServerProps> {
   };
 }
 
+/** Id crescente para o `addMessage` do navegador (0 significaria falha). */
+let messageSeq = 0;
+export function nextMessageId(): number {
+  messageSeq += 1;
+  return messageSeq;
+}
+
 const chats: ChatRow[] = [];
 const messages: MessageRow[] = [];
 const presets: PresetRow[] = [

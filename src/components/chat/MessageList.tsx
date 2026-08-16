@@ -33,6 +33,8 @@ export interface UiMessage {
   /** Imagens anexadas nesta sessão (enviadas como image_url à API). */
   images?: { name: string; dataUrl: string }[];
   error?: boolean;
+  /** A resposta não foi gravada: ao reabrir a conversa ela não volta. */
+  unsaved?: boolean;
 }
 
 function ActionButton({
@@ -347,6 +349,19 @@ export default function MessageList({
                     />
                   )}
                   {m.content !== "" && <Markdown text={m.content} />}
+                  {/* Nunca um buraco: uma resposta sem texto e sem
+                      raciocínio precisa DIZER que veio vazia, senão parece
+                      que a mensagem sumiu. */}
+                  {m.content === "" && !m.reasoning && (
+                    <p className="text-sm text-dim italic">
+                      {t("chat.emptyAnswer")}
+                    </p>
+                  )}
+                  {m.unsaved && (
+                    <p className="mt-1 text-[11px] leading-relaxed text-warn">
+                      {t("chat.notSaved")}
+                    </p>
+                  )}
                   {loadingModel && generating && i === messages.length - 1 && (
                     <div className="mt-1 text-xs text-dim">
                       {t("chat.loadingModel")}

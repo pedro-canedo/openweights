@@ -107,14 +107,32 @@ async function loadModelOptions(): Promise<string[]> {
   return out;
 }
 
-/** Extrai o prefixo <think>...</think> salvo no DB (raciocínio persistido). */
+/**
+ * Separa o raciocínio persistido (`<think>…</think>`) da resposta.
+ *
+ * O bloco aberto e nunca fechado não é caso raro: acontece quando a geração é
+ * interrompida no meio do pensamento (Parar, limite de tokens, servidor que
+ * cai). Tratar só o bloco fechado devolvia a marcação crua no lugar da
+ * resposta — e como não sobra texto nenhum depois dela, a bolha voltava vazia
+ * ao reabrir a conversa. Aqui um `<think>` sem fecho vale até o fim: é tudo
+ * raciocínio, e é assim que ele aparece.
+ */
 function parseThinkPrefix(content: string): {
   reasoning: string | null;
   content: string;
 } {
-  const m = /^\s*<think>([\s\S]*?)<\/think>\s*/.exec(content);
-  if (!m) return { reasoning: null, content };
-  return { reasoning: m[1].trim(), content: content.slice(m[0].length) };
+  const fechado = /^\s*<think>([\s\S]*?)<\/think>\s*/.exec(content);
+  if (fechado) {
+    return { reasoning: fechado[1].trim(), content: content.slice(fechado[0].length) };
+  }
+  const aberto = /^\s*<think>([\s\S]*)$/.exec(content);
+  if (aberto) return { reasoning: aberto[1].trim(), content: "" };
+  // Fecho órfão: o texto antes dele é raciocínio de uma gravação antiga.
+  const orfao = /^([\s\S]*?)<\/think>\s*/.exec(content);
+  if (orfao) {
+    return { reasoning: orfao[1].trim(), content: content.slice(orfao[0].length) };
+  }
+  return { reasoning: null, content };
 }
 
 /** Linha de mensagem do DB → mensagem da UI (com parse do raciocínio). */
@@ -128,7 +146,7 @@ function rowToUi(r: MessageRow): UiMessage {
     content,
     tokensPerSec: r.tokensPerSec,
     rowId: r.id,
-    reasoning: reasoning ?? undefined,
+    reasoning: reasoning || undefined,
     genTokens: r.genTokens,
     genMs: r.genMs,
   };
@@ -598,6 +616,13 @@ export default function Chat() {
 
   const displayMessages: UiMessage[] = (() => {
     if (!job) return messages;
+    // Job encerrado e sem nada dentro (o modelo não devolveu texto, ou o job
+    // ficou pendurado de uma visita anterior): o overlay não pode entrar no
+    // lugar da resposta que ESTÁ gravada — trocaria conteúdo por vazio.
+    const jobTemCorpo = Boolean(job.content || job.reasoning || job.error);
+    if (!jobTemCorpo && (job.state === "done" || job.state === "error")) {
+      return messages;
+    }
     // Manter o overlay também em done/error até o dismiss: senão a bolha
     // some no intervalo entre o fim do stream e o listMessages.
     const base =
@@ -621,6 +646,7 @@ export default function Chat() {
         thinkStartedAt: job.thinkStartedAt,
         answerStartedAt: job.answerStartedAt,
         error: Boolean(job.error && !job.content && !job.reasoning),
+        unsaved: job.unsaved,
       },
     ];
   })();
@@ -643,6 +669,7 @@ export default function Chat() {
       genTokens: job.genTokens,
       genMs: job.genMs,
       error: Boolean(job.error && !job.content && !job.reasoning),
+      unsaved: job.unsaved,
     };
     // Grava já no estado — não esperar o DB, senão o overlay some e a
     // resposta some junto se o listMessages vier incompleto.
@@ -663,14 +690,18 @@ export default function Chat() {
   }, [job?.id, job?.state, activeChatId, t]);
 
   /**
-   * Run concluído: o Rust já gravou a resposta final na conversa, então
-   * recarregamos do banco e tiramos a trilha do fluxo (ela continua inteira
-   * no painel de execução). Em cancelado/erro/limite nada foi persistido —
-   * a trilha FICA na tela, que é o único lugar onde aquele trabalho existe.
+   * Run encerrado: o Rust grava na conversa o que o agente produziu — e isso
+   * vale também para cancelado, erro e limite de passos, porque parar não
+   * apaga o que já foi dito. Recarregamos do banco e, **quando houve resposta
+   * gravada**, tiramos a trilha do fluxo (ela continua inteira no painel).
+   *
+   * Quando não houve nada a gravar (cancelou antes de o modelo falar, ou o
+   * run morreu com erro), a trilha FICA: aí ela é mesmo o único lugar onde
+   * aquele trabalho — e a mensagem de erro — existem.
    */
   useEffect(() => {
     if (activeChatId == null || run == null) return;
-    if (run.status !== "done") return;
+    if (isRunActive(run.status)) return;
     const epoch = convEpochRef.current;
     const chatId = activeChatId;
     const finishedId = run.runId;
@@ -687,8 +718,14 @@ export default function Chat() {
         ui = null; // segue com o texto que já está na trilha
       }
       if (convEpochRef.current !== epoch) return;
-      setLastTrace({ chatId, runId: finishedId });
-      runStore.dismiss(chatId);
+      // A trilha só sai do fluxo quando existe resposta gravada para ficar no
+      // lugar dela. Sem isso, um run que morreu sem falar nada não deixaria
+      // rastro nenhum na tela.
+      const gravou = ui?.[ui.length - 1]?.role === "assistant";
+      if (gravou || run.status === "done") {
+        setLastTrace({ chatId, runId: finishedId });
+        runStore.dismiss(chatId);
+      }
       setMessages((prev) => {
         // Uma leitura que veio com MENOS mensagens do que a tela mostra não
         // pode apagar a conversa (mesma defesa do `mergeLoaded`).

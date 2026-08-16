@@ -1089,3 +1089,83 @@ async fn a_model_that_cannot_take_tools_says_so_in_the_trail() {
     );
     assert!(h.has("tools.off"), "faltou dizer por quê: {:?}", h.kinds());
 }
+
+/// Parar não apaga o que o agente já disse.
+///
+/// A trilha guardava o texto, mas ela não sobrevive inteira a um recarregar:
+/// só quatro eventos por run vão para o banco. Então, ao sair da conversa e
+/// voltar, a resposta de um run cancelado (ou que morreu no limite de passos)
+/// simplesmente não estava mais lá. Agora ela é gravada como mensagem, que é
+/// onde a pessoa vai procurar por ela.
+#[tokio::test]
+async fn a_cancelled_run_keeps_what_it_already_said_in_the_chat() {
+    let h = Harness::new();
+    let chat = h.store.create_chat("conversa", None).expect("conversa");
+    // Fala longa de propósito: o cancelamento precisa chegar COM o texto em
+    // curso, que é o caso que perdia o que já tinha sido dito.
+    let mut fala = vec![text_chunk("Comecei a responder e")];
+    fala.extend((0..200).map(|_| text_chunk(" sigo falando")));
+    fala.push(done());
+    let server = FakeLlama::spawn(vec![fala]);
+
+    let mut opts = h.options(RunMode::Yolo);
+    opts.chat_id = chat;
+    let sink = h.events.clone();
+    let handle = h
+        .host
+        .start(
+            StartRun {
+                prompt: "responda".into(),
+                history: Vec::new(),
+                memory: Vec::new(),
+                options: opts,
+                endpoint: server.endpoint(),
+                work_mode: WorkMode::Agent,
+                plan: None,
+            },
+            Some(Arc::new(move |ev: RunEvent| {
+                sink.lock().unwrap().push(ev);
+            })),
+        )
+        .expect("run começou");
+
+    // Puxa o tapete no meio da fala, não depois dela.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !h.has("assistant.delta") {
+        assert!(Instant::now() < deadline, "o modelo não começou a falar");
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    handle.cancel();
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !h.has("run.finished") {
+        assert!(Instant::now() < deadline, "o run não encerrou");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let status = h
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|e| match &e.event {
+            RunEventKind::RunFinished { status, .. } => Some(*status),
+            _ => None,
+        });
+    assert_eq!(
+        status,
+        Some(RunStatus::Cancelled),
+        "o teste só vale se o run foi mesmo cancelado"
+    );
+
+    let mensagens = h.store.list_messages(chat).expect("mensagens");
+    let resposta = mensagens
+        .iter()
+        .find(|m| m.role == "assistant")
+        .expect("o que foi dito antes do cancelamento fica na conversa");
+    assert!(
+        resposta.content.starts_with("Comecei a responder e"),
+        "conteúdo: {}",
+        resposta.content
+    );
+}

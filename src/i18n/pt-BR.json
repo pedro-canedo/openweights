@@ -213,7 +213,9 @@
     "deleteMsg": "Apagar mensagem",
     "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s",
     "speak": "Ouvir a resposta",
-    "speakStop": "Parar de ler"
+    "speakStop": "Parar de ler",
+    "emptyAnswer": "(o modelo não respondeu nada)",
+    "notSaved": "Não consegui guardar esta resposta — ela não volta ao reabrir a conversa."
   },
   "activity": {
     "title": "Atividade",

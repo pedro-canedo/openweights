@@ -187,7 +187,7 @@ export const addMessage = (
         genMs,
         model,
       })
-    : Promise.resolve(0);
+    : Promise.resolve(mocks.nextMessageId());
 
 export const renameChat = (chatId: number, title: string) =>
   isTauri

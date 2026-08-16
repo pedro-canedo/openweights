@@ -38,6 +38,8 @@ export interface GenerationJob {
   answerStartedAt: number | null;
   error?: string;
   rowId?: number;
+  /** A resposta não chegou ao banco: sumiria ao reabrir a conversa. */
+  unsaved?: boolean;
 }
 
 export interface GenerationSnapshot {
@@ -171,6 +173,15 @@ async function autoTitle(
   }
 }
 
+/**
+ * Grava a resposta na conversa — e não desiste calado.
+ *
+ * Antes, uma falha aqui virava `.catch(() => 0)`: a resposta continuava na
+ * tela, e sumia ao reabrir a conversa. Quem viu isso não tinha como saber se
+ * o app perdeu ou nunca gravou. Agora tenta de novo e, quando não dá, o job
+ * carrega `unsaved` — a tela diz que aquela resposta não foi guardada,
+ * enquanto o texto ainda está ali para ser copiado.
+ */
 async function persistAssistant(
   chatId: number,
   text: string,
@@ -181,17 +192,35 @@ async function persistAssistant(
   /** Modelo que gerou — o backend carimba a configuração vigente dele. */
   model: string | null = null,
 ): Promise<number | undefined> {
-  if (!canPersist(chatId) || (!text && !reasoning)) return undefined;
-  const id = await addMessage(
-    chatId,
-    "assistant",
-    toDbContent(text, reasoning),
-    tokensPerSec,
-    genTokens,
-    genMs,
-    model,
-  ).catch(() => 0);
-  return id > 0 ? id : undefined;
+  if (!text && !reasoning) return undefined;
+  if (!canPersist(chatId)) {
+    console.warn(`resposta não gravada: conversa ${chatId} foi excluída`);
+    patch(chatId, { unsaved: true });
+    return undefined;
+  }
+  const conteudo = toDbContent(text, reasoning);
+  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+    try {
+      const id = await addMessage(
+        chatId,
+        "assistant",
+        conteudo,
+        tokensPerSec,
+        genTokens,
+        genMs,
+        model,
+      );
+      if (id > 0) {
+        patch(chatId, { unsaved: false });
+        return id;
+      }
+    } catch (e) {
+      console.error(`falha ${tentativa}/3 ao gravar a resposta:`, e);
+    }
+    await new Promise((r) => setTimeout(r, 200 * tentativa));
+  }
+  patch(chatId, { unsaved: true });
+  return undefined;
 }
 
 /**

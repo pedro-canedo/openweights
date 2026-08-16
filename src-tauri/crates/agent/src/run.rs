@@ -946,11 +946,17 @@ impl StepEngine<'_> {
                 request = chat_request(self.opts, messages, &api_tools);
             }
 
+            // O que o modelo já falou neste passo. Cancelar no meio da fala
+            // descartava o `outcome` inteiro, e com ele o texto — que some da
+            // conversa mesmo tendo aparecido na tela. Aqui ele fica.
+            let parcial = Arc::new(std::sync::Mutex::new(String::new()));
             let outcome = {
                 let sink_delta = self.sink.clone();
                 let step = step_id.clone();
+                let dito = parcial.clone();
                 let mut on_delta = move |delta: ChatDelta| match delta {
                     ChatDelta::Text(text) => {
+                        dito.lock().unwrap().push_str(&text);
                         sink_delta.emit(RunEventKind::AssistantDelta {
                             step_id: step.clone(),
                             text,
@@ -967,7 +973,10 @@ impl StepEngine<'_> {
                 };
                 let primeira = tokio::select! {
                     biased;
-                    _ = self.handle.cancelled() => break RunStatus::Cancelled,
+                    _ = self.handle.cancelled() => {
+                        out.text = parcial.lock().unwrap().clone();
+                        break RunStatus::Cancelled;
+                    }
                     r = self.client.chat_stream(&request, &mut on_delta) => r,
                 };
                 match primeira {
@@ -983,7 +992,10 @@ impl StepEngine<'_> {
                             let sem_tools = chat_request(self.opts, messages, &[]);
                             tokio::select! {
                                 biased;
-                                _ = self.handle.cancelled() => break RunStatus::Cancelled,
+                                _ = self.handle.cancelled() => {
+                                    out.text = parcial.lock().unwrap().clone();
+                                    break RunStatus::Cancelled;
+                                }
                                 r = self.client.chat_stream(&sem_tools, &mut on_delta) => r.ok(),
                             }
                         } else {
@@ -1401,20 +1413,36 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
                 keep_in_chat(&plan_summary);
                 plan_summary
             }
-            None => format!(
-                "Parei no limite de {} passos sem terminar a tarefa.",
-                budget.max()
-            ),
+            None => {
+                keep_in_chat(&final_text);
+                format!(
+                    "Parei no limite de {} passos sem terminar a tarefa.",
+                    budget.max()
+                )
+            }
         },
         RunStatus::Escalated => match summary_override {
             Some(plan_summary) => {
                 keep_in_chat(&plan_summary);
                 plan_summary
             }
-            None => escalation.unwrap_or_else(|| "Execução interrompida.".into()),
+            None => {
+                keep_in_chat(&final_text);
+                escalation.unwrap_or_else(|| "Execução interrompida.".into())
+            }
         },
-        RunStatus::Cancelled => "Execução cancelada.".to_string(),
-        _ => "A execução falhou.".to_string(),
+        // Parar ou falhar não apaga o que o agente já tinha dito. A trilha
+        // guarda os passos, mas ela não sobrevive inteira a um recarregar —
+        // e sem isto o texto sumia da conversa ao voltar para ela, que é
+        // exatamente a queixa de "as mensagens da IA somem".
+        RunStatus::Cancelled => {
+            keep_in_chat(&final_text);
+            "Execução cancelada.".to_string()
+        }
+        _ => {
+            keep_in_chat(&final_text);
+            "A execução falhou.".to_string()
+        }
     };
 
     let usage_json = serde_json::to_string(&usage).unwrap_or_else(|_| "{}".into());

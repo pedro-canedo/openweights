@@ -213,7 +213,9 @@
     "deleteMsg": "Delete message",
     "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s",
     "speak": "Read aloud",
-    "speakStop": "Stop reading"
+    "speakStop": "Stop reading",
+    "emptyAnswer": "(the model answered nothing)",
+    "notSaved": "Couldn't save this answer — it won't come back when you reopen the chat."
   },
   "activity": {
     "title": "Activity",
