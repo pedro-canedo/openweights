@@ -287,10 +287,10 @@ fn ctx_len_for(map: &Map<String, Value>, name: &str) -> Option<u32> {
     let stem = model_stem(name);
     let with_ext = format!("{stem}.gguf");
     for key in [name, stem, with_ext.as_str()] {
-        if let Some(n) = map.get(key).and_then(Value::as_u64) {
-            if let Some(n) = u32::try_from(n).ok().filter(|v| *v > 0) {
-                return Some(clamp_ctx(n));
-            }
+        if let Some(n) = map.get(key).and_then(Value::as_u64)
+            && let Some(n) = u32::try_from(n).ok().filter(|v| *v > 0)
+        {
+            return Some(clamp_ctx(n));
         }
     }
     None
@@ -362,15 +362,15 @@ pub async fn server_start(
     // fica FORA dele para não travar server_status/stop/exit por até 30 s.
     let view = {
         let mut guard = state.server.lock().await;
-        if let Some(srv) = guard.as_ref() {
-            if srv.is_spawned() {
-                return Ok(ServerStatusView {
-                    running: true,
-                    base_url: Some(srv.config().connect_url()),
-                    port: srv.config().port,
-                    lan: srv.config().host != "127.0.0.1",
-                });
-            }
+        if let Some(srv) = guard.as_ref()
+            && srv.is_spawned()
+        {
+            return Ok(ServerStatusView {
+                running: true,
+                base_url: Some(srv.config().connect_url()),
+                port: srv.config().port,
+                lan: srv.config().host != "127.0.0.1",
+            });
         }
 
         let mut cfg = lr_engine::ServerConfig::new(exe, state.models_dir.clone(), port);

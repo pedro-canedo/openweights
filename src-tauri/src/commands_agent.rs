@@ -126,28 +126,27 @@ pub async fn run_approve(
         ApprovalDecision::DenyAlways { scope } => (Some(*scope), Some(ToolPolicy::Never)),
         _ => (None, None),
     };
-    if let (Some(scope), Some(policy)) = (scope, policy) {
-        if let Some(call) = state
+    if let (Some(scope), Some(policy)) = (scope, policy)
+        && let Some(call) = state
             .store
             .list_tool_calls(&run_id)
             .ok()
             .and_then(|calls| calls.into_iter().find(|c| c.id == call_id))
-        {
-            let workspace = state
-                .store
-                .get_run(&run_id)
-                .ok()
-                .flatten()
-                .and_then(|r| r.workspace_dir);
-            let ws = match scope {
-                PolicyScope::Workspace => workspace.as_deref(),
-                PolicyScope::Global => None,
-            };
-            state
-                .store
-                .set_tool_permission(scope, ws, &call.tool_name, policy)
-                .map_err(err_str)?;
-        }
+    {
+        let workspace = state
+            .store
+            .get_run(&run_id)
+            .ok()
+            .flatten()
+            .and_then(|r| r.workspace_dir);
+        let ws = match scope {
+            PolicyScope::Workspace => workspace.as_deref(),
+            PolicyScope::Global => None,
+        };
+        state
+            .store
+            .set_tool_permission(scope, ws, &call.tool_name, policy)
+            .map_err(err_str)?;
     }
 
     if state.agent.resolve(&run_id, &call_id, decision) {

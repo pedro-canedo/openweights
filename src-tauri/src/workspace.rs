@@ -102,10 +102,10 @@ pub fn write_file(root: &str, rel: &str, content: &str) -> WsResult<()> {
         )));
     }
     let path = resolve_under(Path::new(root), rel)?;
-    if let Some(parent) = path.parent() {
-        if !parent.exists() {
-            return Err(WorkspaceError::Msg("pasta pai não existe".into()));
-        }
+    if let Some(parent) = path.parent()
+        && !parent.exists()
+    {
+        return Err(WorkspaceError::Msg("pasta pai não existe".into()));
     }
     std::fs::write(&path, content)?;
     Ok(())

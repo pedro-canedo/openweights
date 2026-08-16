@@ -77,10 +77,10 @@ impl AppState {
 
         // Um fechamento abrupto deixa runs "em andamento" no banco; marcá-los
         // como falha evita que a interface mostre execução fantasma.
-        if let Ok(n) = store.fail_orphan_runs() {
-            if n > 0 {
-                log::info!("{n} execução(ões) interrompida(s) por fechamento anterior");
-            }
+        if let Ok(n) = store.fail_orphan_runs()
+            && n > 0
+        {
+            log::info!("{n} execução(ões) interrompida(s) por fechamento anterior");
         }
 
         let tools = Arc::new(lr_tools::builtin_registry());
