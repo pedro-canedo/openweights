@@ -739,5 +739,40 @@
       "agentHint": "Executa a tarefa pedida, um passo por vez.",
       "loopHint": "Executa o plano inteiro, conferindo cada entrega antes de seguir."
     }
+  },
+  "tune": {
+    "open": "Ajustar para esta máquina",
+    "title": "Ajustar para esta máquina",
+    "measuring": "Medindo o que cabe na sua placa…",
+    "recommended": "Recomendada",
+    "apply": "Usar esta configuração",
+    "applyAnyway": "Aplicar mesmo assim",
+    "applying": "Aplicando…",
+    "applied": "Pronto — o motor reiniciou com esta configuração.",
+    "rolledBack": "Não carregou, e voltei para a configuração anterior. {{error}}",
+    "ctxChip": "{{n}}k de janela",
+    "kvChip": "KV em {{kv}}",
+    "flashChip": "flash attention",
+    "memGpu": "{{used}} de {{total}} na placa",
+    "memHost": "{{used}} na memória do sistema",
+    "partial": "Não cabe inteiro na placa: parte roda na CPU, bem mais devagar.",
+    "intent": {
+      "balanced": "Equilibrada",
+      "moreContext": "Mais janela"
+    },
+    "reason": {
+      "ctx": "Janela de {{ctx}} tokens por conversa, o que custa {{kv}} de KV cache.",
+      "kvCompressed": "KV cache comprimido: cabe mais janela na mesma memória, com perda que não se nota na conversa.",
+      "flashAttn": "Flash attention ligado: mesma memória, geração mais rápida.",
+      "fitsGpu": "Cabe inteiro na placa: {{used}} de {{total}}, com folga para o sistema.",
+      "partial": "Não cabe inteiro: {{host}} ficam na memória do sistema, e essa parte roda na CPU.",
+      "alternative": "Se quiser mais janela: {{ctx}} tokens ocupariam {{used}} na placa."
+    },
+    "fact": {
+      "mtp": "Traz MTP",
+      "mtpHint": "Este arquivo traz previsão de múltiplos tokens. Pode acelerar a geração — ainda não medimos nesta máquina.",
+      "vision": "Tem visão",
+      "visionHint": "Este modelo vem com projetor de visão. Carregá-lo só quando houver imagem ainda não está pronto."
+    }
   }
 }

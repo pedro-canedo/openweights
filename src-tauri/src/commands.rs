@@ -294,7 +294,7 @@ fn model_stem(name: &str) -> &str {
 ///
 /// O nome que a interface manda nem sempre é o nome do arquivo — o seletor do
 /// chat usa o id do Router, que às vezes perde a extensão.
-fn profile_for(state: &AppState, name: &str) -> Option<lr_types::tuning::ModelProfile> {
+pub(crate) fn profile_for(state: &AppState, name: &str) -> Option<lr_types::tuning::ModelProfile> {
     let stem = model_stem(name);
     let with_ext = format!("{stem}.gguf");
     for key in [name, stem, with_ext.as_str()] {
@@ -352,6 +352,10 @@ pub async fn server_start(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<ServerStatusView> {
+    start_engine(&app, &state).await
+}
+
+pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult<ServerStatusView> {
     let runtime = {
         let variant = lr_runtime::select_variant(&state.profile);
         state.runtime_mgr.state(variant)
@@ -366,7 +370,7 @@ pub async fn server_start(
         api_key,
         models_max,
         parallel,
-    } = server_prefs(&state);
+    } = server_prefs(state);
 
     // Spawn + instalação no slot acontecem sob o lock; a espera do /health
     // fica FORA dele para não travar server_status/stop/exit por até 30 s.
@@ -394,7 +398,7 @@ pub async fn server_start(
         // --models-dir do llama.cpp não é recursivo; a biblioteca mora em
         // autor/repo/. O INI registra cada GGUF com o nome que a UI já usa,
         // mais `ctx-size`/`fit` quando o usuário fixou a janela de contexto.
-        cfg.models_preset = Some(write_router_preset(&state)?);
+        cfg.models_preset = Some(write_router_preset(state)?);
 
         let mut srv = lr_engine::LlamaServer::new(cfg);
         srv.spawn().map_err(err_str)?;
@@ -478,6 +482,10 @@ pub async fn server_start(
 
 #[tauri::command]
 pub async fn server_stop(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    stop_engine(&app, &state).await
+}
+
+pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<()> {
     // Um único guard para parar E limpar o slot: dois lock() sequenciais
     // abririam janela para um server_start intercalado ser morto em seguida.
     {
@@ -490,7 +498,7 @@ pub async fn server_stop(app: AppHandle, state: State<'_, AppState>) -> CmdResul
     state
         .server_pid
         .store(0, std::sync::atomic::Ordering::SeqCst);
-    let prefs = server_prefs(&state);
+    let prefs = server_prefs(state);
     let (port, lan) = (prefs.port, prefs.lan);
     let _ = app.emit(
         "server-status",
@@ -552,12 +560,25 @@ pub async fn server_restart(
     state: State<'_, AppState>,
     force: Option<bool>,
 ) -> CmdResult<ServerStatusView> {
-    let ocupado = engine_busy_with(&state);
-    if !ocupado.is_empty() && !force.unwrap_or(false) {
+    restart_engine(&app, &state, force.unwrap_or(false)).await
+}
+
+/// O reinício de verdade, alcançável de dentro do processo.
+///
+/// Recebe `&AppState` em vez do `State` do Tauri porque quem mais precisa
+/// dele é código que já tem o estado na mão (aplicar uma configuração, por
+/// exemplo) e não um comando vindo da tela.
+pub(crate) async fn restart_engine(
+    app: &AppHandle,
+    state: &AppState,
+    force: bool,
+) -> CmdResult<ServerStatusView> {
+    let ocupado = engine_busy_with(state);
+    if !ocupado.is_empty() && !force {
         return Err(format!("engine-busy:{}", ocupado.join(",")));
     }
-    server_stop(app.clone(), state.clone()).await?;
-    server_start(app, state).await
+    stop_engine(app, state).await?;
+    start_engine(app, state).await
 }
 
 /// `GET /props` do servidor em execução: capacidades do chat template do

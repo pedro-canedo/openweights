@@ -131,11 +131,23 @@ pub fn asset_url(tag: &str, asset: &str) -> String {
 
 /// Nome do executável do servidor dentro do pacote extraído.
 pub fn server_exe_name() -> &'static str {
-    if cfg!(windows) {
-        "llama-server.exe"
+    exe_name("llama-server")
+}
+
+/// Nome de um executável do pacote do llama.cpp neste sistema.
+///
+/// O pacote traz irmãos além do servidor — `llama-fit-params` responde
+/// quanta memória uma configuração vai custar, `llama-bench` mede tokens por
+/// segundo. Eles são extraídos na mesma pasta.
+pub fn exe_name(stem: &str) -> &'static str {
+    // O nome é montado uma vez e vazado de propósito: são dois ou três por
+    // processo, e devolver `&'static str` mantém a API igual à de antes.
+    let full = if cfg!(windows) {
+        format!("{stem}.exe")
     } else {
-        "llama-server"
-    }
+        stem.to_string()
+    };
+    Box::leak(full.into_boxed_str())
 }
 
 /// Diretório onde os runtimes ficam instalados: `<data_dir>/runtimes/<tag>/<variante>`.

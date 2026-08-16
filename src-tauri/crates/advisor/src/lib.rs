@@ -12,7 +12,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod probe;
 pub mod quant;
+pub mod tune;
 
 /// Reserva de VRAM para driver/compositor/buffers (pesquisa: 577 MB–1 GiB).
 pub const VRAM_RESERVE_BYTES: u64 = 1 << 30;

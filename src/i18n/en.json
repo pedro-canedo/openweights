@@ -739,5 +739,40 @@
       "agentHint": "Runs the requested task, one step at a time.",
       "loopHint": "Runs the whole plan, checking each delivery before moving on."
     }
+  },
+  "tune": {
+    "open": "Tune for this machine",
+    "title": "Tune for this machine",
+    "measuring": "Measuring what fits on your GPU…",
+    "recommended": "Recommended",
+    "apply": "Use this configuration",
+    "applyAnyway": "Apply anyway",
+    "applying": "Applying…",
+    "applied": "Done — the engine restarted with this configuration.",
+    "rolledBack": "It didn't load, so I went back to the previous configuration. {{error}}",
+    "ctxChip": "{{n}}k window",
+    "kvChip": "KV as {{kv}}",
+    "flashChip": "flash attention",
+    "memGpu": "{{used}} of {{total}} on the GPU",
+    "memHost": "{{used}} in system memory",
+    "partial": "Doesn't fit entirely on the GPU: part runs on the CPU, much slower.",
+    "intent": {
+      "balanced": "Balanced",
+      "moreContext": "More window"
+    },
+    "reason": {
+      "ctx": "A {{ctx}}-token window per conversation, costing {{kv}} of KV cache.",
+      "kvCompressed": "Compressed KV cache: more window in the same memory, with a loss you won't notice in conversation.",
+      "flashAttn": "Flash attention on: same memory, faster generation.",
+      "fitsGpu": "Fits entirely on the GPU: {{used}} of {{total}}, leaving room for the system.",
+      "partial": "Doesn't fit entirely: {{host}} stay in system memory, and that part runs on the CPU.",
+      "alternative": "If you want more window: {{ctx}} tokens would take {{used}} on the GPU."
+    },
+    "fact": {
+      "mtp": "Has MTP",
+      "mtpHint": "This file ships multi-token prediction. It may speed up generation — we haven't measured it on this machine yet.",
+      "vision": "Has vision",
+      "visionHint": "This model comes with a vision projector. Loading it only when there's an image isn't ready yet."
+    }
   }
 }

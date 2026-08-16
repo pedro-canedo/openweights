@@ -2622,8 +2622,12 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 name = "lr_advisor"
 version = "0.1.0"
 dependencies = [
+ "lr_runtime",
  "lr_types",
  "serde",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]

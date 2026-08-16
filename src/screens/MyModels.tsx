@@ -8,6 +8,7 @@ import { deleteModel, listLocalModels } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import { navigate } from "../lib/nav";
 import IncompleteDownloads from "../components/models/IncompleteDownloads";
+import TunePanel from "../components/models/TunePanel";
 
 function ModelCard({
   model,
@@ -19,6 +20,7 @@ function ModelCard({
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [tuning, setTuning] = useState(false);
 
   const remove = () => {
     setDeleting(true);
@@ -69,12 +71,19 @@ function ModelCard({
             </div>
           </div>
         ) : (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => navigate("chat", { chatModel: model.name })}
               className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
             >
               {t("models.chatWith")}
+            </button>
+            <button
+              onClick={() => setTuning((v) => !v)}
+              aria-expanded={tuning}
+              className="rounded-lg border border-edge px-3 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-ink"
+            >
+              {t("tune.open")}
             </button>
             <button
               onClick={() => setConfirming(true)}
@@ -85,6 +94,7 @@ function ModelCard({
           </div>
         )}
       </div>
+      {tuning && <TunePanel model={model.name} onClose={() => setTuning(false)} />}
     </div>
   );
 }

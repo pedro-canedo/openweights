@@ -77,6 +77,10 @@ pub struct RuntimeState {
     pub variant: BackendVariant,
     pub installed: bool,
     pub server_exe: Option<PathBuf>,
+    /// Pasta onde o pacote foi extraído. É por ela que se alcançam os
+    /// irmãos do servidor (`llama-fit-params`, `llama-bench`), que o
+    /// otimizador usa para responder "cabe?" e "rende quanto?".
+    pub dir: Option<PathBuf>,
 }
 
 /// Gerencia a instalação dos runtimes em `<data_dir>/runtimes/`.
@@ -105,6 +109,7 @@ impl RuntimeManager {
             variant,
             installed,
             server_exe: installed.then_some(exe),
+            dir: installed.then_some(dir),
         }
     }
 
