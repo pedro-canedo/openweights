@@ -220,10 +220,13 @@ pub async fn run(
     // processo direto: o `npm` morria e o `vitest` que ele abriu continuava
     // comendo CPU para sempre. O guarda abaixo roda no drop — inclusive no
     // cancelamento — e leva o grupo (Unix) ou o Job (Windows) junto.
-    let _arvore = TreeGuard {
+    let arvore = TreeGuard {
         pid,
+        reaped: std::cell::Cell::new(false),
+        // O `Job` do Windows não é clonável, e não precisa ser: o guarda passa
+        // a ser o dono dele, e o timeout mata pelo próprio guarda.
         #[cfg(windows)]
-        job: job.clone(),
+        job,
     };
 
     let (tx, mut rx) = mpsc::unbounded_channel::<(Stream, String)>();
@@ -280,7 +283,11 @@ pub async fn run(
             },
             res = child.wait(), if status.is_none() => {
                 match res {
-                    Ok(st) => status = Some(st),
+                    Ok(st) => {
+                        status = Some(st);
+                        // Colhido: o pid deixou de ser nosso.
+                        arvore.mark_reaped();
+                    }
                     Err(e) => {
                         wait_error = Some(e);
                         break;
@@ -291,10 +298,7 @@ pub async fn run(
             },
             _ = &mut deadline, if !timed_out => {
                 timed_out = true;
-                #[cfg(windows)]
-                kill_tree(job.as_ref(), pid);
-                #[cfg(not(windows))]
-                kill_tree(pid);
+                arvore.kill();
             },
             _ = &mut grace, if grace_armed && draining => {
                 // Alguém ficou segurando o cano; não vale esperar mais.
@@ -370,16 +374,35 @@ fn take_valid_utf8(buf: &mut Vec<u8>) -> String {
 /// para cobrir é o terceiro: alguém cancelou e o futuro sumiu no meio.
 struct TreeGuard {
     pid: Option<u32>,
+    /// O processo já foi colhido pelo `wait`. A partir daí o número dele pode
+    /// ter sido reciclado pelo sistema, e mandar sinal para o grupo seria
+    /// mirar em quem herdou o número. Saída normal não precisa de tiro.
+    reaped: std::cell::Cell<bool>,
     #[cfg(windows)]
     job: Option<windows_job::JobHandle>,
 }
 
-impl Drop for TreeGuard {
-    fn drop(&mut self) {
+impl TreeGuard {
+    /// Encerra a árvore. Chamar de novo depois de tudo já ter morrido não faz
+    /// nada — é o que permite o timeout e o `Drop` usarem o mesmo caminho.
+    fn kill(&self) {
+        if self.reaped.get() {
+            return;
+        }
         #[cfg(windows)]
         kill_tree(self.job.as_ref(), self.pid);
         #[cfg(not(windows))]
         kill_tree(self.pid);
+    }
+
+    fn mark_reaped(&self) {
+        self.reaped.set(true);
+    }
+}
+
+impl Drop for TreeGuard {
+    fn drop(&mut self) {
+        self.kill();
     }
 }
 
