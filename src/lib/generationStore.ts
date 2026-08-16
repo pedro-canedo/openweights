@@ -31,6 +31,10 @@ export interface GenerationJob {
   genTokens: number | null;
   genMs: number | null;
   loadingModel: boolean;
+  /** performance.now() quando o job entra em running (relógio da UI). */
+  startedAt: number | null;
+  thinkStartedAt: number | null;
+  answerStartedAt: number | null;
   error?: string;
   rowId?: number;
 }
@@ -220,7 +224,16 @@ async function runJob(chatId: number): Promise<void> {
     return;
   }
 
-  patch(chatId, { state: "running", loadingModel: true, error: undefined });
+  patch(chatId, {
+    state: "running",
+    loadingModel: true,
+    error: undefined,
+    startedAt: performance.now(),
+    thinkStartedAt: null,
+    answerStartedAt: null,
+    thinkingMs: null,
+    genMs: null,
+  });
 
   let status = await getServerStatus();
   if (!status.running || !status.baseUrl) {
@@ -244,7 +257,12 @@ async function runJob(chatId: number): Promise<void> {
     (j) => j.public.chatId !== chatId && j.public.state === "running",
   );
   if (othersRunning && mustQueue(resolved, loaded, max)) {
-    patch(chatId, { state: "queued", model: resolved, loadingModel: false });
+    patch(chatId, {
+      state: "queued",
+      model: resolved,
+      loadingModel: false,
+      startedAt: null,
+    });
     return;
   }
 
@@ -268,9 +286,19 @@ async function runJob(chatId: number): Promise<void> {
         window.clearTimeout(slowTimer);
         const cur = internals.get(chatId);
         if (!cur) return;
+        const now = performance.now();
+        const answerStartedAt = cur.public.answerStartedAt ?? now;
+        const thinkOrigin =
+          cur.public.thinkStartedAt ?? cur.public.startedAt ?? firstReasonAt;
         patch(chatId, {
           content: cur.public.content + delta,
           loadingModel: false,
+          answerStartedAt,
+          genMs: Math.round(now - answerStartedAt),
+          thinkingMs:
+            thinkOrigin > 0
+              ? Math.round(answerStartedAt - thinkOrigin)
+              : cur.public.thinkingMs,
         });
       },
       onReasoningDelta: (delta) => {
@@ -280,10 +308,12 @@ async function runJob(chatId: number): Promise<void> {
         window.clearTimeout(slowTimer);
         const cur = internals.get(chatId);
         if (!cur) return;
+        const thinkStartedAt = cur.public.thinkStartedAt ?? now;
         patch(chatId, {
           reasoning: cur.public.reasoning + delta,
           loadingModel: false,
-          thinkingMs: Math.round(lastReasonAt - firstReasonAt),
+          thinkStartedAt,
+          thinkingMs: Math.round(now - thinkStartedAt),
         });
       },
     });
@@ -320,13 +350,28 @@ async function runJob(chatId: number): Promise<void> {
       const cur = internals.get(chatId);
       const text = cur?.public.content ?? "";
       const reasoning = cur?.public.reasoning ?? "";
+      const now = performance.now();
       const thinkingMs =
-        firstReasonAt > 0 ? Math.round(lastReasonAt - firstReasonAt) : null;
-      const rowId = await persistAssistant(chatId, text, reasoning, null, null, null);
+        cur?.public.thinkingMs ??
+        (firstReasonAt > 0 ? Math.round(lastReasonAt - firstReasonAt) : null);
+      const genMs =
+        cur?.public.genMs ??
+        (cur?.public.answerStartedAt != null
+          ? Math.round(now - cur.public.answerStartedAt)
+          : null);
+      const rowId = await persistAssistant(
+        chatId,
+        text,
+        reasoning,
+        null,
+        null,
+        genMs,
+      );
       if (cur) {
         patch(chatId, {
           state: "done",
           thinkingMs,
+          genMs,
           loadingModel: false,
           rowId,
         });
@@ -437,6 +482,9 @@ export const generationStore = {
         genTokens: null,
         genMs: null,
         loadingModel: false,
+        startedAt: null,
+        thinkStartedAt: null,
+        answerStartedAt: null,
       },
     };
     internals.set(opts.chatId, row);

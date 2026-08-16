@@ -27,9 +27,12 @@ export default function ThinkingBlock({
   }, [reasoning, active]);
 
   const expanded = active || open;
+  const seconds = ((thinkingMs ?? 0) / 1000).toFixed(1);
   const label = active
-    ? t("chat.thinking")
-    : t("chat.thought", { seconds: ((thinkingMs ?? 0) / 1000).toFixed(1) });
+    ? t("chat.thinkingTimer", { seconds })
+    : thinkingMs != null
+      ? t("chat.thought", { seconds })
+      : t("chat.thoughtNoTime");
 
   return (
     <div className="mb-2 rounded-lg border border-edge bg-panel/60">

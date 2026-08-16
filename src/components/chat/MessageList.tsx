@@ -20,6 +20,9 @@ export interface UiMessage {
   thinkingMs?: number | null;
   genTokens?: number | null;
   genMs?: number | null;
+  startedAt?: number | null;
+  thinkStartedAt?: number | null;
+  answerStartedAt?: number | null;
   /** Imagens anexadas nesta sessão (enviadas como image_url à API). */
   images?: { name: string; dataUrl: string }[];
   error?: boolean;
@@ -74,6 +77,22 @@ const TRASH_ICON = icon(
   "M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6",
 );
 
+function formatSec(ms: number): string {
+  return (Math.max(0, ms) / 1000).toFixed(1);
+}
+
+/** Relógio local (~10 Hz) enquanto a última resposta ainda está em curso. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => performance.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(performance.now());
+    const id = window.setInterval(() => setNow(performance.now()), 100);
+    return () => window.clearInterval(id);
+  }, [active]);
+  return now;
+}
+
 export default function MessageList({
   messages,
   generating,
@@ -93,6 +112,7 @@ export default function MessageList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const now = useNow(generating);
 
   const onScroll = () => {
     const el = scrollRef.current;
@@ -123,10 +143,28 @@ export default function MessageList({
     if (lastUserIdx >= 0 && lastAssistantIdx >= 0) break;
   }
 
+  const liveTimes = (m: UiMessage, live: boolean) => {
+    let thinkingMs = m.thinkingMs ?? null;
+    let genMs = m.genMs ?? null;
+    if (live) {
+      if (m.answerStartedAt != null) {
+        genMs = Math.round(now - m.answerStartedAt);
+        const thinkOrigin = m.thinkStartedAt ?? m.startedAt;
+        if (thinkOrigin != null) {
+          thinkingMs = Math.round(m.answerStartedAt - thinkOrigin);
+        }
+      } else {
+        const origin = m.thinkStartedAt ?? m.startedAt;
+        if (origin != null) thinkingMs = Math.round(now - origin);
+      }
+    }
+    return { thinkingMs, genMs };
+  };
+
   /** Linha sutil de métricas sob a resposta — só os campos disponíveis. */
-  const statsFor = (m: UiMessage): string | null => {
+  const statsFor = (m: UiMessage, live: boolean): string | null => {
+    const { genMs: ms } = liveTimes(m, live);
     const tokens = m.genTokens ?? null;
-    const ms = m.genMs ?? null;
     if (tokens != null && ms != null) {
       const tps =
         m.tokensPerSec ?? (ms > 0 ? tokens / (ms / 1000) : null);
@@ -134,9 +172,20 @@ export default function MessageList({
         return t("chat.statsLine", {
           tps: tps.toFixed(1),
           tokens,
-          seconds: (ms / 1000).toFixed(1),
+          seconds: formatSec(ms),
         });
       }
+    }
+    if (m.tokensPerSec != null && ms != null) {
+      return t("chat.statsTpsTime", {
+        tps: m.tokensPerSec.toFixed(1),
+        seconds: formatSec(ms),
+      });
+    }
+    if (ms != null) {
+      return live
+        ? t("chat.answeringTimer", { seconds: formatSec(ms) })
+        : t("chat.statsTime", { seconds: formatSec(ms) });
     }
     if (m.tokensPerSec != null) {
       return `${m.tokensPerSec.toFixed(1)} ${t("status.tokensPerSec")}`;
@@ -201,11 +250,6 @@ export default function MessageList({
   };
 
   const last = messages[messages.length - 1];
-  const waitingFirstToken =
-    generating &&
-    last?.role === "assistant" &&
-    last.content === "" &&
-    !last.reasoning;
 
   return (
     <div
@@ -234,14 +278,26 @@ export default function MessageList({
                 i === messages.length - 1 ? (
                 <div className="flex items-center gap-2 py-1 text-sm text-dim">
                   <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-                  {loadingModel ? t("chat.loadingModel") : t("chat.generating")}
+                  {loadingModel
+                    ? t("chat.loadingModel")
+                    : m.startedAt == null
+                      ? t("jobs.queued")
+                      : t("chat.generatingTimer", {
+                          seconds: formatSec(
+                            liveTimes(m, true).thinkingMs ??
+                              now - m.startedAt,
+                          ),
+                        })}
                 </div>
               ) : (
                 <>
                   {m.reasoning && (
                     <ThinkingBlock
                       reasoning={m.reasoning}
-                      thinkingMs={m.thinkingMs}
+                      thinkingMs={
+                        liveTimes(m, generating && i === messages.length - 1)
+                          .thinkingMs
+                      }
                       active={
                         generating &&
                         i === messages.length - 1 &&
@@ -256,7 +312,8 @@ export default function MessageList({
                     </div>
                   )}
                   {(() => {
-                    const stats = statsFor(m);
+                    const live = generating && i === messages.length - 1;
+                    const stats = statsFor(m, live);
                     return stats ? (
                       <div className="mt-1 text-[11px] tabular-nums text-dim">
                         {stats}
@@ -270,13 +327,13 @@ export default function MessageList({
           ),
         )}
 
-        {/* Servidor/modelo carregando antes mesmo da 1ª mensagem existir */}
-        {loadingModel && !waitingFirstToken && messages.length === 0 && (
+        {(loadingModel && !waitingFirstToken && messages.length === 0) ||
+        (generating && last?.role === "user") ? (
           <div className="flex items-center gap-2 py-1 text-sm text-dim">
             <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-            {t("chat.loadingModel")}
+            {loadingModel ? t("chat.loadingModel") : t("chat.generating")}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

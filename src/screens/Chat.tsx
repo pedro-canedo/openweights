@@ -145,6 +145,8 @@ export default function Chat() {
   const convEpochRef = useRef(0);
   // Conversas excluídas na sessão: não persistir mensagens nelas (FK).
   const deletedChatsRef = useRef<Set<number>>(new Set());
+  // Ids já vistos na lista — um id novo (ainda não listado) não é exclusão.
+  const seenChatIdsRef = useRef<Set<number>>(new Set());
   // Pula o persist com debounce quando os params acabaram de ser CARREGADOS.
   const paramsSkipRef = useRef(false);
   const attachErrTimerRef = useRef(0);
@@ -252,8 +254,14 @@ export default function Chat() {
   }, [openId, openNew, chats]);
 
   useEffect(() => {
+    for (const c of chats) seenChatIdsRef.current.add(c.id);
+  }, [chats]);
+
+  useEffect(() => {
     if (activeChatId == null) return;
     if (chats.some((c) => c.id === activeChatId)) return;
+    // Conversa recém-criada ainda não entrou em `chats` — não abortar o job.
+    if (!seenChatIdsRef.current.has(activeChatId)) return;
     deletedChatsRef.current.add(activeChatId);
     generationStore.markDeleted(activeChatId);
   }, [chats, activeChatId]);
@@ -308,6 +316,9 @@ export default function Chat() {
         thinkingMs: job.thinkingMs,
         genTokens: job.genTokens,
         genMs: job.genMs,
+        startedAt: job.startedAt,
+        thinkStartedAt: job.thinkStartedAt,
+        answerStartedAt: job.answerStartedAt,
       },
     ];
   })();
@@ -318,11 +329,20 @@ export default function Chat() {
     const epoch = convEpochRef.current;
     const errorOnly = Boolean(job.error && !job.content && !job.rowId);
     const errorText = job.error;
+    const thinkingMs = job.thinkingMs;
     void (async () => {
       try {
         const rows = await listMessages(activeChatId);
         if (convEpochRef.current !== epoch) return;
         const ui = rows.map(rowToUi);
+        if (thinkingMs != null) {
+          for (let i = ui.length - 1; i >= 0; i--) {
+            if (ui[i].role === "assistant") {
+              ui[i] = { ...ui[i], thinkingMs };
+              break;
+            }
+          }
+        }
         if (errorOnly && errorText) {
           setMessages([
             ...ui,
@@ -432,8 +452,17 @@ export default function Chat() {
             content.length > 40 ? `${content.slice(0, 40)}…` : content;
           chatId = await createChat(title, selectedModel);
           created = true;
+          chatStore.setChats([
+            {
+              id: chatId,
+              title,
+              modelId: selectedModel,
+              createdAt: Date.now(),
+              paramsJson: JSON.stringify(params),
+            },
+            ...chats.filter((c) => c.id !== chatId),
+          ]);
           if (convEpochRef.current === epoch) setActiveChatId(chatId);
-          // Persiste os parâmetros atuais do painel na conversa nova.
           void setChatParams(chatId, JSON.stringify(params)).catch(() => {});
           void listChats()
             .then(chatStore.setChats)
@@ -449,7 +478,7 @@ export default function Chat() {
         }
       }
 
-      if (!canPersistId(chatId)) return;
+      if (chatId == null) return;
       generationStore.start({
         chatId,
         messages: toApiMessages(history),

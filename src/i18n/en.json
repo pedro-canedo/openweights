@@ -134,7 +134,13 @@
     "copyMsg": "Copy",
     "copied": "Copied!",
     "thinking": "Thinking...",
+    "thinkingTimer": "Thinking... {{seconds}}s",
     "thought": "Thought for {{seconds}}s",
+    "thoughtNoTime": "Reasoning",
+    "generatingTimer": "Generating... {{seconds}}s",
+    "answeringTimer": "Answering... {{seconds}}s",
+    "statsTime": "{{seconds}}s",
+    "statsTpsTime": "{{tps}} tok/s · {{seconds}}s",
     "attach": "Attach file or image",
     "plus": {
       "open": "Add",
