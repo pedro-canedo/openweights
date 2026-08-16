@@ -100,6 +100,7 @@ export default function MessageList({
   onRegenerate,
   onEditResend,
   onDeleteMsg,
+  trail,
 }: {
   messages: UiMessage[];
   generating: boolean;
@@ -107,6 +108,12 @@ export default function MessageList({
   onRegenerate?: () => void;
   onEditResend?: (index: number) => void;
   onDeleteMsg?: (index: number) => void;
+  /**
+   * Trilha da execução do agente (passos + cards de ferramenta) desenhada
+   * depois das mensagens. Quando existe, ela é quem mostra o andamento —
+   * o indicador genérico de "gerando" fica de fora.
+   */
+  trail?: ReactNode;
 }) {
   const { t } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -123,7 +130,7 @@ export default function MessageList({
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, generating, loadingModel]);
+  }, [messages, generating, loadingModel, trail]);
 
   const copyMsg = (i: number, text: string) => {
     void navigator.clipboard.writeText(text).then(() => {
@@ -334,8 +341,10 @@ export default function MessageList({
           ),
         )}
 
+        {trail}
+
         {(loadingModel && !waitingFirstToken && messages.length === 0) ||
-        (generating && last?.role === "user") ? (
+        (generating && last?.role === "user" && !trail) ? (
           <div className="flex items-center gap-2 py-1 text-sm text-dim">
             <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
             {loadingModel ? t("chat.loadingModel") : t("chat.generating")}

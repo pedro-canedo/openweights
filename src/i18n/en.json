@@ -66,7 +66,19 @@
     "chatWith": "Chat",
     "delete": "Delete",
     "deleteConfirm": "Delete {{name}} from disk?",
-    "loose": "manually imported"
+    "loose": "manually imported",
+    "incompleteTitle": "Incomplete downloads",
+    "incompleteHint": "Pick up where you left off, even after restarting the computer.",
+    "incompleteSearch": "Search downloads...",
+    "incompleteNone": "Nothing matches this search.",
+    "filterAll": "All",
+    "filterActive": "In progress",
+    "filterPaused": "Paused",
+    "filterError": "Failed",
+    "resume": "Resume",
+    "discard": "Discard",
+    "paused": "Paused",
+    "queued": "Queued"
   },
   "chat": {
     "title": "Chat",
@@ -125,6 +137,30 @@
     "topK": "Top-K",
     "maxTokens": "Response token limit",
     "noLimit": "No limit",
+    "ctx": {
+      "label": "Context window",
+      "auto": "Automatic",
+      "hint": "How much the model can remember in this load. Reasoning and the answer share this budget. More tokens use more VRAM.",
+      "inUse": "In use now: {{n}} tokens",
+      "notLoaded": "The model is not in memory yet. Takes effect on the next load.",
+      "pending": "Saved. Reload to apply {{n}} tokens.",
+      "apply": "Apply and reload",
+      "applying": "Reloading…",
+      "busy": "Stop generation to reload the model.",
+      "tokens": "tokens",
+      "usage": {
+        "title": "Context Usage",
+        "ringTitle": "{{pct}}% · ~{{used}} / {{limit}} tokens",
+        "full": "{{pct}}% Full",
+        "tokens": "~{{used}} / {{limit}} tokens",
+        "empty": "Nothing in this chat yet.",
+        "system": "System prompt",
+        "conversation": "Conversation",
+        "reasoning": "Reasoning",
+        "draft": "Current message",
+        "attachments": "Attachments"
+      }
+    },
     "preset": "Preset",
     "presetSave": "Save as preset",
     "presetName": "Preset name",
@@ -142,6 +178,15 @@
     "statsTime": "{{seconds}}s",
     "statsTpsTime": "{{tps}} tok/s · {{seconds}}s",
     "attach": "Attach file or image",
+    "voice": {
+      "start": "Dictate with voice",
+      "stop": "Stop dictation",
+      "unsupported": "Voice dictation is not supported in this environment.",
+      "denied": "Microphone permission denied. Allow access in Windows settings.",
+      "noMic": "No microphone found.",
+      "network": "Voice recognition failed. Check your connection.",
+      "error": "Could not start dictation."
+    },
     "plus": {
       "open": "Add",
       "attach": "Add files or photos",

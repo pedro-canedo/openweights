@@ -1,6 +1,6 @@
 // Caixa de envio de mensagem: Enter envia, Shift+Enter quebra linha.
 // Durante a geração o botão vira "Parar" (aborta o streaming).
-// Suporta anexos (botão 📎, colar imagem) com chips acima do campo.
+// Anexos (botão + / colar imagem) e ditado por voz (microfone).
 
 import {
   useEffect,
@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import type { WorkspaceFile } from "../../lib/types";
 import AttachMenu from "./AttachMenu";
 import AttachmentChips, { type Attachment } from "./AttachmentChips";
+import VoiceButton from "./VoiceButton";
 
 export default function Composer({
   draft,
@@ -225,6 +226,11 @@ export default function Composer({
             <AttachMenu
               disabled={generating}
               onAttach={() => fileRef.current?.click()}
+            />
+            <VoiceButton
+              draft={draft}
+              onDraftChange={onDraftChange}
+              disabled={generating || disabled}
             />
             {startActions}
             {leftActions}

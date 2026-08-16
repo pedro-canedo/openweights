@@ -1,6 +1,8 @@
 // Espelhos TypeScript dos tipos Rust (serde rename_all = "camelCase").
 // Mantenha em sincronia com src-tauri/crates/*/src e src-tauri/src/commands.rs.
 
+import type { RunMode } from "./agent/types";
+
 export type GpuVendor = "nvidia" | "amd" | "intel" | "apple" | "other";
 
 export interface GpuInfo {
@@ -197,6 +199,14 @@ export interface ChatParams {
    * Ausente/`null` = cair para `ChatRow.modelId`.
    */
   model?: string | null;
+  /**
+   * Modo agente desta conversa: em vez de uma resposta única, o pedido vira
+   * um run com ferramentas (o laço vive no Rust). Opcional para não quebrar
+   * os `paramsJson` já gravados — ausente = desligado.
+   */
+  agent?: boolean;
+  /** Nível de autorização do agente. Ausente = `"smart"`. */
+  mode?: RunMode;
 }
 
 export interface WorkspaceFile {
@@ -215,4 +225,6 @@ export const DEFAULT_CHAT_PARAMS: ChatParams = {
   effort: "high",
   workspaceDir: null,
   model: null,
+  agent: false,
+  mode: "smart",
 };

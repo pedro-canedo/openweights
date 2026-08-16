@@ -56,6 +56,13 @@ lr_engine = { path = "crates/engine" }
 lr_models = { path = "crates/models" }
 lr_advisor = { path = "crates/advisor" }
 lr_store = { path = "crates/store" }
+lr_tools = { path = "crates/tools" }
+lr_policy = { path = "crates/policy" }
+lr_checkpoint = { path = "crates/checkpoint" }
+lr_agent = { path = "crates/agent" }
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
 
 [profile.release]
 lto = true

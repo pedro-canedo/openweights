@@ -21,6 +21,7 @@ import {
   writeWorkspaceFile,
 } from "../../lib/api";
 import type { WorkspaceFile } from "../../lib/types";
+import CheckpointList from "../agent/CheckpointList";
 
 function folderName(dir: string): string {
   const parts = dir.replace(/[\\/]+$/, "").split(/[\\/]/);
@@ -127,6 +128,8 @@ type WorkspaceCtx = {
   disabled?: boolean;
   explorerOpen: boolean;
   setExplorerOpen: (open: boolean) => void;
+  /** Muda quando o agente cria um checkpoint — recarrega a lista. */
+  checkpointsKey: number;
   addFolder: () => Promise<void>;
   removeFolder: () => void;
   query: string;
@@ -163,6 +166,7 @@ export function WorkspaceHost({
   files,
   onFiles,
   disabled,
+  checkpointsKey = 0,
   children,
 }: {
   dir: string | null;
@@ -170,6 +174,8 @@ export function WorkspaceHost({
   files: WorkspaceFile[];
   onFiles: (files: WorkspaceFile[]) => void;
   disabled?: boolean;
+  /** Contador de checkpoints do run corrente (força recarga da lista). */
+  checkpointsKey?: number;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -281,6 +287,7 @@ export function WorkspaceHost({
         disabled,
         explorerOpen,
         setExplorerOpen,
+        checkpointsKey,
         addFolder,
         removeFolder,
         query,
@@ -305,6 +312,19 @@ export function WorkspaceHost({
       <WorkspaceEditor />
     </WorkspaceContext.Provider>
   );
+}
+
+/**
+ * Acesso ao explorador de dentro do `WorkspaceHost` — usado pelo atalho de
+ * checkpoint do agente, que precisa abrir a coluna onde a lista mora.
+ */
+export function useWorkspacePanel(): {
+  dir: string | null;
+  explorerOpen: boolean;
+  openExplorer: () => void;
+} {
+  const { dir, explorerOpen, setExplorerOpen } = useWorkspace();
+  return { dir, explorerOpen, openExplorer: () => setExplorerOpen(true) };
 }
 
 export function WorkspaceTrigger() {
@@ -414,6 +434,7 @@ export function WorkspaceExplorer() {
     dir,
     explorerOpen,
     setExplorerOpen,
+    checkpointsKey,
     addFolder,
     removeFolder,
     reveal,
@@ -480,6 +501,8 @@ export function WorkspaceExplorer() {
               <FileTree nodes={tree} depth={0} />
             )}
           </div>
+          {/* Desfazer das alterações do agente, junto dos arquivos. */}
+          <CheckpointList workspaceDir={dir} reloadKey={checkpointsKey} />
         </>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">

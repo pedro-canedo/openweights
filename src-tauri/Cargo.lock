@@ -2414,6 +2414,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "lr_agent"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "log",
+ "lr_checkpoint",
+ "lr_engine",
+ "lr_policy",
+ "lr_store",
+ "lr_tools",
+ "lr_types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "lr_checkpoint"
 version = "0.1.0"
 dependencies = [
@@ -2429,6 +2448,7 @@ name = "lr_engine"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "libc",
  "log",
  "lr_types",
  "reqwest 0.12.28",
@@ -2436,6 +2456,8 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "tokio",
+ "win32job",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -2510,6 +2532,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "ignore",
+ "libc",
  "log",
  "lr_policy",
  "lr_types",
@@ -2520,6 +2543,7 @@ dependencies = [
  "thiserror 2.0.20",
  "tokio",
  "win32job",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -2955,11 +2979,15 @@ dependencies = [
  "env_logger",
  "log",
  "lr_advisor",
+ "lr_agent",
+ "lr_checkpoint",
  "lr_engine",
  "lr_hw",
  "lr_models",
+ "lr_policy",
  "lr_runtime",
  "lr_store",
+ "lr_tools",
  "lr_types",
  "rfd",
  "serde",
@@ -2968,6 +2996,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tokio",
+ "webview2-com",
 ]
 
 [[package]]

@@ -134,6 +134,18 @@ export async function startDownload(
 }
 
 export async function listDownloads(): Promise<DownloadStatus[]> {
+  if (downloads.size === 0) {
+    downloads.set("unsloth/Qwen3-8B-GGUF::Qwen3-8B-Q4_K_M.gguf", {
+      id: "unsloth/Qwen3-8B-GGUF::Qwen3-8B-Q4_K_M.gguf",
+      repoId: "unsloth/Qwen3-8B-GGUF",
+      artifactName: "Qwen3-8B-Q4_K_M.gguf",
+      receivedBytes: 2.1 * 2 ** 30,
+      totalBytes: 5.1 * 2 ** 30,
+      bytesPerSec: 0,
+      state: "paused",
+      error: null,
+    });
+  }
   return [...downloads.values()];
 }
 

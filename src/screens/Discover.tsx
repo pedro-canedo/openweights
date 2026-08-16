@@ -94,10 +94,13 @@ export default function Discover() {
             {Array.from({ length: 4 }).map((_, i) => (
               <div
                 key={i}
-                className="animate-pulse rounded-xl border border-edge bg-panel p-5"
+                className="flex animate-pulse items-start gap-3.5 rounded-xl border border-edge bg-panel p-4"
               >
-                <div className="h-4 w-2/5 rounded bg-panel2" />
-                <div className="mt-3 h-3 w-3/5 rounded bg-panel2" />
+                <div className="h-10 w-10 shrink-0 rounded-xl bg-panel2" />
+                <div className="min-w-0 flex-1">
+                  <div className="h-4 w-2/5 rounded bg-panel2" />
+                  <div className="mt-3 h-3 w-3/5 rounded bg-panel2" />
+                </div>
               </div>
             ))}
           </div>

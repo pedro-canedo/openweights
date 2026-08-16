@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* https://huggingface.co https://*.hf.co"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; media-src 'self' blob: mediastream:; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* https://huggingface.co https://*.hf.co https://*.bing.com wss://*.bing.com https://*.speech.microsoft.com wss://*.speech.microsoft.com"
     }
   },
   "bundle": {

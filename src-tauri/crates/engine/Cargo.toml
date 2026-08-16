@@ -18,5 +18,16 @@ tokio.workspace = true
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 async-trait = "0.1"
 
+[target.'cfg(windows)'.dependencies]
+win32job = "2"
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 # Os testes sobem um servidor HTTP falso com `std::net` (sem dependência
 # nova) e rodam no runtime que o tokio do crate já traz.

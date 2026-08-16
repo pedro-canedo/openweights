@@ -5,6 +5,7 @@ use lr_advisor as advisor;
 use lr_models::{DownloadRequest, DownloadStatus, ModelSummary, SortBy};
 use lr_types::HardwareProfile;
 use serde::Serialize;
+use serde_json::{Map, Value};
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::AsyncBufReadExt;
 
@@ -182,7 +183,8 @@ pub async fn download_pause(state: State<'_, AppState>, id: String) -> CmdResult
 
 #[tauri::command]
 pub async fn download_resume(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    state.downloads.resume(&id).await.map_err(err_str)
+    let token = state.store.get_setting("hf_token").ok().flatten();
+    state.downloads.resume(&id, token).await.map_err(err_str)
 }
 
 #[tauri::command]
@@ -256,6 +258,69 @@ fn server_prefs(state: &AppState) -> (u16, bool, Option<String>, u32) {
     )
 }
 
+/// Janela de contexto por modelo (`--ctx-size` no INI do Router).
+/// `null`/ausente = deixar o llama.cpp ajustar à VRAM (`--fit on`).
+const MODEL_CTX_SETTING: &str = "model_ctx_sizes";
+const CTX_MIN: u32 = 512;
+const CTX_MAX: u32 = 262_144;
+
+fn clamp_ctx(n: u32) -> u32 {
+    n.clamp(CTX_MIN, CTX_MAX)
+}
+
+fn model_stem(name: &str) -> &str {
+    name.strip_suffix(".gguf")
+        .or_else(|| name.strip_suffix(".GGUF"))
+        .unwrap_or(name)
+}
+
+fn read_ctx_map(store: &lr_store::Store) -> Map<String, Value> {
+    store
+        .get_setting(MODEL_CTX_SETTING)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn ctx_len_for(map: &Map<String, Value>, name: &str) -> Option<u32> {
+    let stem = model_stem(name);
+    let with_ext = format!("{stem}.gguf");
+    for key in [name, stem, with_ext.as_str()] {
+        if let Some(n) = map.get(key).and_then(Value::as_u64) {
+            if let Some(n) = u32::try_from(n).ok().filter(|v| *v > 0) {
+                return Some(clamp_ctx(n));
+            }
+        }
+    }
+    None
+}
+
+fn preset_with_ctx(mut entry: lr_engine::PresetEntry, ctx: Option<u32>) -> lr_engine::PresetEntry {
+    if let Some(n) = ctx {
+        // `fit = off` senão o llama.cpp volta a encolher `-c` à VRAM.
+        entry = entry
+            .with_extra("ctx-size", n.to_string())
+            .with_extra("fit", "off");
+    }
+    entry
+}
+
+/// Reescreve `router-models.ini` com o `ctx-size` gravado por modelo.
+fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
+    let map = read_ctx_map(&state.store);
+    let preset_path = state.data_dir.join("router-models.ini");
+    let preset_models: Vec<lr_engine::PresetEntry> = lr_models::scan_local(&state.models_dir)
+        .into_iter()
+        .map(|a| {
+            let ctx = ctx_len_for(&map, &a.name);
+            preset_with_ctx(lr_engine::PresetEntry::new(a.name, a.primary_path), ctx)
+        })
+        .collect();
+    lr_engine::write_models_preset(&preset_path, &preset_models).map_err(err_str)?;
+    Ok(preset_path)
+}
+
 #[tauri::command]
 pub async fn server_status(state: State<'_, AppState>) -> CmdResult<ServerStatusView> {
     let (port, lan, _, _) = server_prefs(&state);
@@ -316,19 +381,15 @@ pub async fn server_start(
         cfg.models_max = models_max;
 
         // --models-dir do llama.cpp não é recursivo; a biblioteca mora em
-        // autor/repo/. O INI registra cada GGUF com o nome que a UI já usa.
-        // Sem extras por enquanto: embedding/reranker (pooling = mean) entram
-        // aqui quando o RAG chegar.
-        let preset_path = state.data_dir.join("router-models.ini");
-        let preset_models: Vec<lr_engine::PresetEntry> = lr_models::scan_local(&state.models_dir)
-            .into_iter()
-            .map(|a| lr_engine::PresetEntry::new(a.name, a.primary_path))
-            .collect();
-        lr_engine::write_models_preset(&preset_path, &preset_models).map_err(err_str)?;
-        cfg.models_preset = Some(preset_path);
+        // autor/repo/. O INI registra cada GGUF com o nome que a UI já usa,
+        // mais `ctx-size`/`fit` quando o usuário fixou a janela de contexto.
+        cfg.models_preset = Some(write_router_preset(&state)?);
 
         let mut srv = lr_engine::LlamaServer::new(cfg);
         srv.spawn().map_err(err_str)?;
+        if let Some(pid) = srv.pid() {
+            state.server_pid.store(pid, std::sync::atomic::Ordering::SeqCst);
+        }
 
         // Logs do processo → evento `server-log` (baixa frequência, IPC ok).
         let (stdout, stderr) = srv.take_output();
@@ -381,6 +442,9 @@ pub async fn server_start(
             if let Some(mut srv) = state.server.lock().await.take() {
                 srv.stop().await;
             }
+            state
+                .server_pid
+                .store(0, std::sync::atomic::Ordering::SeqCst);
             let _ = app.emit(
                 "server-status",
                 &ServerStatusView {
@@ -410,6 +474,9 @@ pub async fn server_stop(app: AppHandle, state: State<'_, AppState>) -> CmdResul
         }
         *guard = None;
     }
+    state
+        .server_pid
+        .store(0, std::sync::atomic::Ordering::SeqCst);
     let (port, lan, _, _) = server_prefs(&state);
     let _ = app.emit(
         "server-status",
@@ -447,6 +514,39 @@ pub async fn server_props(state: State<'_, AppState>) -> CmdResult<lr_engine::Se
         .props()
         .await
         .map_err(err_str)
+}
+
+/// Grava a janela de contexto de um modelo e atualiza o INI do Router.
+///
+/// `null` volta ao automático (`--fit`). A janela só entra em vigor no
+/// próximo carregamento do modelo (reinício do servidor, se já estiver no ar).
+#[tauri::command]
+pub fn model_set_ctx(
+    state: State<'_, AppState>,
+    model: String,
+    ctx_len: Option<u32>,
+) -> CmdResult<Option<u32>> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Err("modelo vazio".into());
+    }
+    let mut map = read_ctx_map(&state.store);
+    let stored = match ctx_len {
+        Some(n) => {
+            let n = clamp_ctx(n);
+            map.insert(model.to_string(), Value::from(n));
+            Some(n)
+        }
+        None => {
+            map.remove(model);
+            map.remove(model_stem(model));
+            None
+        }
+    };
+    let raw = serde_json::to_string(&map).map_err(err_str)?;
+    state.store.set_setting(MODEL_CTX_SETTING, &raw).map_err(err_str)?;
+    write_router_preset(&state)?;
+    Ok(stored)
 }
 
 // ---------------------------------------------------------------- chats ---

@@ -19,3 +19,18 @@ export function formatParams(n: number | null): string {
   if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
   return `${(n / 1e6).toFixed(0)}M`;
 }
+
+export function downloadPercent(received: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.max(0, Math.min(100, (received / total) * 100));
+}
+
+/** Tempo restante compacto (ex.: "3min 20s"). */
+export function formatEta(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}min ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}min`;
+}

@@ -8,6 +8,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ModelSummary, QuantView } from "../../lib/types";
 import { getModelQuants, startDownload } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
+import { AuthorAvatar } from "./ModelCard";
 import VerdictBadge from "./VerdictBadge";
 
 async function openOnHf(repoId: string) {
@@ -162,6 +163,7 @@ export default function QuantDrawer({
         }`}
       >
         <header className="flex items-start gap-3 border-b border-edge px-5 py-4">
+          <AuthorAvatar author={model.author} size={36} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm">
               <span className="text-dim">{model.author}/</span>

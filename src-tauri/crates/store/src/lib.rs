@@ -189,6 +189,16 @@ impl Store {
         Ok(())
     }
 
+    /// Guarda o modelo em uso pela conversa (o seletor pode trocar no meio).
+    pub fn set_chat_model(&self, chat_id: i64, model_id: &str) -> Result<(), StoreError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE chats SET model_id = ?1 WHERE id = ?2",
+            rusqlite::params![model_id, chat_id],
+        )?;
+        Ok(())
+    }
+
     pub fn set_chat_params(&self, chat_id: i64, params_json: &str) -> Result<(), StoreError> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

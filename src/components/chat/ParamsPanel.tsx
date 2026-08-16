@@ -4,9 +4,29 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { deletePreset, listPresets, savePreset } from "../../lib/api";
+import {
+  deletePreset,
+  getModelCtxMap,
+  getServerProps,
+  getServerStatus,
+  listPresets,
+  lookupModelCtx,
+  savePreset,
+  setModelCtx,
+  startServer,
+  stopServer,
+} from "../../lib/api";
 import type { ChatParams, PresetRow } from "../../lib/types";
 import { DEFAULT_CHAT_PARAMS } from "../../lib/types";
+
+const CTX_CHIPS = [8192, 16384, 32768, 65536];
+const CTX_MIN = 512;
+const CTX_MAX = 262_144;
+
+function formatCtx(n: number): string {
+  if (n >= 1024 && n % 1024 === 0) return `${n / 1024}k`;
+  return String(n);
+}
 
 function Slider({
   label,
@@ -47,15 +67,25 @@ function Slider({
 export default function ParamsPanel({
   params,
   onChange,
+  model,
+  generating = false,
 }: {
   params: ChatParams;
   onChange: (p: ChatParams) => void;
+  model: string;
+  generating?: boolean;
 }) {
   const { t } = useTranslation();
   const [presets, setPresets] = useState<PresetRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [naming, setNaming] = useState(false);
   const [presetName, setPresetName] = useState("");
+  const [ctxDraft, setCtxDraft] = useState<number | null>(null);
+  const [ctxSaved, setCtxSaved] = useState<number | null>(null);
+  const [ctxLive, setCtxLive] = useState<number | null>(null);
+  const [ctxLoaded, setCtxLoaded] = useState(false);
+  const [ctxApplying, setCtxApplying] = useState(false);
+  const [serverRunning, setServerRunning] = useState(false);
 
   const refreshPresets = () =>
     listPresets()
@@ -66,7 +96,55 @@ export default function ParamsPanel({
     void refreshPresets();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setCtxLoaded(false);
+    void (async () => {
+      const [map, props, status] = await Promise.all([
+        getModelCtxMap().catch(() => ({})),
+        getServerProps().catch(() => null),
+        getServerStatus().catch(() => null),
+      ]);
+      if (cancelled) return;
+      const saved = lookupModelCtx(map, model);
+      setCtxSaved(saved);
+      setCtxDraft(saved);
+      setCtxLive(props?.nCtx ?? null);
+      setServerRunning(Boolean(status?.running));
+      setCtxLoaded(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [model]);
+
   const patch = (p: Partial<ChatParams>) => onChange({ ...params, ...p });
+
+  const applyCtx = async (next: number | null) => {
+    if (!model || ctxApplying) return;
+    const value =
+      next == null ? null : Math.round(Math.min(CTX_MAX, Math.max(CTX_MIN, next)));
+    setCtxDraft(value);
+    setCtxApplying(true);
+    try {
+      const stored = await setModelCtx(model, value);
+      setCtxSaved(stored);
+      const status = await getServerStatus().catch(() => null);
+      const running = Boolean(status?.running);
+      setServerRunning(running);
+      if (running && !generating) {
+        await stopServer();
+        await startServer();
+        setServerRunning(true);
+      }
+      const props = await getServerProps().catch(() => null);
+      setCtxLive(props?.nCtx ?? null);
+    } catch (e) {
+      console.error("falha ao gravar janela de contexto:", e);
+    } finally {
+      setCtxApplying(false);
+    }
+  };
 
   const applyPreset = (id: number) => {
     setSelectedId(id);
@@ -188,6 +266,100 @@ export default function ParamsPanel({
             {t("chat.presetSave")}
           </button>
         )}
+      </div>
+
+      {/* Janela de contexto (por modelo, no carregamento) */}
+      <div className="flex flex-col gap-2">
+        <label className="text-xs text-dim">{t("chat.ctx.label")}</label>
+        <p className="text-[11px] leading-relaxed text-dim">{t("chat.ctx.hint")}</p>
+        <div className="flex flex-wrap gap-1">
+          <button
+            type="button"
+            disabled={!model || ctxApplying}
+            onClick={() => void applyCtx(null)}
+            className={`rounded-lg border px-2 py-1 text-[11px] transition-colors disabled:opacity-40 ${
+              ctxDraft == null
+                ? "border-accent bg-accent/15 text-ink"
+                : "border-edge text-dim hover:border-accent hover:text-ink"
+            }`}
+          >
+            {t("chat.ctx.auto")}
+          </button>
+          {CTX_CHIPS.map((n) => (
+            <button
+              key={n}
+              type="button"
+              disabled={!model || ctxApplying}
+              onClick={() => void applyCtx(n)}
+              className={`rounded-lg border px-2 py-1 text-[11px] tabular-nums transition-colors disabled:opacity-40 ${
+                ctxDraft === n
+                  ? "border-accent bg-accent/15 text-ink"
+                  : "border-edge text-dim hover:border-accent hover:text-ink"
+              }`}
+            >
+              {formatCtx(n)}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={CTX_MIN}
+            max={CTX_MAX}
+            step={256}
+            disabled={!model || ctxDraft == null || ctxApplying}
+            value={ctxDraft ?? ""}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              setCtxDraft(
+                Number.isFinite(n) && n > 0 ? Math.round(n) : CTX_MIN,
+              );
+            }}
+            onBlur={() => {
+              if (ctxDraft != null && ctxDraft !== ctxSaved) {
+                void applyCtx(ctxDraft);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && ctxDraft != null) {
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            className="w-24 rounded-lg border border-edge bg-panel2 px-2 py-1.5 text-xs tabular-nums outline-none focus:border-accent disabled:opacity-40"
+          />
+          <span className="text-[11px] text-dim">{t("chat.ctx.tokens")}</span>
+        </div>
+        {ctxLoaded && ctxLive != null && (
+          <p className="text-[11px] leading-relaxed text-dim">
+            {t("chat.ctx.inUse", { n: ctxLive.toLocaleString() })}
+          </p>
+        )}
+        {ctxLoaded && ctxLive == null && (
+          <p className="text-[11px] leading-relaxed text-dim">
+            {t("chat.ctx.notLoaded")}
+          </p>
+        )}
+        {ctxSaved != null &&
+          ctxLive != null &&
+          ctxSaved !== ctxLive &&
+          !ctxApplying && (
+            <p className="text-[11px] leading-relaxed text-warn">
+              {t("chat.ctx.pending", { n: ctxSaved.toLocaleString() })}
+            </p>
+          )}
+        {serverRunning &&
+          ctxDraft !== ctxLive &&
+          !(ctxDraft == null && ctxSaved == null) && (
+            <button
+              type="button"
+              disabled={!model || ctxApplying || generating}
+              title={generating ? t("chat.ctx.busy") : undefined}
+              onClick={() => void applyCtx(ctxDraft)}
+              className="self-start rounded-lg border border-edge px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+            >
+              {ctxApplying ? t("chat.ctx.applying") : t("chat.ctx.apply")}
+            </button>
+          )}
       </div>
 
       {/* System prompt */}

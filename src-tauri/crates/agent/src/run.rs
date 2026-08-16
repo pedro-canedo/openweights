@@ -853,17 +853,17 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         }
 
         let outcome = {
-            let sink = sink.clone();
+            let sink_delta = sink.clone();
             let step = step_id.clone();
             let mut on_delta = move |delta: ChatDelta| match delta {
                 ChatDelta::Text(text) => {
-                    sink.emit(RunEventKind::AssistantDelta {
+                    sink_delta.emit(RunEventKind::AssistantDelta {
                         step_id: step.clone(),
                         text,
                     });
                 }
                 ChatDelta::Reasoning(text) => {
-                    sink.emit(RunEventKind::ReasoningDelta {
+                    sink_delta.emit(RunEventKind::ReasoningDelta {
                         step_id: step.clone(),
                         text,
                     });

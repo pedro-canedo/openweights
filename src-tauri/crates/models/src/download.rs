@@ -17,7 +17,7 @@
 use crate::{ModelsError, RepoFile, resolve_url};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -169,6 +169,207 @@ fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(os)
 }
 
+/// Índice do artefato incompleto: sobrevive a fechar o app / reiniciar o PC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IncompleteRecord {
+    repo_id: String,
+    artifact_name: String,
+    files: Vec<RepoFile>,
+}
+
+fn owdl_path(models_dir: &Path, repo_id: &str, artifact_name: &str) -> Result<PathBuf, ModelsError> {
+    Ok(append_suffix(
+        &dest_path(models_dir, repo_id, artifact_name)?,
+        ".owdl.json",
+    ))
+}
+
+fn persist_incomplete(models_dir: &Path, req: &DownloadRequest) {
+    let Ok(path) = owdl_path(models_dir, &req.repo_id, &req.artifact_name) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let rec = IncompleteRecord {
+        repo_id: req.repo_id.clone(),
+        artifact_name: req.artifact_name.clone(),
+        files: req.files.clone(),
+    };
+    match serde_json::to_vec_pretty(&rec) {
+        Ok(bytes) => {
+            if let Err(e) = std::fs::write(&path, bytes) {
+                log::warn!("não gravou índice de download incompleto: {e}");
+            }
+        }
+        Err(e) => log::warn!("não serializou índice de download incompleto: {e}"),
+    }
+}
+
+fn clear_incomplete(models_dir: &Path, repo_id: &str, artifact_name: &str) {
+    if let Ok(path) = owdl_path(models_dir, repo_id, artifact_name) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+fn bytes_on_disk(models_dir: &Path, repo_id: &str, file: &RepoFile) -> u64 {
+    let Ok(dest) = dest_path(models_dir, repo_id, &file.path) else {
+        return 0;
+    };
+    if let Ok(meta) = std::fs::metadata(&dest) {
+        return meta.len();
+    }
+    std::fs::metadata(part_path(&dest))
+        .map(|m| m.len())
+        .unwrap_or(0)
+}
+
+fn job_from_record(models_dir: &Path, rec: IncompleteRecord) -> Option<Job> {
+    if rec.files.is_empty() {
+        return None;
+    }
+    let all_done = rec.files.iter().all(|f| {
+        dest_path(models_dir, &rec.repo_id, &f.path)
+            .ok()
+            .and_then(|p| std::fs::metadata(p).ok())
+            .is_some_and(|m| m.is_file() && m.len() == f.size_bytes)
+    });
+    if all_done {
+        clear_incomplete(models_dir, &rec.repo_id, &rec.artifact_name);
+        return None;
+    }
+    let received: u64 = rec
+        .files
+        .iter()
+        .map(|f| bytes_on_disk(models_dir, &rec.repo_id, f))
+        .sum();
+    let total: u64 = rec.files.iter().map(|f| f.size_bytes).sum();
+    let id = download_id(&rec.repo_id, &rec.artifact_name);
+    Some(Job {
+        req: DownloadRequest {
+            repo_id: rec.repo_id.clone(),
+            artifact_name: rec.artifact_name.clone(),
+            files: rec.files,
+            token: None,
+        },
+        status: DownloadStatus {
+            id,
+            repo_id: rec.repo_id,
+            artifact_name: rec.artifact_name,
+            received_bytes: received,
+            total_bytes: total,
+            bytes_per_sec: 0,
+            state: DownloadState::Paused,
+            error: None,
+        },
+        received: Arc::new(AtomicU64::new(received)),
+        speed: Arc::new(AtomicU64::new(0)),
+        cancel: CancellationToken::new(),
+        handle: None,
+    })
+}
+
+/// Reconstrói jobs pausados a partir dos índices `.owdl.json` e de `.part`
+/// órfãos (downloads de versões anteriores, sem índice).
+fn recover_jobs(models_dir: &Path) -> BTreeMap<String, Job> {
+    let mut jobs = BTreeMap::new();
+    recover_dir(models_dir, models_dir, "", &mut jobs);
+    let Ok(authors) = std::fs::read_dir(models_dir) else {
+        return jobs;
+    };
+    for author in authors.flatten() {
+        if !author.path().is_dir() {
+            continue;
+        }
+        let author_name = author.file_name().to_string_lossy().into_owned();
+        let Ok(repos) = std::fs::read_dir(author.path()) else {
+            continue;
+        };
+        for repo in repos.flatten() {
+            if !repo.path().is_dir() {
+                continue;
+            }
+            let repo_id = format!("{author_name}/{}", repo.file_name().to_string_lossy());
+            recover_dir(models_dir, &repo.path(), &repo_id, &mut jobs);
+        }
+    }
+    jobs
+}
+
+fn recover_dir(
+    models_dir: &Path,
+    dir: &Path,
+    repo_id: &str,
+    jobs: &mut BTreeMap<String, Job>,
+) {
+    if repo_id.is_empty() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut covered: HashSet<String> = HashSet::new();
+    let mut orphans: Vec<String> = Vec::new();
+
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".owdl.json") {
+            let Ok(bytes) = std::fs::read(e.path()) else {
+                continue;
+            };
+            let Ok(mut rec) = serde_json::from_slice::<IncompleteRecord>(&bytes) else {
+                continue;
+            };
+            if rec.repo_id.is_empty() {
+                rec.repo_id = repo_id.to_string();
+            }
+            let files = rec.files.clone();
+            if let Some(job) = job_from_record(models_dir, rec) {
+                for f in &files {
+                    covered.insert(f.path.clone());
+                }
+                jobs.insert(job.status.id.clone(), job);
+            }
+        } else if let Some(dest) = name.strip_suffix(".part") {
+            if dest.ends_with(".gguf") {
+                orphans.push(dest.to_string());
+            }
+        }
+    }
+
+    for dest_name in orphans {
+        if covered.contains(&dest_name) {
+            continue;
+        }
+        let dest = dir.join(&dest_name);
+        let part = part_path(&dest);
+        let part_len = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
+        if part_len == 0 {
+            continue;
+        }
+        let sidecar: Option<PartMeta> = std::fs::read(part_meta_path(&dest))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok());
+        let total = sidecar
+            .as_ref()
+            .map(|m| m.total_bytes)
+            .filter(|n| *n > 0)
+            .unwrap_or(part_len);
+        let rec = IncompleteRecord {
+            repo_id: repo_id.to_string(),
+            artifact_name: dest_name.clone(),
+            files: vec![RepoFile {
+                path: dest_name,
+                size_bytes: total,
+            }],
+        };
+        if let Some(job) = job_from_record(models_dir, rec) {
+            jobs.entry(job.status.id.clone()).or_insert(job);
+        }
+    }
+}
+
 fn header_str(resp: &reqwest::Response, name: &str) -> Option<String> {
     resp.headers()
         .get(name)
@@ -261,12 +462,19 @@ impl DownloadManager {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("reqwest client");
+        let jobs = recover_jobs(&models_dir);
+        if !jobs.is_empty() {
+            log::info!(
+                "{} download(s) incompleto(s) recuperado(s) do disco",
+                jobs.len()
+            );
+        }
         Self {
             inner: Arc::new(Inner {
                 models_dir,
                 http,
                 http_noredir,
-                jobs: Mutex::new(BTreeMap::new()),
+                jobs: Mutex::new(jobs),
                 events,
                 sem: Semaphore::new(MAX_CONCURRENT_ARTIFACTS),
             }),
@@ -284,6 +492,7 @@ impl DownloadManager {
         for f in &req.files {
             dest_path(&self.inner.models_dir, &req.repo_id, &f.path)?;
         }
+        persist_incomplete(&self.inner.models_dir, &req);
         {
             let mut jobs = self.inner.jobs.lock().await;
             if let Some(job) = jobs.get_mut(&id) {
@@ -369,7 +578,11 @@ impl DownloadManager {
     }
 
     /// Revalida (etag) e continua com `Range` de onde o `.part` parou.
-    pub async fn resume(&self, id: &str) -> Result<(), ModelsError> {
+    pub async fn resume(
+        &self,
+        id: &str,
+        token: Option<String>,
+    ) -> Result<(), ModelsError> {
         {
             let mut jobs = self.inner.jobs.lock().await;
             let Some(job) = jobs.get_mut(id) else {
@@ -379,6 +592,10 @@ impl DownloadManager {
                 DownloadState::Paused | DownloadState::Error => {}
                 _ => return Ok(()),
             }
+            if token.is_some() {
+                job.req.token = token;
+            }
+            persist_incomplete(&self.inner.models_dir, &job.req);
             prepare_restart(job);
             job.handle = Some(spawn_job(self.inner.clone(), id.to_string()));
         }
@@ -403,6 +620,11 @@ impl DownloadManager {
                 let _ = tokio::fs::remove_file(&dest).await;
             }
         }
+        clear_incomplete(
+            &self.inner.models_dir,
+            &job.req.repo_id,
+            &job.req.artifact_name,
+        );
         let _ = self
             .inner
             .events
@@ -463,6 +685,7 @@ fn spawn_job(inner: Arc<Inner>, id: String) -> tokio::task::JoinHandle<()> {
 
         match result {
             Ok(Outcome::Completed) => {
+                clear_incomplete(&inner.models_dir, &req.repo_id, &req.artifact_name);
                 inner.set_state(&id, DownloadState::Done, None).await;
             }
             Ok(Outcome::Interrupted) => {
@@ -925,16 +1148,105 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_ids_are_rejected() {
-        let mgr = DownloadManager::new(std::env::temp_dir());
+        let dir = temp_dir("ids");
+        let mgr = DownloadManager::new(dir.clone());
         assert!(mgr.pause("x").await.is_err());
-        assert!(mgr.resume("x").await.is_err());
+        assert!(mgr.resume("x", None).await.is_err());
         assert!(mgr.cancel("x").await.is_err());
         assert!(mgr.list().await.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn recovers_incomplete_from_owdl_and_orphan_part() {
+        let dir = temp_dir("recover");
+        let repo = dir.join("acme/mod");
+        std::fs::create_dir_all(&repo).unwrap();
+
+        let dest = repo.join("m.gguf");
+        std::fs::write(part_path(&dest), vec![0u8; 40]).unwrap();
+        std::fs::write(
+            part_meta_path(&dest),
+            serde_json::to_vec(&PartMeta {
+                etag: Some("abc".into()),
+                total_bytes: 100,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            owdl_path(&dir, "acme/mod", "m.gguf").unwrap(),
+            serde_json::to_vec(&IncompleteRecord {
+                repo_id: "acme/mod".into(),
+                artifact_name: "m.gguf".into(),
+                files: vec![RepoFile {
+                    path: "m.gguf".into(),
+                    size_bytes: 100,
+                }],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        let orphan_dest = repo.join("n.gguf");
+        std::fs::write(part_path(&orphan_dest), vec![0u8; 12]).unwrap();
+        std::fs::write(
+            part_meta_path(&orphan_dest),
+            serde_json::to_vec(&PartMeta {
+                etag: Some("xyz".into()),
+                total_bytes: 50,
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        let mgr = DownloadManager::new(dir.clone());
+        let mut list = mgr.list().await;
+        list.sort_by(|a, b| a.artifact_name.cmp(&b.artifact_name));
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].artifact_name, "m.gguf");
+        assert_eq!(list[0].state, DownloadState::Paused);
+        assert_eq!(list[0].received_bytes, 40);
+        assert_eq!(list[0].total_bytes, 100);
+        assert_eq!(list[1].artifact_name, "n.gguf");
+        assert_eq!(list[1].received_bytes, 12);
+        assert_eq!(list[1].total_bytes, 50);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn recover_skips_already_complete_owdl() {
+        let dir = temp_dir("recover-done");
+        let repo = dir.join("acme/mod");
+        std::fs::create_dir_all(&repo).unwrap();
+        std::fs::write(repo.join("m.gguf"), vec![0u8; 10]).unwrap();
+        let owdl = owdl_path(&dir, "acme/mod", "m.gguf").unwrap();
+        std::fs::write(
+            &owdl,
+            serde_json::to_vec(&IncompleteRecord {
+                repo_id: "acme/mod".into(),
+                artifact_name: "m.gguf".into(),
+                files: vec![RepoFile {
+                    path: "m.gguf".into(),
+                    size_bytes: 10,
+                }],
+            })
+            .unwrap(),
+        )
+        .unwrap();
+
+        let mgr = DownloadManager::new(dir.clone());
+        assert!(mgr.list().await.is_empty());
+        assert!(!owdl.exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
     async fn enqueue_rejects_path_traversal() {
-        let mgr = DownloadManager::new(std::env::temp_dir());
+        let dir = temp_dir("trav");
+        let mgr = DownloadManager::new(dir.clone());
         let err = mgr
             .enqueue(DownloadRequest {
                 repo_id: "a/b".to_string(),
@@ -947,6 +1259,7 @@ mod tests {
             })
             .await;
         assert!(err.is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Teste live (rede): baixa o menor arquivo de um repo público real,

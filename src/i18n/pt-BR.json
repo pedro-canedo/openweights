@@ -66,7 +66,19 @@
     "chatWith": "Conversar",
     "delete": "Excluir",
     "deleteConfirm": "Excluir {{name}} do disco?",
-    "loose": "importado manualmente"
+    "loose": "importado manualmente",
+    "incompleteTitle": "Downloads incompletos",
+    "incompleteHint": "Retome de onde parou, mesmo depois de reiniciar o computador.",
+    "incompleteSearch": "Buscar download...",
+    "incompleteNone": "Nada corresponde à busca.",
+    "filterAll": "Todos",
+    "filterActive": "Em andamento",
+    "filterPaused": "Pausados",
+    "filterError": "Com erro",
+    "resume": "Continuar",
+    "discard": "Descartar",
+    "paused": "Pausado",
+    "queued": "Na fila"
   },
   "chat": {
     "title": "Chat",
@@ -125,6 +137,30 @@
     "topK": "Top-K",
     "maxTokens": "Limite de tokens da resposta",
     "noLimit": "Sem limite",
+    "ctx": {
+      "label": "Janela de contexto",
+      "auto": "Automático",
+      "hint": "Quanto o modelo consegue lembrar neste carregamento. O raciocínio e a resposta cabem neste orçamento. Mais tokens = mais VRAM.",
+      "inUse": "Em uso agora: {{n}} tokens",
+      "notLoaded": "O modelo ainda não está na memória. Vale no próximo carregamento.",
+      "pending": "Salvo. Recarregue para aplicar {{n}} tokens.",
+      "apply": "Aplicar e recarregar",
+      "applying": "Recarregando…",
+      "busy": "Pare a geração para recarregar o modelo.",
+      "tokens": "tokens",
+      "usage": {
+        "title": "Uso do contexto",
+        "ringTitle": "{{pct}}% · ~{{used}} / {{limit}} tokens",
+        "full": "{{pct}}% cheio",
+        "tokens": "~{{used}} / {{limit}} tokens",
+        "empty": "Nada nesta conversa ainda.",
+        "system": "Instruções do sistema",
+        "conversation": "Conversa",
+        "reasoning": "Raciocínio",
+        "draft": "Mensagem atual",
+        "attachments": "Anexos"
+      }
+    },
     "preset": "Preset",
     "presetSave": "Salvar como preset",
     "presetName": "Nome do preset",
@@ -142,6 +178,15 @@
     "statsTime": "{{seconds}}s",
     "statsTpsTime": "{{tps}} tok/s · {{seconds}}s",
     "attach": "Anexar arquivo ou imagem",
+    "voice": {
+      "start": "Ditar por voz",
+      "stop": "Parar ditado",
+      "unsupported": "Ditado por voz não é suportado neste ambiente.",
+      "denied": "Sem permissão de microfone. Libere o acesso nas configurações do Windows.",
+      "noMic": "Nenhum microfone encontrado.",
+      "network": "Falha no reconhecimento de voz. Verifique a conexão.",
+      "error": "Não foi possível iniciar o ditado."
+    },
     "plus": {
       "open": "Adicionar",
       "attach": "Adicionar arquivos ou fotos",

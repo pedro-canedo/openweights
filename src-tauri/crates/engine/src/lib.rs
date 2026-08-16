@@ -14,9 +14,10 @@
 //!   `--sleep-idle-seconds` descarrega ociosos.
 //! - `-ngl` já é `auto` por padrão; `--fit` ajusta `-c`/`-ngl` à VRAM.
 //! - `/health`: 503 carregando, 200 pronto — readiness probe.
-//! - Sidecars NÃO morrem com o app no Tauri: [`LlamaServer::stop`] precisa ser
-//!   chamado em `RunEvent::Exit` (e temos kill-on-drop como cinto de
-//!   segurança).
+//! - Sidecars NÃO morrem com o app no Tauri: [`LlamaServer::stop_blocking`]
+//!   precisa ser chamado em `ExitRequested`/`Exit`. No Windows o processo
+//!   entra num Job Object (`KILL_ON_JOB_CLOSE`) para a árvore morrer mesmo
+//!   num crash; `taskkill /T` é o cinto se o job não puder ser criado.
 
 pub mod client;
 pub mod props;
@@ -32,6 +33,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::{Duration, Instant};
 use tokio::process::{Child, Command};
 
 #[derive(Debug, thiserror::Error)]
@@ -218,6 +220,9 @@ pub struct LlamaServer {
     config: ServerConfig,
     child: Option<Child>,
     http: reqwest::Client,
+    /// Job Object Windows: fecha o handle → o kernel mata a árvore inteira.
+    #[cfg(windows)]
+    job: Option<windows_job::JobHandle>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -234,6 +239,8 @@ impl LlamaServer {
             config,
             child: None,
             http: reqwest::Client::new(),
+            #[cfg(windows)]
+            job: None,
         }
     }
 
@@ -243,6 +250,11 @@ impl LlamaServer {
 
     pub fn is_spawned(&self) -> bool {
         self.child.is_some()
+    }
+
+    /// PID do llama-server, para matar a árvore no exit se o mutex estiver ocupado.
+    pub fn pid(&self) -> Option<u32> {
+        self.child.as_ref().and_then(Child::id)
     }
 
     /// Inicia o processo. stdout/stderr ficam disponíveis para streaming de
@@ -255,13 +267,10 @@ impl LlamaServer {
         cmd.args(self.config.to_args())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            // Cinto de segurança: o handler de RunEvent::Exit chama stop(),
-            // mas se o app morrer de forma anormal o SO reaproveita o handle.
             .kill_on_drop(true);
-        #[cfg(windows)]
+        #[cfg(unix)]
         {
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
+            cmd.process_group(0);
         }
         if let Some(dir) = self.config.exe_path.parent() {
             cmd.current_dir(dir);
@@ -271,7 +280,12 @@ impl LlamaServer {
             self.config.exe_path.display(),
             self.config.to_args().join(" ")
         );
-        self.child = Some(cmd.spawn()?);
+        let child = spawn_llama(&mut cmd)?;
+        #[cfg(windows)]
+        {
+            self.job = attach_job(&child);
+        }
+        self.child = Some(child);
         Ok(())
     }
 
@@ -314,12 +328,207 @@ impl LlamaServer {
     }
 
     /// Encerra o processo. SEMPRE chamar no exit do app (sidecars não morrem
-    /// sozinhos no Tauri).
+    /// sozinhos no Tauri). Versão async para os comandos; o exit usa
+    /// [`Self::stop_blocking`] para não depender do runtime do Tokio.
     pub async fn stop(&mut self) {
+        self.stop_blocking();
+    }
+
+    /// Mata o llama-server e os netos de forma síncrona (VRAM libera aqui).
+    pub fn stop_blocking(&mut self) {
+        let pid = self.pid();
+        if pid.is_some() {
+            log::info!("encerrando llama-server pid={pid:?}");
+        }
+        #[cfg(windows)]
+        if let Some(job) = self.job.take() {
+            windows_job::terminate(&job);
+        } else if let Some(pid) = pid {
+            kill_process_tree(pid);
+        }
+        #[cfg(not(windows))]
+        if let Some(pid) = pid {
+            kill_process_tree(pid);
+        }
         if let Some(mut child) = self.child.take() {
-            log::info!("encerrando llama-server");
-            let _ = child.kill().await;
-            let _ = child.wait().await;
+            let _ = child.start_kill();
+            reap_child(&mut child);
+        }
+    }
+}
+
+impl Drop for LlamaServer {
+    fn drop(&mut self) {
+        self.stop_blocking();
+    }
+}
+
+/// Mata o PID e toda a árvore (Windows: `taskkill /T /F`; Unix: grupo).
+pub fn kill_process_tree(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(unix)]
+    {
+        let pid = pid as i32;
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+            libc::kill(pid, libc::SIGKILL);
+        }
+    }
+}
+
+fn reap_child(child: &mut Child) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return,
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            _ => {
+                let _ = child.start_kill();
+                return;
+            }
+        }
+    }
+}
+
+/// Sobe o llama-server. No Windows, `CREATE_BREAKAWAY_FROM_JOB` só é
+/// legal se o job pai tiver `BREAKAWAY_OK`. O terminal do Cursor (e o
+/// WebView2) costuma colocar o app num job *sem* essa permissão — aí o
+/// `CreateProcess` falha com acesso negado (os error 5). Tentamos
+/// breakaway só quando dá; se mesmo assim vier 5, repetimos sem a flag.
+fn spawn_llama(cmd: &mut Command) -> Result<Child, EngineError> {
+    #[cfg(not(windows))]
+    {
+        Ok(cmd.spawn()?)
+    }
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+        let breakaway = windows_job::parent_allows_breakaway();
+        cmd.creation_flags(if breakaway {
+            CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB
+        } else {
+            CREATE_NO_WINDOW
+        });
+        match cmd.spawn() {
+            Ok(child) => Ok(child),
+            Err(e) if breakaway && e.raw_os_error() == Some(5) => {
+                log::warn!(
+                    "llama-server: BREAKAWAY_FROM_JOB negado ({e}); tentando sem breakaway"
+                );
+                cmd.creation_flags(CREATE_NO_WINDOW);
+                Ok(cmd.spawn()?)
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn attach_job(child: &Child) -> Option<windows_job::JobHandle> {
+    let job = windows_job::create()?;
+    let handle = child.raw_handle()?;
+    if windows_job::assign(&job, handle) {
+        Some(job)
+    } else {
+        log::warn!(
+            "não foi possível colocar o llama-server num Job Object; o exit usará taskkill /T"
+        );
+        None
+    }
+}
+
+/// Job Object só com `KILL_ON_JOB_CLOSE` — sem teto de memória (o modelo
+/// precisa de dezenas de GiB de VRAM/RAM).
+#[cfg(windows)]
+mod windows_job {
+    use std::os::windows::io::RawHandle;
+    use win32job::Job;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::JobObjects::{
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
+    };
+
+    pub type JobHandle = Job;
+
+    fn handle(job: &Job) -> HANDLE {
+        HANDLE(job.handle() as *mut core::ffi::c_void)
+    }
+
+    pub fn create() -> Option<Job> {
+        let job = Job::create().ok()?;
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let ok = unsafe {
+            SetInformationJobObject(
+                handle(&job),
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if ok.is_err() {
+            log::warn!("não foi possível aplicar KILL_ON_JOB_CLOSE ao Job Object: {ok:?}");
+            return None;
+        }
+        Some(job)
+    }
+
+    pub fn assign(job: &Job, child: RawHandle) -> bool {
+        job.assign_process(child as isize).is_ok()
+    }
+
+    pub fn terminate(job: &Job) {
+        let _ = unsafe { TerminateJobObject(handle(job), 1) };
+    }
+
+    /// `CREATE_BREAKAWAY_FROM_JOB` exige `JOB_OBJECT_LIMIT_BREAKAWAY_OK`
+    /// no job do processo atual. Sem isso o Windows devolve ACCESS_DENIED.
+    pub fn parent_allows_breakaway() -> bool {
+        use windows::Win32::System::JobObjects::{
+            IsProcessInJob, JobObjectExtendedLimitInformation, QueryInformationJobObject,
+            JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        };
+        use windows::Win32::System::Threading::GetCurrentProcess;
+
+        unsafe {
+            let mut in_job = windows::core::BOOL::default();
+            if IsProcessInJob(GetCurrentProcess(), None, &mut in_job).is_err()
+                || !in_job.as_bool()
+            {
+                return false;
+            }
+            let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            if QueryInformationJobObject(
+                None,
+                JobObjectExtendedLimitInformation,
+                &mut info as *mut _ as *mut core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                None,
+            )
+            .is_err()
+            {
+                return false;
+            }
+            info.BasicLimitInformation
+                .LimitFlags
+                .contains(JOB_OBJECT_LIMIT_BREAKAWAY_OK)
         }
     }
 }
@@ -429,6 +638,24 @@ mod tests {
              [chat.gguf]\nmodel = /m/chat.gguf\n\n\
              [bge-m3.gguf]\nmodel = /m/bge-m3.gguf\nembedding = true\npooling = mean\n\n"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Janela de contexto fixa: `ctx-size` + `fit = off` na seção do modelo.
+    #[test]
+    fn writes_ctx_size_and_disables_fit() {
+        let dir = temp_dir("ctx");
+        let ini = dir.join("router-models.ini");
+        write_models_preset(
+            &ini,
+            &[PresetEntry::new("qwen.gguf", "/m/qwen.gguf")
+                .with_extra("ctx-size", "32768")
+                .with_extra("fit", "off")],
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&ini).unwrap();
+        assert!(text.contains("ctx-size = 32768"));
+        assert!(text.contains("fit = off"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

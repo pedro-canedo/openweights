@@ -2,9 +2,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod commands_agent;
 mod state;
 mod telemetry;
 mod workspace;
+#[cfg(windows)]
+mod webview_perm;
 
 use tauri::{Emitter, Manager};
 
@@ -68,6 +71,7 @@ fn main() {
             commands::server_start,
             commands::server_stop,
             commands::server_props,
+            commands::model_set_ctx,
             commands::chats_list,
             commands::chat_create,
             commands::chat_delete,
@@ -87,16 +91,36 @@ fn main() {
             commands::workspace_read,
             commands::workspace_write,
             commands::workspace_reveal,
+            // Modo agente: execuções, confirmações, trilha e checkpoints.
+            commands_agent::run_start,
+            commands_agent::run_attach,
+            commands_agent::run_approve,
+            commands_agent::run_cancel,
+            commands_agent::runs_list,
+            commands_agent::run_events_list,
+            commands_agent::tool_permissions_list,
+            commands_agent::tool_permission_set,
+            commands_agent::tools_list,
+            commands_agent::checkpoints_list,
+            commands_agent::checkpoint_restore,
+            commands_agent::chat_set_model,
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o OpenWeights")
         .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                // Sidecars NÃO morrem sozinhos com o app (Tauri #3273):
-                // encerramento explícito e síncrono aqui.
-                if let Some(state) = app.try_state::<state::AppState>() {
-                    state.shutdown_blocking();
+            // Matar o llama-server ANTES do runtime Tokio acabar.
+            // `Exit` sozinho chegava tarde demais e `block_on` podia travar.
+            match event {
+                tauri::RunEvent::Ready => {
+                    #[cfg(windows)]
+                    webview_perm::allow_microphone(app);
                 }
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
+                    if let Some(state) = app.try_state::<state::AppState>() {
+                        state.shutdown_blocking();
+                    }
+                }
+                _ => {}
             }
         });
 }

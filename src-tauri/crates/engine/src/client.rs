@@ -504,11 +504,14 @@ impl LlamaClient {
     ///
     /// Chama `on_delta` a cada pedaço (texto, raciocínio ou fragmento de tool
     /// call) e devolve o resultado agregado no fim.
-    pub async fn chat_stream(
+    pub async fn chat_stream<F>(
         &self,
         req: &ChatRequest,
-        on_delta: &mut dyn FnMut(ChatDelta),
-    ) -> Result<ChatOutcome, EngineError> {
+        on_delta: &mut F,
+    ) -> Result<ChatOutcome, EngineError>
+    where
+        F: FnMut(ChatDelta),
+    {
         let body = req.with_stream(true);
         let mut res = self
             .auth(self.http.post(self.url("/v1/chat/completions")))
@@ -677,10 +680,10 @@ struct StreamAcc {
 
 impl StreamAcc {
     /// Processa uma linha do SSE. Devolve `true` quando veio `[DONE]`.
-    fn handle_line(
+    fn handle_line<F: FnMut(ChatDelta)>(
         &mut self,
         line: &str,
-        on_delta: &mut dyn FnMut(ChatDelta),
+        on_delta: &mut F,
     ) -> Result<bool, EngineError> {
         let line = line.trim();
         // Linhas vazias (separador de evento) e comentários (`: ping`) são
@@ -745,7 +748,7 @@ impl StreamAcc {
     }
 
     /// Junta um fragmento de tool call ao acumulador do seu `index`.
-    fn absorb_tool_call(&mut self, item: &Value, on_delta: &mut dyn FnMut(ChatDelta)) {
+    fn absorb_tool_call<F: FnMut(ChatDelta)>(&mut self, item: &Value, on_delta: &mut F) {
         let id = non_empty_str(&item["id"]).map(str::to_string);
         let name = non_empty_str(&item["function"]["name"]).map(str::to_string);
         let args = item["function"]["arguments"].as_str().unwrap_or_default();
@@ -779,7 +782,7 @@ impl StreamAcc {
         });
     }
 
-    fn finish(mut self, on_delta: &mut dyn FnMut(ChatDelta)) -> ChatOutcome {
+    fn finish<F: FnMut(ChatDelta)>(mut self, on_delta: &mut F) -> ChatOutcome {
         if let Some((is_reasoning, seg)) = self.splitter.flush() {
             if is_reasoning {
                 self.reasoning.push_str(&seg);
