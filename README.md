@@ -10,6 +10,7 @@ OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://gith
 - 🤗 **Modelos do Hugging Face, já filtrados** — busca GGUF e recomenda a quantização para o *seu* PC: verde roda inteiro na GPU, amarelo divide com a CPU, cinza fica só no processador.
 - 💬 **Chat local** — streaming, markdown e histórico no disco.
 - 🤖 **Modo agente** — o modelo lê e edita arquivos, roda comandos, usa Git, consulta a internet e analisa dados. Cada ação passa pela sua confirmação (ou não, se você preferir), e uma foto do projeto é tirada antes da primeira alteração: dá para voltar atrás.
+- 🎛️ **Ajustar para esta máquina** — o app pergunta ao próprio llama.cpp quanta memória cada configuração custa na *sua* placa, recomenda uma (com o porquê, em números), aplica e volta atrás sozinho se o modelo não carregar. Depois, se você quiser, mede tokens/s de verdade e substitui a estimativa pelo que a máquina deu.
 - 🧭 **Feito para modelo pequeno** — o objetivo vira entregas curtas, cada uma com contexto novo, e o cardápio de ferramentas se ajusta à janela do modelo: o que não cabe, ele pede quando precisa.
 - 🧠 **Memória e índice do projeto** — o agente lembra do que aprendeu e busca por significado no seu código.
 - 🧩 **Conectores MCP** — servidores do padrão Model Context Protocol entram como ferramentas, com aprovação por servidor.
