@@ -179,6 +179,69 @@ fn usable_ram(ram_bytes: u64) -> u64 {
     (ram_bytes as f64 * RAM_USABLE_FRACTION) as u64
 }
 
+/// Quanto a nossa aritmética costuma errar nesta máquina.
+///
+/// Antes do download não existe arquivo para o `llama-fit-params` inspecionar,
+/// então a estimativa continua sendo conta nossa. Mas depois de cada download
+/// a sonda mede o mesmo modelo de verdade — e comparar as duas dá o fator que
+/// corrige as próximas estimativas.
+///
+/// Sem histórico, o fator é 1.0: melhor uma estimativa crua e dita como tal
+/// do que uma correção inventada.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Calibration {
+    pub factor: f64,
+    /// Quantas comparações sustentam o fator.
+    pub samples: u32,
+}
+
+impl Default for Calibration {
+    fn default() -> Self {
+        Self {
+            factor: 1.0,
+            samples: 0,
+        }
+    }
+}
+
+impl Calibration {
+    /// Calcula o fator a partir de pares (estimado, medido).
+    ///
+    /// Usa a mediana, não a média: um modelo com geometria fora do comum
+    /// (MoE, atenção incomum) erraria muito e puxaria a média sozinho.
+    pub fn from_pairs(pairs: &[(u64, u64)]) -> Self {
+        let mut razoes: Vec<f64> = pairs
+            .iter()
+            .filter(|(e, m)| *e > 0 && *m > 0)
+            .map(|(e, m)| *m as f64 / *e as f64)
+            .collect();
+        if razoes.is_empty() {
+            return Self::default();
+        }
+        razoes.sort_by(|a, b| a.total_cmp(b));
+        let meio = razoes.len() / 2;
+        let mediana = if razoes.len().is_multiple_of(2) {
+            (razoes[meio - 1] + razoes[meio]) / 2.0
+        } else {
+            razoes[meio]
+        };
+        Self {
+            // Um fator absurdo é sinal de dado ruim, não de máquina estranha.
+            factor: mediana.clamp(0.5, 2.0),
+            samples: razoes.len() as u32,
+        }
+    }
+
+    /// Vale a pena mostrar à pessoa? Duas amostras não são padrão.
+    pub fn is_meaningful(&self) -> bool {
+        self.samples >= 3 && (self.factor - 1.0).abs() >= 0.03
+    }
+
+    pub fn apply(&self, bytes: u64) -> u64 {
+        (bytes as f64 * self.factor) as u64
+    }
+}
+
 /// Um arquivo candidato de um repositório (uma quantização).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -197,6 +260,13 @@ pub struct QuantOption {
     pub bits: Option<f32>,
     pub recommended: bool,
     pub verdict: FitVerdict,
+    /// Memória estimada com a janela avaliada — arquivo + KV cache + reserva.
+    ///
+    /// Era calculada e descartada antes de sair do Rust, e a tela só mostrava
+    /// o tamanho do arquivo. É a diferença entre "18 GB" e "18 GB agora, 21
+    /// GB com a janela que você usa".
+    pub est_total_bytes: u64,
+    pub kv_cache_bytes: u64,
 }
 
 /// Avalia todos os arquivos de um repositório e marca o recomendado:
@@ -219,6 +289,8 @@ pub fn evaluate_files(
                 size_bytes: f.size_bytes,
                 recommended: false,
                 verdict: report.verdict,
+                est_total_bytes: report.est_total_bytes,
+                kv_cache_bytes: report.kv_cache_bytes,
             }
         })
         .collect();
@@ -242,6 +314,64 @@ pub fn evaluate_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A estimativa que a tela mostra antes do download vinha sendo jogada
+    /// fora aqui dentro: só o tamanho do arquivo chegava à pessoa.
+    #[test]
+    fn the_estimate_reaches_whoever_asked() {
+        let budget = MemoryBudget {
+            vram_bytes: 16 << 30,
+            ram_bytes: 32 << 30,
+            unified: false,
+        };
+        let meta = ModelMeta::estimate_from_params(8_000_000_000, 8192);
+        let opts = evaluate_files(
+            &budget,
+            &meta,
+            &[QuantFile {
+                filename: "m-Q4_K_M.gguf".into(),
+                size_bytes: 5 << 30,
+            }],
+        );
+        assert!(opts[0].est_total_bytes > opts[0].size_bytes);
+        assert!(opts[0].kv_cache_bytes > 0);
+    }
+
+    #[test]
+    fn without_history_the_estimate_is_left_alone() {
+        let c = Calibration::default();
+        assert_eq!(c.apply(1000), 1000);
+        assert!(!c.is_meaningful());
+        assert_eq!(Calibration::from_pairs(&[]), Calibration::default());
+    }
+
+    /// Uma medição fora da curva não pode reescrever a régua sozinha.
+    #[test]
+    fn the_correction_uses_the_median_and_not_the_average() {
+        let pares = [(100u64, 106u64), (200, 214), (300, 318), (400, 800)];
+        let c = Calibration::from_pairs(&pares);
+        assert!(
+            c.factor < 1.10,
+            "o par fora da curva puxaria a média: {c:?}"
+        );
+        assert!(c.factor > 1.04);
+        assert_eq!(c.samples, 4);
+    }
+
+    #[test]
+    fn a_correction_of_two_percent_is_not_worth_saying() {
+        let c = Calibration::from_pairs(&[(100, 102), (200, 204), (300, 306)]);
+        assert!(!c.is_meaningful(), "2% é ruído: {c:?}");
+
+        let vale = Calibration::from_pairs(&[(100, 112), (200, 226), (300, 335)]);
+        assert!(vale.is_meaningful());
+    }
+
+    #[test]
+    fn an_absurd_ratio_is_clamped_instead_of_believed() {
+        let c = Calibration::from_pairs(&[(100, 10_000), (200, 20_000), (300, 30_000)]);
+        assert_eq!(c.factor, 2.0);
+    }
 
     /// Máquina da referência do usuário: RTX 5060 Ti 16 GB + 32 GB RAM.
     fn rtx_5060ti() -> MemoryBudget {

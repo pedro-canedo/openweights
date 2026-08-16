@@ -9,6 +9,7 @@ import type {
   MessageRow,
   ModelSummary,
   PresetRow,
+  QuantsView,
   QuantView,
   RuntimeState,
   ServerStatus,
@@ -84,7 +85,7 @@ export async function searchModels(query: string): Promise<ModelSummary[]> {
     : MODELS;
 }
 
-export async function modelQuants(_repoId: string): Promise<QuantView[]> {
+export async function modelQuants(_repoId: string): Promise<QuantsView> {
   await delay(300);
   const gb = 2 ** 30;
   const mk = (
@@ -102,15 +103,24 @@ export async function modelQuants(_repoId: string): Promise<QuantView[]> {
     bits: null,
     recommended,
     verdict,
+    // Arquivo + KV da janela avaliada + reserva de runtime.
+    estTotalBytes: sizeGb * gb + 1.4 * gb,
+    kvCacheBytes: 0.4 * gb,
   });
-  return [
-    mk("UD-Q2_K_XL", 10.3, { kind: "fullGpu", ngl: 64 }),
-    mk("Q3_K_M", 13.8, { kind: "fullGpu", ngl: 64 }),
-    mk("UD-Q4_K_XL", 17.9, { kind: "partial", ngl: 52, layersTotal: 64 }, true),
-    mk("Q5_K_M", 19.8, { kind: "partial", ngl: 46, layersTotal: 64 }),
-    mk("Q8_0", 29, { kind: "cpuOnly" }),
-    mk("BF16", 54.7, { kind: "wontFit" }),
-  ];
+  return {
+    quants: [
+      mk("UD-Q2_K_XL", 10.3, { kind: "fullGpu", ngl: 64 }),
+      mk("Q3_K_M", 13.8, { kind: "fullGpu", ngl: 64 }),
+      mk("UD-Q4_K_XL", 17.9, { kind: "partial", ngl: 52, layersTotal: 64 }, true),
+      mk("Q5_K_M", 19.8, { kind: "partial", ngl: 46, layersTotal: 64 }),
+      mk("Q8_0", 29, { kind: "cpuOnly" }),
+      mk("BF16", 54.7, { kind: "wontFit" }),
+    ],
+    ctxLen: 8192,
+    modelCtxMax: 262144,
+    visionProjectorBytes: 931 * 2 ** 20,
+    calibrated: null,
+  };
 }
 
 const downloads = new Map<string, DownloadStatus>();

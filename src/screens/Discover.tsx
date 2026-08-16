@@ -18,9 +18,20 @@ const SORT_KEYS: Record<SearchSort, string> = {
   updated: "discover.sortUpdated",
 };
 
+/** Tira o nome do formato da busca, deixando só o nome do modelo. */
+function semFormato(q: string): string {
+  return q
+    .replace(/\b(mlx|ollama|safetensors|gptq|awq)\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export default function Discover() {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
+  // O app roda arquivos GGUF pelo llama.cpp: MLX é o formato da Apple e não
+  // roda aqui, e "tag" é vocabulário do Ollama.
+  const outroFormato = /\b(mlx|ollama|safetensors|gptq|awq)\b/i.test(query);
   const [debounced, setDebounced] = useState("");
   const [sort, setSort] = useState<SearchSort>("trending");
   const [results, setResults] = useState<ModelSummary[] | null>(null);
@@ -106,7 +117,25 @@ export default function Discover() {
           </div>
         ) : results.length === 0 ? (
           <div className="rounded-xl border border-dashed border-edge p-10 text-center text-sm text-dim">
-            {t("discover.empty")}
+            {/* Procurar por "mlx" ou "ollama" não é erro de digitação: é
+                alguém trazendo o vocabulário de outra ferramenta. Um beco sem
+                saída aqui vira uma explicação e um caminho. */}
+            {outroFormato ? (
+              <div className="flex flex-col items-center gap-2">
+                <p className="max-w-md leading-relaxed">
+                  {t("discover.otherFormat")}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setQuery(semFormato(query))}
+                  className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                >
+                  {t("discover.findGguf")}
+                </button>
+              </div>
+            ) : (
+              t("discover.empty")
+            )}
           </div>
         ) : (
           <div className="flex flex-col gap-3">

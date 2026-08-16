@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { ModelSummary, QuantView } from "../../lib/types";
+import type { ModelSummary, QuantsView, QuantView } from "../../lib/types";
 import { getModelQuants, startDownload } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
 import { AuthorAvatar } from "./ModelCard";
@@ -25,10 +25,13 @@ function QuantItem({
   quant,
   started,
   onDownload,
+  ctxLen,
 }: {
   quant: QuantView;
   started: boolean;
   onDownload: () => void;
+  /** Janela usada na estimativa — o KV cache depende dela. */
+  ctxLen: number;
 }) {
   const { t } = useTranslation();
 
@@ -46,6 +49,15 @@ function QuantItem({
           {formatBytes(quant.sizeBytes)}
         </span>
       </div>
+
+      {/* O arquivo é o que se baixa; o que precisa caber é isto. A diferença
+          entre os dois números é o que faz alguém escolher errado. */}
+      <p className="mt-1 text-[11px] tabular-nums text-dim">
+        {t("badge.needsMemory", {
+          total: formatBytes(quant.estTotalBytes),
+          ctx: (ctxLen / 1024).toFixed(0),
+        })}
+      </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {quant.recommended && (
@@ -85,7 +97,7 @@ export default function QuantDrawer({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [quants, setQuants] = useState<QuantView[] | null>(null);
+  const [view, setView] = useState<QuantsView | null>(null);
   const [failed, setFailed] = useState(false);
   const [started, setStarted] = useState<ReadonlySet<string>>(new Set());
   const [shown, setShown] = useState(false);
@@ -107,11 +119,11 @@ export default function QuantDrawer({
 
   useEffect(() => {
     let cancelled = false;
-    setQuants(null);
+    setView(null);
     setFailed(false);
     getModelQuants(model.id, model.paramsTotal)
       .then((q) => {
-        if (!cancelled) setQuants(q);
+        if (!cancelled) setView(q);
       })
       .catch(() => {
         if (!cancelled) setFailed(true);
@@ -124,15 +136,15 @@ export default function QuantDrawer({
   // Ordena por bits (desconhecidos por último) e desempata pelo tamanho.
   const sorted = useMemo(
     () =>
-      quants
-        ? [...quants].sort(
+      view
+        ? [...view.quants].sort(
             (a, b) =>
               (a.bits ?? Number.MAX_SAFE_INTEGER) -
                 (b.bits ?? Number.MAX_SAFE_INTEGER) ||
               a.sizeBytes - b.sizeBytes,
           )
         : null,
-    [quants],
+    [view],
   );
 
   const download = (q: QuantView) => {
@@ -230,8 +242,35 @@ export default function QuantDrawer({
                   quant={q}
                   started={started.has(q.artifactName)}
                   onDownload={() => download(q)}
+                  ctxLen={view?.ctxLen ?? 8192}
                 />
               ))}
+            </div>
+          )}
+
+          {view && (
+            <div className="mt-4 flex flex-col gap-1 border-t border-edge pt-3">
+              {/* O projetor não é uma quantização: é acessório, e antes ele
+                  aparecia na lista como se fosse escolha de modelo. */}
+              {view.visionProjectorBytes != null && (
+                <p className="text-[11px] leading-relaxed text-dim">
+                  {t("badge.hasProjector", {
+                    size: formatBytes(view.visionProjectorBytes),
+                  })}
+                </p>
+              )}
+              {view.modelCtxMax != null && (
+                <p className="text-[11px] leading-relaxed text-dim">
+                  {t("badge.modelCtxMax", {
+                    n: (view.modelCtxMax / 1024).toFixed(0),
+                  })}
+                </p>
+              )}
+              <p className="text-[11px] leading-relaxed text-dim">
+                {view.calibrated
+                  ? t("badge.estimateCalibrated")
+                  : t("badge.estimateOnly")}
+              </p>
             </div>
           )}
         </div>

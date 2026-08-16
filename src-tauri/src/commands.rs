@@ -88,6 +88,23 @@ pub async fn models_search(
         .map_err(err_str)
 }
 
+/// O que a gaveta de quantizações precisa saber.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuantsView {
+    pub quants: Vec<QuantView>,
+    /// Janela usada na estimativa (já limitada ao teto do modelo).
+    pub ctx_len: u32,
+    /// Janela máxima que o modelo foi treinado para aguentar, quando o
+    /// repositório publica isso.
+    pub model_ctx_max: Option<u32>,
+    /// Tamanho do projetor de visão, quando o repositório tem um. Ele não é
+    /// uma quantização — é acessório, e custa memória à parte.
+    pub vision_projector_bytes: Option<u64>,
+    /// Fator de correção aplicado, quando há histórico que o sustente.
+    pub calibrated: Option<f64>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuantView {
@@ -98,6 +115,45 @@ pub struct QuantView {
     pub option: advisor::QuantOption,
 }
 
+/// Chave onde ficam os pares (estimado, medido) que calibram a aritmética.
+const CALIBRATION_SETTING: &str = "advisor_calibration";
+/// Quantos pares guardar. O suficiente para uma mediana estável, pouco o
+/// bastante para caber num setting sem virar banco de dados disfarçado.
+const CALIBRATION_MAX: usize = 20;
+
+fn calibration(state: &AppState) -> advisor::Calibration {
+    let pares: Vec<(u64, u64)> = state
+        .store
+        .get_setting(CALIBRATION_SETTING)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    advisor::Calibration::from_pairs(&pares)
+}
+
+/// Guarda mais um par para a calibração das estimativas futuras.
+pub(crate) fn record_calibration(state: &AppState, estimado: u64, medido: u64) {
+    if estimado == 0 || medido == 0 {
+        return;
+    }
+    let mut pares: Vec<(u64, u64)> = state
+        .store
+        .get_setting(CALIBRATION_SETTING)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    pares.push((estimado, medido));
+    if pares.len() > CALIBRATION_MAX {
+        let sobra = pares.len() - CALIBRATION_MAX;
+        pares.drain(0..sobra);
+    }
+    if let Ok(json) = serde_json::to_string(&pares) {
+        let _ = state.store.set_setting(CALIBRATION_SETTING, &json);
+    }
+}
+
 /// Lista as quantizações de um repo com veredito de compatibilidade
 /// (badges verde/amarelo/cinza/vermelho) para o hardware desta máquina.
 #[tauri::command]
@@ -106,7 +162,7 @@ pub async fn models_quants(
     repo_id: String,
     params_total: Option<u64>,
     ctx_len: Option<u32>,
-) -> CmdResult<Vec<QuantView>> {
+) -> CmdResult<QuantsView> {
     let files = state
         .hf
         .lock()
@@ -115,12 +171,33 @@ pub async fn models_quants(
         .await
         .map_err(err_str)?;
     let artifacts = lr_models::group_artifacts(&files);
+    let projetores = lr_models::vision_projectors(&files);
+
+    // A geometria do modelo vem do próprio Hugging Face quando ele a publica;
+    // adivinhar por faixa de parâmetros era o que sobrava, não o que queríamos.
+    let publicado = state
+        .hf
+        .lock()
+        .await
+        .gguf_meta(&repo_id)
+        .await
+        .ok()
+        .flatten();
+    let params = params_total
+        .or_else(|| publicado.as_ref().and_then(|m| m.params_total))
+        .unwrap_or(8_000_000_000);
+    // Pedir 256k a um modelo treinado em 32k degrada a resposta em silêncio.
+    let teto_do_modelo = publicado
+        .as_ref()
+        .and_then(|m| m.context_length)
+        .and_then(|c| u32::try_from(c).ok())
+        .filter(|c| *c > 0);
+    let janela = ctx_len
+        .unwrap_or(8192)
+        .min(teto_do_modelo.unwrap_or(u32::MAX));
 
     let budget = advisor::MemoryBudget::from_profile(&state.profile);
-    let meta = advisor::ModelMeta::estimate_from_params(
-        params_total.unwrap_or(8_000_000_000),
-        ctx_len.unwrap_or(8192),
-    );
+    let meta = advisor::ModelMeta::estimate_from_params(params, janela);
     let qfiles: Vec<advisor::QuantFile> = artifacts
         .iter()
         .map(|a| advisor::QuantFile {
@@ -128,18 +205,33 @@ pub async fn models_quants(
             size_bytes: a.total_bytes,
         })
         .collect();
-    let options = advisor::evaluate_files(&budget, &meta, &qfiles);
+    let mut options = advisor::evaluate_files(&budget, &meta, &qfiles);
 
-    Ok(artifacts
-        .into_iter()
-        .zip(options)
-        .map(|(a, option)| QuantView {
-            artifact_name: a.name,
-            files: a.files.iter().map(|f| f.path.clone()).collect(),
-            total_bytes: a.total_bytes,
-            option,
-        })
-        .collect())
+    // A correção só entra quando há histórico que a sustente; sem isso a
+    // estimativa vai crua, e a tela diz que é estimativa.
+    let calib = calibration(&state);
+    if calib.is_meaningful() {
+        for o in &mut options {
+            o.est_total_bytes = calib.apply(o.est_total_bytes);
+        }
+    }
+
+    Ok(QuantsView {
+        quants: artifacts
+            .into_iter()
+            .zip(options)
+            .map(|(a, option)| QuantView {
+                artifact_name: a.name,
+                files: a.files.iter().map(|f| f.path.clone()).collect(),
+                total_bytes: a.total_bytes,
+                option,
+            })
+            .collect(),
+        ctx_len: janela,
+        model_ctx_max: teto_do_modelo,
+        vision_projector_bytes: projetores.first().map(|f| f.size_bytes),
+        calibrated: calib.is_meaningful().then_some(calib.factor),
+    })
 }
 
 // ------------------------------------------------------------ downloads ---

@@ -95,6 +95,22 @@ export interface QuantView {
   bits: number | null;
   recommended: boolean;
   verdict: FitVerdict;
+  /** Arquivo + KV cache + reserva, com a janela avaliada. */
+  estTotalBytes: number;
+  kvCacheBytes: number;
+}
+
+/** O que a gaveta de quantizações recebe do backend. */
+export interface QuantsView {
+  quants: QuantView[];
+  /** Janela usada na estimativa (já limitada ao teto do modelo). */
+  ctxLen: number;
+  /** Janela máxima do modelo, quando o repositório publica. */
+  modelCtxMax: number | null;
+  /** Tamanho do projetor de visão, quando existe. Não é quantização. */
+  visionProjectorBytes: number | null;
+  /** Fator de correção aplicado, quando há histórico que o sustente. */
+  calibrated: number | null;
 }
 
 // ------------------------------------------------------------ downloads ---

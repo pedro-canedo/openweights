@@ -21,7 +21,12 @@
     "partialWarn": "Runs, but much slower (partially on CPU)",
     "cpuOnly": "CPU only (slow)",
     "wontFit": "Won't fit on your machine",
-    "recommended": "Recommended"
+    "recommended": "Recommended",
+    "needsMemory": "Needs ~{{total}} with a {{ctx}}k window",
+    "hasProjector": "This model also has a vision projector ({{size}}), downloaded separately when you want images.",
+    "modelCtxMax": "The model was trained for up to a {{n}}k window.",
+    "estimateOnly": "These numbers are an estimate: the file isn't here yet to measure. After downloading, the app measures for real.",
+    "estimateCalibrated": "Estimate adjusted by what we've already measured on this machine."
   },
   "discover": {
     "title": "Discover models",
@@ -42,7 +47,9 @@
     "sortTrending": "Trending",
     "sortDownloads": "Most downloaded",
     "sortLikes": "Most liked",
-    "sortUpdated": "Recently updated"
+    "sortUpdated": "Recently updated",
+    "otherFormat": "OpenWeights runs GGUF files with llama.cpp. MLX is Apple's format and doesn't run here; neither do safetensors, GPTQ or AWQ. The same model almost always exists as GGUF.",
+    "findGguf": "Find the GGUF version"
   },
   "downloadsPanel": {
     "title": "Downloads",

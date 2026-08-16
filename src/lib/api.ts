@@ -12,7 +12,7 @@ import type {
   MessageRow,
   ModelSummary,
   PresetRow,
-  QuantView,
+  QuantsView,
   RuntimeEvent,
   RuntimeState,
   ServerStatus,
@@ -54,7 +54,7 @@ export const getModelQuants = (
   ctxLen = 8192,
 ) =>
   isTauri
-    ? invoke<QuantView[]>("models_quants", { repoId, paramsTotal, ctxLen })
+    ? invoke<QuantsView>("models_quants", { repoId, paramsTotal, ctxLen })
     : mocks.modelQuants(repoId);
 
 // ------------------------------------------------------------ downloads ---

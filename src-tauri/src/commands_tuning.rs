@@ -118,6 +118,15 @@ pub async fn tune_advise(state: State<'_, AppState>, model: String) -> CmdResult
         return Err("não consegui estimar a memória deste modelo".into());
     }
 
+    // Fecha o laço com a tela Descobrir: aqui temos o que a nossa aritmética
+    // teria dito e o que a sonda de fato disse, para o mesmo arquivo. Guardar
+    // o par é o que permite corrigir as estimativas de antes do download.
+    if let Some(primeiro) = medidos.first() {
+        let estimado = lr_advisor::evaluate(&budget, &meta, artefato.total_bytes).est_total_bytes;
+        let medido = primeiro.report.gpu_bytes() + primeiro.report.host_bytes();
+        crate::commands::record_calibration(&state, estimado, medido);
+    }
+
     let escolhido = tune::pick(&medidos).ok_or("nenhum candidato")?.clone();
     let indice = medidos
         .iter()
