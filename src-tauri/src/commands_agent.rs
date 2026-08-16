@@ -322,7 +322,7 @@ pub fn tool_permission_set(
 /// Catálogo de ferramentas disponíveis (para a tela de permissões).
 #[tauri::command]
 pub async fn tools_list(state: State<'_, AppState>) -> CmdResult<Vec<lr_types::agent::ToolSpec>> {
-    Ok(state.tools.specs().await)
+    Ok(state.tools().specs().await)
 }
 
 // ----------------------------------------------------------- checkpoints ---

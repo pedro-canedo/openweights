@@ -1,7 +1,9 @@
-// Menu do "+" no composer: anexar arquivos agora; o resto fica como "em breve".
+// Menu do "+" no composer: anexar arquivos e abrir os conectores (MCP); o
+// resto ainda fica como "em breve".
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { navigate } from "../../lib/nav";
 
 function Icon({ children }: { children: ReactNode }) {
   return (
@@ -37,6 +39,24 @@ function Chevron() {
 
 function shortcutLabel(): string {
   return navigator.platform.toLowerCase().includes("mac") ? "⌘U" : "Ctrl+U";
+}
+
+/**
+ * Leva à seção de conectores em Configurações.
+ *
+ * A troca de tela desmonta o Chat, então o scroll só pode acontecer depois
+ * que a nova tela montou — daí o `requestAnimationFrame` duplo em vez de um
+ * `scrollIntoView` imediato, que cairia num elemento que ainda não existe.
+ */
+function openConnectors() {
+  navigate("settings");
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() =>
+      document
+        .getElementById("mcp-connectors")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+    ),
+  );
 }
 
 export default function AttachMenu({
@@ -133,9 +153,12 @@ export default function AttachMenu({
 
           <button
             type="button"
-            disabled
-            title={t("chat.plus.soon")}
-            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] text-dim opacity-60"
+            onClick={() => {
+              setOpen(false);
+              openConnectors();
+            }}
+            title={t("agent.mcp.subtitle")}
+            className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-panel2"
           >
             <Icon>
               <rect x="3" y="3" width="7" height="7" rx="1.2" />
@@ -144,7 +167,6 @@ export default function AttachMenu({
               <rect x="14" y="14" width="7" height="7" rx="1.2" />
             </Icon>
             <span className="min-w-0 flex-1">{t("chat.plus.connectors")}</span>
-            {soon}
             <Chevron />
           </button>
 

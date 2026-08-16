@@ -1,0 +1,23 @@
+[package]
+name = "lr_memory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Memória de longo prazo do agente: fatos curados, arquivos legíveis e consolidação em ocioso"
+
+[dependencies]
+lr_types.workspace = true
+lr_store = { path = "../store" }
+lr_tools = { path = "../tools" }
+lr_engine = { path = "../engine" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+tokio.workspace = true
+async-trait = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
+# Os testes de consolidação sobem um servidor HTTP falso com `std::net`
+# (mesma receita de crates/engine/src/client/tests.rs), sem dependência nova.

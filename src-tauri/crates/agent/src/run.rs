@@ -1213,6 +1213,22 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     let _ = deps
         .store
         .finish_run(&run_id, status, &summary, &usage_json);
+
+    // Episódio: o que aconteceu nesta execução, para a memória consolidar
+    // depois em fatos duráveis. Só vale a pena guardar o que produziu algo —
+    // cancelar ou falhar de cara não ensina nada.
+    if matches!(
+        status,
+        RunStatus::Done | RunStatus::Escalated | RunStatus::MaxSteps
+    ) && usage.tool_calls > 0
+    {
+        let _ = deps.store.add_memory_episode(
+            workspace.as_deref().and_then(|p| p.to_str()),
+            (opts.chat_id > 0).then_some(opts.chat_id),
+            Some(&run_id),
+            &summary,
+        );
+    }
     sink.emit(RunEventKind::RunFinished {
         status,
         summary,

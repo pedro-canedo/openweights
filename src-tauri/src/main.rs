@@ -3,6 +3,9 @@
 
 mod commands;
 mod commands_agent;
+mod commands_mcp;
+mod commands_memory;
+mod commands_rag;
 mod state;
 mod telemetry;
 #[cfg(windows)]
@@ -107,6 +110,26 @@ fn main() {
             commands_agent::checkpoints_list,
             commands_agent::checkpoint_restore,
             commands_agent::chat_set_model,
+            // Conectores MCP.
+            commands_mcp::mcp_servers_list,
+            commands_mcp::mcp_server_add,
+            commands_mcp::mcp_server_remove,
+            commands_mcp::mcp_server_enable,
+            commands_mcp::mcp_server_test,
+            commands_mcp::mcp_server_tools,
+            commands_mcp::mcp_server_approve_tools,
+            // Memória do agente.
+            commands_memory::memory_facts_list,
+            commands_memory::memory_fact_add,
+            commands_memory::memory_fact_delete,
+            commands_memory::memory_consolidate_now,
+            commands_memory::memory_open_folder,
+            // Índice do projeto (busca por significado).
+            commands_rag::rag_status,
+            commands_rag::rag_index_start,
+            commands_rag::rag_index_cancel,
+            commands_rag::rag_search,
+            commands_rag::rag_clear,
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o OpenWeights")

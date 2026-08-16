@@ -430,7 +430,19 @@
       "elicitation": "O conector precisa de uma informação",
       "elicitationSend": "Enviar",
       "invalidJson": "JSON inválido.",
-      "testFailed": "Não foi possível conectar: {{error}}"
+      "testFailed": "Não foi possível conectar: {{error}}",
+      "namePlaceholder": "Ex.: GitHub",
+      "argsHint": "Separados por espaço; use aspas para valores com espaço.",
+      "envHint": "Uma por linha, no formato CHAVE=valor.",
+      "headersHint": "Um por linha, no formato Nome: valor.",
+      "statusDisabled": "Desativado",
+      "statusError": "Falhou na última tentativa",
+      "statusPending": "Aguardando revisão",
+      "testing": "Testando...",
+      "testFirst": "Teste a conexão para ler as ferramentas.",
+      "showTools": "Ver ferramentas",
+      "hideTools": "Ocultar ferramentas",
+      "noTools": "Nenhuma ferramenta lida ainda."
     },
     "memory": {
       "title": "Memória",
@@ -459,7 +471,16 @@
       "openDiscover": "Baixar modelo de embedding",
       "vectorOff": "Busca vetorial indisponível — usando apenas busca textual.",
       "empty": "Este projeto ainda não foi indexado.",
-      "searchPlaceholder": "Buscar no projeto..."
+      "searchPlaceholder": "Buscar no projeto...",
+      "scanning": "Varrendo arquivos...",
+      "embedding": "Gerando vetores {{done}}/{{total}}...",
+      "cancelling": "Cancelando...",
+      "noResults": "Nenhum trecho encontrado.",
+      "confirmClear": "Apagar o índice deste projeto? Dá para indexar de novo depois.",
+      "sourceText": "texto",
+      "sourceVector": "significado",
+      "sourceBoth": "texto + significado",
+      "openFile": "Abrir arquivo"
     }
   },
   "plan": {

@@ -22,6 +22,8 @@ import {
 } from "../../lib/api";
 import type { WorkspaceFile } from "../../lib/types";
 import CheckpointList from "../agent/CheckpointList";
+import RagPanel from "../agent/RagPanel";
+import MemoryPanel from "../agent/MemoryPanel";
 
 function folderName(dir: string): string {
   const parts = dir.replace(/[\\/]+$/, "").split(/[\\/]/);
@@ -442,6 +444,7 @@ export function WorkspaceExplorer() {
     setQuery,
     visible,
     error,
+    openFile,
   } = useWorkspace();
 
   const tree = useMemo(() => buildTree(visible), [visible]);
@@ -503,6 +506,18 @@ export function WorkspaceExplorer() {
           </div>
           {/* Desfazer das alterações do agente, junto dos arquivos. */}
           <CheckpointList workspaceDir={dir} reloadKey={checkpointsKey} />
+          {/* Índice do projeto: clicar num resultado abre o arquivo no mesmo
+              editor da árvore (o trecho traz caminho e linha). */}
+          <RagPanel
+            workspaceDir={dir}
+            onOpenFile={(path) =>
+              void openFile({
+                path,
+                name: path.split("/").pop() ?? path,
+                bytes: 0,
+              })
+            }
+          />
         </>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
@@ -516,6 +531,10 @@ export function WorkspaceExplorer() {
           </button>
         </div>
       )}
+
+      {/* Memória de longo prazo: fica fora do `dir ?` porque os fatos
+          globais valem mesmo sem pasta escolhida. */}
+      <MemoryPanel workspaceDir={dir} />
 
       {error && (
         <p className="border-t border-edge px-3 py-2 text-[11px] text-bad">

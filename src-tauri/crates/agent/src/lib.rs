@@ -21,7 +21,7 @@ use lr_types::scout::WorkMode;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::sync::{Notify, oneshot};
 
@@ -163,7 +163,10 @@ impl RunHandle {
 /// Ponto de entrada: sobe e acompanha execuções.
 pub struct AgentHost {
     store: Arc<Store>,
-    registry: Arc<ToolRegistry>,
+    /// Catálogo de ferramentas. Fica atrás de um cadeado porque conectores
+    /// podem ser adicionados ou removidos com o app aberto — cada execução
+    /// pega a foto do catálogo no momento em que começa.
+    registry: RwLock<Arc<ToolRegistry>>,
     config: Arc<AgentConfig>,
     runs: Mutex<HashMap<String, Arc<RunHandle>>>,
 }
@@ -172,7 +175,7 @@ impl AgentHost {
     pub fn new(store: Arc<Store>, registry: Arc<ToolRegistry>, config: AgentConfig) -> Self {
         Self {
             store,
-            registry,
+            registry: RwLock::new(registry),
             config: Arc::new(config),
             runs: Mutex::new(HashMap::new()),
         }
@@ -209,7 +212,7 @@ impl AgentHost {
 
         let deps = RunDeps {
             store: self.store.clone(),
-            registry: self.registry.clone(),
+            registry: self.registry().clone(),
             config: self.config.clone(),
         };
         let h = handle.clone();
@@ -217,6 +220,19 @@ impl AgentHost {
             execute_run(req, h, deps).await;
         });
         Ok(handle)
+    }
+
+    /// Troca o catálogo de ferramentas (conector adicionado ou removido).
+    /// Execuções em andamento seguem com o catálogo que já tinham.
+    pub fn set_registry(&self, registry: Arc<ToolRegistry>) {
+        *self.registry.write().unwrap_or_else(|e| e.into_inner()) = registry;
+    }
+
+    fn registry(&self) -> Arc<ToolRegistry> {
+        self.registry
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<RunHandle>> {

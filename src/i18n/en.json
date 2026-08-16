@@ -430,7 +430,19 @@
       "elicitation": "The connector needs some information",
       "elicitationSend": "Send",
       "invalidJson": "Invalid JSON.",
-      "testFailed": "Could not connect: {{error}}"
+      "testFailed": "Could not connect: {{error}}",
+      "namePlaceholder": "e.g. GitHub",
+      "argsHint": "Space separated; use quotes for values with spaces.",
+      "envHint": "One per line, as KEY=value.",
+      "headersHint": "One per line, as Name: value.",
+      "statusDisabled": "Disabled",
+      "statusError": "Last attempt failed",
+      "statusPending": "Awaiting review",
+      "testing": "Testing...",
+      "testFirst": "Test the connection to read the tools.",
+      "showTools": "Show tools",
+      "hideTools": "Hide tools",
+      "noTools": "No tools read yet."
     },
     "memory": {
       "title": "Memory",
@@ -459,7 +471,16 @@
       "openDiscover": "Download embedding model",
       "vectorOff": "Vector search unavailable — using text search only.",
       "empty": "This project has not been indexed yet.",
-      "searchPlaceholder": "Search the project..."
+      "searchPlaceholder": "Search the project...",
+      "scanning": "Scanning files...",
+      "embedding": "Building vectors {{done}}/{{total}}...",
+      "cancelling": "Cancelling...",
+      "noResults": "No matching snippet.",
+      "confirmClear": "Delete this project's index? You can rebuild it later.",
+      "sourceText": "text",
+      "sourceVector": "meaning",
+      "sourceBoth": "text + meaning",
+      "openFile": "Open file"
     }
   },
   "plan": {
