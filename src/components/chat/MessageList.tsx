@@ -1,11 +1,18 @@
 // Lista de mensagens do chat com auto-scroll para o fim durante o
 // streaming (só "gruda" no fundo se o usuário já estiver perto dele).
-// Cada mensagem tem uma barra de ações discreta no hover (copiar,
+// Cada mensagem tem uma barra de ações discreta no hover (copiar, ouvir,
 // regenerar, editar-e-reenviar, apagar) e as respostas do assistente
 // exibem raciocínio (ThinkingBlock) e métricas de geração.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
+import { speechStore } from "../../lib/speech";
 import Markdown from "./Markdown";
 import ThinkingBlock from "./ThinkingBlock";
 
@@ -76,6 +83,8 @@ const EDIT_ICON = icon(
 const TRASH_ICON = icon(
   "M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6",
 );
+const SPEAK_ICON = icon("M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 010 7");
+const SILENCE_ICON = icon("M11 5L6 9H3v6h3l5 4zM22 9l-6 6M16 9l6 6");
 
 function formatSec(ms: number): string {
   return (Math.max(0, ms) / 1000).toFixed(1);
@@ -115,10 +124,12 @@ export default function MessageList({
    */
   trail?: ReactNode;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const speaking = useSyncExternalStore(speechStore.subscribe, speechStore.get);
+  const canSpeak = speechStore.available();
   const now = useNow(generating);
 
   const onScroll = () => {
@@ -131,6 +142,10 @@ export default function MessageList({
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
   }, [messages, generating, loadingModel, trail]);
+
+  // Sair da conversa cala a voz: ninguém espera que ela continue falando de
+  // outra tela.
+  useEffect(() => () => speechStore.stop(), []);
 
   const copyMsg = (i: number, text: string) => {
     void navigator.clipboard.writeText(text).then(() => {
@@ -230,6 +245,18 @@ export default function MessageList({
             COPY_ICON
           )}
         </ActionButton>
+        {m.role === "assistant" && canSpeak && m.content.trim() && (
+          <ActionButton
+            title={
+              speaking === String(i) ? t("chat.speakStop") : t("chat.speak")
+            }
+            onClick={() =>
+              speechStore.speak(String(i), m.content, i18n.language)
+            }
+          >
+            {speaking === String(i) ? SILENCE_ICON : SPEAK_ICON}
+          </ActionButton>
+        )}
         {isLastAssistant && m.role === "assistant" && onRegenerate && (
           <ActionButton title={t("chat.regenerate")} onClick={onRegenerate}>
             {REGEN_ICON}

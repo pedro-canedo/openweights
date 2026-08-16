@@ -203,7 +203,9 @@
     "exportMd": "Copiar como Markdown",
     "exported": "Conversa copiada!",
     "deleteMsg": "Apagar mensagem",
-    "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s"
+    "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s",
+    "speak": "Ouvir a resposta",
+    "speakStop": "Parar de ler"
   },
   "server": {
     "title": "Servidor Local",
@@ -431,7 +433,11 @@
       "taskComplete": "Concluir etapa",
       "askUser": "Perguntar à pessoa",
       "toolsFind": "Procurar ferramentas",
-      "agentDelegate": "Delegar a um ajudante"
+      "agentDelegate": "Delegar a um ajudante",
+      "clipboardRead": "Ler a área de transferência",
+      "clipboardWrite": "Copiar para a área de transferência",
+      "notifyUser": "Avisar você",
+      "openPath": "Abrir arquivo ou link"
     },
     "toolGroups": {
       "title": "Famílias de ferramentas",
@@ -481,6 +487,10 @@
       "mcp": {
         "label": "Conectores",
         "desc": "Ferramentas emprestadas pelos conectores MCP que você ligou."
+      },
+      "desktop": {
+        "label": "Computador",
+        "desc": "Área de transferência, avisos do sistema e abrir arquivo ou link."
       }
     },
     "mcp": {

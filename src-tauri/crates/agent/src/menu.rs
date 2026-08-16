@@ -80,6 +80,7 @@ pub fn group_of(spec: &ToolSpec) -> ToolGroup {
         "workspace_search" => ToolGroup::Project,
         "todo_update" | "plan_create" | "plan_update" | "task_complete" | "ask_user"
         | "agent_delegate" | TOOLS_FIND => ToolGroup::Plan,
+        "clipboard_read" | "clipboard_write" | "notify_user" | "open_path" => ToolGroup::Desktop,
         other => guess_group(other, spec.category),
     }
 }
@@ -125,7 +126,10 @@ fn group_rank(group: ToolGroup) -> u8 {
         // O laço acrescenta as meta do plano por fora da curadoria; uma que
         // chegue até aqui é sobra e não pode empurrar trabalho para fora.
         ToolGroup::Plan => 8,
-        ToolGroup::Mcp => 9,
+        // Área de transferência e afins servem ao pedido, raramente são o
+        // pedido: entram quando o objetivo as chama pelo nome.
+        ToolGroup::Desktop => 9,
+        ToolGroup::Mcp => 10,
     }
 }
 
@@ -160,6 +164,40 @@ pub fn limit_for(n_ctx: Option<u32>) -> usize {
 /// dentro de outra palavra fica de fora — "log" pegaria "lógica", então o que
 /// vale é "git log".
 const KEYWORDS: &[(&str, &[&str])] = &[
+    (
+        "clipboard_read",
+        &[
+            "area de transferencia",
+            "clipboard",
+            "copiei",
+            "colei",
+            "ctrl+v",
+        ],
+    ),
+    (
+        "clipboard_write",
+        &[
+            "copie",
+            "copiar",
+            "area de transferencia",
+            "clipboard",
+            "ctrl+c",
+        ],
+    ),
+    (
+        "notify_user",
+        &["avise", "avisar", "notific", "me chame", "quando terminar"],
+    ),
+    (
+        "open_path",
+        &[
+            "abra",
+            "abrir",
+            "mostre o arquivo",
+            "no navegador",
+            "visualiz",
+        ],
+    ),
     (
         "project_info",
         &[

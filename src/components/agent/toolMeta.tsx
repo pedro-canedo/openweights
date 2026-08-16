@@ -44,6 +44,11 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   data_summary: "dataSummary",
   sql_query: "sqlQuery",
   sql_schema: "sqlSchema",
+  // Computador
+  clipboard_read: "clipboardRead",
+  clipboard_write: "clipboardWrite",
+  notify_user: "notifyUser",
+  open_path: "openPath",
   // Plano e conversa
   plan_create: "planCreate",
   plan_update: "planUpdate",

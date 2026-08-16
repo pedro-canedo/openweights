@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "Permissões da janela principal",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "notification:default",
+    "clipboard-manager:default"
+  ]
 }

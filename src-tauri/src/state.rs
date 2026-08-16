@@ -17,6 +17,10 @@ pub struct AppState {
     pub tools: std::sync::RwLock<Arc<lr_tools::ToolRegistry>>,
     /// Conectores MCP (processos filhos e sessões HTTP).
     pub mcp: lr_mcp::McpHost,
+    /// Quem fala com o computador em volta (área de transferência, avisos,
+    /// abrir arquivo). Mora aqui porque o catálogo é remontado sem o
+    /// `AppHandle` à mão.
+    desktop: Arc<dyn lr_desktop::DesktopHost>,
     /// Índice do projeto para busca por significado.
     pub rag: Arc<lr_rag::RagHandle>,
     /// Executa e acompanha as execuções do agente.
@@ -95,7 +99,9 @@ impl AppState {
 
         let rag = Arc::new(lr_rag::RagHandle::new(db_path.clone()));
         let mcp = lr_mcp::McpHost::new(store.clone());
-        let tools = build_tool_registry(&mcp, &store, &rag)?;
+        let desktop: Arc<dyn lr_desktop::DesktopHost> =
+            Arc::new(crate::desktop_host::TauriDesktop::new(app.clone()));
+        let tools = build_tool_registry(&mcp, &store, &rag, &desktop)?;
 
         let agent = lr_agent::AgentHost::new(
             store.clone(),
@@ -112,6 +118,7 @@ impl AppState {
             server_pid: AtomicU32::new(0),
             tools: std::sync::RwLock::new(tools),
             mcp,
+            desktop,
             rag,
             agent,
             store,
@@ -130,8 +137,8 @@ impl AppState {
     /// precisar reiniciar o app. Execuções em andamento seguem com o
     /// catálogo que já tinham.
     pub fn rebuild_tools(&self) -> Result<(), String> {
-        let tools =
-            build_tool_registry(&self.mcp, &self.store, &self.rag).map_err(|e| e.to_string())?;
+        let tools = build_tool_registry(&self.mcp, &self.store, &self.rag, &self.desktop)
+            .map_err(|e| e.to_string())?;
         *self.tools.write().unwrap_or_else(|e| e.into_inner()) = tools.clone();
         self.agent.set_registry(tools);
         Ok(())
@@ -185,6 +192,7 @@ fn build_tool_registry(
     mcp: &lr_mcp::McpHost,
     store: &Arc<lr_store::Store>,
     rag: &Arc<lr_rag::RagHandle>,
+    desktop: &Arc<dyn lr_desktop::DesktopHost>,
 ) -> Result<Arc<lr_tools::ToolRegistry>, Box<dyn std::error::Error>> {
     // O host do MCP devolve o registro já com as nativas e um provedor por
     // conector configurado.
@@ -219,6 +227,10 @@ fn build_tool_registry(
         store.get_setting("web.config").ok().flatten().as_deref(),
     ));
     for tool in lr_webtools::web_tools(web_cfg) {
+        registry.register(tool);
+    }
+    // O computador em volta do projeto: copiar, avisar, abrir.
+    for tool in lr_desktop::desktop_tools(desktop.clone()) {
         registry.register(tool);
     }
     Ok(Arc::new(registry))

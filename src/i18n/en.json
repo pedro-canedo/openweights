@@ -203,7 +203,9 @@
     "exportMd": "Copy as Markdown",
     "exported": "Chat copied!",
     "deleteMsg": "Delete message",
-    "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s"
+    "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s",
+    "speak": "Read aloud",
+    "speakStop": "Stop reading"
   },
   "server": {
     "title": "Local Server",
@@ -431,7 +433,11 @@
       "taskComplete": "Finish step",
       "askUser": "Ask the user",
       "toolsFind": "Find tools",
-      "agentDelegate": "Delegate to a helper"
+      "agentDelegate": "Delegate to a helper",
+      "clipboardRead": "Read the clipboard",
+      "clipboardWrite": "Copy to clipboard",
+      "notifyUser": "Notify you",
+      "openPath": "Open file or link"
     },
     "toolGroups": {
       "title": "Tool families",
@@ -481,6 +487,10 @@
       "mcp": {
         "label": "Connectors",
         "desc": "Tools lent by the MCP connectors you turned on."
+      },
+      "desktop": {
+        "label": "Computer",
+        "desc": "Clipboard, system notifications and opening files or links."
       }
     },
     "mcp": {

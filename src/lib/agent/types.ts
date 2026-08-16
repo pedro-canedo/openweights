@@ -22,7 +22,8 @@ export type ToolGroup =
   | "memory"
   | "project"
   | "plan"
-  | "mcp";
+  | "mcp"
+  | "desktop";
 
 /** Ordem em que os grupos aparecem nas preferências. */
 export const TOOL_GROUPS: ToolGroup[] = [
@@ -36,6 +37,7 @@ export const TOOL_GROUPS: ToolGroup[] = [
   "project",
   "plan",
   "mcp",
+  "desktop",
 ];
 
 export type ToolPolicy = "alwaysAllow" | "ask" | "never";

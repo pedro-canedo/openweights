@@ -7,6 +7,7 @@ mod commands_automation;
 mod commands_mcp;
 mod commands_memory;
 mod commands_rag;
+mod desktop_host;
 mod scheduler;
 mod state;
 mod telemetry;
@@ -21,6 +22,8 @@ fn main() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .setup(|app| {
             let profile = lr_hw::detect();
             log::info!(

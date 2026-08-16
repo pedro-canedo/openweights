@@ -75,11 +75,14 @@ pub enum ToolGroup {
     Plan,
     /// Vindas de conectores MCP.
     Mcp,
+    /// O computador em volta do projeto: área de transferência, avisos,
+    /// abrir arquivo ou link.
+    Desktop,
 }
 
 impl ToolGroup {
     /// Todas, na ordem em que aparecem nas preferências.
-    pub const ALL: [ToolGroup; 10] = [
+    pub const ALL: [ToolGroup; 11] = [
         ToolGroup::Files,
         ToolGroup::Terminal,
         ToolGroup::Code,
@@ -90,6 +93,7 @@ impl ToolGroup {
         ToolGroup::Project,
         ToolGroup::Plan,
         ToolGroup::Mcp,
+        ToolGroup::Desktop,
     ];
 
     /// Chave usada no i18n e nas preferências (`camelCase`).
@@ -105,6 +109,7 @@ impl ToolGroup {
             ToolGroup::Project => "project",
             ToolGroup::Plan => "plan",
             ToolGroup::Mcp => "mcp",
+            ToolGroup::Desktop => "desktop",
         }
     }
 

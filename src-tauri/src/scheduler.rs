@@ -205,7 +205,11 @@ async fn ensure_server(app: &AppHandle) -> Result<(), String> {
     }
 }
 
-/// Avisa a interface que uma automação terminou (a tela atualiza a lista).
+/// Avisa que uma automação terminou: a interface, para atualizar a lista, e a
+/// pessoa, por um aviso do sistema.
+///
+/// O aviso do sistema é o ponto da automação: ela roda quando ninguém está
+/// olhando a tela, então a notícia precisa sair da janela.
 fn notify(app: &AppHandle, task: &ScheduledTask, status: Option<RunStatus>) {
     let _ = app.emit(
         "automation",
@@ -215,4 +219,17 @@ fn notify(app: &AppHandle, task: &ScheduledTask, status: Option<RunStatus>) {
             "status": status,
         }),
     );
+    // Texto de gente: o aviso do sistema é a única coisa que a pessoa vai ler
+    // sobre esta execução se ela não abrir o app.
+    let corpo = match status {
+        Some(RunStatus::Done) => "Concluída.",
+        Some(RunStatus::Cancelled) => "Cancelada.",
+        Some(RunStatus::MaxSteps) => "Parou no limite de passos sem terminar.",
+        Some(RunStatus::Escalated) => "Parou no meio e precisa de você.",
+        Some(RunStatus::WaitingApproval) => "Está esperando você confirmar uma ação.",
+        Some(RunStatus::Error) | Some(RunStatus::Running) | None => {
+            "Não terminou — veja o motivo nas automações."
+        }
+    };
+    crate::desktop_host::notify(app, &task.name, corpo);
 }
