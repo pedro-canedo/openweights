@@ -252,9 +252,12 @@ fn server_prefs(state: &AppState) -> (u16, bool, Option<String>, u32) {
             .unwrap_or(DEFAULT_PORT),
         get("server_lan").as_deref() == Some("true"),
         get("server_api_key").filter(|v| !v.is_empty()),
+        // Um modelo por vez: o roteador descarrega o menos usado ao bater no
+        // teto, então 1 é literalmente "troque o modelo carregado". Com 2, o
+        // segundo modelo tentava caber junto do primeiro e a placa recusava.
         get("server_models_max")
             .and_then(|v| v.parse().ok())
-            .unwrap_or(2),
+            .unwrap_or(1),
     )
 }
 

@@ -47,6 +47,16 @@ pub enum EngineError {
     /// O servidor respondeu, mas com status de erro (corpo já resumido).
     #[error("HTTP {status} do engine: {body}")]
     Http { status: u16, body: String },
+    /// O roteador não conseguiu carregar o modelo pedido. Quase sempre é
+    /// memória de vídeo: outro modelo ocupando, ou o modelo grande demais
+    /// para a placa. Merece variante própria porque a saída é diferente de
+    /// qualquer outro erro HTTP.
+    #[error(
+        "não consegui carregar o modelo `{model}`. Em geral é memória de vídeo: \
+         feche o que estiver usando a GPU, escolha uma quantização menor ou \
+         reduza a janela de contexto do modelo"
+    )]
+    ModelLoad { model: String },
     /// Resposta bem-sucedida porém fora do formato esperado.
     #[error("resposta inesperada do engine: {0}")]
     Protocol(String),
@@ -60,6 +70,12 @@ pub struct ServerConfig {
     pub models_dir: PathBuf,
     pub host: String,
     pub port: u16,
+    /// Quantos modelos o roteador mantém carregados ao mesmo tempo.
+    ///
+    /// Um. Trocar de modelo no meio da conversa é o caso comum, e o segundo
+    /// não cabe na placa quando o primeiro ainda está lá — o roteador
+    /// descarrega o menos usado ao bater no teto, então o teto ser 1 é
+    /// exatamente "descarregue o anterior para carregar o novo".
     pub models_max: u32,
     pub api_key: Option<String>,
     /// Segundos de ociosidade até descarregar um modelo (0 = nunca).
@@ -77,7 +93,7 @@ impl ServerConfig {
             models_dir,
             host: "127.0.0.1".to_string(),
             port,
-            models_max: 2,
+            models_max: 1,
             api_key: None,
             sleep_idle_seconds: 0,
             extra_args: Vec::new(),
@@ -546,7 +562,9 @@ mod tests {
         assert!(joined.contains("--models-dir"));
         assert!(joined.contains("--host 127.0.0.1"));
         assert!(joined.contains("--port 8080"));
-        assert!(joined.contains("--models-max 2"));
+        // Um modelo por vez: trocar de modelo descarrega o anterior em vez
+        // de tentar caber os dois na placa.
+        assert!(joined.contains("--models-max 1"));
         assert!(joined.contains("--parallel 4"));
         // Router mode = SEM -m.
         assert!(!joined.contains(" -m "));

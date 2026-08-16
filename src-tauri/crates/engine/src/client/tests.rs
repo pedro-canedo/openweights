@@ -942,3 +942,23 @@ fn base_url_is_normalized() {
     assert_eq!(c.base_url(), "http://127.0.0.1:11711");
     assert_eq!(c.url("/props"), "http://127.0.0.1:11711/props");
 }
+
+/// O roteador recusa por memória com "failed to load". Repassar isso cru
+/// manda a pessoa procurar erro de rede quando o problema é a placa cheia.
+#[test]
+fn a_model_that_does_not_fit_is_recognized_as_such() {
+    assert_eq!(
+        failed_to_load("model name=Qwen3-27B-UD-Q2_K_XL.gguf failed to load"),
+        Some("Qwen3-27B-UD-Q2_K_XL.gguf".to_string())
+    );
+    // Sem o nome ainda é o mesmo problema.
+    assert_eq!(failed_to_load("failed to load"), Some("escolhido".into()));
+    assert_eq!(failed_to_load("context window exceeded"), None);
+
+    let erro = EngineError::ModelLoad {
+        model: "m.gguf".into(),
+    };
+    let texto = erro.to_string();
+    assert!(texto.contains("m.gguf"), "{texto}");
+    assert!(texto.contains("memória de vídeo"), "{texto}");
+}

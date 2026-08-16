@@ -115,7 +115,7 @@ function ServerConfig({ running }: { running: boolean }) {
   const [port, setPort] = useState("11711");
   const [lan, setLan] = useState(false);
   const [apiKey, setApiKey] = useState("");
-  const [modelsMax, setModelsMax] = useState("2");
+  const [modelsMax, setModelsMax] = useState("1");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -164,6 +164,11 @@ function ServerConfig({ running }: { running: boolean }) {
             onChange={(e) => setModelsMax(e.target.value)}
             className={`${input} mt-1`}
           />
+          {/* Sem esta frase o número parece "quantos você tem"; ele é quanto
+              a placa vai segurar ao mesmo tempo. */}
+          <p className="mt-1 text-[11px] leading-relaxed text-dim">
+            {t("server.modelsMaxHint")}
+          </p>
         </div>
         <div className="col-span-2">
           <div className={label}>{t("server.apiKey")}</div>
@@ -194,9 +199,7 @@ function ServerConfig({ running }: { running: boolean }) {
           {saved ? "✓" : t("common.save")}
         </button>
         {running && (
-          <span className="text-[11px] text-dim">
-            {t("server.stop")} → {t("server.start")} para aplicar.
-          </span>
+          <span className="text-[11px] text-warn">{t("server.applyHint")}</span>
         )}
       </div>
     </div>

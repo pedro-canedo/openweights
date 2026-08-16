@@ -293,7 +293,9 @@
     "logs": "Logs do servidor",
     "needRuntime": "Instale o motor de IA primeiro (isso acontece na primeira execução).",
     "exampleTitle": "Exemplo de uso",
-    "modelsLoaded": "Modelos carregados"
+    "modelsLoaded": "Modelos carregados",
+    "modelsMaxHint": "Com 1, trocar de modelo descarrega o anterior — é o que cabe na maioria das placas. Acima disso, os modelos ficam carregados juntos e podem não caber na memória de vídeo.",
+    "applyHint": "O motor está rodando: pare e inicie de novo para estes ajustes valerem."
   },
   "settings": {
     "title": "Configurações",

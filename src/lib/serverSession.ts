@@ -75,9 +75,15 @@ export function matchServerModel(wanted: string, ids: string[]): string {
   return hit ?? wanted;
 }
 
-/** Teto de modelos simultâneos do Router (`--models-max`; padrão 2). */
+/**
+ * Teto de modelos carregados ao mesmo tempo (`--models-max`; padrão 1).
+ *
+ * Um. Trocar de modelo é o caso comum, e o segundo não cabe na placa com o
+ * primeiro ainda lá — o roteador descarrega o menos usado ao bater no teto,
+ * então 1 significa "descarregue o anterior para carregar o novo".
+ */
 export async function modelsMax(): Promise<number> {
   const raw = await getSetting("server_models_max").catch(() => null);
-  const n = raw ? Number(raw) : 2;
-  return Number.isFinite(n) && n >= 1 ? n : 2;
+  const n = raw ? Number(raw) : 1;
+  return Number.isFinite(n) && n >= 1 ? n : 1;
 }

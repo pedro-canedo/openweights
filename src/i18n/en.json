@@ -293,7 +293,9 @@
     "logs": "Server logs",
     "needRuntime": "Install the AI engine first (happens on first run).",
     "exampleTitle": "Usage example",
-    "modelsLoaded": "Loaded models"
+    "modelsLoaded": "Loaded models",
+    "modelsMaxHint": "With 1, switching models unloads the previous one — what most GPUs can take. Above that, models stay loaded together and may not fit in video memory.",
+    "applyHint": "The engine is running: stop and start it again for these settings to apply."
   },
   "settings": {
     "title": "Settings",

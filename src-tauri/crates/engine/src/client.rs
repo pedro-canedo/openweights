@@ -931,10 +931,37 @@ async fn ensure_ok(res: &mut reqwest::Response) -> Result<(), EngineError> {
         .ok()
         .and_then(|v| error_message(&v));
     let body = parsed.unwrap_or(body);
+
+    // "model name=X failed to load" é o jeito do roteador dizer que não coube
+    // na placa. Repassar isso cru manda a pessoa procurar um erro de HTTP
+    // quando o problema é memória — e a saída é outra.
+    if let Some(model) = failed_to_load(&body) {
+        return Err(EngineError::ModelLoad { model });
+    }
+
     Err(EngineError::Http {
         status,
         body: body.chars().take(500).collect(),
     })
+}
+
+/// Extrai o nome do modelo de um "model name=X failed to load".
+fn failed_to_load(body: &str) -> Option<String> {
+    if !body.contains("failed to load") {
+        return None;
+    }
+    let nome = body
+        .split("name=")
+        .nth(1)
+        .map(|rest| {
+            rest.split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim_end_matches(&[',', '"', '\''][..])
+                .to_string()
+        })
+        .filter(|s| !s.is_empty());
+    Some(nome.unwrap_or_else(|| "escolhido".to_string()))
 }
 
 async fn read_json(res: reqwest::Response) -> Result<Value, EngineError> {
