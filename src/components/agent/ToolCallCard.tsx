@@ -29,9 +29,15 @@ export function toolTarget(call: ToolCallView): string {
   return "";
 }
 
-function StatusPill({ call }: { call: ToolCallView }) {
+function StatusPill({ call, stale }: { call: ToolCallView; stale: boolean }) {
   const { t } = useTranslation();
   const { state } = call;
+  // Run encerrado antes desta chamada resolver (cancelamento, limite de
+  // passos): "Aguardando confirmação" piscando para sempre seria mentira —
+  // a chamada simplesmente não teve desfecho.
+  if (stale && (state === "waiting" || state === "running")) {
+    return <span className="shrink-0 text-[11px] text-dim">—</span>;
+  }
   if (state === "waiting") {
     return (
       <span className="flex shrink-0 items-center gap-1 text-[11px] text-warn">
@@ -70,9 +76,12 @@ function StatusPill({ call }: { call: ToolCallView }) {
 export default function ToolCallCard({
   call,
   defaultOpen = false,
+  stale = false,
 }: {
   call: ToolCallView;
   defaultOpen?: boolean;
+  /** O run já terminou: chamadas sem desfecho param de "pulsar". */
+  stale?: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(defaultOpen);
@@ -117,7 +126,7 @@ export default function ToolCallCard({
               {t("agent.tool.duration", { ms: call.durationMs })}
             </span>
           )}
-          <StatusPill call={call} />
+          <StatusPill call={call} stale={stale} />
           <svg
             className={`h-3 w-3 text-dim transition-transform ${open ? "rotate-90" : ""}`}
             fill="none"

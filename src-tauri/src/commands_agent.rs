@@ -184,11 +184,9 @@ pub fn tool_permission_set(
         None => state
             .store
             .clear_tool_permission(scope, workspace_dir.as_deref(), &tool_name),
-        Some(p) => {
-            state
-                .store
-                .set_tool_permission(scope, workspace_dir.as_deref(), &tool_name, p)
-        }
+        Some(p) => state
+            .store
+            .set_tool_permission(scope, workspace_dir.as_deref(), &tool_name, p),
     }
     .map_err(err_str)
 }
@@ -226,18 +224,14 @@ pub async fn checkpoint_restore(
 
     let store_dir = state.data_dir.clone();
     let workspace = std::path::PathBuf::from(&row.workspace_dir);
-    let cp = lr_checkpoint::Checkpoint {
-        id: row.id,
-        backend: row.backend,
-        ref_id: row.ref_id,
-        label: row.label.unwrap_or_default(),
-        files: Vec::new(),
-    };
 
-    // E/S de disco fora do runtime assíncrono.
+    // E/S de disco fora do runtime assíncrono. `checkpoint_from_row`
+    // reconstrói a lista de arquivos a partir do manifesto — sem ela a
+    // restauração por cópia não teria o que devolver.
     tokio::task::spawn_blocking(move || {
-        let engine = lr_checkpoint::engine_for(&workspace, &store_dir).map_err(err_str)?;
-        engine.restore(&cp).map_err(err_str)
+        let cp =
+            lr_agent::checkpoint_from_row(&row.id, &row.backend, &row.ref_id, row.label.as_deref());
+        lr_agent::restore_blocking(&workspace, &store_dir, &cp).map_err(err_str)
     })
     .await
     .map_err(err_str)?
@@ -245,11 +239,7 @@ pub async fn checkpoint_restore(
 
 /// Lembra qual modelo a conversa estava usando (o seletor troca no meio).
 #[tauri::command]
-pub fn chat_set_model(
-    state: State<'_, AppState>,
-    chat_id: i64,
-    model_id: String,
-) -> CmdResult<()> {
+pub fn chat_set_model(state: State<'_, AppState>, chat_id: i64, model_id: String) -> CmdResult<()> {
     state
         .store
         .set_chat_model(chat_id, &model_id)

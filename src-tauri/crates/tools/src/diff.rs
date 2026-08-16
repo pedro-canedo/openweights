@@ -64,9 +64,7 @@ fn truncate_diff(text: &str) -> String {
 
     let shown = head.lines().count();
     let total = text.lines().count();
-    format!(
-        "{head}[...diff cortado: mostrando {shown} de {total} linhas...]\n"
-    )
+    format!("{head}[...diff cortado: mostrando {shown} de {total} linhas...]\n")
 }
 
 #[cfg(test)]
@@ -119,7 +117,9 @@ mod tests {
     #[test]
     fn long_diff_is_truncated_with_a_notice() {
         let before = String::new();
-        let after: String = (0..5_000).map(|i| format!("linha de teste {i}\n")).collect();
+        let after: String = (0..5_000)
+            .map(|i| format!("linha de teste {i}\n"))
+            .collect();
         let d = unified("grande.txt", &before, &after);
         assert!(d.len() <= MAX_DIFF_CHARS + 200, "tamanho: {}", d.len());
         assert!(d.contains("diff cortado"), "deveria avisar do corte");
@@ -128,7 +128,9 @@ mod tests {
 
     #[test]
     fn truncation_keeps_utf8_valid() {
-        let after: String = (0..5_000).map(|i| format!("çãõé acentuado {i}\n")).collect();
+        let after: String = (0..5_000)
+            .map(|i| format!("çãõé acentuado {i}\n"))
+            .collect();
         let d = unified("acentos.txt", "", &after);
         assert!(std::str::from_utf8(d.as_bytes()).is_ok());
     }

@@ -16,6 +16,9 @@ pub const DEFAULT_ERROR_LIMIT: u32 = 3;
 /// Chamadas idênticas seguidas até tratar como laço.
 pub const DEFAULT_REPEAT_LIMIT: u32 = 3;
 /// Fração da janela de contexto que dispara a compactação.
+/// O valor efetivo vem de `AgentConfig::context_ratio`; este é o padrão
+/// documentado para quem configurar o host.
+#[allow(dead_code)]
 pub const DEFAULT_CONTEXT_RATIO: f32 = 0.8;
 
 // -------------------------------------------------------------- passos ---
@@ -45,6 +48,8 @@ impl StepBudget {
         Some(self.used)
     }
 
+    /// Passos já consumidos (telemetria e testes).
+    #[allow(dead_code)]
     pub fn used(&self) -> u32 {
         self.used
     }
@@ -87,6 +92,8 @@ impl ErrorStreak {
         self.count = 0;
     }
 
+    /// Erros seguidos acumulados (telemetria e testes).
+    #[allow(dead_code)]
     pub fn count(&self) -> u32 {
         self.count
     }
@@ -163,9 +170,7 @@ impl RepeatDetector {
     }
 
     pub fn escalation_message(tool: &str) -> String {
-        format!(
-            "O agente insistiu na mesma chamada de `{tool}` e parou para você decidir."
-        )
+        format!("O agente insistiu na mesma chamada de `{tool}` e parou para você decidir.")
     }
 }
 
@@ -190,7 +195,11 @@ fn canonical_json(v: &Value) -> String {
             format!("{{{body}}}")
         }
         Value::Array(items) => {
-            let body = items.iter().map(canonical_json).collect::<Vec<_>>().join(",");
+            let body = items
+                .iter()
+                .map(canonical_json)
+                .collect::<Vec<_>>()
+                .join(",");
             format!("[{body}]")
         }
         Value::String(s) => format!("{s:?}"),
@@ -217,8 +226,12 @@ impl ReadLedger {
             return None;
         }
         let path = args.get("path").and_then(Value::as_str)?;
-        // Uma leitura parcial não substitui a anterior.
-        let range = match (args.get("offset"), args.get("limit")) {
+        // Uma leitura parcial não substitui a anterior. O schema de `fs_read`
+        // usa `offset_lines`/`max_lines`, mas modelos pequenos costumam
+        // mandar `offset`/`limit` — as duas grafias contam como a mesma faixa.
+        let offset = args.get("offset_lines").or_else(|| args.get("offset"));
+        let limit = args.get("max_lines").or_else(|| args.get("limit"));
+        let range = match (offset, limit) {
             (None, None) => String::new(),
             (a, b) => format!(
                 "#{}..{}",
@@ -471,8 +484,8 @@ mod tests {
         // Ferramenta que não é leitura de arquivo fica fora do mecanismo.
         assert!(ReadLedger::key_for("terminal_run", &json!({"command": "ls"})).is_none());
         // Trecho diferente do mesmo arquivo é outra leitura.
-        let partial = ReadLedger::key_for("fs_read", &json!({"path": "src/main.rs", "offset": 100}))
-            .unwrap();
+        let partial =
+            ReadLedger::key_for("fs_read", &json!({"path": "src/main.rs", "offset": 100})).unwrap();
         assert_ne!(key, partial);
         assert!(ReadLedger::duplicate_message("src/main.rs", 2).contains("passo 2"));
     }
@@ -533,7 +546,9 @@ mod tests {
             "a cauda não pode começar num resultado órfão"
         );
         assert!(
-            plan.tail.iter().any(|m| m.text() == "agora faça outra coisa"),
+            plan.tail
+                .iter()
+                .any(|m| m.text() == "agora faça outra coisa"),
             "a última mensagem da pessoa fica"
         );
 

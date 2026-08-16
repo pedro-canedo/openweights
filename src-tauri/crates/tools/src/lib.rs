@@ -24,6 +24,7 @@ pub mod spawner;
 pub mod terminal;
 pub mod todo;
 
+pub use fs::builtin_registry;
 pub use registry::{ToolProvider, ToolRegistry};
 
 #[derive(Debug, thiserror::Error)]
@@ -58,9 +59,9 @@ impl ToolError {
             ToolError::NotFound(p) => {
                 format!("`{p}` não existe. Liste a pasta antes para conferir o caminho.")
             }
-            ToolError::Timeout(s) => format!(
-                "A operação passou de {s}s e foi interrompida. Tente algo mais específico."
-            ),
+            ToolError::Timeout(s) => {
+                format!("A operação passou de {s}s e foi interrompida. Tente algo mais específico.")
+            }
             other => other.to_string(),
         }
     }
@@ -288,7 +289,12 @@ mod tests {
     #[test]
     fn resolve_rejects_escapes() {
         let dir = tempfile::tempdir().unwrap();
-        for bad in ["../fora.txt", "a/../../fora.txt", "/etc/passwd", r"C:\Windows"] {
+        for bad in [
+            "../fora.txt",
+            "a/../../fora.txt",
+            "/etc/passwd",
+            r"C:\Windows",
+        ] {
             assert!(
                 resolve_under(dir.path(), bad).is_err(),
                 "deveria recusar: {bad}"
@@ -317,6 +323,9 @@ mod tests {
     fn error_messages_guide_the_model() {
         let msg = ToolError::NotFound("a.txt".into()).to_model_message();
         assert!(msg.contains("a.txt"));
-        assert!(msg.contains("Liste a pasta"), "deve sugerir o próximo passo");
+        assert!(
+            msg.contains("Liste a pasta"),
+            "deve sugerir o próximo passo"
+        );
     }
 }

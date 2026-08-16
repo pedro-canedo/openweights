@@ -103,9 +103,8 @@ impl ToolRunner {
 
         // Ferramenta inexistente: erro acionável, sem passar pela política.
         let Some(spec) = self.registry.spec_of(&name).await else {
-            let message = format!(
-                "A ferramenta `{name}` não existe. Use apenas as ferramentas listadas."
-            );
+            let message =
+                format!("A ferramenta `{name}` não existe. Use apenas as ferramentas listadas.");
             self.trace_rejection(step_id, &call_id, &name, &tc.arguments_json, None, &message);
             return self.record_failure(&call_id, &name, message);
         };
@@ -330,13 +329,9 @@ impl ToolRunner {
                     "changedFiles": out.changed_files,
                 })
                 .to_string();
-                let _ = self.store.finish_tool_call(
-                    call_id,
-                    true,
-                    &result_json,
-                    out.bytes_total,
-                    None,
-                );
+                let _ =
+                    self.store
+                        .finish_tool_call(call_id, true, &result_json, out.bytes_total, None);
 
                 self.errors.record_success();
                 if let Some(key) = read_key {
@@ -456,9 +451,9 @@ impl ToolRunner {
                     ),
                 }
             }
-            ApprovalDecision::Deny { reason } => Ask::Denied(
-                reason.unwrap_or_else(|| "A pessoa recusou esta ação.".to_string()),
-            ),
+            ApprovalDecision::Deny { reason } => {
+                Ask::Denied(reason.unwrap_or_else(|| "A pessoa recusou esta ação.".to_string()))
+            }
             ApprovalDecision::DenyAlways { scope } => {
                 self.remember(name, scope, ToolPolicy::Never);
                 Ask::Denied(format!(
@@ -475,10 +470,7 @@ impl ToolRunner {
             PolicyScope::Workspace => workspace.as_deref(),
             PolicyScope::Global => None,
         };
-        if let Err(e) = self
-            .store
-            .set_tool_permission(scope, dir, tool, policy)
-        {
+        if let Err(e) = self.store.set_tool_permission(scope, dir, tool, policy) {
             log::warn!("não consegui guardar a permissão de `{tool}`: {e}");
         }
         self.overrides.retain(|o| o.tool_name != tool);
@@ -505,14 +497,9 @@ impl ToolRunner {
         let _ = self
             .store
             .finish_tool_call(call_id, false, "", 0, Some(reason));
-        let _ = self.store.log_approval(
-            &self.run_id,
-            call_id,
-            name,
-            "deny",
-            source,
-            "",
-        );
+        let _ = self
+            .store
+            .log_approval(&self.run_id, call_id, name, "deny", source, "");
         CallFlow::Result(ChatMessage::tool_result(
             call_id,
             name,
@@ -658,10 +645,7 @@ impl ToolRunner {
 
 /// Resultado da conversa com a pessoa sobre uma chamada.
 enum Ask {
-    Approved {
-        source: ApprovalSource,
-        args: Value,
-    },
+    Approved { source: ApprovalSource, args: Value },
     Denied(String),
     Cancelled,
 }
@@ -928,7 +912,8 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
 
     // Verificação barata do que ficou em disco.
     if status == RunStatus::Done
-        && let Some(report) = verify::verify(workspace.as_deref(), &runner.written, &runner.commands)
+        && let Some(report) =
+            verify::verify(workspace.as_deref(), &runner.written, &runner.commands)
     {
         sink.emit(RunEventKind::Verification {
             passed: report.passed,

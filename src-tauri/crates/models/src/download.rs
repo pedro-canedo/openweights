@@ -178,7 +178,11 @@ struct IncompleteRecord {
     files: Vec<RepoFile>,
 }
 
-fn owdl_path(models_dir: &Path, repo_id: &str, artifact_name: &str) -> Result<PathBuf, ModelsError> {
+fn owdl_path(
+    models_dir: &Path,
+    repo_id: &str,
+    artifact_name: &str,
+) -> Result<PathBuf, ModelsError> {
     Ok(append_suffix(
         &dest_path(models_dir, repo_id, artifact_name)?,
         ".owdl.json",
@@ -297,12 +301,7 @@ fn recover_jobs(models_dir: &Path) -> BTreeMap<String, Job> {
     jobs
 }
 
-fn recover_dir(
-    models_dir: &Path,
-    dir: &Path,
-    repo_id: &str,
-    jobs: &mut BTreeMap<String, Job>,
-) {
+fn recover_dir(models_dir: &Path, dir: &Path, repo_id: &str, jobs: &mut BTreeMap<String, Job>) {
     if repo_id.is_empty() {
         return;
     }
@@ -331,10 +330,10 @@ fn recover_dir(
                 }
                 jobs.insert(job.status.id.clone(), job);
             }
-        } else if let Some(dest) = name.strip_suffix(".part") {
-            if dest.ends_with(".gguf") {
-                orphans.push(dest.to_string());
-            }
+        } else if let Some(dest) = name.strip_suffix(".part")
+            && dest.ends_with(".gguf")
+        {
+            orphans.push(dest.to_string());
         }
     }
 
@@ -578,11 +577,7 @@ impl DownloadManager {
     }
 
     /// Revalida (etag) e continua com `Range` de onde o `.part` parou.
-    pub async fn resume(
-        &self,
-        id: &str,
-        token: Option<String>,
-    ) -> Result<(), ModelsError> {
+    pub async fn resume(&self, id: &str, token: Option<String>) -> Result<(), ModelsError> {
         {
             let mut jobs = self.inner.jobs.lock().await;
             let Some(job) = jobs.get_mut(id) else {
@@ -1107,10 +1102,10 @@ mod tests {
                 .await
                 .expect("timeout esperando eventos")
                 .expect("canal fechado");
-            if let DownloadEvent::Update { status } = ev {
-                if matches!(status.state, DownloadState::Done | DownloadState::Error) {
-                    return status;
-                }
+            if let DownloadEvent::Update { status } = ev
+                && matches!(status.state, DownloadState::Done | DownloadState::Error)
+            {
+                return status;
             }
         }
     }

@@ -44,7 +44,12 @@ pub fn snapshot_blocking(
 /// A lista de arquivos não volta na linha do banco; no backend de cópia ela
 /// está no manifesto dentro da própria pasta do snapshot (no git ela não é
 /// usada).
-pub fn checkpoint_from_row(id: &str, backend: &str, ref_id: &str, label: Option<&str>) -> Checkpoint {
+pub fn checkpoint_from_row(
+    id: &str,
+    backend: &str,
+    ref_id: &str,
+    label: Option<&str>,
+) -> Checkpoint {
     let files = if backend == "copy" {
         std::fs::read_to_string(Path::new(ref_id).join(COPY_MANIFEST))
             .ok()

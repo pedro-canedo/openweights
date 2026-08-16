@@ -222,7 +222,16 @@ function RunItems({
         if (item.kind === "tool") {
           const call = run.tools[item.id];
           if (!call) return null;
-          return <ToolCallCard key={item.id} call={call} />;
+          return (
+            <ToolCallCard
+              key={item.id}
+              call={call}
+              // No chat, comando já nasce aberto: a saída chega em streaming
+              // e ficaria escondida atrás de um clique.
+              defaultOpen={!compact && call.category === "execute"}
+              stale={!active}
+            />
+          );
         }
         if (item.kind === "checkpoint") {
           return (

@@ -226,19 +226,24 @@ function AgentBar({
   workspaceDir,
   startError,
   onDismissError,
+  showTrace,
+  onOpenTrace,
 }: {
   run: RunView | undefined;
   mode: RunMode;
   workspaceDir: string | null;
   startError: string | null;
   onDismissError: () => void;
+  /** Há um run encerrado cuja trilha ainda pode ser aberta no painel. */
+  showTrace: boolean;
+  onOpenTrace: () => void;
 }) {
   const { t } = useTranslation();
   const { openExplorer } = useWorkspacePanel();
   const focusMd = run?.focusMd ?? "";
   const yolo = mode === "yolo";
 
-  if (!yolo && !focusMd && !startError) return null;
+  if (!yolo && !focusMd && !startError && !showTrace) return null;
 
   return (
     <div className="px-6">
@@ -251,6 +256,15 @@ function AgentBar({
           />
         )}
         {focusMd && <FocusChip todoMd={focusMd} />}
+        {showTrace && (
+          <button
+            type="button"
+            onClick={onOpenTrace}
+            className="rounded-full border border-edge bg-panel px-2 py-1 text-[11px] text-dim transition-colors hover:text-ink"
+          >
+            {t("agent.run.showTrace")}
+          </button>
+        )}
         {startError && (
           <button
             type="button"
@@ -553,6 +567,17 @@ export default function Chat() {
     setParamsOpen(false);
   };
 
+  /**
+   * Tira do fluxo a trilha de um run já encerrado (cancelado, com erro, no
+   * limite de passos). Sem isso ela ficaria pendurada DEPOIS das mensagens
+   * novas, fora de ordem — a execução inteira continua no painel.
+   */
+  const parkFinishedRun = (chatId: number) => {
+    if (!run || activeChatId !== chatId || isRunActive(run.status)) return;
+    setLastTrace({ chatId, runId: run.runId });
+    runStore.dismiss(chatId);
+  };
+
   const displayMessages: UiMessage[] = (() => {
     if (!job) return messages;
     // Manter o overlay também em done/error até o dismiss: senão a bolha
@@ -789,6 +814,7 @@ export default function Chat() {
       }
 
       if (chatId == null) return;
+      parkFinishedRun(chatId);
       if (agentOn) {
         // O laço do agente monta o próprio histórico a partir do banco (a
         // mensagem acima já está gravada); aqui só entregamos o pedido.
@@ -846,6 +872,7 @@ export default function Chat() {
       }
       if (convEpochRef.current === epoch) setMessages(history);
       if (!canPersistId(chatId)) return;
+      parkFinishedRun(chatId);
       generationStore.start({
         chatId,
         messages: toApiMessages(history),
@@ -1023,6 +1050,8 @@ export default function Chat() {
                       activeChatId != null &&
                       runStore.clearStartError(activeChatId)
                     }
+                    showTrace={traceRunId != null && !traceOpen}
+                    onOpenTrace={openTrace}
                   />
                 )}
 

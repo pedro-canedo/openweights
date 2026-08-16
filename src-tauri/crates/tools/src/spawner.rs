@@ -510,7 +510,9 @@ mod tests {
     async fn timeout_kills_the_process() {
         let started = std::time::Instant::now();
         let cmd = line("sleep 30", "ping -n 30 127.0.0.1 >nul");
-        let out = run(sh(&cmd), |_| {}).await.unwrap();
+        // 1s de teto: o teste mede que o processo MORRE no tempo pedido, não
+        // quanto tempo o padrão espera.
+        let out = run(sh(&cmd).with_timeout(1), |_| {}).await.unwrap();
         assert!(out.timed_out, "deveria estourar o tempo");
         assert!(
             started.elapsed() < Duration::from_secs(10),

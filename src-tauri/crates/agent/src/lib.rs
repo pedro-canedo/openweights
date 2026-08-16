@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::{Notify, oneshot};
 
+pub use checkpoint::{checkpoint_from_row, restore_blocking};
 pub use events::{EventCallback, EventSink, now_ms};
 pub use prompt::{PromptContext, build_system_prompt};
 pub use run::{append_prompt, history_from_messages};
@@ -104,7 +105,10 @@ impl RunHandle {
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
         self.cancel.notify_waiters();
-        self.pending.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.pending
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     /// Future que completa quando o run é cancelado.

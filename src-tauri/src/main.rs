@@ -5,9 +5,9 @@ mod commands;
 mod commands_agent;
 mod state;
 mod telemetry;
-mod workspace;
 #[cfg(windows)]
 mod webview_perm;
+mod workspace;
 
 use tauri::{Emitter, Manager};
 

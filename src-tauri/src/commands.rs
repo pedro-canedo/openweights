@@ -388,7 +388,9 @@ pub async fn server_start(
         let mut srv = lr_engine::LlamaServer::new(cfg);
         srv.spawn().map_err(err_str)?;
         if let Some(pid) = srv.pid() {
-            state.server_pid.store(pid, std::sync::atomic::Ordering::SeqCst);
+            state
+                .server_pid
+                .store(pid, std::sync::atomic::Ordering::SeqCst);
         }
 
         // Logs do processo → evento `server-log` (baixa frequência, IPC ok).
@@ -544,7 +546,10 @@ pub fn model_set_ctx(
         }
     };
     let raw = serde_json::to_string(&map).map_err(err_str)?;
-    state.store.set_setting(MODEL_CTX_SETTING, &raw).map_err(err_str)?;
+    state
+        .store
+        .set_setting(MODEL_CTX_SETTING, &raw)
+        .map_err(err_str)?;
     write_router_preset(&state)?;
     Ok(stored)
 }

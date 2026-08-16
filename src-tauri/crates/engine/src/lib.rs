@@ -428,9 +428,7 @@ fn spawn_llama(cmd: &mut Command) -> Result<Child, EngineError> {
         match cmd.spawn() {
             Ok(child) => Ok(child),
             Err(e) if breakaway && e.raw_os_error() == Some(5) => {
-                log::warn!(
-                    "llama-server: BREAKAWAY_FROM_JOB negado ({e}); tentando sem breakaway"
-                );
+                log::warn!("llama-server: BREAKAWAY_FROM_JOB negado ({e}); tentando sem breakaway");
                 cmd.creation_flags(CREATE_NO_WINDOW);
                 Ok(cmd.spawn()?)
             }
@@ -502,15 +500,14 @@ mod windows_job {
     /// no job do processo atual. Sem isso o Windows devolve ACCESS_DENIED.
     pub fn parent_allows_breakaway() -> bool {
         use windows::Win32::System::JobObjects::{
-            IsProcessInJob, JobObjectExtendedLimitInformation, QueryInformationJobObject,
-            JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            IsProcessInJob, JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JobObjectExtendedLimitInformation, QueryInformationJobObject,
         };
         use windows::Win32::System::Threading::GetCurrentProcess;
 
         unsafe {
             let mut in_job = windows::core::BOOL::default();
-            if IsProcessInJob(GetCurrentProcess(), None, &mut in_job).is_err()
-                || !in_job.as_bool()
+            if IsProcessInJob(GetCurrentProcess(), None, &mut in_job).is_err() || !in_job.as_bool()
             {
                 return false;
             }

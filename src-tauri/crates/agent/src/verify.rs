@@ -100,7 +100,12 @@ pub fn verify(
 /// As ferramentas de terminal costumam terminar o texto com uma linha do tipo
 /// `[código de saída: 1]`; sem essa marca, devolve `None` (nada de adivinhar).
 pub fn extract_exit_code(text: &str) -> Option<i32> {
-    const MARKERS: &[&str] = &["código de saída", "codigo de saida", "exit code", "exit status"];
+    const MARKERS: &[&str] = &[
+        "código de saída",
+        "codigo de saida",
+        "exit code",
+        "exit status",
+    ];
     let lower = text.to_lowercase();
     let marker = MARKERS
         .iter()
@@ -128,12 +133,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("notas.md"), "oi").unwrap();
 
-        let ok = verify(
-            Some(dir.path()),
-            &["notas.md".to_string()],
-            &[],
-        )
-        .unwrap();
+        let ok = verify(Some(dir.path()), &["notas.md".to_string()], &[]).unwrap();
         assert!(ok.passed);
         assert!(ok.notes.contains("conferido"));
 
