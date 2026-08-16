@@ -2547,6 +2547,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "lr_codetools"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "ignore",
+ "log",
+ "lr_policy",
+ "lr_tools",
+ "lr_types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "lr_datatools"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "log",
+ "lr_tools",
+ "lr_types",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "lr_engine"
 version = "0.1.0"
 dependencies = [
@@ -2561,6 +2591,19 @@ dependencies = [
  "tokio",
  "win32job",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "lr_gittools"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "log",
+ "lr_tools",
+ "lr_types",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -2710,6 +2753,21 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lr_webtools"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "log",
+ "lr_tools",
+ "lr_types",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -3157,7 +3215,10 @@ dependencies = [
  "lr_advisor",
  "lr_agent",
  "lr_checkpoint",
+ "lr_codetools",
+ "lr_datatools",
  "lr_engine",
+ "lr_gittools",
  "lr_hw",
  "lr_mcp",
  "lr_memory",
@@ -3168,6 +3229,7 @@ dependencies = [
  "lr_store",
  "lr_tools",
  "lr_types",
+ "lr_webtools",
  "rfd",
  "serde",
  "serde_json",

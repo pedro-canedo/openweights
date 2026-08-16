@@ -1,0 +1,17 @@
+[package]
+name = "lr_gittools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ferramentas de Git do agente: status, diff, log, branch, add, commit, restore e stash"
+
+[dependencies]
+lr_types.workspace = true
+lr_tools = { path = "../tools" }
+serde_json.workspace = true
+log.workspace = true
+tokio.workspace = true
+async-trait = "0.1"
+
+[dev-dependencies]
+tempfile = "3"

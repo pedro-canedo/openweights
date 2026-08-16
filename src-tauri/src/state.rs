@@ -204,5 +204,22 @@ fn build_tool_registry(
     for tool in lr_rag::rag_tools(rag.clone()) {
         registry.register(tool);
     }
+    // Rodar o que escreve, versionar e analisar dados: sem isso o agente
+    // edita no escuro.
+    lr_codetools::register_all(&mut registry);
+    for tool in lr_gittools::git_tools() {
+        registry.register(tool);
+    }
+    for tool in lr_datatools::data_tools() {
+        registry.register(tool);
+    }
+    // Internet: a configuração da busca (provedor e chave) fica nas
+    // preferências; sem chave, o padrão não exige nenhuma.
+    let web_cfg = Arc::new(lr_webtools::WebConfig::from_json_or_default(
+        store.get_setting("web.config").ok().flatten().as_deref(),
+    ));
+    for tool in lr_webtools::web_tools(web_cfg) {
+        registry.register(tool);
+    }
     Ok(Arc::new(registry))
 }

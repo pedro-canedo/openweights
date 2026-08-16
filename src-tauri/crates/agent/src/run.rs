@@ -254,10 +254,18 @@ impl ToolRunner {
             .map(|t| t.within_workspace(&args, &ctx))
             .unwrap_or(true);
 
+        // A mesma ferramenta pode ser leitura ou escrita conforme o pedido
+        // (`sql_query` consulta por padrão e altera com permissão explícita).
+        // Quem sabe disso são os argumentos, não o catálogo.
+        let category = builtin
+            .as_ref()
+            .map(|t| t.category_for(&args))
+            .unwrap_or(spec.category);
+
         // `terminal_run` e afins: a classificação do comando é o que faz o
         // modo automático continuar pedindo confirmação para o que não dá
         // para analisar.
-        let command_text = (spec.category == ToolCategory::Execute)
+        let command_text = (category == ToolCategory::Execute)
             .then(|| {
                 args.get("command")
                     .or_else(|| args.get("cmd"))
@@ -267,9 +275,15 @@ impl ToolRunner {
             .flatten();
         let analysis = command_text.as_deref().map(classify);
 
-        let mut request = ToolRequest::new(&name, spec.category);
+        let mut request = ToolRequest::new(&name, category);
         if !within {
             request = request.outside_workspace();
+        }
+        // Chamada mais pesada que o feitio da ferramenta: o "sempre permitir"
+        // não vale para ela.
+        if category != spec.category && !matches!(category, ToolCategory::Read | ToolCategory::Meta)
+        {
+            request = request.escalated();
         }
         if let Some(a) = &analysis {
             request = request.with_command(a.class);
@@ -289,7 +303,7 @@ impl ToolRunner {
             call_id: call_id.clone(),
             tool: name.clone(),
             origin: spec.origin.clone(),
-            category: spec.category,
+            category,
             tier: spec.tier,
             args_json: args_json.clone(),
             preview,
@@ -326,12 +340,19 @@ impl ToolRunner {
         let _ = source;
 
         // Foto antes da primeira alteração — depois de aprovada, antes de rodar.
-        if !self.checkpoint_done && PolicyEngine::needs_checkpoint(&request) {
+        //
+        // A categoria é o critério principal, mas uma ferramenta que declara
+        // arquivos em risco também merece a foto mesmo sendo de outra
+        // categoria: `web_download` é de rede e sobrescreve arquivo do
+        // projeto. Quem sabe o que vai mudar é a própria ferramenta.
+        if !self.checkpoint_done {
             let files = builtin
                 .as_ref()
                 .map(|t| t.files_at_risk(&args, &ctx))
                 .unwrap_or_default();
-            self.take_checkpoint(&name, files).await;
+            if PolicyEngine::needs_checkpoint(&request) || !files.is_empty() {
+                self.take_checkpoint(&name, files).await;
+            }
         }
 
         self.execute(&name, &call_id, args, read_key, step_index, analysis)

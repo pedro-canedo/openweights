@@ -63,6 +63,10 @@ lr_agent = { path = "crates/agent" }
 lr_mcp = { path = "crates/mcp" }
 lr_memory = { path = "crates/memory" }
 lr_rag = { path = "crates/rag" }
+lr_webtools = { path = "crates/webtools" }
+lr_codetools = { path = "crates/codetools" }
+lr_gittools = { path = "crates/gittools" }
+lr_datatools = { path = "crates/datatools" }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"

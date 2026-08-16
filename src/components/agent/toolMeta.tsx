@@ -17,6 +17,38 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   todo_update: "todoUpdate",
   memory_save: "memorySave",
   workspace_search: "workspaceSearch",
+  // Internet
+  web_search: "webSearch",
+  web_fetch: "webFetch",
+  web_download: "webDownload",
+  http_request: "httpRequest",
+  // Código
+  project_info: "projectInfo",
+  build_run: "buildRun",
+  test_run: "testRun",
+  lint_run: "lintRun",
+  format_run: "formatRun",
+  code_run: "codeRun",
+  // Git
+  git_status: "gitStatus",
+  git_diff: "gitDiff",
+  git_log: "gitLog",
+  git_add: "gitAdd",
+  git_commit: "gitCommit",
+  git_branch: "gitBranch",
+  git_stash: "gitStash",
+  git_restore: "gitRestore",
+  // Dados
+  csv_preview: "csvPreview",
+  csv_query: "csvQuery",
+  data_summary: "dataSummary",
+  sql_query: "sqlQuery",
+  sql_schema: "sqlSchema",
+  // Plano e conversa
+  plan_create: "planCreate",
+  plan_update: "planUpdate",
+  task_complete: "taskComplete",
+  ask_user: "askUser",
 };
 
 /**

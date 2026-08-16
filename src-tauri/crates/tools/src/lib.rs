@@ -210,6 +210,16 @@ pub trait Tool: Send + Sync {
 
     fn category(&self) -> ToolCategory;
 
+    /// Categoria desta chamada específica.
+    ///
+    /// A mesma ferramenta pode ser leitura ou escrita conforme os
+    /// argumentos — `sql_query` consulta por padrão e altera quando recebe
+    /// permissão explícita. O laço usa esta versão para decidir se pede
+    /// confirmação, então é ela que precisa dizer a verdade.
+    fn category_for(&self, _args: &Value) -> ToolCategory {
+        self.category()
+    }
+
     fn tier(&self) -> ToolTier {
         match self.category() {
             ToolCategory::Read | ToolCategory::Meta => ToolTier::Safe,

@@ -1,0 +1,24 @@
+[package]
+name = "lr_codetools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ferramentas de código do agente: detectar o projeto, rodar testes, lint, formatação e build"
+
+[dependencies]
+lr_types.workspace = true
+lr_tools = { path = "../tools" }
+lr_policy = { path = "../policy" }
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+async-trait = "0.1"
+# Varredura de arquivos respeitando .gitignore — usada só no plano B de
+# `files_at_risk`, quando o formatador não pôde dizer o que vai mudar.
+ignore = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+# Só a suíte precisa de runtime próprio (`#[tokio::test]`): a biblioteca é
+# assíncrona mas não chama nada do tokio direto — quem faz isso é o spawner.
+tokio.workspace = true

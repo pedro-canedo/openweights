@@ -47,6 +47,11 @@ pub struct ToolRequest {
     pub within_workspace: bool,
     /// Presente apenas para `terminal_run`.
     pub command_class: Option<CommandClass>,
+    /// Esta chamada é mais sensível do que o uso normal da ferramenta.
+    /// `sql_query` consulta por padrão, mas altera o banco quando recebe
+    /// `allow_write` — quem marcou "sempre permitir" vendo consultas não
+    /// concordou com isso.
+    pub escalated: bool,
 }
 
 impl ToolRequest {
@@ -56,6 +61,7 @@ impl ToolRequest {
             category,
             within_workspace: true,
             command_class: None,
+            escalated: false,
         }
     }
 
@@ -66,6 +72,11 @@ impl ToolRequest {
 
     pub fn with_command(mut self, class: CommandClass) -> Self {
         self.command_class = Some(class);
+        self
+    }
+
+    pub fn escalated(mut self) -> Self {
+        self.escalated = true;
         self
     }
 }
@@ -136,7 +147,13 @@ impl PolicyEngine {
         }
 
         // (4) "Sempre permitir" do usuário, uma vez passados os itens acima.
-        if ovr == Some(ToolPolicy::AlwaysAllow) {
+        //
+        // Uma chamada fora do feitio da ferramenta descarta esse consentimento
+        // e cai na matriz: quem liberou `sql_query` vendo consultas não
+        // liberou apagar a tabela. Na matriz o modo automático ainda passa —
+        // lá a foto do checkpoint é garantida, e foi isso que a pessoa
+        // escolheu.
+        if ovr == Some(ToolPolicy::AlwaysAllow) && !req.escalated {
             return Decision::Allow {
                 source: ApprovalSource::Policy,
             };
@@ -256,6 +273,29 @@ mod tests {
             e.decide(&exec(CommandClass::Mutating), RunMode::Smart)
                 .is_allow()
         );
+    }
+
+    /// "Sempre permitir" foi dado vendo consultas; a mesma ferramenta pedindo
+    /// para ALTERAR o banco é outra conversa e volta a perguntar.
+    #[test]
+    fn an_escalated_call_ignores_always_allow() {
+        let e = PolicyEngine::new(vec![PermissionOverride {
+            tool_name: "sql_query".into(),
+            policy: ToolPolicy::AlwaysAllow,
+            scope: PolicyScope::Global,
+        }]);
+        let consulta = ToolRequest::new("sql_query", ToolCategory::Read);
+        let escrita = ToolRequest::new("sql_query", ToolCategory::Edit).escalated();
+
+        assert!(e.decide(&consulta, RunMode::Smart).is_allow());
+        assert!(matches!(
+            e.decide(&escrita, RunMode::Smart),
+            Decision::Ask { .. }
+        ));
+        // No modo automático segue liberado — lá a foto do checkpoint é
+        // garantida, e foi isso que a pessoa escolheu.
+        assert!(e.decide(&escrita, RunMode::Yolo).is_allow());
+        assert!(PolicyEngine::needs_checkpoint(&escrita));
     }
 
     #[test]
