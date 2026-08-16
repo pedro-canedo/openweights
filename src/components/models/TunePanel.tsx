@@ -60,7 +60,7 @@ function OptionCard({
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
-      className={`flex flex-1 flex-col items-start gap-1 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+      className={`flex min-w-0 flex-col items-start gap-1 rounded-xl border px-3 py-2.5 text-left transition-colors ${
         selected
           ? "border-accent bg-accent/10"
           : "border-edge hover:border-accent/60"
@@ -227,10 +227,13 @@ export default function TunePanel({
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-edge bg-panel2 p-3">
-      <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 text-[12px] font-medium text-ink">
+    <div className="rounded-xl border border-accent/40 bg-panel2 p-4">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[13px] font-medium text-ink">
           {t("tune.title")}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[11px] text-dim" title={model}>
+          {model}
         </span>
         <button
           type="button"
@@ -248,7 +251,7 @@ export default function TunePanel({
 
       {advice && (
         <>
-          <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
             {advice.options.map((o, i) => (
               <OptionCard
                 key={i}

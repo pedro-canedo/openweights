@@ -767,7 +767,9 @@
     "partial": "Doesn't fit entirely on the GPU: part runs on the CPU, much slower.",
     "intent": {
       "balanced": "Balanced",
-      "moreContext": "More window"
+      "moreContext": "More window",
+      "fast": "Faster",
+      "lowMemory": "Low memory"
     },
     "reason": {
       "ctx": "A {{ctx}}-token window per conversation, costing {{kv}} of KV cache.",

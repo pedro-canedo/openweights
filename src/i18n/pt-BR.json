@@ -767,7 +767,9 @@
     "partial": "Não cabe inteiro na placa: parte roda na CPU, bem mais devagar.",
     "intent": {
       "balanced": "Equilibrada",
-      "moreContext": "Mais janela"
+      "moreContext": "Mais janela",
+      "fast": "Mais rápida",
+      "lowMemory": "Pouca memória"
     },
     "reason": {
       "ctx": "Janela de {{ctx}} tokens por conversa, o que custa {{kv}} de KV cache.",

@@ -1,7 +1,7 @@
 // Tela Meus Modelos: grade da biblioteca local + histórico de downloads
 // incompletos (retomáveis depois de reiniciar o PC).
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { LocalModel } from "../lib/types";
 import { deleteModel, listLocalModels } from "../lib/api";
@@ -13,14 +13,18 @@ import TunePanel from "../components/models/TunePanel";
 function ModelCard({
   model,
   onDeleted,
+  tuning,
+  onToggleTune,
 }: {
   model: LocalModel;
   onDeleted: () => void;
+  /** O painel de ajuste deste modelo está aberto? */
+  tuning: boolean;
+  onToggleTune: () => void;
 }) {
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [tuning, setTuning] = useState(false);
 
   const remove = () => {
     setDeleting(true);
@@ -79,7 +83,7 @@ function ModelCard({
               {t("models.chatWith")}
             </button>
             <button
-              onClick={() => setTuning((v) => !v)}
+              onClick={onToggleTune}
               aria-expanded={tuning}
               className="rounded-lg border border-edge px-3 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-ink"
             >
@@ -94,7 +98,6 @@ function ModelCard({
           </div>
         )}
       </div>
-      {tuning && <TunePanel model={model.name} onClose={() => setTuning(false)} />}
     </div>
   );
 }
@@ -102,6 +105,10 @@ function ModelCard({
 export default function MyModels() {
   const { t } = useTranslation();
   const [models, setModels] = useState<LocalModel[] | null>(null);
+  // Qual modelo está com o painel de ajuste aberto. Mora aqui, e não no
+  // cartão, porque o painel ocupa a LINHA inteira da grade: dentro de uma
+  // célula ele nasce espremido e transborda por cima do cartão vizinho.
+  const [tuning, setTuning] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     listLocalModels()
@@ -147,7 +154,23 @@ export default function MyModels() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {models.map((m) => (
-              <ModelCard key={m.primaryPath} model={m} onDeleted={refresh} />
+              <Fragment key={m.primaryPath}>
+                <ModelCard
+                  model={m}
+                  onDeleted={refresh}
+                  tuning={tuning === m.name}
+                  onToggleTune={() =>
+                    setTuning((atual) => (atual === m.name ? null : m.name))
+                  }
+                />
+                {/* `col-span-full` empurra o painel para uma linha só dele:
+                    é o que dá espaço às quatro propostas lado a lado. */}
+                {tuning === m.name && (
+                  <div className="col-span-full">
+                    <TunePanel model={m.name} onClose={() => setTuning(null)} />
+                  </div>
+                )}
+              </Fragment>
             ))}
           </div>
         )}
