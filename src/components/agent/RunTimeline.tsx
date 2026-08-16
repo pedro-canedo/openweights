@@ -20,6 +20,7 @@ import {
   type RunView,
   type StepItem,
   type TimelineItem,
+  type ToolsItem,
 } from "../../lib/agent/runStore";
 import { plansFirst } from "../../lib/agent/scout";
 import { errorMessage } from "../../lib/serverSession";
@@ -27,6 +28,7 @@ import Markdown from "../chat/Markdown";
 import ThinkingBlock from "../chat/ThinkingBlock";
 import TaskBoard from "./TaskBoard";
 import ToolCallCard from "./ToolCallCard";
+import { toolLabel } from "./toolMeta";
 
 /** Avisos da trilha → chave de i18n e cor. */
 const NOTES: Record<NoteKind, { key: string; className: string }> = {
@@ -155,6 +157,62 @@ function CheckpointLine({
   );
 }
 
+/**
+ * Cardápio de ferramentas do run. Sem o cardápio a pessoa não entende por que
+ * o agente "não tem" uma ferramenta que ela ligou nas preferências — a linha
+ * mostra quantas couberam na janela e, ao expandir, quais são.
+ */
+function ToolsLine({ item }: { item: ToolsItem }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const names = item.active.map((name) => toolLabel(t, name)).join(" · ");
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-start gap-2 text-[11px] text-dim">
+        <svg
+          className="mt-0.5 h-3.5 w-3.5 shrink-0"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          viewBox="0 0 24 24"
+        >
+          <path d="M4 6h16M4 12h10M4 18h7" />
+        </svg>
+        <span className="min-w-0 flex-1 leading-relaxed select-text">
+          {item.requested
+            ? t("agent.run.toolsRequested", { tools: names })
+            : t("agent.run.toolsSelected", {
+                active: item.active.length,
+                available: item.available,
+              })}
+        </span>
+        <span className="shrink-0 tabular-nums">{timeLabel(item.tsMs)}</span>
+      </div>
+      {/* Pedido do modelo já vem com os nomes na frase — nada a expandir. */}
+      {!item.requested && item.active.length > 0 && (
+        <>
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className="self-start pl-5 text-[11px] text-dim transition-colors hover:text-ink"
+          >
+            {t(open ? "agent.tool.showLess" : "agent.tool.showMore")}
+          </button>
+          {open && (
+            <p className="pl-5 text-[11px] leading-relaxed text-dim select-text">
+              {names}
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function StepBlock({
   step,
   live,
@@ -244,6 +302,9 @@ function RunItems({
               tsMs={item.tsMs}
             />
           );
+        }
+        if (item.kind === "tools") {
+          return <ToolsLine key={item.id} item={item} />;
         }
         const note = NOTES[item.note];
         return (

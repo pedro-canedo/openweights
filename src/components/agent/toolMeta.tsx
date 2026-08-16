@@ -49,6 +49,7 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   plan_update: "planUpdate",
   task_complete: "taskComplete",
   ask_user: "askUser",
+  tools_find: "toolsFind",
 };
 
 /**

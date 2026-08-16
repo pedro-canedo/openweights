@@ -10,6 +10,7 @@ import {
 } from "../lib/api";
 import { invoke, isTauri } from "../lib/tauri";
 import McpConnectors from "../components/settings/McpConnectors";
+import ToolGroups from "../components/settings/ToolGroups";
 import { formatBytes } from "../lib/format";
 import type { HardwareProfile, RuntimeEvent, RuntimeState } from "../lib/types";
 
@@ -76,6 +77,8 @@ export default function Settings() {
 
         <HfTokenRow />
         <RuntimeRow />
+        {/* Famílias primeiro: os conectores são uma delas. */}
+        <ToolGroups />
         <McpConnectors />
         <HardwareCard profile={profile} modelsDir={paths?.modelsDir} />
       </div>

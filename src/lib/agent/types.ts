@@ -8,6 +8,33 @@ export type ToolCategory = "read" | "edit" | "execute" | "network" | "mcp" | "me
 
 export type ToolTier = "safe" | "caution" | "danger";
 
+/** Família de ferramentas: a pessoa liga/desliga famílias inteiras. */
+export type ToolGroup =
+  | "files"
+  | "terminal"
+  | "code"
+  | "git"
+  | "data"
+  | "web"
+  | "memory"
+  | "project"
+  | "plan"
+  | "mcp";
+
+/** Ordem em que os grupos aparecem nas preferências. */
+export const TOOL_GROUPS: ToolGroup[] = [
+  "files",
+  "terminal",
+  "code",
+  "git",
+  "data",
+  "web",
+  "memory",
+  "project",
+  "plan",
+  "mcp",
+];
+
 export type ToolPolicy = "alwaysAllow" | "ask" | "never";
 
 export type PolicyScope = "global" | "workspace";
@@ -135,6 +162,15 @@ export type RunEvent = RunEventBase &
     | { kind: "run.paused"; reason: PauseReason }
     | { kind: "run.resumed" }
     | { kind: "run.error"; message: string; retryable: boolean }
+    | {
+        kind: "tools.selected";
+        available: number;
+        /** No início do run, o cardápio inteiro; num pedido do modelo
+         * (`requested`), só as ferramentas que acabaram de entrar. */
+        active: string[];
+        limit: number;
+        requested: boolean;
+      }
     | {
         kind: "run.finished";
         status: RunStatus;

@@ -87,10 +87,27 @@ export interface StepItem {
   reasoning: string;
 }
 
+/**
+ * Cardápio entregue ao modelo. Vira uma linha própria (e não um `note`)
+ * porque a trilha precisa dos nomes das ferramentas para traduzi-los.
+ */
+export interface ToolsItem {
+  kind: "tools";
+  id: string;
+  /** Ferramentas desta entrega — o cardápio inicial ou o que foi pedido. */
+  active: string[];
+  /** Tamanho do catálogo habilitado, para a linha "N de M". */
+  available: number;
+  /** `true` quando o próprio modelo pediu mais ferramentas no meio do run. */
+  requested: boolean;
+  tsMs: number;
+}
+
 export type TimelineItem =
   | StepItem
   | { kind: "tool"; id: string }
   | { kind: "checkpoint"; id: string; label: string; backend: string; tsMs: number }
+  | ToolsItem
   | { kind: "note"; id: string; note: NoteKind; detail: string; tsMs: number };
 
 export interface CheckpointMark {
@@ -416,6 +433,28 @@ export function reduceEvent(run: RunView, event: RunEvent): RunView {
           },
         ];
       }
+      break;
+
+    case "tools.selected":
+      // O cardápio do começo substitui; o que o modelo pediu depois SOMA —
+      // ferramenta ativada por ele não sai mais do alcance no meio do run.
+      next.toolNames = event.requested
+        ? [
+            ...next.toolNames,
+            ...event.active.filter((name) => !next.toolNames.includes(name)),
+          ]
+        : event.active;
+      next.items = [
+        ...next.items,
+        {
+          kind: "tools",
+          id: `tools-${event.seq}`,
+          active: event.active,
+          available: event.available,
+          requested: event.requested,
+          tsMs: event.tsMs,
+        },
+      ];
       break;
 
     case "focus.updated":

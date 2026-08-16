@@ -15,6 +15,7 @@
 import { invoke, isTauri } from "../tauri";
 import { isTaskFinished } from "./scout";
 import type { Task, TaskPlan, WorkMode } from "./scout";
+import { TOOL_GROUPS } from "./types";
 import type {
   ApprovalDecision,
   CheckpointRow,
@@ -167,6 +168,44 @@ export function toolPermissionSet(
     : mockPermissionSet(toolName, policy, scope, workspaceDir);
 }
 
+/**
+ * Chaves das famílias de ferramentas habilitadas.
+ *
+ * Nunca lança: sem o comando (build antiga) ou com a preferência ilegível,
+ * cai em TODAS habilitadas — o mesmo padrão do Rust. Esconder capacidade por
+ * causa de uma falha de leitura seria pior do que mostrar demais.
+ */
+export function toolGroupsGet(): Promise<string[]> {
+  if (!isTauri) return mockToolGroupsGet();
+  return invoke<string[]>("tool_groups_get").catch((e) => {
+    console.warn("tool_groups_get falhou:", e);
+    return [...TOOL_GROUPS];
+  });
+}
+
+/**
+ * Quantas ferramentas cada família tem no catálogo de agora (conectores MCP
+ * incluídos). Vem do backend porque uma lista escrita na interface mentiria
+ * na primeira ferramenta nova.
+ */
+export function toolGroupCounts(): Promise<Record<string, number>> {
+  if (!isTauri) return mockToolGroupCounts();
+  return invoke<Record<string, number>>("tool_group_counts").catch((e) => {
+    console.warn("tool_group_counts falhou:", e);
+    return {};
+  });
+}
+
+/**
+ * Grava as famílias habilitadas e devolve o que o backend aceitou (chave
+ * desconhecida é descartada lá). Lança: a tela desfaz a mudança na falha.
+ */
+export function toolGroupsSet(groups: string[]): Promise<string[]> {
+  return isTauri
+    ? invoke<string[]>("tool_groups_set", { groups })
+    : mockToolGroupsSet(groups);
+}
+
 export function checkpointsList(
   workspaceDir: string,
 ): Promise<CheckpointRow[]> {
@@ -216,6 +255,8 @@ const mockPlans = new Map<string, TaskPlan>();
 /** Runs cujo plano é movido pelo roteiro (os outros andam a cada consulta). */
 const mockDrivenPlans = new Set<string>();
 let mockPermissions: ToolPermissionRow[] = [];
+/** Famílias habilitadas na simulação (o padrão do backend é todas). */
+let mockGroups: string[] = [...TOOL_GROUPS];
 let mockRunSeq = 0;
 let mockCheckpointSeq = 0;
 let mockPermissionSeq = 0;
@@ -230,6 +271,12 @@ const MOCK_TOOLS = [
   "terminal_run",
   "todo_update",
 ];
+
+/** Cardápio curado: total do catálogo e o que cabe na janela do modelo. */
+const MOCK_TOOLS_AVAILABLE = 37;
+const MOCK_TOOLS_LIMIT = 12;
+/** O que o modelo pede no meio do run (o `tools_find` em ação). */
+const MOCK_TOOLS_EXTRA = ["test_run", "git_status"];
 
 const MOCK_DIFF = `--- /dev/null
 +++ b/notas.md
@@ -574,6 +621,13 @@ async function driveMock(run: MockRun): Promise<void> {
     workspaceDir: dir,
     tools: MOCK_TOOLS,
   });
+  emit(run, {
+    kind: "tools.selected",
+    available: MOCK_TOOLS_AVAILABLE,
+    active: MOCK_TOOLS,
+    limit: MOCK_TOOLS_LIMIT,
+    requested: false,
+  });
 
   // 0) Scout Rule: antes de agir, o objetivo vira entregas pequenas. Em
   // planejamento o run PARA aqui até o usuário aprovar o plano.
@@ -720,7 +774,15 @@ async function driveMock(run: MockRun): Promise<void> {
     emit(run, { kind: "focus.updated", todoMd: MOCK_FOCUS });
   }
 
-  // 3) Comando de terminal com saída em streaming.
+  // 3) O modelo pede ferramentas que não vieram no cardápio inicial e depois
+  //    roda um comando, com a saída em streaming.
+  emit(run, {
+    kind: "tools.selected",
+    available: MOCK_TOOLS_AVAILABLE,
+    active: MOCK_TOOLS_EXTRA,
+    limit: MOCK_TOOLS_LIMIT,
+    requested: true,
+  });
   emit(run, { kind: "step.started", stepId: "step-3", index: 2 });
   await tick(run, 300);
   await typeOut(
@@ -978,6 +1040,30 @@ function mockPermissionSet(
     });
   }
   return Promise.resolve();
+}
+
+function mockToolGroupsGet(): Promise<string[]> {
+  return Promise.resolve([...mockGroups]);
+}
+
+function mockToolGroupCounts(): Promise<Record<string, number>> {
+  return Promise.resolve({
+    files: 6,
+    terminal: 1,
+    code: 6,
+    git: 8,
+    data: 5,
+    web: 4,
+    memory: 1,
+    project: 1,
+    plan: 5,
+    mcp: 0,
+  });
+}
+
+function mockToolGroupsSet(groups: string[]): Promise<string[]> {
+  mockGroups = TOOL_GROUPS.filter((g) => groups.includes(g));
+  return Promise.resolve([...mockGroups]);
 }
 
 function mockCheckpointsList(workspaceDir: string): Promise<CheckpointRow[]> {

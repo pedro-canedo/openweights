@@ -18,6 +18,10 @@ pub struct PromptContext<'a> {
     pub memory: &'a [String],
     /// Nomes das ferramentas disponíveis nesta execução.
     pub tools: &'a [String],
+    /// O cardápio é um recorte: existem outras ferramentas no catálogo que
+    /// não couberam na janela deste modelo. Muda o texto para o modelo saber
+    /// que pode pedir mais em vez de desistir do caminho certo.
+    pub tools_partial: bool,
     /// Instruções que a pessoa configurou para a conversa.
     pub user_system: Option<&'a str>,
     pub mode: RunMode,
@@ -84,6 +88,11 @@ pub fn build_system_prompt(ctx: &PromptContext<'_>) -> String {
              - Se a pessoa recusar uma ação, não insista: proponha outra abordagem.\n\
              - Quando a tarefa estiver concluída, responda em texto, SEM chamar ferramenta.\n",
         );
+        if ctx.tools_partial {
+            out.push_str(
+                "Esta lista é um recorte do que existe. Se faltar uma ferramenta para o que                  você precisa fazer, chame `tools_find` descrevendo a tarefa e ela aparece.\n",
+            );
+        }
         if ctx.mode == RunMode::Approve {
             out.push_str(
                 "Cada ação passa pela confirmação da pessoa: prefira poucas ações grandes a muitas pequenas.\n",
@@ -119,6 +128,7 @@ mod tests {
             tools: &tools,
             user_system: Some("Seja direto."),
             mode: RunMode::Smart,
+            tools_partial: false,
         });
 
         for section in [
@@ -138,6 +148,27 @@ mod tests {
         assert!(p.contains("SEM chamar ferramenta"));
         // Orçamento: algumas centenas de tokens (~4 caracteres por token).
         assert!(p.len() < 2600, "prompt longo demais: {} bytes", p.len());
+    }
+
+    /// Cardápio recortado: o modelo precisa saber que pode pedir mais, senão
+    /// ele desiste do caminho certo por achar que a ferramenta não existe.
+    #[test]
+    fn a_partial_menu_tells_the_model_how_to_ask_for_more() {
+        let tools = tools();
+        let cheio = build_system_prompt(&PromptContext {
+            workspace: Some("/ws"),
+            tools: &tools,
+            ..Default::default()
+        });
+        assert!(!cheio.contains("tools_find"));
+
+        let recorte = build_system_prompt(&PromptContext {
+            workspace: Some("/ws"),
+            tools: &tools,
+            tools_partial: true,
+            ..Default::default()
+        });
+        assert!(recorte.contains("tools_find"));
     }
 
     #[test]

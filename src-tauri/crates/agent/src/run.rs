@@ -12,6 +12,7 @@
 
 use crate::checkpoint;
 use crate::events::EventSink;
+use crate::menu;
 use crate::plan_tools::{PlanTools, SharedPlan, shared_plan, snapshot};
 use crate::prompt::{PromptContext, build_system_prompt};
 use crate::reliability::{
@@ -21,15 +22,13 @@ use crate::reliability::{
 use crate::scout::{self, PlanRun};
 use crate::verify::{self, CommandRecord};
 use crate::{AgentConfig, RunHandle, StartRun, new_id};
-use lr_engine::{
-    ChatDelta, ChatMessage, ChatRequest, LlamaClient, ServerProps, ToolCallReq, tool_specs_to_api,
-};
+use lr_engine::{ChatDelta, ChatMessage, ChatRequest, LlamaClient, ServerProps, ToolCallReq};
 use lr_policy::{Decision, PermissionOverride, PolicyEngine, ToolRequest, classify};
 use lr_store::Store;
 use lr_tools::{SharedTool, ToolContext, ToolOutput, ToolRegistry, ToolResult};
 use lr_types::agent::{
     ApprovalDecision, ApprovalSource, PolicyScope, RunEventKind, RunMode, RunOptions, RunStatus,
-    ToolCategory, ToolOrigin, ToolPolicy, ToolSpec, ToolTier, UsageStats,
+    ToolCategory, ToolGroup, ToolOrigin, ToolPolicy, ToolSpec, ToolTier, UsageStats,
 };
 use lr_types::scout::{TaskPlan, WindowBudget, WorkMode};
 use serde_json::{Value, json};
@@ -807,8 +806,11 @@ pub(crate) struct StepEngine<'a> {
     pub store: Arc<Store>,
     pub run_id: String,
     pub opts: &'a RunOptions,
-    /// Cardápio já no formato da API (vazio quando não há ferramentas).
-    pub api_tools: Vec<Value>,
+    /// Cardápio vivo do run: o recorte entregue ao modelo, que muda quando
+    /// ele pede mais ou quando a etapa do laço vira.
+    pub menu: Arc<menu::MenuState>,
+    /// Famílias habilitadas pela pessoa (a recuragem precisa delas).
+    pub groups: Vec<ToolGroup>,
     pub tools_on: bool,
     pub context: ContextBudget,
 }
@@ -825,6 +827,22 @@ pub(crate) struct StepOutcome {
 }
 
 impl StepEngine<'_> {
+    /// Reavalia o cardápio contra a etapa atual do plano.
+    ///
+    /// A instrução da etapa é a melhor pista que existe sobre o que faz falta
+    /// agora — melhor do que o objetivo geral, que já ficou para trás.
+    pub(crate) fn refocus_menu(&self, goal: &str) {
+        if !self.tools_on || !self.menu.refocus(goal, &self.groups) {
+            return;
+        }
+        self.sink.emit(RunEventKind::ToolsSelected {
+            available: self.menu.available(),
+            active: self.menu.active_names(),
+            limit: self.menu.limit(),
+            requested: false,
+        });
+    }
+
     /// Roda o laço até uma resposta final, o teto de passos ou uma parada.
     ///
     /// `max_local_steps` é o teto DESTE trecho (uma etapa do plano); o
@@ -875,18 +893,19 @@ impl StepEngine<'_> {
                 index,
             });
 
-            let mut request = chat_request(self.opts, messages, &self.api_tools);
+            let api_tools = self.menu.api_tools();
+            let mut request = chat_request(self.opts, messages, &api_tools);
             if self.context.limit().is_some() {
                 compact_if_needed(
                     self.client,
                     &self.sink,
                     &self.context,
                     self.opts,
-                    &self.api_tools,
+                    &api_tools,
                     messages,
                 )
                 .await;
-                request = chat_request(self.opts, messages, &self.api_tools);
+                request = chat_request(self.opts, messages, &api_tools);
             }
 
             let outcome = {
@@ -1009,12 +1028,27 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     let tools_on =
         props.supports_tools() && opts.mode != RunMode::Chat && work_mode != WorkMode::Chat;
 
-    // Cardápio: o modo de trabalho manda no que o modelo pode usar.
-    let mut specs = if tools_on {
+    // Cardápio: o modo de trabalho manda no que o modelo PODE usar; a
+    // curadoria decide o que cabe na janela DESTE modelo.
+    let specs = if tools_on {
         scout::menu_for(work_mode, deps.registry.specs().await)
     } else {
         Vec::new()
     };
+    let groups = ToolGroup::enabled_from_setting(
+        deps.store
+            .get_setting(ToolGroup::SETTING)
+            .ok()
+            .flatten()
+            .as_deref(),
+    );
+    let available = specs.len();
+    let mut curated = menu::curate(specs, &prompt, &groups, props.n_ctx);
+    // Família desligada é escolha da pessoa: sai do alcance do agente, não
+    // fica guardada para o `tools_find` ressuscitar.
+    curated.rest.retain(|s| groups.contains(&menu::group_of(s)));
+    let menu = Arc::new(menu::MenuState::new(curated, available));
+
     // Plano do run + ferramentas meta que o conduzem (vazias fora dos modos
     // que planejam).
     // Um plano já aprovado (o laço que continua um planejamento) entra
@@ -1025,10 +1059,18 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     }));
     let plan_tools = PlanTools::for_mode(work_mode, plan.clone());
     if tools_on {
-        specs.extend(plan_tools.specs());
+        for spec in plan_tools.specs() {
+            menu.pin_active(spec);
+        }
     }
-    let tool_names: Vec<String> = specs.iter().map(|s| s.name.clone()).collect();
-    let api_tools = tool_specs_to_api(&specs);
+    // A porta de saída só faz sentido quando ficou coisa de fora.
+    let finder: Option<SharedTool> = menu.is_partial().then(|| {
+        let tool: SharedTool = Arc::new(menu::ToolsFind::new(menu.clone(), sink.clone()));
+        menu.pin_active(tool.spec());
+        tool
+    });
+    let tools_partial = menu.is_partial();
+    let tool_names: Vec<String> = menu.active_names();
 
     sink.emit(RunEventKind::RunStarted {
         chat_id: opts.chat_id,
@@ -1038,6 +1080,15 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         workspace_dir: opts.workspace_dir.clone(),
         tools: tool_names.clone(),
     });
+
+    if tools_on {
+        sink.emit(RunEventKind::ToolsSelected {
+            available: menu.available(),
+            active: tool_names.clone(),
+            limit: menu.limit(),
+            requested: false,
+        });
+    }
 
     let workspace_str = workspace.as_ref().map(|p| p.to_string_lossy().into_owned());
     let overrides: Vec<PermissionOverride> = deps
@@ -1072,7 +1123,9 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         focus_md: None,
         tool_calls: 0,
         local_tools: if tools_on {
-            plan_tools.tools.clone()
+            let mut locais = plan_tools.tools.clone();
+            locais.extend(finder.clone());
+            locais
         } else {
             Vec::new()
         },
@@ -1087,6 +1140,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
             tools: &tool_names,
             user_system: opts.system_prompt.as_deref(),
             mode: opts.mode,
+            tools_partial,
         })
     };
 
@@ -1097,7 +1151,8 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         store: deps.store.clone(),
         run_id: run_id.clone(),
         opts: &opts,
-        api_tools,
+        menu: menu.clone(),
+        groups,
         tools_on,
         context: ContextBudget::new(props.n_ctx, deps.config.context_ratio),
     };

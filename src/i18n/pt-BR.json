@@ -362,7 +362,9 @@
       "verified": "Resultado verificado",
       "verifyFailed": "Verificação apontou problemas",
       "empty": "Nenhuma execução ainda.",
-      "usage": "{{steps}} passos · {{tools}} ferramentas · {{seconds}}s"
+      "usage": "{{steps}} passos · {{tools}} ferramentas · {{seconds}}s",
+      "toolsSelected": "{{active}} de {{available}} ferramentas nesta janela",
+      "toolsRequested": "O agente pediu mais ferramentas: {{tools}}"
     },
     "focus": {
       "title": "Plano",
@@ -421,7 +423,58 @@
       "planCreate": "Dividir em etapas",
       "planUpdate": "Atualizar etapa",
       "taskComplete": "Concluir etapa",
-      "askUser": "Perguntar à pessoa"
+      "askUser": "Perguntar à pessoa",
+      "toolsFind": "Procurar ferramentas"
+    },
+    "toolGroups": {
+      "title": "Famílias de ferramentas",
+      "subtitle": "Desligar uma família tira aquelas ferramentas do alcance do agente.",
+      "windowHint": "Mesmo com tudo ligado, o agente recebe só as ferramentas que cabem na janela do modelo — ele pede as outras quando precisa.",
+      "count_one": "1 ferramenta",
+      "count_other": "{{count}} ferramentas",
+      "countNone": "nenhuma ferramenta",
+      "lastOne": "Deixe pelo menos uma família ligada. Para o agente não usar ferramenta nenhuma, escolha \"Sem ferramentas\" na autorização.",
+      "saveFailed": "Não foi possível salvar: {{error}}",
+      "files": {
+        "label": "Arquivos",
+        "desc": "Ler, criar, editar e procurar arquivos da pasta do projeto."
+      },
+      "terminal": {
+        "label": "Terminal",
+        "desc": "Rodar comandos no seu computador."
+      },
+      "code": {
+        "label": "Código",
+        "desc": "Reconhecer o projeto, compilar, rodar testes, analisar e formatar."
+      },
+      "git": {
+        "label": "Git",
+        "desc": "Ver histórico e alterações, preparar arquivos e gravar commits."
+      },
+      "data": {
+        "label": "Dados",
+        "desc": "Espiar e consultar planilhas CSV e bancos SQLite."
+      },
+      "web": {
+        "label": "Internet",
+        "desc": "Buscar, abrir páginas e baixar arquivos da internet."
+      },
+      "memory": {
+        "label": "Memória",
+        "desc": "Guardar o que precisa ser lembrado nas próximas conversas."
+      },
+      "project": {
+        "label": "Índice do projeto",
+        "desc": "Buscar por significado nos arquivos já indexados."
+      },
+      "plan": {
+        "label": "Plano",
+        "desc": "Dividir a tarefa em etapas e perguntar quando ficar em dúvida."
+      },
+      "mcp": {
+        "label": "Conectores",
+        "desc": "Ferramentas emprestadas pelos conectores MCP que você ligou."
+      }
     },
     "mcp": {
       "title": "Conectores (MCP)",

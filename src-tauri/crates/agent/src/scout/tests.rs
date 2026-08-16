@@ -551,7 +551,11 @@ fn engine<'a>(h: &Harness, client: &'a LlamaClient, opts: &'a RunOptions) -> Ste
         store: h.store.clone(),
         run_id: "r1".into(),
         opts,
-        api_tools: Vec::new(),
+        menu: std::sync::Arc::new(crate::menu::MenuState::new(
+            crate::menu::curate(Vec::new(), "", &lr_types::agent::ToolGroup::ALL, None),
+            0,
+        )),
+        groups: lr_types::agent::ToolGroup::ALL.to_vec(),
         tools_on: true,
         context: crate::reliability::ContextBudget::new(Some(8_192), 0.85),
     }

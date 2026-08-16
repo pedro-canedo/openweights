@@ -45,6 +45,92 @@ pub enum ToolCategory {
     Meta,
 }
 
+/// Família de ferramentas.
+///
+/// Serve a duas coisas: a pessoa liga e desliga famílias inteiras nas
+/// preferências, e o cardápio automático usa a família para escolher o que
+/// entregar ao modelo quando não cabe tudo. Modelo pequeno com trinta e sete
+/// ferramentas na frente erra a escolha e gasta a janela só com as
+/// descrições.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ToolGroup {
+    /// Ler, escrever, listar e buscar arquivos.
+    Files,
+    /// Rodar comandos.
+    Terminal,
+    /// Compilar, testar, analisar e formatar código.
+    Code,
+    /// Git.
+    Git,
+    /// CSV, SQLite e resumos de dados.
+    Data,
+    /// Internet: busca, páginas, download, HTTP.
+    Web,
+    /// Memória do agente.
+    Memory,
+    /// Índice do projeto (busca por significado).
+    Project,
+    /// Plano e conversa com a pessoa (Scout Rule).
+    Plan,
+    /// Vindas de conectores MCP.
+    Mcp,
+}
+
+impl ToolGroup {
+    /// Todas, na ordem em que aparecem nas preferências.
+    pub const ALL: [ToolGroup; 10] = [
+        ToolGroup::Files,
+        ToolGroup::Terminal,
+        ToolGroup::Code,
+        ToolGroup::Git,
+        ToolGroup::Data,
+        ToolGroup::Web,
+        ToolGroup::Memory,
+        ToolGroup::Project,
+        ToolGroup::Plan,
+        ToolGroup::Mcp,
+    ];
+
+    /// Chave usada no i18n e nas preferências (`camelCase`).
+    pub fn key(&self) -> &'static str {
+        match self {
+            ToolGroup::Files => "files",
+            ToolGroup::Terminal => "terminal",
+            ToolGroup::Code => "code",
+            ToolGroup::Git => "git",
+            ToolGroup::Data => "data",
+            ToolGroup::Web => "web",
+            ToolGroup::Memory => "memory",
+            ToolGroup::Project => "project",
+            ToolGroup::Plan => "plan",
+            ToolGroup::Mcp => "mcp",
+        }
+    }
+
+    pub fn from_key(k: &str) -> Option<ToolGroup> {
+        ToolGroup::ALL.into_iter().find(|g| g.key() == k)
+    }
+
+    /// Chave da preferência que guarda as famílias habilitadas.
+    pub const SETTING: &'static str = "agent.tool_groups";
+
+    /// Lê a preferência. Ausente, vazia ou ilegível = **todas** habilitadas:
+    /// o padrão é não esconder capacidade de quem nunca abriu essa tela.
+    pub fn enabled_from_setting(raw: Option<&str>) -> Vec<ToolGroup> {
+        let parsed = raw
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok());
+        match parsed {
+            Some(keys) if !keys.is_empty() => {
+                keys.iter().filter_map(|k| ToolGroup::from_key(k)).collect()
+            }
+            _ => ToolGroup::ALL.to_vec(),
+        }
+    }
+}
+
 /// Risco padrão, usado para badge na UI e tier inicial de permissão.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -297,6 +383,20 @@ pub enum RunEventKind {
     RunResumed,
     #[serde(rename = "run.error")]
     RunError { message: String, retryable: bool },
+    /// O cardápio entregue ao modelo mudou: no começo do run e sempre que
+    /// `tools_find` traz uma ferramenta que estava fora.
+    #[serde(rename = "tools.selected")]
+    ToolsSelected {
+        /// Quantas existem no catálogo inteiro.
+        available: u32,
+        /// No começo do run, o cardápio inteiro entregue ao modelo. Num
+        /// pedido do modelo (`requested`), só o que acabou de entrar.
+        active: Vec<String>,
+        /// Teto de ferramentas para esta janela de contexto.
+        limit: u32,
+        /// `true` quando foi o modelo que pediu (`tools_find`).
+        requested: bool,
+    },
     #[serde(rename = "run.finished")]
     RunFinished {
         status: RunStatus,
@@ -339,6 +439,7 @@ impl RunEvent {
             RunEventKind::RunPaused { .. } => "run.paused",
             RunEventKind::RunResumed => "run.resumed",
             RunEventKind::RunError { .. } => "run.error",
+            RunEventKind::ToolsSelected { .. } => "tools.selected",
             RunEventKind::RunFinished { .. } => "run.finished",
         }
     }
@@ -415,6 +516,52 @@ pub struct RunSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Quem nunca abriu a tela de ferramentas tem tudo à disposição.
+    #[test]
+    fn tool_groups_default_to_all_when_the_setting_is_missing_or_broken() {
+        for raw in [None, Some(""), Some("  "), Some("não é json"), Some("[]")] {
+            assert_eq!(
+                ToolGroup::enabled_from_setting(raw).len(),
+                ToolGroup::ALL.len(),
+                "entrada: {raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tool_groups_come_back_from_the_setting_ignoring_unknown_keys() {
+        let got = ToolGroup::enabled_from_setting(Some(r#"["files","git","inventado"]"#));
+        assert_eq!(got, vec![ToolGroup::Files, ToolGroup::Git]);
+    }
+
+    #[test]
+    fn tool_group_keys_survive_a_round_trip() {
+        for g in ToolGroup::ALL {
+            assert_eq!(ToolGroup::from_key(g.key()), Some(g));
+        }
+    }
+
+    #[test]
+    fn tools_selected_keeps_the_camel_case_contract() {
+        let ev = RunEvent {
+            run_id: "r1".into(),
+            seq: 1,
+            ts_ms: 0,
+            event: RunEventKind::ToolsSelected {
+                available: 37,
+                active: vec!["fs_read".into()],
+                limit: 12,
+                requested: true,
+            },
+        };
+        let v: serde_json::Value = serde_json::to_value(&ev).unwrap();
+        assert_eq!(v["kind"], "tools.selected");
+        assert_eq!(v["available"], 37);
+        assert_eq!(v["requested"], true);
+        assert_eq!(ev.kind_name(), "tools.selected");
+        assert!(ev.is_persistable(), "o recorte do cardápio entra na trilha");
+    }
 
     #[test]
     fn run_event_serializes_flat_with_camel_case_fields() {

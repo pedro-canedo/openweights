@@ -784,3 +784,105 @@ async fn a_network_tool_that_overwrites_a_file_gets_a_checkpoint() {
         .expect("checkpoints");
     assert_eq!(checkpoints.len(), 1);
 }
+
+// ------------------------------------------------------- cardápio curado ---
+
+/// Ferramenta inócua, só para encher o catálogo. O nome não casa com nada do
+/// objetivo, então a curadoria tem que deixá-la de fora.
+struct Filler(&'static str);
+
+#[async_trait::async_trait]
+impl Tool for Filler {
+    fn name(&self) -> &str {
+        self.0
+    }
+    fn description(&self) -> &str {
+        "Ferramenta zebra de enchimento, sem relação com o pedido."
+    }
+    fn parameters(&self) -> serde_json::Value {
+        serde_json::json!({ "type": "object", "properties": {} })
+    }
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Read
+    }
+    async fn execute(
+        &self,
+        _args: serde_json::Value,
+        _ctx: &ToolContext,
+    ) -> ToolResult<ToolOutput> {
+        Ok(ToolOutput::text("nada a fazer"))
+    }
+}
+
+/// Janela de 8k não comporta o catálogo inteiro: o modelo recebe um recorte
+/// e a porta de saída, e o que ele pede por ela passa a existir.
+#[tokio::test]
+async fn a_small_window_gets_a_partial_menu_the_model_can_extend() {
+    let extras: Vec<lr_tools::SharedTool> = [
+        "zebra_alfa",
+        "zebra_beta",
+        "zebra_gama",
+        "zebra_delta",
+        "zebra_epsilon",
+        "zebra_zeta",
+    ]
+    .into_iter()
+    .map(|n| Arc::new(Filler(n)) as lr_tools::SharedTool)
+    .collect();
+    let h = Harness::with_tools(extras);
+
+    let server = FakeLlama::spawn(vec![
+        tool_call_chunks("call_1", "tools_find", r#"{"que"#, r#"ry":"zebra"}"#),
+        vec![text_chunk("Consegui as ferramentas zebra."), done()],
+    ]);
+
+    let status = h
+        .run("liste a pasta do projeto", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let events = h.events.lock().unwrap().clone();
+    let selections: Vec<_> = events
+        .iter()
+        .filter_map(|e| match &e.event {
+            RunEventKind::ToolsSelected {
+                available,
+                active,
+                limit,
+                requested,
+            } => Some((*available, active.clone(), *limit, *requested)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(selections.len(), 2, "abertura + pedido do modelo");
+
+    // Abertura: o recorte cabe na janela e nenhuma zebra entrou.
+    let (available, active, limit, requested) = &selections[0];
+    assert!(!requested);
+    assert_eq!(*limit, 8, "8k de janela");
+    assert!(
+        *available >= 14,
+        "o catálogo do teste é maior que o recorte"
+    );
+    // O recorte respeita o teto (a porta de saída não conta) e o que não tem
+    // relação com o pedido fica de fora — sobra vaga vira enchimento, e tudo
+    // bem: o que não pode é o catálogo inteiro entrar.
+    assert!(active.len() <= *limit as usize + 1, "{active:?}");
+    let zebras = active.iter().filter(|n| n.starts_with("zebra_")).count();
+    assert!(zebras <= 1, "só o que sobrou de vaga: {active:?}");
+    assert!(
+        active.iter().any(|n| n == "tools_find"),
+        "cardápio parcial precisa da porta de saída: {active:?}"
+    );
+    for essencial in ["fs_read", "fs_list", "fs_grep", "terminal_run"] {
+        assert!(active.iter().any(|n| n == essencial), "faltou {essencial}");
+    }
+
+    // Pedido do modelo: só o que acabou de entrar, e as zebras entraram.
+    let (_, pedidas, _, requested) = &selections[1];
+    assert!(requested);
+    assert!(
+        pedidas.iter().all(|n| n.starts_with("zebra_")),
+        "o evento do pedido traz só a novidade: {pedidas:?}"
+    );
+}

@@ -8,7 +8,7 @@
 use crate::state::AppState;
 use lr_store::agent::{CheckpointRow, RunEventRow, ToolPermissionRow};
 use lr_types::agent::{
-    ApprovalDecision, PolicyScope, RunEvent, RunOptions, RunSummary, ToolPolicy,
+    ApprovalDecision, PolicyScope, RunEvent, RunOptions, RunSummary, ToolGroup, ToolPolicy,
 };
 use lr_types::scout::{TaskPlan, TaskStatus, WorkMode};
 use std::sync::Arc;
@@ -323,6 +323,59 @@ pub fn tool_permission_set(
 #[tauri::command]
 pub async fn tools_list(state: State<'_, AppState>) -> CmdResult<Vec<lr_types::agent::ToolSpec>> {
     Ok(state.tools().specs().await)
+}
+
+/// Quantas ferramentas cada família tem no catálogo de agora.
+///
+/// A tela precisa do número para a pessoa dimensionar o que está desligando.
+/// Vem do catálogo vivo, e não de uma lista escrita à mão na interface, que
+/// mentiria na primeira ferramenta nova. Conectores MCP entram no mesmo
+/// caminho, sem contagem à parte.
+#[tauri::command]
+pub async fn tool_group_counts(
+    state: State<'_, AppState>,
+) -> CmdResult<std::collections::HashMap<String, u32>> {
+    let mut counts: std::collections::HashMap<String, u32> = ToolGroup::ALL
+        .iter()
+        .map(|g| (g.key().to_string(), 0))
+        .collect();
+    for spec in state.tools().specs().await {
+        *counts
+            .entry(lr_agent::group_of(&spec).key().to_string())
+            .or_insert(0) += 1;
+    }
+    Ok(counts)
+}
+
+/// Famílias de ferramentas habilitadas. Nunca configurado = todas.
+#[tauri::command]
+pub fn tool_groups_get(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
+    let raw = state
+        .store
+        .get_setting(ToolGroup::SETTING)
+        .map_err(err_str)?;
+    Ok(ToolGroup::enabled_from_setting(raw.as_deref())
+        .iter()
+        .map(|g| g.key().to_string())
+        .collect())
+}
+
+/// Guarda as famílias habilitadas. Chaves desconhecidas são descartadas, e
+/// desabilitar tudo não é possível: sem nenhuma família o agente ficaria sem
+/// ferramenta nenhuma sem dizer o motivo — nesse caso volta ao padrão.
+#[tauri::command]
+pub fn tool_groups_set(state: State<'_, AppState>, groups: Vec<String>) -> CmdResult<Vec<String>> {
+    let valid: Vec<String> = groups
+        .iter()
+        .filter_map(|k| ToolGroup::from_key(k))
+        .map(|g| g.key().to_string())
+        .collect();
+    let json = serde_json::to_string(&valid).map_err(err_str)?;
+    state
+        .store
+        .set_setting(ToolGroup::SETTING, &json)
+        .map_err(err_str)?;
+    Ok(valid)
 }
 
 // ----------------------------------------------------------- checkpoints ---

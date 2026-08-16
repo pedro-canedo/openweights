@@ -520,6 +520,11 @@ pub(crate) async fn run_plan(
         let (task, digest, total, md) = start_task(&ctx.plan, index);
         publish(ctx, "etapa iniciada");
 
+        // Cada etapa pede ferramentas diferentes: "rodar a suíte" quer
+        // `test_run`, "commitar" quer `git_commit`. Recurar aqui é o que faz
+        // o cardápio caber na janela sem esconder o que a etapa precisa.
+        ctx.engine.refocus_menu(&task.instruction);
+
         // Contexto NOVO: sistema + objetivo + resumo do que já foi feito +
         // ESTA etapa. Nada do histórico anterior entra aqui — é a Scout Rule
         // em quatro linhas.

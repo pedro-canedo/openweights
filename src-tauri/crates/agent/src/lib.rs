@@ -5,6 +5,7 @@
 
 mod checkpoint;
 mod events;
+mod menu;
 mod plan_tools;
 mod prompt;
 mod reliability;
@@ -27,6 +28,7 @@ use tokio::sync::{Notify, oneshot};
 
 pub use checkpoint::{checkpoint_from_row, restore_blocking};
 pub use events::{EventCallback, EventSink, now_ms};
+pub use menu::group_of;
 pub use plan_tools::{AskUser, PlanCreate, PlanTools, PlanUpdate, SharedPlan, TaskComplete};
 pub use prompt::{PromptContext, build_system_prompt};
 pub use run::{append_prompt, history_from_messages};

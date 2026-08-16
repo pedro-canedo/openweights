@@ -362,7 +362,9 @@
       "verified": "Result verified",
       "verifyFailed": "Verification found problems",
       "empty": "No runs yet.",
-      "usage": "{{steps}} steps · {{tools}} tools · {{seconds}}s"
+      "usage": "{{steps}} steps · {{tools}} tools · {{seconds}}s",
+      "toolsSelected": "{{active}} of {{available}} tools in this window",
+      "toolsRequested": "The agent asked for more tools: {{tools}}"
     },
     "focus": {
       "title": "Plan",
@@ -421,7 +423,58 @@
       "planCreate": "Split into steps",
       "planUpdate": "Update step",
       "taskComplete": "Finish step",
-      "askUser": "Ask the user"
+      "askUser": "Ask the user",
+      "toolsFind": "Find tools"
+    },
+    "toolGroups": {
+      "title": "Tool families",
+      "subtitle": "Turning a family off puts those tools out of the agent's reach.",
+      "windowHint": "Even with every family on, the agent only gets the tools that fit the model's window — it asks for the rest when it needs them.",
+      "count_one": "1 tool",
+      "count_other": "{{count}} tools",
+      "countNone": "no tools",
+      "lastOne": "Keep at least one family on. To stop the agent from using tools at all, pick \"No tools\" under authorization.",
+      "saveFailed": "Could not save: {{error}}",
+      "files": {
+        "label": "Files",
+        "desc": "Read, create, edit and find files in the project folder."
+      },
+      "terminal": {
+        "label": "Terminal",
+        "desc": "Run commands on your computer."
+      },
+      "code": {
+        "label": "Code",
+        "desc": "Detect the project, build, run tests, lint and format."
+      },
+      "git": {
+        "label": "Git",
+        "desc": "See history and changes, stage files and commit."
+      },
+      "data": {
+        "label": "Data",
+        "desc": "Preview and query CSV files and SQLite databases."
+      },
+      "web": {
+        "label": "Web",
+        "desc": "Search, open pages and download files from the internet."
+      },
+      "memory": {
+        "label": "Memory",
+        "desc": "Keep what should be remembered in later chats."
+      },
+      "project": {
+        "label": "Project index",
+        "desc": "Search the indexed project files by meaning."
+      },
+      "plan": {
+        "label": "Planning",
+        "desc": "Split the task into steps and ask you when unsure."
+      },
+      "mcp": {
+        "label": "Connectors",
+        "desc": "Tools lent by the MCP connectors you turned on."
+      }
     },
     "mcp": {
       "title": "Connectors (MCP)",
