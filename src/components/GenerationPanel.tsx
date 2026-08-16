@@ -69,6 +69,10 @@ export default function GenerationPanel() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             {runs.map((run) => {
               const pending = run.status === "waitingApproval";
+              // Execução de automação não pertence a conversa nenhuma: o
+              // clique leva às preferências, onde ela mora, e não a um chat
+              // que não existe.
+              const auto = run.chatId <= 0;
               return (
                 <div
                   key={run.runId}
@@ -76,11 +80,15 @@ export default function GenerationPanel() {
                 >
                   <button
                     type="button"
-                    onClick={() => goTo(run.chatId)}
+                    onClick={() =>
+                      auto ? navigate("settings") : goTo(run.chatId)
+                    }
                     className="min-w-0 flex-1 text-left"
                   >
                     <p className="truncate text-xs font-medium text-ink">
-                      {titleOf(run.chatId)}
+                      {auto
+                        ? t("agent.automations.title")
+                        : titleOf(run.chatId)}
                     </p>
                     <p
                       className={`flex items-center gap-1.5 truncate text-[11px] ${
@@ -98,7 +106,11 @@ export default function GenerationPanel() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => runStore.cancel(run.chatId)}
+                    onClick={() =>
+                      auto
+                        ? runStore.cancelRun(run.runId)
+                        : runStore.cancel(run.chatId)
+                    }
                     title={t("agent.run.cancel")}
                     className="shrink-0 rounded-md px-2 py-1 text-[11px] font-medium text-dim transition-colors hover:bg-panel2 hover:text-ink"
                   >

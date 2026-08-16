@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 pub mod agent;
+pub mod automation;
 pub mod mcp;
 pub mod memory;
 
@@ -134,6 +135,7 @@ impl Store {
         ensure_column(&conn, "runs", "plan_json", "TEXT")?;
         mcp::init(&conn)?;
         memory::init(&conn)?;
+        automation::init(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

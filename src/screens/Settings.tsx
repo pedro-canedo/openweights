@@ -9,6 +9,7 @@ import {
   setSetting,
 } from "../lib/api";
 import { invoke, isTauri } from "../lib/tauri";
+import Automations from "../components/settings/Automations";
 import McpConnectors from "../components/settings/McpConnectors";
 import ToolGroups from "../components/settings/ToolGroups";
 import { formatBytes } from "../lib/format";
@@ -80,6 +81,7 @@ export default function Settings() {
         {/* Famílias primeiro: os conectores são uma delas. */}
         <ToolGroups />
         <McpConnectors />
+        <Automations />
         <HardwareCard profile={profile} modelsDir={paths?.modelsDir} />
       </div>
     </div>

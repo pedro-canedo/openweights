@@ -916,6 +916,36 @@ export const runStore = {
     );
   },
 
+  /**
+   * Reata a uma execução avulsa: a de uma automação, que não pertence a
+   * conversa nenhuma.
+   *
+   * Reconstrói a trilha pelos eventos gravados e, se ela ainda estiver viva,
+   * abre o canal. É isso que permite responder a um pedido de confirmação de
+   * fora do chat — sem o canal, a automação ficaria parada esperando uma
+   * resposta que não teria por onde chegar.
+   */
+  async attachToRun(runId: string): Promise<void> {
+    const known = runs.get(runId);
+    if (known) {
+      if (isRunActive(known.status) && !known.attached) await attachTo(known);
+      return;
+    }
+    const events = await runEventsList(runId, 0).catch(() => [] as RunEvent[]);
+    if (events.length === 0) return;
+    const view = buildRunView(runId, events);
+    runs.set(runId, view);
+    emit();
+    if (isRunActive(view.status)) await attachTo(view);
+  },
+
+  /** Para uma execução pelo id (a de uma automação não tem conversa). */
+  cancelRun(runId: string): void {
+    void runCancel(runId).catch((e) =>
+      console.warn("run_cancel falhou:", errorMessage(e)),
+    );
+  },
+
   /** Tira o run do fluxo do chat (a trilha continua no painel/histórico). */
   dismiss(chatId: number): void {
     const runId = byChat.get(chatId);

@@ -3,9 +3,11 @@
 
 mod commands;
 mod commands_agent;
+mod commands_automation;
 mod commands_mcp;
 mod commands_memory;
 mod commands_rag;
+mod scheduler;
 mod state;
 mod telemetry;
 #[cfg(windows)]
@@ -53,6 +55,8 @@ fn main() {
             });
 
             app.manage(state);
+            // O relógio das automações precisa do estado já publicado.
+            scheduler::spawn_loop(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -113,6 +117,11 @@ fn main() {
             commands_agent::checkpoints_list,
             commands_agent::checkpoint_restore,
             commands_agent::chat_set_model,
+            // Automações (tarefas que rodam sozinhas).
+            commands_automation::automations_list,
+            commands_automation::automation_save,
+            commands_automation::automation_delete,
+            commands_automation::automation_run_now,
             // Conectores MCP.
             commands_mcp::mcp_servers_list,
             commands_mcp::mcp_server_add,

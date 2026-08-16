@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod agent;
+pub mod automation;
 pub mod scout;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

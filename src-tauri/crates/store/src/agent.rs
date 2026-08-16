@@ -161,14 +161,14 @@ pub struct ToolPermissionRow {
 }
 
 /// Serializa um enum serde para a forma textual usada nas colunas.
-fn enum_str<T: Serialize>(v: &T) -> String {
+pub(crate) fn enum_str<T: Serialize>(v: &T) -> String {
     serde_json::to_value(v)
         .ok()
         .and_then(|x| x.as_str().map(str::to_string))
         .unwrap_or_default()
 }
 
-fn enum_from<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
+pub(crate) fn enum_from<T: serde::de::DeserializeOwned>(s: &str) -> Option<T> {
     serde_json::from_value(serde_json::Value::String(s.to_string())).ok()
 }
 
