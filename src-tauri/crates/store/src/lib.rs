@@ -14,6 +14,7 @@ pub mod agent;
 pub mod automation;
 pub mod mcp;
 pub mod memory;
+pub mod perf;
 pub mod tuning;
 
 #[derive(Debug, thiserror::Error)]
@@ -145,6 +146,7 @@ impl Store {
         automation::init(&conn)?;
         // Depois das outras: a migração da janela por modelo lê `settings`.
         tuning::init(&conn)?;
+        perf::init(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })

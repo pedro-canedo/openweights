@@ -12,6 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod bench;
 pub mod probe;
 pub mod quant;
 pub mod tune;

@@ -773,6 +773,12 @@
       "mtpHint": "This file ships multi-token prediction. It may speed up generation — we haven't measured it on this machine yet.",
       "vision": "Has vision",
       "visionHint": "This model comes with a vision projector. Loading it only when there's an image isn't ready yet."
-    }
+    },
+    "bench": "Test on this machine",
+    "benchHint": "Measures real tokens per second. Takes a few minutes and needs the whole GPU: the engine goes down while it runs.",
+    "benchStarting": "Preparing the measurement…",
+    "benchProgress": "Measuring {{step}} of {{total}}…",
+    "benchSuspect": "The GPU heated up during the run, so the comparison between configurations may be skewed. Worth repeating on a cold machine.",
+    "tested": "{{tps}} tok/s measured here"
   }
 }

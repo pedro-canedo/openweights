@@ -89,6 +89,8 @@ fn main() {
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,
+            commands_tuning::tune_bench,
+            commands_tuning::tune_bench_cancel,
             commands::chats_list,
             commands::chat_create,
             commands::chat_delete,

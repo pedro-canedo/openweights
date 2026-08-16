@@ -10,13 +10,16 @@
 //! modelo não carregar a configuração antiga volta sozinha. Sem isso, o
 //! recurso seria "aquilo que quebrou o app".
 
-use crate::commands::{profile_for, restart_engine};
+use crate::commands::{profile_for, restart_engine, stop_engine};
 use crate::state::AppState;
+use lr_advisor::bench::{self, BenchResult};
 use lr_advisor::probe::{ProbeReport, probe};
 use lr_advisor::tune::{self, Intent, Measured};
+use lr_store::perf::PerfRun;
 use lr_types::tuning::{ModelProfile, ProfileSource};
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::{AppHandle, Emitter, State};
 
 type CmdResult<T> = Result<T, String>;
 
@@ -248,4 +251,166 @@ async fn carga_de_prova(state: &AppState, model: &str) -> Result<(), String> {
         .await
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+// ------------------------------------------------------------- medição ---
+
+/// Uma medição em curso. Só uma por vez: o `llama-bench` quer a placa
+/// inteira, e duas ao mesmo tempo mediriam uma à outra.
+static MEDINDO: AtomicBool = AtomicBool::new(false);
+static CANCELAR: AtomicBool = AtomicBool::new(false);
+
+/// Progresso de uma medição, para a tela não ficar olhando um spinner mudo.
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct BenchProgress {
+    model: String,
+    /// Configuração atual (1-based) e quantas ao todo.
+    step: usize,
+    total: usize,
+    /// Resultado da configuração que acabou de ser medida.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last: Option<BenchResult>,
+}
+
+/// O que a medição concluiu.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchOutcome {
+    pub model: String,
+    /// Uma entrada por configuração medida, na ordem em que foram medidas.
+    pub results: Vec<(ModelProfile, BenchResult)>,
+    /// A que rendeu mais.
+    pub best: Option<usize>,
+    /// A placa esquentou durante a corrida: os números servem, com ressalva.
+    pub suspect: bool,
+}
+
+/// Mede as configurações propostas nesta máquina.
+///
+/// Derruba o motor antes de começar (o bench quer a placa inteira) e emite
+/// `tune-bench` a cada configuração concluída. Ao fim, grava tudo com a
+/// impressão digital da máquina e do build do llama.cpp — é isso que faz o
+/// número caducar sozinho quando a placa, o driver ou o runtime mudam.
+#[tauri::command]
+pub async fn tune_bench(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    model: String,
+    profiles: Vec<ModelProfile>,
+    force: Option<bool>,
+) -> CmdResult<BenchOutcome> {
+    if profiles.is_empty() {
+        return Err("nada para medir".into());
+    }
+    let ocupado = crate::commands::engine_busy_with(&state);
+    if !ocupado.is_empty() && !force.unwrap_or(false) {
+        return Err(format!("engine-busy:{}", ocupado.join(",")));
+    }
+    if MEDINDO.swap(true, Ordering::SeqCst) {
+        return Err("já existe uma medição em andamento".into());
+    }
+    CANCELAR.store(false, Ordering::SeqCst);
+    let _fim = MedindoGuard;
+
+    let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
+    let runtime = {
+        let variant = lr_runtime::select_variant(&state.profile);
+        state.runtime_mgr.state(variant)
+    };
+    let dir = runtime
+        .dir
+        .ok_or("o runtime do llama.cpp ainda não está instalado")?;
+
+    // O bench e o servidor não dividem a placa.
+    let _ = stop_engine(&app, &state).await;
+
+    let total = profiles.len();
+    let mut results: Vec<(ModelProfile, BenchResult)> = Vec::new();
+    let mut primeiro_tps = 0.0_f64;
+
+    for (i, perfil) in profiles.iter().enumerate() {
+        let r = bench::bench(&dir, &artefato.primary_path, perfil, &CANCELAR).await;
+        match r {
+            Ok(res) => {
+                if i == 0 {
+                    primeiro_tps = res.gen_tps;
+                }
+                let _ = app.emit(
+                    "tune-bench",
+                    BenchProgress {
+                        model: artefato.name.clone(),
+                        step: i + 1,
+                        total,
+                        last: Some(res.clone()),
+                    },
+                );
+                results.push((perfil.clone(), res));
+            }
+            Err(lr_advisor::bench::BenchError::Cancelled) => break,
+            Err(e) => {
+                log::warn!("medição falhou para {}: {e}", artefato.name);
+            }
+        }
+    }
+
+    // Repete o primeiro braço no fim: se a placa esquentou, a comparação
+    // inteira está enviesada em favor de quem foi medido primeiro.
+    let mut suspect = false;
+    if results.len() > 1
+        && let Ok(repetido) =
+            bench::bench(&dir, &artefato.primary_path, &profiles[0], &CANCELAR).await
+    {
+        suspect = bench::drifted(primeiro_tps, repetido.gen_tps);
+    }
+
+    let machine = state.profile.machine_key();
+    let agora = crate::scheduler::now_ms();
+    for (perfil, res) in &results {
+        let _ = state.store.add_perf_run(&PerfRun {
+            machine_key: machine.clone(),
+            model_id: artefato.name.clone(),
+            profile_key: perfil.key().unwrap_or_default(),
+            build_number: res.build_number,
+            gen_tps: res.gen_tps,
+            prompt_tps: res.prompt_tps,
+            gen_stddev: res.gen_stddev,
+            gpu_bytes: None,
+            source: "bench".into(),
+            suspect,
+            measured_at: agora,
+        });
+    }
+
+    let best = results
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.1.gen_tps.total_cmp(&b.1.1.gen_tps))
+        .map(|(i, _)| i);
+
+    // O motor volta como estava; medir não pode deixar o app sem servidor.
+    let _ = restart_engine(&app, &state, true).await;
+
+    Ok(BenchOutcome {
+        model: artefato.name.clone(),
+        results,
+        best,
+        suspect,
+    })
+}
+
+/// Para a medição em curso (a configuração atual termina; as próximas não
+/// começam — resultado parcial de uma configuração não serve para nada).
+#[tauri::command]
+pub fn tune_bench_cancel() {
+    CANCELAR.store(true, Ordering::SeqCst);
+}
+
+/// Libera a trava mesmo quando a medição sai por erro ou `?`.
+struct MedindoGuard;
+
+impl Drop for MedindoGuard {
+    fn drop(&mut self) {
+        MEDINDO.store(false, Ordering::SeqCst);
+    }
 }

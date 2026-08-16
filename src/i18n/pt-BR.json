@@ -773,6 +773,12 @@
       "mtpHint": "Este arquivo traz previsão de múltiplos tokens. Pode acelerar a geração — ainda não medimos nesta máquina.",
       "vision": "Tem visão",
       "visionHint": "Este modelo vem com projetor de visão. Carregá-lo só quando houver imagem ainda não está pronto."
-    }
+    },
+    "bench": "Testar nesta máquina",
+    "benchHint": "Mede tokens por segundo de verdade. Leva alguns minutos e ocupa a placa: o motor fica fora do ar enquanto roda.",
+    "benchStarting": "Preparando a medição…",
+    "benchProgress": "Medindo {{step}} de {{total}}…",
+    "benchSuspect": "A placa esquentou durante a medição, então a comparação entre as configurações pode estar torta. Vale repetir com a máquina fria.",
+    "tested": "{{tps}} tok/s medidos aqui"
   }
 }

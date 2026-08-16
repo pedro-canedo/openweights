@@ -169,3 +169,75 @@ function mockAdvice(model: string): TuneAdvice {
     facts: ["mtp"],
   };
 }
+
+// ---------------------------------------------------------------- medido ---
+
+/** O que uma configuração rendeu de verdade nesta máquina. */
+export interface BenchResult {
+  /** Tokens por segundo gerando — o número que a pessoa sente. */
+  genTps: number;
+  /** Tokens por segundo processando o prompt. */
+  promptTps: number;
+  genStddev: number;
+  buildNumber: number;
+  cpuInfo: string;
+  gpuInfo: string;
+  backends: string;
+  modelSize: number;
+}
+
+/** Progresso da medição, emitido no evento `tune-bench`. */
+export interface BenchProgress {
+  model: string;
+  step: number;
+  total: number;
+  last?: BenchResult;
+}
+
+export interface BenchOutcome {
+  model: string;
+  results: [ModelProfile, BenchResult][];
+  best: number | null;
+  /** A placa esquentou durante a corrida: os números servem, com ressalva. */
+  suspect: boolean;
+}
+
+/**
+ * Mede as configurações nesta máquina.
+ *
+ * Custa minutos e a placa inteira: o motor é derrubado enquanto roda e volta
+ * ao fim. Lança `engine-busy:<quem>` quando há execução de agente, automação
+ * ou indexação em curso.
+ */
+export function tuneBench(
+  model: string,
+  profiles: ModelProfile[],
+  force = false,
+): Promise<BenchOutcome> {
+  if (!isTauri) return Promise.resolve(mockBench(model, profiles));
+  return invoke<BenchOutcome>("tune_bench", { model, profiles, force });
+}
+
+/** Para a medição: a configuração atual termina, as próximas não começam. */
+export function tuneBenchCancel(): Promise<void> {
+  if (!isTauri) return Promise.resolve();
+  return invoke<void>("tune_bench_cancel");
+}
+
+function mockBench(model: string, profiles: ModelProfile[]): BenchOutcome {
+  const base = {
+    promptTps: 810,
+    genStddev: 0.4,
+    buildNumber: 10441,
+    cpuInfo: "AMD Ryzen 5 4600G",
+    gpuInfo: "NVIDIA GeForce RTX 5060 Ti",
+    backends: "CUDA",
+    modelSize: 6_969_004_032,
+  };
+  return {
+    model,
+    results: profiles.map((p, i) => [p, { ...base, genTps: 54 - i * 8 }]),
+    best: 0,
+    suspect: false,
+  };
+}

@@ -14,9 +14,14 @@ import type { TFunction } from "i18next";
 import { engineBusyReason } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
 import { errorMessage } from "../../lib/serverSession";
+import { listen } from "../../lib/tauri";
 import {
   tuneAdvise,
   tuneApply,
+  tuneBench,
+  tuneBenchCancel,
+  type BenchProgress,
+  type BenchResult,
   type ModelProfile,
   type TuneAdvice,
   type TuneOption,
@@ -37,12 +42,15 @@ function OptionCard({
   selected,
   onSelect,
   vramBytes,
+  measured,
 }: {
   option: TuneOption;
   recommended: boolean;
   selected: boolean;
   onSelect: () => void;
   vramBytes: number;
+  /** Tokens por segundo medidos nesta máquina, quando já houve medição. */
+  measured?: BenchResult | null;
 }) {
   const { t } = useTranslation();
   return (
@@ -83,6 +91,12 @@ function OptionCard({
           {t("tune.partial")}
         </span>
       )}
+      {/* Medido vale mais que estimado, e a tela precisa dizer qual é qual. */}
+      {measured && (
+        <span className="mt-0.5 rounded-md bg-ok/10 px-1.5 py-0.5 text-[11px] tabular-nums text-ok">
+          {t("tune.tested", { tps: measured.genTps.toFixed(1) })}
+        </span>
+      )}
     </button>
   );
 }
@@ -102,6 +116,10 @@ export default function TunePanel({
   const [aplicando, setAplicando] = useState(false);
   const [resultado, setResultado] = useState<string | null>(null);
   const [ocupado, setOcupado] = useState<string[]>([]);
+  /// Medição: tok/s reais por configuração, indexados como em `options`.
+  const [medidos, setMedidos] = useState<(BenchResult | null)[]>([]);
+  const [medindo, setMedindo] = useState<BenchProgress | null>(null);
+  const [suspeito, setSuspeito] = useState(false);
 
   useEffect(() => {
     let vivo = true;
@@ -119,6 +137,52 @@ export default function TunePanel({
       vivo = false;
     };
   }, [model]);
+
+  // O progresso vem por evento: uma medição leva minutos, e um spinner mudo
+  // durante minutos é indistinguível de travamento.
+  useEffect(() => {
+    const parar = listen<BenchProgress>("tune-bench", (p) => {
+      if (p.model === model || p.model.startsWith(model)) setMedindo(p);
+    });
+    return () => {
+      void parar.then((f) => f());
+    };
+  }, [model]);
+
+  async function medir(force = false) {
+    if (!advice) return;
+    setMedindo({ model, step: 0, total: advice.options.length });
+    setOcupado([]);
+    setResultado(null);
+    try {
+      const r = await tuneBench(
+        model,
+        advice.options.map((o) => o.profile),
+        force,
+      );
+      const porIndice = advice.options.map(
+        (o) =>
+          r.results.find(([p]) => p.ctx === o.profile.ctx && p.kvK === o.profile.kvK)?.[1] ??
+          null,
+      );
+      setMedidos(porIndice);
+      setSuspeito(r.suspect);
+      // O que rendeu mais passa a ser a escolha em foco: foi medido, não
+      // estimado.
+      const melhor = porIndice.reduce(
+        (best, atual, i) =>
+          atual && (best < 0 || (porIndice[best]?.genTps ?? 0) < atual.genTps) ? i : best,
+        -1,
+      );
+      if (melhor >= 0) setEscolhido(melhor);
+    } catch (e) {
+      const quem = engineBusyReason(e);
+      if (quem) setOcupado(quem);
+      else setResultado(errorMessage(e));
+    } finally {
+      setMedindo(null);
+    }
+  }
 
   async function aplicar(force = false) {
     if (!advice) return;
@@ -170,6 +234,7 @@ export default function TunePanel({
                 selected={i === escolhido}
                 onSelect={() => setEscolhido(i)}
                 vramBytes={advice.vramBytes}
+                measured={medidos[i]}
               />
             ))}
           </div>
@@ -214,6 +279,35 @@ export default function TunePanel({
             >
               {aplicando ? t("tune.applying") : t("tune.apply")}
             </button>
+            {medindo ? (
+              <>
+                <span className="text-[11px] text-dim">
+                  {medindo.total > 0
+                    ? t("tune.benchProgress", {
+                        step: Math.max(1, medindo.step),
+                        total: medindo.total,
+                      })
+                    : t("tune.benchStarting")}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void tuneBenchCancel()}
+                  className="rounded-lg border border-edge px-2 py-1 text-[11px] text-dim hover:text-ink"
+                >
+                  {t("common.cancel")}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={aplicando}
+                onClick={() => void medir()}
+                title={t("tune.benchHint")}
+                className="rounded-lg border border-edge px-3 py-1.5 text-xs text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+              >
+                {t("tune.bench")}
+              </button>
+            )}
             {resultado === "ok" && (
               <span className="text-[11px] text-ok">{t("tune.applied")}</span>
             )}
@@ -224,6 +318,12 @@ export default function TunePanel({
             )}
           </div>
 
+          {suspeito && (
+            <p className="mt-2 text-[11px] leading-relaxed text-warn">
+              {t("tune.benchSuspect")}
+            </p>
+          )}
+
           {ocupado.length > 0 && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <span className="text-[11px] leading-relaxed text-warn">
@@ -233,7 +333,7 @@ export default function TunePanel({
               </span>
               <button
                 type="button"
-                onClick={() => void aplicar(true)}
+                onClick={() => void (medidos.length ? aplicar(true) : medir(true))}
                 className="rounded-lg border border-warn/40 px-2 py-1 text-[11px] text-warn hover:bg-warn/10"
               >
                 {t("tune.applyAnyway")}

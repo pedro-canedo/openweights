@@ -2625,6 +2625,7 @@ dependencies = [
  "lr_runtime",
  "lr_types",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",

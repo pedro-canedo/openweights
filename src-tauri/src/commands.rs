@@ -518,7 +518,7 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
 /// passa pela tela: o relógio das automações dispara execuções sozinho e o
 /// índice do projeto pede embeddings ao mesmo servidor. Uma guarda no
 /// frontend enxerga só a conversa aberta.
-fn engine_busy_with(state: &AppState) -> Vec<&'static str> {
+pub(crate) fn engine_busy_with(state: &AppState) -> Vec<&'static str> {
     let mut quem = Vec::new();
     if state.agent.live_count() > 0 {
         quem.push("agent");

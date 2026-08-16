@@ -8,6 +8,7 @@ description = "Recomendação de quantização e estimativa de memória por hard
 [dependencies]
 lr_types.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 # A sonda e o banco de ensaio precisam falar com os binários do runtime; o
 # resto do crate segue puro, no desenho de `lr_runtime` (lib pura + casca).
 lr_runtime = { path = "../runtime" }

@@ -54,6 +54,113 @@ impl HardwareProfile {
             .max_by_key(|g| g.vram_total_bytes)
             .or_else(|| self.gpus.iter().max_by_key(|g| g.vram_total_bytes))
     }
+
+    /// Identidade desta máquina para efeito de desempenho.
+    ///
+    /// Entra tudo que muda o quanto ela rende: sistema, CPU, memória e, de
+    /// cada placa, nome, memória e **versão do driver** — uma atualização de
+    /// driver muda tok/s em dois dígitos percentuais. Não entra nada que
+    /// identifique a pessoa: é uma chave para comparar medições, não para
+    /// reconhecer quem está do outro lado.
+    pub fn machine_key(&self) -> String {
+        let mut partes = vec![
+            self.os.clone(),
+            self.arch.clone(),
+            self.cpu_name.clone(),
+            self.cpu_cores.to_string(),
+            (self.ram_total_bytes >> 30).to_string(),
+        ];
+        // Ordenada: a ordem de enumeração das placas não é promessa de nada.
+        let mut gpus: Vec<String> = self
+            .gpus
+            .iter()
+            .map(|g| {
+                format!(
+                    "{}/{}/{}",
+                    g.name,
+                    g.vram_total_bytes >> 20,
+                    g.driver_version.as_deref().unwrap_or("?")
+                )
+            })
+            .collect();
+        gpus.sort();
+        partes.extend(gpus);
+
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in partes.join("|").bytes() {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(0x100_0000_01b3);
+        }
+        format!("{hash:016x}")
+    }
+}
+
+#[cfg(test)]
+mod machine_key_tests {
+    use super::*;
+
+    fn perfil(driver: &str, vram_gib: u64) -> HardwareProfile {
+        HardwareProfile {
+            os: "windows".into(),
+            arch: "x86_64".into(),
+            cpu_name: "Ryzen 5 4600G".into(),
+            cpu_cores: 12,
+            avx2: true,
+            avx512: false,
+            ram_total_bytes: 32 << 30,
+            gpus: vec![GpuInfo {
+                name: "RTX 5060 Ti".into(),
+                vendor: GpuVendor::Nvidia,
+                vram_total_bytes: vram_gib << 30,
+                is_integrated: false,
+                driver_version: Some(driver.into()),
+                cuda_compute: Some((12, 0)),
+            }],
+        }
+    }
+
+    #[test]
+    fn the_same_machine_keeps_the_same_key() {
+        assert_eq!(
+            perfil("580.1", 16).machine_key(),
+            perfil("580.1", 16).machine_key()
+        );
+    }
+
+    /// Driver novo muda tok/s em dois dígitos: a medição antiga não descreve
+    /// mais esta máquina.
+    #[test]
+    fn a_driver_update_is_a_different_machine() {
+        assert_ne!(
+            perfil("580.1", 16).machine_key(),
+            perfil("581.0", 16).machine_key()
+        );
+    }
+
+    #[test]
+    fn changing_the_card_changes_the_key() {
+        assert_ne!(
+            perfil("580.1", 16).machine_key(),
+            perfil("580.1", 24).machine_key()
+        );
+    }
+
+    /// A ordem em que as placas foram enumeradas não é promessa de nada.
+    #[test]
+    fn the_order_of_the_cards_does_not_matter() {
+        let mut a = perfil("580.1", 16);
+        let segunda = GpuInfo {
+            name: "RTX 3060".into(),
+            vram_total_bytes: 12 << 30,
+            ..a.gpus[0].clone()
+        };
+        a.gpus.push(segunda.clone());
+
+        let mut b = perfil("580.1", 16);
+        b.gpus.insert(0, segunda);
+
+        assert_eq!(a.machine_key(), b.machine_key());
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
