@@ -53,6 +53,21 @@ const MAX_CUTUCADAS: u32 = 2;
 /// tentando agir — só errou o nome —, e errar o nome é consertável.
 const MAX_NOMES_ERRADOS: u32 = 3;
 
+/// Quantas vezes o laço aceita que o modelo emita uma chamada com JSON
+/// quebrado antes de desistir. Três: é erro comum e consertável, mas se ele
+/// não conserta com a dica, insistir só queima a placa.
+const MAX_JSON_QUEBRADO: u32 = 3;
+
+/// O que dizer quando o servidor recusa o passo por causa dos argumentos.
+///
+/// Não basta dizer "deu erro": o modelo precisa da SAÍDA. Quem cai aqui está
+/// tentando escrever um arquivo inteiro numa string só, e a saída é escrever
+/// em pedaços.
+const AVISO_JSON_QUEBRADO: &str = "Sua última chamada de ferramenta foi recusada: o JSON \
+     dos argumentos veio inválido (uma aspa não fechada num conteúdo longo). Não mande o \
+     arquivo inteiro de uma vez. Crie primeiro uma base curta com `fs_write` e depois \
+     acrescente o resto com `fs_edit`, em pedaços de até ~40 linhas.";
+
 /// Os empurrões. Curtos de propósito: modelo pequeno afogado em instrução
 /// esquece o pedido original.
 const CUTUCADA_ANUNCIO: &str = "Nada aconteceu: você descreveu o que ia fazer e não \
@@ -1136,6 +1151,7 @@ impl StepEngine<'_> {
         let mut local: u32 = 0;
         let mut cutucadas: u32 = 0;
         let mut nomes_errados: u32 = 0;
+        let mut jsons_quebrados: u32 = 0;
 
         let status = 'run: loop {
             if self.handle.is_cancelled() {
@@ -1212,6 +1228,23 @@ impl StepEngine<'_> {
                 };
                 match primeira {
                     Ok(outcome) => outcome,
+                    // O servidor leu a resposta, mas não conseguiu decodificar
+                    // os argumentos da chamada. Isso é conserto, não fim de
+                    // run: devolvemos o erro ao modelo com a saída.
+                    Err(e) if e.is_bad_tool_arguments() && jsons_quebrados < MAX_JSON_QUEBRADO => {
+                        jsons_quebrados += 1;
+                        log::warn!(
+                            "tool call com JSON inválido ({jsons_quebrados}/{MAX_JSON_QUEBRADO}): {e}"
+                        );
+                        messages.push(ChatMessage::user(AVISO_JSON_QUEBRADO.to_string()));
+                        self.sink.emit(RunEventKind::RunError {
+                            message: "O modelo mandou uma chamada com JSON inválido; \
+                                      pedi para escrever o arquivo em pedaços."
+                                .into(),
+                            retryable: true,
+                        });
+                        continue;
+                    }
                     Err(e) => {
                         // Pode ter sido a própria lista de ferramentas: há
                         // template que não sabe renderizar `tools` e o

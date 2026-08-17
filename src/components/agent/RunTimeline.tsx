@@ -60,15 +60,15 @@ function durationMs(run: RunView, now: number): number {
   return Math.max(0, end - run.startedAtMs);
 }
 
-/** Relógio de 1 Hz — só enquanto o run está vivo. */
-function useNow(active: boolean): number {
+/** Relógio — só enquanto o run está vivo. */
+function useNow(active: boolean, hz = 1): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!active) return;
     setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    const id = window.setInterval(() => setNow(Date.now()), 1000 / hz);
     return () => window.clearInterval(id);
-  }, [active]);
+  }, [active, hz]);
   return now;
 }
 
@@ -265,7 +265,14 @@ function StepBlock({
   compact: boolean;
 }) {
   const { t } = useTranslation();
+  // O cronômetro do "Pensando…" contava sempre 0,0 s: a trilha passava
+  // `thinkingMs={null}`, e um contador parado num modelo lento é a diferença
+  // entre "está trabalhando" e "travou". Enquanto o passo pensa, o relógio
+  // corre; quando a resposta começa a sair, congela no que levou.
+  const pensando = live && !step.text;
+  const agora = useNow(pensando, 10);
   if (!step.text && !step.reasoning) return null;
+  const pensou = step.thoughtMs ?? (pensando ? agora - step.startedAtMs : null);
   return (
     <div className="flex flex-col">
       {compact && (
@@ -276,8 +283,8 @@ function StepBlock({
       {step.reasoning && (
         <ThinkingBlock
           reasoning={step.reasoning}
-          thinkingMs={null}
-          active={live && !step.text}
+          thinkingMs={pensou != null ? Math.max(0, pensou) : null}
+          active={pensando}
         />
       )}
       {step.text &&

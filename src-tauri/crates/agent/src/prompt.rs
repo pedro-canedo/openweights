@@ -91,6 +91,16 @@ pub fn build_system_prompt(ctx: &PromptContext<'_>) -> String {
              - Não rode servidor nem processo que não termina sozinho (`python -m http.server`, \
              `npm run dev`): o passo fica preso até estourar o tempo.\n",
         );
+        // Só para quem pode escrever: mandar um ajudante somente-leitura usar
+        // `fs_write` é anunciar ferramenta que ele não tem.
+        let escreve = |t: &str| ctx.tools.iter().any(|n| n == t);
+        if escreve("fs_write") && escreve("fs_edit") {
+            out.push_str(
+                "- Arquivo grande não cabe numa chamada só: o JSON dos argumentos quebra no \
+                 meio e o servidor recusa o passo inteiro. Escreva uma base curta com \
+                 `fs_write` e complete com `fs_edit`, em pedaços de até ~40 linhas.\n",
+            );
+        }
         if ctx.tools_partial {
             out.push_str(
                 "Esta lista é um recorte do que existe. Se faltar uma ferramenta para o que                  você precisa fazer, chame `tools_find` descrevendo a tarefa e ela aparece.\n",

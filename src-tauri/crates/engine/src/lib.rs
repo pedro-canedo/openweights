@@ -62,6 +62,51 @@ pub enum EngineError {
     Protocol(String),
 }
 
+impl EngineError {
+    /// O servidor recusou o passo porque não conseguiu ler os argumentos da
+    /// chamada de ferramenta que o modelo emitiu.
+    ///
+    /// Acontece com arquivo grande escrito de uma vez: o modelo erra o escape
+    /// no meio de alguns milhares de caracteres, o JSON fica sem fechar a
+    /// aspa e o llama.cpp devolve 500 para a requisição inteira. É erro do
+    /// MODELO, não do servidor nem da rede — e tem conserto, então não pode
+    /// derrubar a execução.
+    pub fn is_bad_tool_arguments(&self) -> bool {
+        match self {
+            EngineError::Http { body, .. } => {
+                let b = body.to_lowercase();
+                b.contains("parse tool call") || b.contains("tool call arguments")
+            }
+            _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod erro_tests {
+    use super::EngineError;
+
+    /// Corpo real devolvido pelo llama.cpp quando o modelo escreveu um HTML
+    /// de 7 KB dentro dos argumentos e errou o escape no meio.
+    #[test]
+    fn a_broken_tool_call_is_told_apart_from_a_server_failure() {
+        let quebrado = EngineError::Http {
+            status: 500,
+            body: r#"{"error":{"code":500,"message":"Failed to parse tool call arguments as JSON: [json.exception.parse_error.101] parse error at line 1, column 7018: syntax error while parsing value - invalid string: missing closing quote"}}"#.into(),
+        };
+        assert!(quebrado.is_bad_tool_arguments());
+
+        // Um 500 de verdade (o servidor caiu) não pode virar "tente de novo
+        // em pedaços" — ali não há o que o modelo conserte.
+        let outro = EngineError::Http {
+            status: 500,
+            body: "internal server error".into(),
+        };
+        assert!(!outro.is_bad_tool_arguments());
+        assert!(!EngineError::NotRunning.is_bad_tool_arguments());
+    }
+}
+
 /// Configuração de inicialização do llama-server em Router mode.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

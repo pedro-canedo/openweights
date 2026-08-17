@@ -144,6 +144,9 @@ export default function ContextMeter({
     if (!model || applying) return;
     const value =
       next == null ? null : Math.round(Math.min(CTX_MAX, Math.max(CTX_MIN, next)));
+    // Reiniciar o motor recarrega o modelo — dezenas de segundos num 27B.
+    // Clicar de novo no valor que já está gravado não pode custar isso.
+    if (value === saved) return;
     setApplying(true);
     setBusyWith([]);
     try {

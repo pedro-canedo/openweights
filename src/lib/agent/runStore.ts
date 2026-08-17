@@ -90,6 +90,11 @@ export interface StepItem {
   index: number;
   text: string;
   reasoning: string;
+  /** Quando o passo começou — é o relógio do "Pensando…" da trilha. */
+  startedAtMs: number;
+  /** Quanto durou o raciocínio, fechado quando a resposta começa a sair.
+   *  `null` enquanto ele ainda está pensando. */
+  thoughtMs: number | null;
 }
 
 /**
@@ -263,6 +268,8 @@ function withStep(
   items: TimelineItem[],
   stepId: string,
   fn: (step: StepItem) => StepItem,
+  /** Relógio do evento — só usado quando o passo é criado agora. */
+  tsMs = 0,
 ): TimelineItem[] {
   const idx = items.findIndex((i) => i.kind === "step" && i.id === stepId);
   if (idx < 0) {
@@ -272,6 +279,8 @@ function withStep(
       index: countSteps(items),
       text: "",
       reasoning: "",
+      startedAtMs: tsMs,
+      thoughtMs: null,
     };
     return [...items, fn(created)];
   }
@@ -320,24 +329,35 @@ export function reduceEvent(run: RunView, event: RunEvent): RunView {
       break;
 
     case "step.started":
-      next.items = withStep(next.items, event.stepId, (s) => ({
-        ...s,
-        index: event.index,
-      }));
+      next.items = withStep(
+        next.items,
+        event.stepId,
+        (s) => ({ ...s, index: event.index, startedAtMs: event.tsMs }),
+        event.tsMs,
+      );
       break;
 
     case "assistant.delta":
-      next.items = withStep(next.items, event.stepId, (s) => ({
-        ...s,
-        text: s.text + event.text,
-      }));
+      next.items = withStep(
+        next.items,
+        event.stepId,
+        (s) => ({
+          ...s,
+          text: s.text + event.text,
+          // A resposta começou: o tempo de pensar está fechado.
+          thoughtMs: s.thoughtMs ?? Math.max(0, event.tsMs - s.startedAtMs),
+        }),
+        event.tsMs,
+      );
       break;
 
     case "reasoning.delta":
-      next.items = withStep(next.items, event.stepId, (s) => ({
-        ...s,
-        reasoning: s.reasoning + event.text,
-      }));
+      next.items = withStep(
+        next.items,
+        event.stepId,
+        (s) => ({ ...s, reasoning: s.reasoning + event.text }),
+        event.tsMs,
+      );
       break;
 
     case "assistant.message":

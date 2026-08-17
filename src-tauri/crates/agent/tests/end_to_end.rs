@@ -68,6 +68,19 @@ impl FakeLlama {
                         };
                         if path.contains("/chat/completions") && !path.contains("input_tokens") {
                             vistos.lock().unwrap().push(body);
+                            // Roteiro pode pedir uma recusa do servidor: o
+                            // primeiro pedaço vira o corpo do erro.
+                            let recusa = replies
+                                .lock()
+                                .unwrap()
+                                .get(counter.load(Ordering::SeqCst))
+                                .and_then(|r| r.first().cloned())
+                                .filter(|c| c.starts_with(HTTP_500));
+                            if let Some(corpo) = recusa {
+                                counter.fetch_add(1, Ordering::SeqCst);
+                                write_error(&mut stream, corpo.trim_start_matches(HTTP_500));
+                                continue;
+                            }
                             let idx = counter.fetch_add(1, Ordering::SeqCst);
                             let chunks = replies
                                 .lock()
@@ -204,6 +217,24 @@ fn tool_call_chunks(id: &str, name: &str, args_a: &str, args_b: &str) -> Vec<Str
         sse(r#"{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#),
         done(),
     ]
+}
+
+/// Prefixo que transforma a próxima resposta do roteiro num erro HTTP 500.
+const HTTP_500: &str = "__HTTP500__";
+
+fn erro_500(corpo: &str) -> Vec<String> {
+    vec![format!("{HTTP_500}{corpo}")]
+}
+
+fn write_error(stream: &mut TcpStream, body: &str) {
+    let head = format!(
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: application/json\r\n\
+         Content-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    let _ = stream.write_all(head.as_bytes());
+    let _ = stream.write_all(body.as_bytes());
+    let _ = stream.flush();
 }
 
 fn done() -> String {
@@ -1299,5 +1330,48 @@ async fn a_written_call_to_an_unknown_tool_is_ignored() {
     assert!(
         server.body(3).contains("Use exatamente um destes nomes"),
         "faltou dizer quais existem"
+    );
+}
+
+/// O 500 que matava a execução.
+///
+/// Com um arquivo grande, o modelo erra o escape no meio dos argumentos e o
+/// llama.cpp recusa a requisição inteira: `Failed to parse tool call arguments
+/// as JSON […] missing closing quote`. Isso derrubava o run com "o modelo não
+/// respondeu" — e o trabalho ia junto. É erro do modelo, e tem conserto: o
+/// laço devolve o problema com a saída (escrever em pedaços) e segue.
+#[tokio::test]
+async fn a_tool_call_with_broken_json_is_fixable_not_fatal() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn(vec![
+        erro_500(
+            r#"{"error":{"code":500,"message":"Failed to parse tool call arguments as JSON: [json.exception.parse_error.101] parse error at line 1, column 7018: syntax error while parsing value - invalid string: missing closing quote"}}"#,
+        ),
+        tool_call_chunks(
+            "call_1",
+            "fs_write",
+            r#"{"path":"index.html","#,
+            r#""content":"<!DOCTYPE html>"}"#,
+        ),
+        vec![
+            text_chunk("Criei a base; agora completo com fs_edit."),
+            done(),
+        ],
+    ]);
+
+    let status = h
+        .run("faça a página", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+    assert!(
+        h.workspace.join("index.html").exists(),
+        "o run morreu no 500 em vez de tentar de novo"
+    );
+
+    // E o modelo recebeu a saída, não só a notícia do erro.
+    let segundo = server.body(1);
+    assert!(
+        segundo.contains("fs_edit") && segundo.contains("pedaços"),
+        "faltou dizer COMO consertar: {segundo}"
     );
 }
