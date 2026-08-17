@@ -27,6 +27,36 @@ fn err_str<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// Garante que todo modelo local sem perfil suba já na configuração
+/// agêntica: janela de [`tune::AGENT_MIN_CTX`] tokens, KV comprimido só o
+/// necessário, `fit` do llama.cpp ligado para as camadas.
+///
+/// Roda no início do motor, ANTES de escrever o preset (que só é lido no
+/// boot). É instantâneo — a conta é pura, sem sonda — e acontece uma vez por
+/// modelo: o perfil gravado (`source = Recommended`) responde pelas próximas
+/// partidas. Perfil escolhido pela pessoa (`Manual`) ou já recomendado nunca
+/// é tocado: este caminho só preenche o vazio, onde antes o `fit` decidia
+/// sozinho e numa placa apertada entregava 8k — que mata o modo agente em
+/// silêncio.
+pub(crate) fn ensure_agent_profiles(state: &AppState) {
+    let budget = lr_advisor::MemoryBudget::from_profile(&state.profile);
+    for a in lr_models::scan_local(&state.models_dir) {
+        if profile_for(state, &a.name).is_some() {
+            continue;
+        }
+        let perfil = tune::agent_profile(&budget, a.total_bytes);
+        match state.store.set_model_profile(a.name.trim(), &perfil) {
+            Ok(()) => log::info!(
+                "perfil agêntico para {}: janela {}, kv {:?}",
+                a.name,
+                tune::AGENT_MIN_CTX,
+                perfil.kv_k
+            ),
+            Err(e) => log::warn!("não gravei o perfil agêntico de {}: {e}", a.name),
+        }
+    }
+}
+
 /// Uma configuração proposta, já com a memória medida.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

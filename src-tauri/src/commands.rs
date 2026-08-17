@@ -522,6 +522,10 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         // --models-dir do llama.cpp não é recursivo; a biblioteca mora em
         // autor/repo/. O INI registra cada GGUF com o nome que a UI já usa,
         // mais `ctx-size`/`fit` quando o usuário fixou a janela de contexto.
+        // Modelo sem perfil ganha o agêntico (janela de 32k) ANTES de o
+        // preset ser escrito — o INI só é lido no boot, então este é o único
+        // momento em que a garantia pode entrar.
+        crate::commands_tuning::ensure_agent_profiles(state);
         cfg.models_preset = Some(write_router_preset(state)?);
 
         let mut srv = lr_engine::LlamaServer::new(cfg);

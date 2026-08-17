@@ -23,6 +23,14 @@ const JANELAS: [u32; 5] = [8192, 16384, 32768, 65536, 131_072];
 /// "cabendo", e roda várias vezes mais devagar, sem erro nenhum.
 pub const MARGEM_VRAM_BYTES: u64 = 768 * 1024 * 1024;
 
+/// Janela mínima para o modo agente funcionar minimamente bem.
+///
+/// Abaixo disso o harness encolhe por todos os lados: o cardápio cai para 12
+/// ferramentas, a compactação dispara cedo e o plano vira etapas minúsculas.
+/// 32.768 é onde essas três curvas param de doer — e é o que o app garante ao
+/// carregar um modelo local sem perfil escolhido pela pessoa.
+pub const AGENT_MIN_CTX: u32 = 32_768;
+
 /// O que a pessoa quer desta máquina. Não é gosto escondido no código: são
 /// respostas defensáveis para o mesmo hardware, e a tela mostra todas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +140,60 @@ pub fn candidates(budget: &MemoryBudget, meta: &ModelMeta, file_size_bytes: u64)
         });
     }
     out
+}
+
+/// Perfil agêntico para um modelo local sem perfil escolhido.
+///
+/// A promessa é UMA: janela de [`AGENT_MIN_CTX`] tokens. Sem perfil, o `fit`
+/// do llama.cpp decide sozinho — e numa placa apertada ele entrega 8k, que
+/// mata o modo agente em silêncio. Aqui a janela é fixada e o resto é
+/// deliberadamente conservador:
+///
+/// - **`ngl` fica de fora.** Sem `ngl`, o `fit` continua LIGADO e divide as
+///   camadas entre placa e RAM se for preciso — a janela vale sempre, e não
+///   existe o risco de um chute de camadas fazer o modelo nem carregar (este
+///   caminho roda no boot, sem a rede de desfazer do `tune_apply`).
+/// - **O KV comprime só o necessário**: f16 quando a estimativa diz que o
+///   modelo inteiro + KV cabem na placa com folga; q8_0 quando aperta; q4_0
+///   quando nem assim — perda de qualidade tem que ser paga por um motivo.
+/// - Flash attention entra quando há GPU (ganho sem custo de memória).
+///
+/// O tamanho do arquivo responde pelo modelo: parâmetros são estimados por
+/// `bytes / 0.6` (a densidade típica de um Q4), e o erro dessa conta só muda
+/// o TIER de compressão do KV — nunca a janela, nunca a carga.
+pub fn agent_profile(budget: &MemoryBudget, file_size_bytes: u64) -> ModelProfile {
+    let tem_gpu = budget.vram_bytes > 0;
+    let teto = if tem_gpu {
+        budget.vram_bytes.saturating_sub(MARGEM_VRAM_BYTES)
+    } else {
+        (budget.ram_bytes as f64 * crate::RAM_USABLE_FRACTION) as u64
+    };
+    let params = (file_size_bytes as f64 / 0.6) as u64;
+    let meta = ModelMeta::estimate_from_params(params, AGENT_MIN_CTX);
+
+    let cabe = |kv: KvType| {
+        let m = ModelMeta {
+            kv_bytes_per_elem: kv.bytes_per_elem(),
+            ..meta
+        };
+        file_size_bytes + m.kv_cache_bytes() <= teto
+    };
+    let kv = if cabe(KvType::F16) {
+        None
+    } else if cabe(KvType::Q8_0) {
+        Some(KvType::Q8_0)
+    } else {
+        Some(KvType::Q4_0)
+    };
+
+    ModelProfile {
+        ctx: Some(AGENT_MIN_CTX),
+        kv_k: kv,
+        kv_v: kv,
+        flash_attn: tem_gpu.then_some(true),
+        source: ProfileSource::Recommended,
+        ..Default::default()
+    }
 }
 
 /// Maior janela da tabela cujo custo estimado cabe no teto.
@@ -363,6 +425,44 @@ mod tests {
             },
             fits_gpu: cabe,
         }
+    }
+
+    /// A promessa do perfil agêntico: a janela é SEMPRE 32.768; o que muda
+    /// conforme a placa é só quanto o KV comprime — e `ngl` nunca entra,
+    /// porque este perfil é gravado no boot, sem rede de desfazer.
+    #[test]
+    fn the_agent_profile_always_promises_the_agent_window() {
+        // 9B Q4 (~5.5 GiB) numa placa de 16 GB: cabe folgado, KV em f16.
+        let folgado = agent_profile(&placa(16), 5_500_000_000);
+        assert_eq!(folgado.ctx, Some(AGENT_MIN_CTX));
+        assert_eq!(folgado.kv_k, None, "com folga não se paga compressão");
+        assert_eq!(folgado.ngl, None, "o fit continua ligado");
+        assert_eq!(folgado.flash_attn, Some(true));
+        assert_eq!(folgado.source, ProfileSource::Recommended);
+
+        // Um Q4 de ~20B (12 GB) na mesma placa: aperta, o KV comprime.
+        let apertado = agent_profile(&placa(16), 12_000_000_000);
+        assert_eq!(apertado.ctx, Some(AGENT_MIN_CTX));
+        assert!(apertado.kv_k.is_some(), "apertou: comprime");
+
+        // Modelo maior que a placa: a janela NÃO cede — o fit divide as
+        // camadas com a RAM, mais lento porém agêntico.
+        let transborda = agent_profile(&placa(8), 40_000_000_000);
+        assert_eq!(transborda.ctx, Some(AGENT_MIN_CTX));
+        assert_eq!(transborda.kv_k, Some(KvType::Q4_0));
+        assert_eq!(transborda.ngl, None);
+
+        // Sem GPU: sem flash attention, e o teto vem da RAM.
+        let cpu = agent_profile(
+            &MemoryBudget {
+                vram_bytes: 0,
+                ram_bytes: 32 * GIB,
+                unified: false,
+            },
+            5_500_000_000,
+        );
+        assert_eq!(cpu.ctx, Some(AGENT_MIN_CTX));
+        assert_eq!(cpu.flash_attn, None);
     }
 
     #[test]
