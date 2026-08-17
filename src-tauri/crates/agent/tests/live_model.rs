@@ -717,6 +717,12 @@ async fn the_agent_survives_the_live_eval_suite() {
     // são comparados (e commitados) entre uma fase e outra.
     if let Ok(caminho) = std::env::var("OW_PLACAR") {
         use std::io::Write as _;
+        // A pasta do placar pode ainda não existir (docs/ num clone novo) —
+        // e perder a suíte INTEIRA na hora de gravar o resultado seria o
+        // pior momento possível para um panic.
+        if let Some(pai) = std::path::Path::new(&caminho).parent() {
+            let _ = std::fs::create_dir_all(pai);
+        }
         let mut f = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
