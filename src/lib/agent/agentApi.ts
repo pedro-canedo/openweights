@@ -309,6 +309,32 @@ export function toolGroupsSet(groups: string[]): Promise<string[]> {
     : mockToolGroupsSet(groups);
 }
 
+/**
+ * JSON cru da configuração da busca na web (setting `web.config`), ou `null`
+ * quando nunca foi gravada.
+ *
+ * Nunca lança: comando ausente (build antiga) ou erro do banco viram `null`
+ * e a tela começa nos padrões — o mesmo que o backend faz quando o JSON
+ * gravado está estragado.
+ */
+export function webConfigGet(): Promise<string | null> {
+  if (!isTauri) return Promise.resolve(null);
+  return invoke<string | null>("web_config_get").catch((e) => {
+    console.warn("web_config_get falhou:", e);
+    return null;
+  });
+}
+
+/**
+ * Grava a configuração da busca e aplica NA HORA: o backend valida o JSON,
+ * persiste e refaz o catálogo de ferramentas (sem reiniciar o app). Lança na
+ * falha de propósito — a tela precisa avisar que nada foi salvo.
+ */
+export function webConfigSet(json: string): Promise<void> {
+  if (!isTauri) return Promise.resolve();
+  return invoke<void>("web_config_set", { json });
+}
+
 export function checkpointsList(
   workspaceDir: string,
 ): Promise<CheckpointRow[]> {

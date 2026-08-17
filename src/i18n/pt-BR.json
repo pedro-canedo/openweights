@@ -396,7 +396,21 @@
     "runtimeInstalled": "instalado",
     "runtimeMissing": "não instalado",
     "runtimeInstall": "Instalar / atualizar",
-    "version": "Versão"
+    "version": "Versão",
+    "webSearch": {
+      "title": "Busca na web",
+      "subtitle": "Sem chave, o agente busca pelo DuckDuckGo — grátis, com qualidade menor e sujeito a bloqueios. Com uma chave do Brave ou da Tavily, os resultados melhoram.",
+      "provider": "Provedor de busca",
+      "providerAuto": "Automático (padrão)",
+      "providerDuckDuckGo": "DuckDuckGo (sem chave)",
+      "providerBrave": "Brave Search",
+      "providerTavily": "Tavily",
+      "apiKey": "Chave de API",
+      "apiKeyPlaceholder": "Cole a chave do Brave ou da Tavily (opcional)",
+      "saved": "Salvo — já está valendo.",
+      "saveFailed": "Não deu para salvar: {{error}}",
+      "applyHint": "As mudanças valem na hora, sem reiniciar o app. No automático, a chave decide o provedor (tvly-… é Tavily; outra chave, Brave)."
+    }
   },
   "onboarding": {
     "welcome": "Bem-vindo ao OpenWeights",

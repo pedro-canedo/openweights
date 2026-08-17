@@ -396,7 +396,21 @@
     "runtimeInstalled": "installed",
     "runtimeMissing": "not installed",
     "runtimeInstall": "Install / update",
-    "version": "Version"
+    "version": "Version",
+    "webSearch": {
+      "title": "Web search",
+      "subtitle": "Without a key, the agent searches via DuckDuckGo — free, lower quality, and prone to blocking. With a Brave or Tavily key, results get better.",
+      "provider": "Search provider",
+      "providerAuto": "Automatic (default)",
+      "providerDuckDuckGo": "DuckDuckGo (no key)",
+      "providerBrave": "Brave Search",
+      "providerTavily": "Tavily",
+      "apiKey": "API key",
+      "apiKeyPlaceholder": "Paste your Brave or Tavily key (optional)",
+      "saved": "Saved — already in effect.",
+      "saveFailed": "Could not save: {{error}}",
+      "applyHint": "Changes apply immediately, no app restart needed. On automatic, the key picks the provider (tvly-… means Tavily; any other key, Brave)."
+    }
   },
   "onboarding": {
     "welcome": "Welcome to OpenWeights",

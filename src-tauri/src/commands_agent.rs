@@ -537,3 +537,34 @@ pub fn chat_set_model(state: State<'_, AppState>, chat_id: i64, model_id: String
         .set_chat_model(chat_id, &model_id)
         .map_err(err_str)
 }
+
+// ------------------------------------------------------- busca na web ---
+
+/// JSON cru da configuração de internet (setting `web.config`), ou `None`
+/// quando nunca foi gravada.
+///
+/// Devolve o texto como está no banco de propósito: quem interpreta é a tela
+/// (com parse defensivo), e o formato é o mesmo `WebConfig` que o registry
+/// lê na montagem — uma tradução aqui só criaria um terceiro dialeto.
+#[tauri::command]
+pub fn web_config_get(state: State<'_, AppState>) -> CmdResult<Option<String>> {
+    state.store.get_setting("web.config").map_err(err_str)
+}
+
+/// Grava a configuração de internet e refaz o catálogo de ferramentas.
+///
+/// Valida ANTES de gravar: o registry ignora JSON estragado em silêncio
+/// (cai nos padrões), então aceitar qualquer texto aqui gravaria uma
+/// configuração que nunca teria efeito — e a pessoa acharia que salvou.
+/// O `rebuild_tools` no fim é o que aplica sem reiniciar o app, o mesmo
+/// mecanismo dos conectores MCP.
+#[tauri::command]
+pub fn web_config_set(state: State<'_, AppState>, json: String) -> CmdResult<()> {
+    serde_json::from_str::<lr_webtools::WebConfig>(&json)
+        .map_err(|e| format!("configuração de internet inválida: {e}"))?;
+    state
+        .store
+        .set_setting("web.config", &json)
+        .map_err(err_str)?;
+    state.rebuild_tools()
+}

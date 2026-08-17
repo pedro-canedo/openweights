@@ -132,6 +132,8 @@ fn main() {
             commands_agent::checkpoints_list,
             commands_agent::checkpoint_restore,
             commands_agent::chat_set_model,
+            commands_agent::web_config_get,
+            commands_agent::web_config_set,
             // Atividade: o histórico do que o agente fez.
             commands_activity::activity_runs,
             commands_activity::activity_calls,
