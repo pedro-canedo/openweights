@@ -128,7 +128,14 @@ impl Bench {
 
     /// Cria um arquivo dentro do projeto (com as pastas que faltarem).
     pub(crate) fn write(&self, rel: &str, body: &str) -> PathBuf {
-        let path = self.dir.path().join(rel);
+        // `join("docs/relatorio.md")` guarda a barra literal: no Windows sai
+        // `…\tmp\docs/relatorio.md`, que abre igual mas nunca é IGUAL ao que
+        // a ferramenta devolve (`…\tmp\docs\relatorio.md`). Compondo peça por
+        // peça o separador é o do sistema e a comparação vale nos dois.
+        let mut path = self.dir.path().to_path_buf();
+        for pedaco in rel.split('/') {
+            path.push(pedaco);
+        }
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).expect("criar pasta");
         }

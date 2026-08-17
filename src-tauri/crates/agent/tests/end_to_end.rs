@@ -1539,19 +1539,29 @@ async fn a_template_rejection_only_disarms_after_the_second_strike() {
 #[tokio::test]
 async fn a_log_that_mentions_an_exit_code_does_not_fail_verification() {
     let h = Harness::new();
+    // Precisa de um comando que SAIA COM 0 e cuspa o texto "exit code 1".
+    // `echo` não serve: no Windows é embutido do cmd, e prefixar com `cmd /c`
+    // torna o comando opaco — opaco sempre pede confirmação, até no modo
+    // automático, e o run ficaria pendurado. A saída é gravar a frase num
+    // arquivo e mandar um programa de verdade lê-la de volta.
+    let leitura = if cfg!(windows) {
+        r#" exit log.txt"}"#
+    } else {
+        r#" log.txt"}"#
+    };
+    let programa = if cfg!(windows) {
+        r#"{"command":"findstr"#
+    } else {
+        r#"{"command":"cat"#
+    };
     let server = FakeLlama::spawn(vec![
         tool_call_chunks(
             "c1",
-            "terminal_run",
-            r#"{"command":"echo exit"#,
-            r#" code 1"}"#,
-        ),
-        tool_call_chunks(
-            "c2",
             "fs_write",
-            r#"{"path":"nota.md","#,
-            r#""content":"fim"}"#,
+            r#"{"path":"log.txt","#,
+            r#""content":"exit code 1"}"#,
         ),
+        tool_call_chunks("c2", "terminal_run", programa, leitura),
         vec![text_chunk("Pronto."), done()],
     ]);
 
@@ -1741,14 +1751,20 @@ async fn an_expired_approval_denies_once_then_stops() {
 #[tokio::test]
 async fn a_failed_verification_gets_one_repair_round() {
     let h = Harness::new();
+    // O teste precisa de um comando que FALHE sem o arquivo e PASSE com ele.
+    // No Windows não existe `ls` no PATH (e `cmd /c dir` seria opaco, que
+    // pede confirmação até no automático): o `findstr` é programa de verdade
+    // e sai com 2 quando o arquivo não abre, 0 quando casa. As duas chamadas
+    // usam a MESMA string de propósito — é por ela que a verificação casa a
+    // re-execução com a primeira.
+    let (lista_a, lista_b) = if cfg!(windows) {
+        (r#"{"command":"findstr"#, r#" . faltando.txt"}"#)
+    } else {
+        (r#"{"command":"ls"#, r#" faltando.txt"}"#)
+    };
     let server = FakeLlama::spawn(vec![
         // O comando falha (arquivo não existe) e o modelo declara vitória.
-        tool_call_chunks(
-            "c1",
-            "terminal_run",
-            r#"{"command":"ls"#,
-            r#" faltando.txt"}"#,
-        ),
+        tool_call_chunks("c1", "terminal_run", lista_a, lista_b),
         vec![text_chunk("Pronto, tudo certo."), done()],
         // A rodada de conserto: cria o arquivo e roda de novo o MESMO comando.
         tool_call_chunks(
@@ -1757,12 +1773,7 @@ async fn a_failed_verification_gets_one_repair_round() {
             r#"{"path":"faltando.txt","#,
             r#""content":"agora existe"}"#,
         ),
-        tool_call_chunks(
-            "c3",
-            "terminal_run",
-            r#"{"command":"ls"#,
-            r#" faltando.txt"}"#,
-        ),
+        tool_call_chunks("c3", "terminal_run", lista_a, lista_b),
         vec![
             text_chunk("Consertei: o arquivo existe e o comando passa."),
             done(),
