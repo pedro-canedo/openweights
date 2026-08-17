@@ -1890,3 +1890,40 @@ async fn compaction_fires_and_survives_a_failed_summary() {
         .any(|i| server.body(i).contains("mensagens antigas foram removidas"));
     assert!(marcado, "faltou o marcador do plano B no histórico");
 }
+
+/// O circuito completo do arquivo grande: o JSON quebra DENTRO do servidor
+/// (nenhum fragmento chega ao cliente — não há o que "recuperar"), o aviso
+/// endurece, e na segunda recaída o modelo entrega o arquivo em TEXTO puro —
+/// que o harness grava com o escape certo, pela política de sempre.
+#[tokio::test]
+async fn a_file_that_breaks_json_twice_arrives_as_plain_text() {
+    let h = Harness::new();
+    let quebra = || {
+        erro_500(
+            r#"{"error":{"code":500,"message":"Failed to parse tool call arguments as JSON: syntax error while parsing value - invalid string: missing closing quote"}}"#,
+        )
+    };
+    let pagina = "<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<body onload=\"init()\">\n<canvas id=\"jogo\"></canvas>\n</html>";
+    let entrega = format!("Vou gravar como texto.\n\nARQUIVO: jogo.html\n```html\n{pagina}\n```");
+    let server = FakeLlama::spawn(vec![
+        quebra(),
+        quebra(),
+        vec![text_chunk(&entrega), done()],
+        vec![text_chunk("Gravado."), done()],
+    ]);
+
+    let status = h
+        .run_with_steps("crie o jogo", RunMode::Yolo, server.endpoint(), 10)
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    // O arquivo existe INTEIRO, com aspas e atributos intactos.
+    let gravado = std::fs::read_to_string(h.workspace.join("jogo.html")).expect("arquivo gravado");
+    assert!(gravado.contains("lang=\"pt-BR\""), "{gravado}");
+    assert!(gravado.contains("onload=\"init()\""), "{gravado}");
+
+    // E o segundo aviso pediu exatamente o formato de texto.
+    let pediu_texto = (0..server.calls.load(Ordering::SeqCst))
+        .any(|i| server.body(i).contains("ARQUIVO: caminho"));
+    assert!(pediu_texto, "faltou a instrução do formato de texto");
+}

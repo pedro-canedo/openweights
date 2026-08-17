@@ -221,3 +221,36 @@ fn only_an_unfinished_turn_gets_pushed() {
         None
     );
 }
+
+/// O fallback de arquivo em texto: o formato que o modelo usa quando o JSON
+/// da chamada não aguenta o conteúdo (a saída do mercado — patch do Codex,
+/// XML do Cline — adaptada ao que o llama.cpp permite).
+#[test]
+fn a_file_delivered_as_text_is_parsed_whole() {
+    let texto = "Aqui está:\n\nARQUIVO: jogo.html\n```html\n<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<body onload=\"init()\">\n</html>\n```\n";
+    let (caminho, conteudo) = super::arquivo_em_texto(texto).expect("parse");
+    assert_eq!(caminho, "jogo.html");
+    // Aspas e atributos chegam INTEIROS — é o ponto do formato.
+    assert!(conteudo.contains("lang=\"pt-BR\""));
+    assert!(conteudo.starts_with("<!DOCTYPE html>"));
+    assert!(conteudo.ends_with("</html>\n"));
+}
+
+/// Uma cerca DENTRO do conteúdo não corta o arquivo: vale a última.
+#[test]
+fn an_inner_fence_does_not_truncate_the_file() {
+    let texto = "ARQUIVO: LEIA.md\n```\n# Doc\n\n```js\ncodigo();\n```\n\nfim\n```";
+    let (_, conteudo) = super::arquivo_em_texto(texto).expect("parse");
+    assert!(conteudo.contains("codigo();"));
+    assert!(conteudo.trim_end().ends_with("fim"));
+}
+
+/// O que não é o formato não vira escrita: prosa, caminho com espaço,
+/// bloco vazio.
+#[test]
+fn prose_and_malformed_headers_are_not_files() {
+    assert!(super::arquivo_em_texto("O ARQUIVO: é importante para o projeto").is_none());
+    assert!(super::arquivo_em_texto("ARQUIVO: dois nomes\n```\nx\n```").is_none());
+    assert!(super::arquivo_em_texto("ARQUIVO: a.md\n```\n\n```").is_none());
+    assert!(super::arquivo_em_texto("sem nada").is_none());
+}

@@ -87,12 +87,47 @@ fn aviso_json_quebrado(recaida: u32) -> String {
          acrescente o resto com `fs_append`, em pedaços de até ~40 linhas."
             .to_string()
     } else {
-        "Quebrou de novo pelo MESMO motivo: conteúdo longo demais numa chamada só. \
-         Agora faça exatamente isto: chame `fs_write` com APENAS as primeiras 30 \
-         linhas do arquivo. Nada mais nesta chamada. Depois continue com `fs_append`, \
-         30 linhas por vez, até terminar."
+        // Segunda recaída: sair do JSON de vez. É o que o mercado faz quando
+        // o modelo não aguenta o escape (patch em texto no Codex, XML no
+        // Cline): o conteúdo viaja como TEXTO puro no stream — que nunca
+        // quebra — e quem monta o JSON da escrita é o harness.
+        "Quebrou de novo pelo MESMO motivo: conteúdo longo dentro do JSON da \
+         chamada. NÃO use mais a ferramenta para este arquivo. Responda em TEXTO \
+         PURO, neste formato exato:\n\nARQUIVO: caminho/do/arquivo\n```\n(conteúdo \
+         completo do arquivo)\n```\n\nUm arquivo por resposta. Eu gravo para você."
             .to_string()
     }
+}
+
+/// Um arquivo entregue em texto puro: `ARQUIVO: caminho` + bloco cercado.
+///
+/// É o fallback para o que o JSON de tool call não aguenta. Contra um modelo
+/// pequeno no llama.cpp, o 500 de "argumentos inválidos" acontece DENTRO do
+/// servidor, antes de qualquer byte chegar aqui — não há fragmento para
+/// recuperar. A saída do mercado (patch freeform do Codex, XML do Cline) é a
+/// mesma: tirar o conteúdo de dentro do JSON. O modelo manda texto, que
+/// nunca quebra; o JSON da escrita — com o escape certo — é montado por nós.
+fn arquivo_em_texto(texto: &str) -> Option<(String, String)> {
+    let inicio = texto.find("ARQUIVO:")?;
+    let resto = &texto[inicio + "ARQUIVO:".len()..];
+    let (linha_caminho, depois) = resto.split_once('\n')?;
+    let caminho = linha_caminho.trim().trim_matches('`').trim();
+    if caminho.is_empty() || caminho.contains(' ') {
+        return None;
+    }
+    // O bloco cercado logo depois. A cerca de abertura pode trazer a
+    // linguagem (```html); o conteúdo vai até a PRÓXIMA cerca — a última do
+    // texto, para um ``` DENTRO do conteúdo não cortar o arquivo no meio.
+    let abre = depois.find("```")?;
+    let apos_cerca = &depois[abre + 3..];
+    let inicio_conteudo = apos_cerca.find('\n')? + 1;
+    let corpo = &apos_cerca[inicio_conteudo..];
+    let fecha = corpo.rfind("\n```")?;
+    let conteudo = &corpo[..fecha];
+    if conteudo.trim().is_empty() {
+        return None;
+    }
+    Some((caminho.to_string(), format!("{conteudo}\n")))
 }
 
 /// Os empurrões. Curtos de propósito: modelo pequeno afogado em instrução
@@ -1569,6 +1604,47 @@ impl StepEngine<'_> {
             // Sem ferramentas pedidas: é a resposta final — a não ser que o
             // modelo só tenha ANUNCIADO o que ia fazer.
             if !self.tools_on() || !outcome.wants_tools() {
+                // Arquivo entregue em TEXTO (o fallback pós-JSON-quebrado):
+                // o harness monta a chamada de escrita com o escape certo e
+                // ela passa pela política e pelo checkpoint como qualquer
+                // outra. O conteúdo veio pelo stream, que não quebra.
+                if self.tools_on()
+                    && self.menu.active_names().iter().any(|n| n == "fs_write")
+                    && let Some((caminho, conteudo)) = arquivo_em_texto(&outcome.content)
+                {
+                    let args = serde_json::json!({
+                        "path": caminho,
+                        "content": conteudo,
+                    });
+                    let tc = ToolCallReq {
+                        id: new_id("call"),
+                        name: "fs_write".into(),
+                        arguments_json: args.to_string(),
+                    };
+                    let como_pedido = ChatMessage::assistant_with_tool_calls(
+                        outcome.content.clone(),
+                        vec![lr_engine::ToolCallMsg {
+                            id: tc.id.clone(),
+                            kind: "function".into(),
+                            function: lr_engine::FunctionCallMsg {
+                                name: tc.name.clone(),
+                                arguments: tc.arguments_json.clone(),
+                            },
+                        }],
+                    );
+                    messages.push(como_pedido);
+                    match runner.call(&step_id, index, &tc).await {
+                        CallFlow::Result(msg) => {
+                            messages.push(msg);
+                            continue;
+                        }
+                        CallFlow::Cancelled => break 'run RunStatus::Cancelled,
+                        CallFlow::Escalate(reason) => {
+                            out.escalation = Some(reason);
+                            break 'run RunStatus::Escalated;
+                        }
+                    }
+                }
                 let empurrao = self
                     .tools_on()
                     .then(|| cutucada_para(&outcome.content))
