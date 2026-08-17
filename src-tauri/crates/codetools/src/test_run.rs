@@ -103,7 +103,9 @@ impl Tool for TestRun {
         {
             body.push_str("\n\n");
             body.push_str(&note);
-            return Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes));
+            return Ok(ToolOutput::text(body)
+                .with_exit_code(run.outcome.exit_code)
+                .truncated_to(ctx.max_output_bytes));
         }
 
         let framework = Framework::from_command(&cmd.argv);
@@ -131,7 +133,9 @@ impl Tool for TestRun {
             body.push_str(&hint);
         }
 
-        Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes))
+        Ok(ToolOutput::text(body)
+            .with_exit_code(run.outcome.exit_code)
+            .truncated_to(ctx.max_output_bytes))
     }
 }
 

@@ -220,7 +220,9 @@ impl Tool for FormatRun {
                 body.push('\n');
                 body.push_str(&crate::text::clip_line(line, 200));
             }
-            return Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes));
+            return Ok(ToolOutput::text(body)
+                .with_exit_code(run.outcome.exit_code)
+                .truncated_to(ctx.max_output_bytes));
         }
 
         match (check.as_ref().map(|c| c.clean), changed.len()) {
@@ -242,6 +244,7 @@ impl Tool for FormatRun {
 
         Ok(ToolOutput::text(body)
             .with_changed(changed)
+            .with_exit_code(run.outcome.exit_code)
             .truncated_to(ctx.max_output_bytes))
     }
 }

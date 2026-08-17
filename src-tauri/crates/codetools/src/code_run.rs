@@ -258,7 +258,9 @@ impl Tool for CodeRun {
             body.push_str("\n\n[...saída cortada no limite; imprima menos coisa...]");
         }
 
-        Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes))
+        Ok(ToolOutput::text(body)
+            .with_exit_code(run.outcome.exit_code)
+            .truncated_to(ctx.max_output_bytes))
     }
 }
 

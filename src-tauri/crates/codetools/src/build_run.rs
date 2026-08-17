@@ -127,7 +127,9 @@ impl Tool for BuildRun {
             body.push_str(&hint);
         }
 
-        Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes))
+        Ok(ToolOutput::text(body)
+            .with_exit_code(run.outcome.exit_code)
+            .truncated_to(ctx.max_output_bytes))
     }
 }
 

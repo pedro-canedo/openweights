@@ -1715,3 +1715,65 @@ async fn an_expired_approval_denies_once_then_stops() {
     assert!(!h.workspace.join("um.md").exists());
     assert!(!h.workspace.join("dois.md").exists());
 }
+
+/// Verificação reprovada no modo agente ganha UMA rodada de conserto — e o
+/// mesmo comando rodado de novo com sucesso supersede a falha histórica.
+///
+/// Antes, a reprovação só virava um evento que ninguém lia: o run terminava
+/// "concluído" com um comando falhado no meio e nada era feito a respeito.
+#[tokio::test]
+async fn a_failed_verification_gets_one_repair_round() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn(vec![
+        // O comando falha (arquivo não existe) e o modelo declara vitória.
+        tool_call_chunks(
+            "c1",
+            "terminal_run",
+            r#"{"command":"ls"#,
+            r#" faltando.txt"}"#,
+        ),
+        vec![text_chunk("Pronto, tudo certo."), done()],
+        // A rodada de conserto: cria o arquivo e roda de novo o MESMO comando.
+        tool_call_chunks(
+            "c2",
+            "fs_write",
+            r#"{"path":"faltando.txt","#,
+            r#""content":"agora existe"}"#,
+        ),
+        tool_call_chunks(
+            "c3",
+            "terminal_run",
+            r#"{"command":"ls"#,
+            r#" faltando.txt"}"#,
+        ),
+        vec![
+            text_chunk("Consertei: o arquivo existe e o comando passa."),
+            done(),
+        ],
+    ]);
+
+    let status = h
+        .run_with_steps("liste o arquivo", RunMode::Yolo, server.endpoint(), 12)
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    // O relatório reprovado chegou ao modelo como instrução de conserto…
+    let recebeu = (0..server.calls.load(Ordering::SeqCst))
+        .any(|i| server.body(i).contains("verificação automática reprovou"));
+    assert!(recebeu, "o modelo tinha que receber o relatório");
+
+    // …e a SEGUNDA verificação passou, porque o mesmo comando rodou verde.
+    let verificacoes: Vec<bool> = h
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match &e.event {
+            RunEventKind::Verification { passed, .. } => Some(*passed),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(verificacoes.len(), 2, "reprovada + re-verificada");
+    assert!(!verificacoes[0] && verificacoes[1], "{verificacoes:?}");
+    assert!(h.workspace.join("faltando.txt").exists());
+}

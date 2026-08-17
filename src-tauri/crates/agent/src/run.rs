@@ -293,6 +293,11 @@ const MAX_ERROS_TOTAIS: u32 = 8;
 const STALL_NUDGE: u32 = 3;
 const STALL_ESCALATE: u32 = 5;
 
+/// Teto de passos da rodada de conserto pós-verificação. Curto: ou o
+/// conserto é direto (criar o arquivo que falta, rodar de novo o comando),
+/// ou não é conserto — e o orçamento global continua valendo por cima.
+const MAX_PASSOS_DE_CONSERTO: u32 = 4;
+
 /// Contadores que atravessam o run inteiro — inclusive as etapas do modo
 /// laço, que zeram a memória de contexto (`reset_task_memory`) mas NÃO podem
 /// zerar isto: um modelo que só anuncia consumiria o orçamento repetindo o
@@ -708,7 +713,7 @@ impl ToolRunner {
             args,
             read_key,
             step_index,
-            analysis,
+            command_text,
             spec.category,
         )
         .await
@@ -723,7 +728,7 @@ impl ToolRunner {
         args: Value,
         read_key: Option<String>,
         step_index: u32,
-        analysis: Option<lr_policy::CommandAnalysis>,
+        comando: Option<String>,
         category: ToolCategory,
     ) -> CallFlow {
         let _ = self.store.set_tool_call_state(call_id, "running");
@@ -792,14 +797,18 @@ impl ToolRunner {
                     // ficou velha, e a releitura de conferência tem que passar.
                     self.reads.invalidate_file(file);
                 }
-                if let Some(a) = &analysis {
+                // Todo Execute vira registro — antes só quem tinha um campo
+                // `command` nos argumentos entrava, e `test_run`/`build_run`
+                // (o sinal mais valioso: "a suíte passou") eram invisíveis
+                // para a verificação. A linha COMPLETA vai no display: dois
+                // `cargo` diferentes não podem virar o mesmo registro.
+                if category == ToolCategory::Execute {
                     self.commands.push(CommandRecord {
-                        display: a.program.clone(),
+                        display: comando.clone().unwrap_or_else(|| name.to_string()),
                         ok: true,
-                        // O código de saída DECLARADO pela ferramenta vence o
-                        // marcador textual: um log que contenha "exit code 1"
-                        // não pode derrubar a verificação de um comando que
-                        // saiu com 0.
+                        // O código DECLARADO pela ferramenta vence o marcador
+                        // textual: um log com "exit code 1" não pode derrubar
+                        // um comando que saiu com 0.
                         exit_code: out
                             .exit_code
                             .or_else(|| verify::extract_exit_code(&out.content)),
@@ -828,9 +837,9 @@ impl ToolRunner {
                 let _ = self
                     .store
                     .finish_tool_call(call_id, false, "", 0, Some(&message));
-                if let Some(a) = &analysis {
+                if category == ToolCategory::Execute {
                     self.commands.push(CommandRecord {
-                        display: a.program.clone(),
+                        display: comando.clone().unwrap_or_else(|| name.to_string()),
                         ok: false,
                         exit_code: None,
                     });
@@ -1895,6 +1904,9 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     let max_tasks = (max_steps / scout::MAX_STEPS_PER_TASK).max(1);
     let mut budget = StepBudget::new(max_steps);
 
+    // Vive fora do despacho porque a rodada de conserto (verificação
+    // reprovada no modo agente) continua a MESMA conversa.
+    let mut messages_do_agente: Vec<ChatMessage> = Vec::new();
     let status = if work_mode == WorkMode::Loop {
         // Divide o objetivo e executa entrega por entrega, cada uma com
         // contexto novo.
@@ -1916,19 +1928,19 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         summary_override = Some(outcome.summary);
         outcome.status
     } else {
-        let mut messages = vec![ChatMessage::system(build_prompt(None))];
+        messages_do_agente = vec![ChatMessage::system(build_prompt(None))];
         if work_mode == WorkMode::Plan {
             // Segunda mensagem de sistema: a reconstrução do prompt a cada
             // passo troca só a primeira, então esta sobrevive ao plano mudar.
-            messages.push(ChatMessage::system(scout::PLAN_MODE_BRIEF));
+            messages_do_agente.push(ChatMessage::system(scout::PLAN_MODE_BRIEF));
         }
-        messages.extend(history);
-        append_prompt(&mut messages, &prompt);
+        messages_do_agente.extend(history);
+        append_prompt(&mut messages_do_agente, &prompt);
 
         let outcome = engine
             .drive(
                 &mut runner,
-                &mut messages,
+                &mut messages_do_agente,
                 &mut budget,
                 max_steps,
                 &build_prompt,
@@ -1957,14 +1969,62 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     helpers.merge_into(&mut runner.written, &mut runner.commands);
     usage.steps += helpers.steps();
 
-    // Verificação barata do que ficou em disco.
-    if status == RunStatus::Done
-        && let Some(report) =
-            verify::verify(workspace.as_deref(), &runner.written, &runner.commands)
+    // Verificação do que ficou em disco — agora em QUALQUER desfecho com
+    // efeito colateral: um run que estourou o teto com arquivos escritos
+    // merece o relatório MAIS que um que terminou redondo.
+    let mut status = status;
+    let mut verificacao = matches!(
+        status,
+        RunStatus::Done | RunStatus::MaxSteps | RunStatus::Escalated
+    )
+    .then(|| verify::verify(workspace.as_deref(), &runner.written, &runner.commands))
+    .flatten();
+
+    // Reprovou no modo agente: UMA rodada de conserto, com o relatório na
+    // mesa e um teto curto próprio (o orçamento global continua valendo por
+    // cima). No modo laço NÃO: `scout::failure_of` já reenfileira a etapa
+    // reprovada, e empilhar os dois daria 16 passos por etapa ruim.
+    if work_mode == WorkMode::Agent
+        && status == RunStatus::Done
+        && verificacao.as_ref().is_some_and(|r| !r.passed)
+        && let Some(report) = verificacao.clone()
     {
         sink.emit(RunEventKind::Verification {
             passed: report.passed,
-            notes: report.notes,
+            notes: report.notes.clone(),
+        });
+        messages_do_agente.push(ChatMessage::user(format!(
+            "A verificação automática reprovou o resultado: {} Corrija AGORA o que ela \
+             aponta — crie o que falta ou rode de novo o comando que falhou depois de \
+             consertar a causa — e só então responda.",
+            report.notes
+        )));
+        let conserto = engine
+            .drive(
+                &mut runner,
+                &mut messages_do_agente,
+                &mut budget,
+                MAX_PASSOS_DE_CONSERTO,
+                &build_prompt,
+            )
+            .await;
+        usage.steps += conserto.steps;
+        usage.prompt_tokens += conserto.prompt_tokens;
+        usage.completion_tokens += conserto.completion_tokens;
+        if !conserto.text.trim().is_empty() {
+            final_text = conserto.text.clone();
+        }
+        escalation = escalation.or(conserto.escalation);
+        status = conserto.status;
+        // O resultado da rodada é FINAL: re-verifica e segue — sem segunda
+        // rodada, senão vira o mesmo laço com outro nome.
+        verificacao = verify::verify(workspace.as_deref(), &runner.written, &runner.commands);
+    }
+
+    if let Some(report) = &verificacao {
+        sink.emit(RunEventKind::Verification {
+            passed: report.passed,
+            notes: report.notes.clone(),
         });
     }
 

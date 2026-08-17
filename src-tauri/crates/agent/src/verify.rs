@@ -43,6 +43,19 @@ pub fn verify(
     let mut notes: Vec<String> = Vec::new();
     let mut passed = true;
 
+    // O MESMO comando rodado de novo supersede o registro antigo: um teste
+    // que falhou e depois passou foi CONSERTADO — cobrar a falha histórica
+    // condenaria exatamente o ciclo certo (rodar, corrigir, rodar de novo).
+    let mut ultimos: Vec<&CommandRecord> = Vec::new();
+    for cmd in commands {
+        if let Some(pos) = ultimos.iter().position(|c| c.display == cmd.display) {
+            ultimos[pos] = cmd;
+        } else {
+            ultimos.push(cmd);
+        }
+    }
+    let commands = ultimos;
+
     if !written.is_empty() {
         match workspace {
             Some(root) => {
@@ -74,7 +87,7 @@ pub fn verify(
         }
     }
 
-    for cmd in commands {
+    for cmd in &commands {
         match (cmd.ok, cmd.exit_code) {
             (_, Some(0)) => notes.push(format!("`{}` terminou com código 0.", cmd.display)),
             (_, Some(code)) => {
@@ -89,10 +102,60 @@ pub fn verify(
         }
     }
 
+    if let Some(root) = workspace {
+        for aviso in content_warnings(root, written) {
+            notes.push(format!("aviso: {aviso}"));
+        }
+    }
+
     Some(VerifyReport {
         passed,
         notes: notes.join(" "),
     })
+}
+
+/// Suspeitas baratas de arquivo truncado. São AVISOS: nenhuma reprova
+/// sozinha, porque cada heurística tem exceção legítima — mas um HTML sem
+/// `</html>` depois de um run que quase estourou o JSON merece uma linha.
+fn content_warnings(root: &Path, written: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for rel in written {
+        let caminho = root.join(rel);
+        let Ok(texto) = std::fs::read_to_string(&caminho) else {
+            continue; // binário ou ilegível: fora do alcance destas checagens
+        };
+        if texto.trim().is_empty() {
+            out.push(format!("`{rel}` ficou vazio"));
+            continue;
+        }
+        // Cerca de código aberta vale para qualquer texto.
+        if texto.matches("```").count() % 2 == 1 {
+            out.push(format!("`{rel}` tem cerca de código sem fechar"));
+        }
+        let ext = caminho
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        match ext.as_str() {
+            "html" | "htm" => {
+                if !texto.to_ascii_lowercase().contains("</html>") {
+                    out.push(format!("`{rel}` não termina com </html>"));
+                }
+            }
+            "rs" | "js" | "ts" | "tsx" | "jsx" | "json" | "c" | "cpp" | "java" | "css" => {
+                let abre = texto.matches('{').count();
+                let fecha = texto.matches('}').count();
+                if abre != fecha {
+                    out.push(format!(
+                        "`{rel}` tem chaves desbalanceadas ({abre} abrem, {fecha} fecham)"
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Procura um código de saída na saída de um comando.
@@ -191,6 +254,80 @@ mod tests {
         assert!(!report.passed);
         assert!(report.notes.contains("código 101"));
         assert!(report.notes.contains("cargo build"));
+    }
+
+    /// Rodar de novo o MESMO comando supersede o registro antigo: o ciclo
+    /// certo (teste vermelho → conserto → teste verde) não pode reprovar por
+    /// causa da falha histórica.
+    #[test]
+    fn rerunning_the_same_command_supersedes_the_old_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let report = verify(
+            Some(dir.path()),
+            &[],
+            &[
+                CommandRecord {
+                    display: "cargo test".into(),
+                    ok: true,
+                    exit_code: Some(101),
+                },
+                CommandRecord {
+                    display: "cargo test".into(),
+                    ok: true,
+                    exit_code: Some(0),
+                },
+            ],
+        )
+        .unwrap();
+        assert!(report.passed, "{}", report.notes);
+
+        // Comandos DIFERENTES não se apagam.
+        let outro = verify(
+            Some(dir.path()),
+            &[],
+            &[
+                CommandRecord {
+                    display: "cargo test -p a".into(),
+                    ok: true,
+                    exit_code: Some(101),
+                },
+                CommandRecord {
+                    display: "cargo test -p b".into(),
+                    ok: true,
+                    exit_code: Some(0),
+                },
+            ],
+        )
+        .unwrap();
+        assert!(!outro.passed);
+    }
+
+    /// Suspeita de truncamento é AVISO, nunca reprova sozinha: cada
+    /// heurística tem exceção legítima.
+    #[test]
+    fn truncation_suspicion_warns_without_failing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("index.html"), "<html><body>oi</body>").unwrap();
+        std::fs::write(dir.path().join("ok.rs"), "fn a() {}\n").unwrap();
+        std::fs::write(dir.path().join("quebrado.rs"), "fn a() { if x {\n").unwrap();
+        std::fs::write(dir.path().join("vazio.md"), "").unwrap();
+
+        let report = verify(
+            Some(dir.path()),
+            &[
+                "index.html".into(),
+                "ok.rs".into(),
+                "quebrado.rs".into(),
+                "vazio.md".into(),
+            ],
+            &[],
+        )
+        .unwrap();
+        assert!(report.passed, "aviso não reprova: {}", report.notes);
+        assert!(report.notes.contains("</html>"), "{}", report.notes);
+        assert!(report.notes.contains("desbalanceadas"), "{}", report.notes);
+        assert!(report.notes.contains("vazio"), "{}", report.notes);
+        assert!(!report.notes.contains("`ok.rs` tem"), "{}", report.notes);
     }
 
     #[test]

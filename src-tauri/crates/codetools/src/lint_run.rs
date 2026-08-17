@@ -152,6 +152,7 @@ impl Tool for LintRun {
         };
         Ok(ToolOutput::text(body)
             .with_changed(changed)
+            .with_exit_code(run.outcome.exit_code)
             .truncated_to(ctx.max_output_bytes))
     }
 }
