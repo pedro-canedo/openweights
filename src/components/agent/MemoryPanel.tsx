@@ -64,10 +64,13 @@ function sortFacts(facts: MemoryFact[]): MemoryFact[] {
 export default function MemoryPanel({
   workspaceDir,
   reloadKey = 0,
+  onChanged,
 }: {
   workspaceDir: string | null;
   /** Muda para forçar recarga (ex.: o agente memorizou algo no run). */
   reloadKey?: number;
+  /** A árvore de arquivos precisa reler `.openweights/memory/`. */
+  onChanged?: () => void;
 }) {
   const { t } = useTranslation();
   const [facts, setFacts] = useState<MemoryFact[]>([]);
@@ -103,6 +106,7 @@ export default function MemoryPanel({
       setDraft("");
       flash(t("agent.memory.saved"));
       refresh();
+      onChanged?.();
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -115,6 +119,7 @@ export default function MemoryPanel({
     try {
       await memoryForgetFact(fact.id, workspaceDir);
       refresh();
+      onChanged?.();
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -127,6 +132,7 @@ export default function MemoryPanel({
       const report = await memoryConsolidateNow(workspaceDir);
       flash(`${t("agent.memory.saved")} (${report.added.length})`);
       refresh();
+      onChanged?.();
     } catch (err) {
       setError(errorMessage(err));
     } finally {

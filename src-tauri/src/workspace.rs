@@ -15,6 +15,8 @@ const SKIP_DIRS: &[&str] = &[
     ".next",
     "build",
 ];
+/// Pastas que começam com `.` e mesmo assim entram na árvore (memória do projeto).
+const VISIBLE_DOT_DIRS: &[&str] = &[".openweights"];
 const MAX_FILES: usize = 400;
 const MAX_DEPTH: usize = 5;
 const MAX_BYTES: u64 = 300 * 1024;
@@ -206,6 +208,18 @@ fn resolve_under(root: &Path, rel: &str) -> WsResult<PathBuf> {
     Ok(canon)
 }
 
+fn skip_entry(name: &str, is_dir: bool) -> bool {
+    if !name.starts_with('.') {
+        return false;
+    }
+    if is_dir {
+        return !VISIBLE_DOT_DIRS
+            .iter()
+            .any(|d| name.eq_ignore_ascii_case(d));
+    }
+    name != ".env" && name != ".gitignore"
+}
+
 fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<WorkspaceFile>) -> WsResult<()> {
     if depth > MAX_DEPTH || out.len() >= MAX_FILES {
         return Ok(());
@@ -220,11 +234,17 @@ fn walk(root: &Path, dir: &Path, depth: usize, out: &mut Vec<WorkspaceFile>) -> 
         }
         let path = ent.path();
         let name = ent.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') && name != ".env" && name != ".gitignore" {
+        if skip_entry(&name, path.is_dir()) {
             continue;
         }
         if path.is_dir() {
             if SKIP_DIRS.iter().any(|s| name.eq_ignore_ascii_case(s)) {
+                continue;
+            }
+            // Rascunhos do code_run: não poluem o explorador.
+            if name.eq_ignore_ascii_case("scratch")
+                && dir.file_name().is_some_and(|n| n == ".openweights")
+            {
                 continue;
             }
             walk(root, &path, depth + 1, out)?;
@@ -292,6 +312,31 @@ mod tests {
         assert_eq!(body, "fn main() {}");
         write_file(dir.to_str().unwrap(), "readme.md", "ok").unwrap();
         assert_eq!(read_file(dir.to_str().unwrap(), "readme.md").unwrap(), "ok");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn lists_memory_fact_files_and_html() {
+        let dir = tmp("facts");
+        std::fs::write(dir.join("index.html"), "<h1>oi</h1>").unwrap();
+        let mem = dir.join(".openweights").join("memory");
+        std::fs::create_dir_all(&mem).unwrap();
+        std::fs::write(mem.join("MEMORY.md"), "# memória").unwrap();
+        std::fs::write(mem.join("estilo.md"), "- tema dark").unwrap();
+        let scratch = dir.join(".openweights").join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        std::fs::write(scratch.join("tmp.py"), "print(1)").unwrap();
+        std::fs::create_dir_all(dir.join(".hidden")).unwrap();
+        std::fs::write(dir.join(".hidden").join("secret.md"), "no").unwrap();
+
+        let files = list_files(dir.to_str().unwrap()).unwrap();
+        let paths: Vec<_> = files.iter().map(|f| f.path.as_str()).collect();
+        assert!(paths.contains(&"index.html"));
+        assert!(paths.contains(&".openweights/memory/MEMORY.md"));
+        assert!(paths.contains(&".openweights/memory/estilo.md"));
+        assert!(!paths.iter().any(|p| p.contains("scratch")));
+        assert!(!paths.iter().any(|p| p.contains(".hidden")));
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

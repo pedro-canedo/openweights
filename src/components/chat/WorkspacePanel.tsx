@@ -150,6 +150,7 @@ type WorkspaceCtx = {
   closeEditor: () => void;
   save: () => Promise<void>;
   reveal: (rel?: string | null) => Promise<void>;
+  reloadFiles: () => void;
 };
 
 const WorkspaceContext = createContext<WorkspaceCtx | null>(null);
@@ -191,6 +192,16 @@ export function WorkspaceHost({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  const reloadFiles = () => {
+    if (!dir) {
+      onFiles([]);
+      return;
+    }
+    void listWorkspace(dir)
+      .then(onFiles)
+      .catch(() => onFiles([]));
+  };
+
   useEffect(() => {
     if (!dir) {
       onFiles([]);
@@ -198,11 +209,11 @@ export function WorkspaceHost({
       setEditorOpen(false);
       return;
     }
-    void listWorkspace(dir)
-      .then(onFiles)
-      .catch(() => onFiles([]));
+    reloadFiles();
+    // Recarrega quando a pasta muda, o agente grava um checkpoint, ou o
+    // explorador abre — senão index.html / MEMORY.md nascem e a lista fica vazia.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dir]);
+  }, [dir, checkpointsKey, explorerOpen]);
 
   const addFolder = async () => {
     setError(null);
@@ -308,6 +319,7 @@ export function WorkspaceHost({
         closeEditor,
         save,
         reveal,
+        reloadFiles,
       }}
     >
       {children}
@@ -445,6 +457,7 @@ export function WorkspaceExplorer() {
     visible,
     error,
     openFile,
+    reloadFiles,
   } = useWorkspace();
 
   const tree = useMemo(() => buildTree(visible), [visible]);
@@ -518,6 +531,11 @@ export function WorkspaceExplorer() {
               })
             }
           />
+          <MemoryPanel
+            workspaceDir={dir}
+            reloadKey={checkpointsKey}
+            onChanged={reloadFiles}
+          />
         </>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
@@ -532,9 +550,14 @@ export function WorkspaceExplorer() {
         </div>
       )}
 
-      {/* Memória de longo prazo: fica fora do `dir ?` porque os fatos
-          globais valem mesmo sem pasta escolhida. */}
-      <MemoryPanel workspaceDir={dir} />
+      {/* Memória global continua visível mesmo sem pasta escolhida. */}
+      {!dir && (
+        <MemoryPanel
+          workspaceDir={dir}
+          reloadKey={checkpointsKey}
+          onChanged={reloadFiles}
+        />
+      )}
 
       {error && (
         <p className="border-t border-edge px-3 py-2 text-[11px] text-bad">
