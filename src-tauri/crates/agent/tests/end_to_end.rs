@@ -1169,3 +1169,135 @@ async fn a_cancelled_run_keeps_what_it_already_said_in_the_chat() {
         resposta.content
     );
 }
+
+/// O agente que anuncia e para: o laço insiste uma vez, e aí o trabalho sai.
+///
+/// Vem de um run real com um 9B: "Vou criar os três arquivos. Começando com o
+/// `app.py`:" encerrava o run como CONCLUÍDO com a pasta vazia. Aqui a
+/// primeira resposta é o anúncio, a segunda é a ação — e o arquivo precisa
+/// existir no fim.
+#[tokio::test]
+async fn a_model_that_only_announces_gets_pushed_to_actually_do_it() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn(vec![
+        vec![
+            text_chunk("Vou criar os arquivos. Começando com o `notas.md`:"),
+            done(),
+        ],
+        tool_call_chunks(
+            "call_1",
+            "fs_write",
+            r#"{"path":"notas.md","#,
+            r#""content":"conteúdo"}"#,
+        ),
+        vec![text_chunk("Criei o notas.md."), done()],
+    ]);
+
+    let status = h
+        .run("crie notas.md", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+    assert!(
+        h.workspace.join("notas.md").exists(),
+        "o anúncio virou run encerrado sem trabalho nenhum"
+    );
+
+    // A cutucada é uma mensagem de usuário no MESMO passo — não um passo novo.
+    let segundo = server.body(1);
+    assert!(
+        segundo.contains("não chamou ferramenta"),
+        "faltou o empurrão no pedido seguinte: {segundo}"
+    );
+}
+
+/// O modo automático não pode parar para perguntar por causa de um `|`.
+///
+/// Encontrado rodando o agente de verdade: `ls -la . | head -20` classificava
+/// como comando inanalisável, e comando inanalisável pede confirmação em
+/// TODOS os modos. Num run automático não há quem clique — o run ficava
+/// pendurado até estourar o tempo, sem nada na tela explicando o que esperava.
+#[tokio::test]
+async fn a_piped_command_does_not_stall_the_automatic_mode() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn(vec![
+        tool_call_chunks(
+            "c1",
+            "terminal_run",
+            r#"{"command":"ls -la"#,
+            r#" . | head -20"}"#,
+        ),
+        vec![text_chunk("Listei."), done()],
+    ]);
+
+    let status = h.run("liste", RunMode::Yolo, server.endpoint()).await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+    assert!(
+        !h.has("run.paused"),
+        "modo automático não pergunta: {:?}",
+        h.kinds()
+    );
+    assert!(h.has("tool.result"), "o comando nem chegou a rodar");
+}
+
+/// O modelo que escreve a chamada em vez de fazê-la.
+///
+/// Visto com o qwen2.5-coder-14b: em vez de emitir a tool call, ele imprime o
+/// JSON `{"name": …, "arguments": …}` no texto. Como texto sem tool call
+/// significa "terminei", o run encerrava no primeiro passo sem fazer nada.
+/// Agora o laço pede duas vezes que ele use o mecanismo e, se ele insistir,
+/// executa o que escreveu — pela mesma política de sempre.
+#[tokio::test]
+async fn a_tool_call_written_as_text_still_gets_executed() {
+    let h = Harness::new();
+    let escrita = r#"{"name": "fs_write", "arguments": {"path": "notas.md", "content": "oi"}}"#;
+    let server = FakeLlama::spawn(vec![
+        vec![text_chunk(escrita), done()],
+        vec![text_chunk(escrita), done()],
+        vec![text_chunk(escrita), done()],
+        vec![text_chunk("Criei o notas.md."), done()],
+    ]);
+
+    let status = h
+        .run("crie notas.md", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+    assert_eq!(
+        std::fs::read_to_string(h.workspace.join("notas.md")).ok(),
+        Some("oi".to_string()),
+        "a chamada escrita como texto tinha de rodar"
+    );
+
+    // Antes de executar, o laço INSISTIU: as duas primeiras respostas viraram
+    // pedidos para usar o mecanismo de ferramentas.
+    assert!(
+        server.body(1).contains("mecanismo de ferramentas"),
+        "faltou o empurrão: {}",
+        server.body(1)
+    );
+}
+
+/// A porta dos fundos não é atalho: nome que não está no cardápio não roda.
+#[tokio::test]
+async fn a_written_call_to_an_unknown_tool_is_ignored() {
+    let h = Harness::new();
+    let escrita = r#"{"name": "formatar_disco", "arguments": {"alvo": "/"}}"#;
+    let server = FakeLlama::spawn(vec![
+        vec![text_chunk(escrita), done()],
+        vec![text_chunk(escrita), done()],
+        vec![text_chunk(escrita), done()],
+        vec![text_chunk("Desisto."), done()],
+    ]);
+
+    let status = h.run("faça algo", RunMode::Yolo, server.endpoint()).await;
+    assert_eq!(status, RunStatus::Done);
+    assert!(
+        !h.has("tool.requested"),
+        "ferramenta fora do cardápio não pode rodar: {:?}",
+        h.kinds()
+    );
+    // Mas o modelo é avisado do nome certo em vez de o run morrer calado.
+    assert!(
+        server.body(3).contains("Use exatamente um destes nomes"),
+        "faltou dizer quais existem"
+    );
+}

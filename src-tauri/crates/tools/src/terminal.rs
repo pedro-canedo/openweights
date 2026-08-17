@@ -7,7 +7,7 @@
 //! direto para o sistema. Assim `git commit -m "mensagem com espaço"` chega
 //! como um argumento só, e nada é reinterpretado no caminho.
 //!
-//! **Com shell quando a linha é [`CommandClass::Opaque`].** Pipe, `&&`,
+//! **Com shell quando a linha tem sintaxe de shell.** Pipe, `&&`,
 //! redireção e variáveis não existem sem um shell — rodar `ls | grep x` sem
 //! ele simplesmente não faz o que a pessoa leu na tela. Como `Opaque` é
 //! justamente a classe que a política manda confirmar *sempre* (inclusive em
@@ -19,7 +19,7 @@ use crate::spawner::{self, SpawnRequest};
 use crate::{Tool, ToolContext, ToolError, ToolOutput, ToolResult, arg_str, arg_str_opt, arg_u64};
 use async_trait::async_trait;
 use lr_policy::classify;
-use lr_types::agent::{CommandClass, ToolCategory, ToolPreview};
+use lr_types::agent::{ToolCategory, ToolPreview};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -168,8 +168,10 @@ impl Tool for TerminalRun {
             .saturating_sub(RESULT_OVERHEAD_BYTES)
             .max(1_024);
 
-        let analysis = classify(&command);
-        let request = if analysis.class == CommandClass::Opaque {
+        // Shell é questão de SINTAXE (pipe, redireção, glob), não de
+        // classificação: `ls | head` é analisável e ainda assim precisa do
+        // shell para o `|` significar alguma coisa.
+        let request = if lr_policy::needs_shell(&command) {
             // Ver a nota no topo: só chega aqui com aprovação humana.
             SpawnRequest::shell(&command, cwd)
         } else {
@@ -227,6 +229,7 @@ impl Tool for TerminalRun {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lr_types::agent::CommandClass;
     use tempfile::TempDir;
 
     fn project() -> (TempDir, ToolContext) {
@@ -305,11 +308,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn opaque_lines_go_through_the_shell() {
+    async fn chained_lines_go_through_the_shell() {
         let (_d, ctx) = project();
-        // Sem shell, `&&` viraria um argumento literal e nada encadearia.
+        // Sem shell, `&&` viraria um argumento literal e nada encadearia —
+        // e isso NÃO depende de a linha ser analisável ou não.
         let cmd = line("echo um && echo dois", "echo um && echo dois");
-        assert_eq!(classify(&cmd).class, CommandClass::Opaque);
+        assert!(lr_policy::needs_shell(&cmd));
         let out = run(json!({"command": cmd, "timeout_secs": 30}), &ctx)
             .await
             .unwrap();
@@ -349,11 +353,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn preview_marks_chained_commands_as_opaque() {
+    async fn preview_shows_the_worst_link_of_a_chain() {
         let (_d, ctx) = project();
         let args = json!({"command": "cargo build && rm -rf alvo"});
         match TerminalRun.preview(&args, &ctx).await.unwrap() {
-            ToolPreview::Command { class, .. } => assert_eq!(class, CommandClass::Opaque),
+            // `rm` é a peça que manda; a linha inteira continua analisável.
+            ToolPreview::Command { class, .. } => {
+                assert_eq!(class, lr_types::agent::CommandClass::Mutating)
+            }
             other => panic!("esperava prévia de comando, veio {other:?}"),
         }
     }

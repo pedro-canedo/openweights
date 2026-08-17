@@ -86,7 +86,10 @@ pub fn build_system_prompt(ctx: &PromptContext<'_>) -> String {
              - Não repita uma chamada que já deu o mesmo resultado.\n\
              - Se a ferramenta falhar, leia a mensagem de erro, corrija os argumentos e tente outro caminho.\n\
              - Se a pessoa recusar uma ação, não insista: proponha outra abordagem.\n\
-             - Quando a tarefa estiver concluída, responda em texto, SEM chamar ferramenta.\n",
+             - Não anuncie o que vai fazer: faça. Texto sem chamada de ferramenta ENCERRA \
+             a execução, então só responda em texto quando a tarefa estiver pronta.\n\
+             - Não rode servidor nem processo que não termina sozinho (`python -m http.server`, \
+             `npm run dev`): o passo fica preso até estourar o tempo.\n",
         );
         if ctx.tools_partial {
             out.push_str(
@@ -145,7 +148,10 @@ mod tests {
         assert!(p.contains("criar notas.md"));
         assert!(p.contains("Usa pnpm"));
         assert!(p.contains("Seja direto."));
-        assert!(p.contains("SEM chamar ferramenta"));
+        // A regra que define quando o run termina — e a contrapartida dela,
+        // que impede o modelo de encerrar anunciando.
+        assert!(p.contains("ENCERRA"));
+        assert!(p.contains("Não anuncie o que vai fazer"));
         // Orçamento: algumas centenas de tokens (~4 caracteres por token).
         assert!(p.len() < 2600, "prompt longo demais: {} bytes", p.len());
     }

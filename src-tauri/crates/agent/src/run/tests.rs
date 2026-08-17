@@ -125,3 +125,99 @@ fn head_chars_cuts_on_character_boundaries() {
     let cut = head_chars(s, 4);
     assert_eq!(cut, "ação…");
 }
+
+/// O deslize que fazia o agente "terminar" com a pasta vazia.
+///
+/// Um 9B respondeu "Vou criar os três arquivos. Começando com o `app.py`:" e
+/// parou. Como texto sem ferramenta significa "acabei", o run encerrou como
+/// concluído sem ter escrito nada — o pior desfecho possível, porque anuncia
+/// sucesso. O detector precisa pegar a promessa e deixar passar a entrega.
+#[test]
+fn announcing_an_action_is_not_the_same_as_finishing() {
+    for promessa in [
+        "Vou criar os três arquivos. Começando com o `app.py`:",
+        "Primeiro, vou ler o arquivo de configuração.",
+        "Deixa eu conferir a estrutura do projeto",
+        "I'll start by creating the server file:",
+        "Perfeito. Agora vou escrever o README",
+    ] {
+        assert!(
+            super::anuncio_sem_acao(promessa),
+            "devia cutucar: {promessa}"
+        );
+    }
+}
+
+#[test]
+fn a_finished_answer_is_left_alone() {
+    for entrega in [
+        "Criei os três arquivos. O servidor sobe com `python3 app.py`.",
+        "Não encontrei nenhum uso dessa função no projeto.",
+        "Pronto: o teste passa e o build está limpo.",
+        // Termina em bloco de código: mostrou algo, não prometeu.
+        "Ficou assim:\n\n```py\nprint(1)\n```",
+        // Dois-pontos no MEIO não é promessa.
+        "O erro é este: faltava fechar o parêntese na linha 12.",
+        "",
+    ] {
+        assert!(
+            !super::anuncio_sem_acao(entrega),
+            "não devia cutucar: {entrega}"
+        );
+    }
+}
+
+/// A espiral que o harness respondia "ok" doze vezes.
+#[test]
+fn a_rewrite_that_keeps_shrinking_is_worth_a_warning() {
+    // Primeira escrita nunca é retrocesso — não há com o que comparar.
+    assert!(!super::reescrita_encolhendo(1, 0, 1_260));
+    // Encolheu para 27% do maior: o conteúdo está sendo cortado.
+    assert!(super::reescrita_encolhendo(2, 1_260, 343));
+    // Limpeza legítima (85% do tamanho) não vira alarme.
+    assert!(!super::reescrita_encolhendo(3, 1_000, 850));
+    // Cresceu: é progresso.
+    assert!(!super::reescrita_encolhendo(4, 1_000, 1_400));
+}
+
+/// A chamada escrita como texto — vista com o qwen2.5-coder-14b, que imprimiu
+/// o JSON da ferramenta num bloco de código e encerrou o run no passo 1.
+#[test]
+fn a_tool_call_typed_as_text_is_not_an_answer() {
+    let bloco = "```json\n{\n  \"name\": \"fs_glob\",\n  \"arguments\": {\"pattern\": \"**/*.html\"}\n}\n```";
+    assert!(super::chamada_em_texto(bloco));
+    assert!(super::chamada_em_texto(
+        "<tool_call>{\"name\":\"fs_read\"}</tool_call>"
+    ));
+    // Sem cerca nenhuma, que foi como o 14B mandou na segunda tentativa.
+    assert!(super::chamada_em_texto(
+        "{\n  \"name\": \"fs_write\",\n  \"arguments\": {\"path\": \"README.md\"}\n}"
+    ));
+
+    // Explicar uma ferramenta em prosa não é chamá-la.
+    assert!(!super::chamada_em_texto(
+        "A ferramenta `fs_glob` recebe um `pattern` e devolve os caminhos."
+    ));
+    // Bloco de código comum também não.
+    assert!(!super::chamada_em_texto(
+        "Ficou assim:\n```py\nprint(1)\n```"
+    ));
+}
+
+/// Os três empurrões, e o silêncio quando a resposta está pronta.
+#[test]
+fn only_an_unfinished_turn_gets_pushed() {
+    assert_eq!(super::cutucada_para("   "), Some(super::CUTUCADA_VAZIA));
+    assert_eq!(
+        super::cutucada_para("Vou criar o arquivo agora:"),
+        Some(super::CUTUCADA_ANUNCIO)
+    );
+    assert_eq!(
+        super::cutucada_para("```json\n{\"name\":\"x\",\"arguments\":{}}\n```"),
+        Some(super::CUTUCADA_TEXTO)
+    );
+    assert_eq!(
+        super::cutucada_para("Pronto: criei os três arquivos."),
+        None
+    );
+}

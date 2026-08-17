@@ -41,6 +41,195 @@ use std::time::Instant;
 
 /// Ferramenta interna que mantém o plano do run.
 const FOCUS_TOOL: &str = "todo_update";
+
+/// Quantas vezes o laço insiste com um modelo que anunciou e não fez.
+///
+/// Duas: a primeira cobre o deslize; a partir da terceira, insistir é o
+/// mesmo laço em outro nome, e a pessoa merece ver a resposta que existe.
+const MAX_CUTUCADAS: u32 = 2;
+
+/// Teto de retornos "essa ferramenta não existe" para uma chamada escrita em
+/// texto. A contagem é separada da cutucada porque aqui o modelo está
+/// tentando agir — só errou o nome —, e errar o nome é consertável.
+const MAX_NOMES_ERRADOS: u32 = 3;
+
+/// Os empurrões. Curtos de propósito: modelo pequeno afogado em instrução
+/// esquece o pedido original.
+const CUTUCADA_ANUNCIO: &str = "Nada aconteceu: você descreveu o que ia fazer e não \
+                                chamou ferramenta nenhuma. Execute agora a primeira \
+                                ação, chamando a ferramenta.";
+const CUTUCADA_VAZIA: &str = "Você não respondeu nada. Continue a tarefa: chame a \
+                              próxima ferramenta, ou responda em texto se ela já \
+                              estiver pronta.";
+const CUTUCADA_TEXTO: &str = "Você escreveu a chamada da ferramenta como TEXTO, então \
+                              ela não rodou. Use o mecanismo de ferramentas do próprio \
+                              modelo (tool call), não um bloco de código.";
+
+/// Este passo precisa de um empurrão? Devolve o que dizer.
+///
+/// Três formas de um modelo pequeno encerrar a tarefa sem fazê-la — e as três
+/// terminavam com o run marcado como CONCLUÍDO, que é o pior desfecho
+/// possível: sucesso anunciado, trabalho nenhum.
+fn cutucada_para(texto: &str) -> Option<&'static str> {
+    if texto.trim().is_empty() {
+        return Some(CUTUCADA_VAZIA);
+    }
+    if chamada_em_texto(texto) {
+        return Some(CUTUCADA_TEXTO);
+    }
+    if anuncio_sem_acao(texto) {
+        return Some(CUTUCADA_ANUNCIO);
+    }
+    None
+}
+
+/// A chamada que o modelo escreveu como texto, pronta para rodar.
+///
+/// Último recurso, e só depois de [`MAX_CUTUCADAS`] pedidos para usar o
+/// mecanismo de verdade. Há modelo local que simplesmente não emite tool call
+/// pelo endpoint (visto com o qwen2.5-coder-14b), e desistir dele seria
+/// deixar de ser agent-first justamente com quem mais precisa de ajuda.
+///
+/// Não abre exceção de segurança nenhuma: o nome é conferido contra o
+/// cardápio ativo e a chamada passa pela MESMA política, confirmação e
+/// checkpoint de qualquer outra.
+fn chamada_escrita(texto: &str, permitidas: &[String]) -> Option<ToolCallReq> {
+    let bruto = bloco_de_chamada(texto)?;
+    let v: Value = serde_json::from_str(&bruto).ok()?;
+    let nome = v.get("name")?.as_str()?.to_string();
+    if !permitidas.contains(&nome) {
+        return None;
+    }
+    let args = match v.get("arguments") {
+        Some(Value::String(s)) => s.clone(),
+        Some(outro) => outro.to_string(),
+        None => "{}".to_string(),
+    };
+    Some(ToolCallReq {
+        id: new_id("call"),
+        name: nome,
+        arguments_json: args,
+    })
+}
+
+/// O JSON de uma chamada de ferramenta escondido no texto, se houver.
+///
+/// Modelo local que não emite tool call escreve a chamada de três jeitos:
+/// dentro de `<tool_call>`, num bloco de código, ou solto depois de uma frase
+/// ("Vamos listar os arquivos: {...}"). Os três caem aqui.
+///
+/// A varredura acha o primeiro `{` e fecha a chave contando aninhamento,
+/// ignorando o que está dentro de string — assim um `}` no meio de um texto
+/// não corta o objeto no lugar errado.
+fn bloco_de_chamada(texto: &str) -> Option<String> {
+    // Fora da tag `<tool_call>`, exigimos os DOIS campos: um JSON solto com
+    // só um `name` é comum demais em prosa para virar chamada.
+    let candidato = |t: &str, exige_args: bool| -> Option<String> {
+        let bytes: Vec<char> = t.chars().collect();
+        let inicio = bytes.iter().position(|c| *c == '{')?;
+        let mut nivel = 0usize;
+        let mut em_string = false;
+        let mut escapado = false;
+        for (i, &c) in bytes.iter().enumerate().skip(inicio) {
+            if em_string {
+                match c {
+                    _ if escapado => escapado = false,
+                    '\\' => escapado = true,
+                    '"' => em_string = false,
+                    _ => {}
+                }
+                continue;
+            }
+            match c {
+                '"' => em_string = true,
+                '{' => nivel += 1,
+                '}' => {
+                    nivel -= 1;
+                    if nivel == 0 {
+                        let json: String = bytes[inicio..=i].iter().collect();
+                        let ok = json.contains("\"name\"")
+                            && (!exige_args || json.contains("\"arguments\""));
+                        return ok.then_some(json);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    };
+
+    if let Some((_, resto)) = texto.split_once("<tool_call>")
+        && let Some(achado) = candidato(resto.split("</tool_call>").next().unwrap_or(resto), false)
+    {
+        return Some(achado);
+    }
+    // Bloco de código primeiro: é onde o JSON está mais bem delimitado.
+    for bloco in texto.split("```").skip(1).step_by(2) {
+        if let Some(achado) = candidato(bloco, true) {
+            return Some(achado);
+        }
+    }
+    candidato(texto, true)
+}
+
+/// O modelo escreveu a chamada em vez de fazê-la?
+fn chamada_em_texto(texto: &str) -> bool {
+    bloco_de_chamada(texto).is_some()
+}
+
+/// O modelo anunciou uma ação em vez de executá-la?
+///
+/// Modelo pequeno faz isso o tempo todo: "Vou criar os três arquivos.
+/// Começando pelo app.py:" — e para. Como resposta em texto significa
+/// "terminei", o run encerrava como concluído com a pasta vazia.
+///
+/// O teste é conservador de propósito, porque um falso positivo faz o laço
+/// insistir depois de uma resposta legítima: só pega frase que TERMINA
+/// prometendo — dois-pontos no fim, ou verbo de intenção na última linha.
+fn anuncio_sem_acao(texto: &str) -> bool {
+    let corpo = texto.trim();
+    if corpo.is_empty() {
+        return false;
+    }
+    // Bloco de código no fim é entrega, não promessa (o modelo mostrou algo).
+    if corpo.ends_with("```") {
+        return false;
+    }
+    if corpo.ends_with(':') {
+        return true;
+    }
+    let ultima = corpo
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .to_lowercase();
+    const PROMESSAS: [&str; 12] = [
+        "vou ",
+        "irei ",
+        "vamos ",
+        "agora vou",
+        "deixa eu",
+        "começando por",
+        "começando com",
+        "primeiro,",
+        "i'll ",
+        "i will ",
+        "let me ",
+        "next, i",
+    ];
+    PROMESSAS.iter().any(|p| ultima.contains(p))
+}
+
+/// Esta escrita é um retrocesso? (`vezes` já conta a de agora.)
+///
+/// O corte é generoso de propósito: encolher um pouco costuma ser limpeza
+/// legítima. Menos de 60% do maior tamanho que o arquivo já teve, na segunda
+/// escrita ou depois, é outra coisa.
+fn reescrita_encolhendo(vezes: u32, maior: u64, agora: u64) -> bool {
+    vezes >= 2 && maior > 0 && agora * 10 < maior * 6
+}
+
 /// Quanto do resultado vai para a prévia do evento (a UI expande depois).
 const PREVIEW_CHARS: usize = 400;
 /// Mensagens preservadas intactas na compactação (≈ dois passos).
@@ -87,6 +276,9 @@ pub(crate) struct ToolRunner {
     pub errors: ErrorStreak,
     /// Arquivos alterados (alimenta a verificação final).
     pub written: Vec<String>,
+    /// Por arquivo: quantas vezes foi escrito neste run e o MAIOR tamanho que
+    /// já teve. É o que permite perceber a espiral de reescrita.
+    pub reescritas: std::collections::HashMap<String, (u32, u64)>,
     pub commands: Vec<CommandRecord>,
     pub focus_md: Option<String>,
     pub tool_calls: u32,
@@ -452,7 +644,12 @@ impl ToolRunner {
                     self.update_focus(&args, &out.content);
                 }
 
-                CallFlow::Result(ChatMessage::tool_result(call_id, name, out.content))
+                let mut resposta = out.content;
+                if let Some(aviso) = self.aviso_de_reescrita(&out.changed_files) {
+                    resposta.push_str("\n\n");
+                    resposta.push_str(&aviso);
+                }
+                CallFlow::Result(ChatMessage::tool_result(call_id, name, resposta))
             }
             Err(e) => {
                 let message = e.to_model_message();
@@ -607,6 +804,38 @@ impl ToolRunner {
                  proponha outro caminho ou explique o que precisa."
             ),
         ))
+    }
+
+    /// Aviso quando o modelo entra na espiral de reescrever o mesmo arquivo,
+    /// cada vez com menos conteúdo.
+    ///
+    /// Vem de um run real: um 9B reescreveu `app.py` doze vezes, cada versão
+    /// cortada no meio de uma função, e o harness respondeu "ok" doze vezes.
+    /// O modelo não tem como perceber sozinho que o próprio conteúdo está
+    /// sendo cortado antes do fim — mas nós temos o tamanho das versões
+    /// anteriores, e é exatamente essa a informação que falta a ele.
+    fn aviso_de_reescrita(&mut self, arquivos: &[String]) -> Option<String> {
+        let raiz = self.workspace.as_ref()?;
+        for arquivo in arquivos {
+            let Ok(meta) = std::fs::metadata(raiz.join(arquivo)) else {
+                continue;
+            };
+            let agora = meta.len();
+            let entrada = self.reescritas.entry(arquivo.clone()).or_insert((0, 0));
+            entrada.0 += 1;
+            let (vezes, maior) = (entrada.0, entrada.1);
+            entrada.1 = maior.max(agora);
+            if reescrita_encolhendo(vezes, maior, agora) {
+                return Some(format!(
+                    "ATENÇÃO: `{arquivo}` já foi escrito {vezes} vezes nesta execução e \
+                     encolheu de {maior} para {agora} bytes — sinal de que o conteúdo está \
+                     sendo cortado antes do fim. Pare de reescrever o arquivo inteiro: leia \
+                     o que está lá com `fs_read` e acrescente o que falta com `fs_edit`, em \
+                     pedaços pequenos."
+                ));
+            }
+        }
+        None
     }
 
     /// Falha de ferramenta: devolve ao modelo e conta para a escalada.
@@ -905,6 +1134,8 @@ impl StepEngine<'_> {
         // igual evita reconstruí-lo à toa no primeiro passo.
         let mut last_focus = runner.focus_md.clone();
         let mut local: u32 = 0;
+        let mut cutucadas: u32 = 0;
+        let mut nomes_errados: u32 = 0;
 
         let status = 'run: loop {
             if self.handle.is_cancelled() {
@@ -1041,8 +1272,64 @@ impl StepEngine<'_> {
                 reasoning: outcome.reasoning.clone(),
             });
 
-            // Sem ferramentas pedidas: é a resposta final.
+            // Sem ferramentas pedidas: é a resposta final — a não ser que o
+            // modelo só tenha ANUNCIADO o que ia fazer.
             if !self.tools_on() || !outcome.wants_tools() {
+                let empurrao = self
+                    .tools_on()
+                    .then(|| cutucada_para(&outcome.content))
+                    .flatten();
+                if let Some(texto) = empurrao.filter(|_| cutucadas < MAX_CUTUCADAS) {
+                    cutucadas += 1;
+                    messages.push(outcome.to_assistant_message());
+                    messages.push(ChatMessage::user(texto.to_string()));
+                    continue;
+                }
+                // Pedimos duas vezes e ele continua escrevendo a chamada em
+                // vez de fazê-la. Antes de encerrar um run que não fez nada,
+                // rodamos o que ele escreveu — pelo caminho de sempre.
+                if self.tools_on()
+                    && let Some(tc) = chamada_escrita(&outcome.content, &self.menu.active_names())
+                {
+                    let como_pedido = ChatMessage::assistant_with_tool_calls(
+                        outcome.content.clone(),
+                        vec![lr_engine::ToolCallMsg {
+                            id: tc.id.clone(),
+                            kind: "function".into(),
+                            function: lr_engine::FunctionCallMsg {
+                                name: tc.name.clone(),
+                                arguments: tc.arguments_json.clone(),
+                            },
+                        }],
+                    );
+                    messages.push(como_pedido);
+                    match runner.call(&step_id, index, &tc).await {
+                        CallFlow::Result(msg) => {
+                            messages.push(msg);
+                            continue;
+                        }
+                        CallFlow::Cancelled => break 'run RunStatus::Cancelled,
+                        CallFlow::Escalate(reason) => {
+                            out.escalation = Some(reason);
+                            break 'run RunStatus::Escalated;
+                        }
+                    }
+                }
+                // Escreveu uma chamada, mas com nome que não está no cardápio
+                // (um `todos_update` no lugar de `todo_update`). Encerrar aqui
+                // seria desistir de um modelo que estava tentando agir.
+                if self.tools_on()
+                    && nomes_errados < MAX_NOMES_ERRADOS
+                    && chamada_em_texto(&outcome.content)
+                {
+                    nomes_errados += 1;
+                    messages.push(outcome.to_assistant_message());
+                    messages.push(ChatMessage::user(format!(
+                        "Essa ferramenta não existe. Use exatamente um destes nomes: {}.",
+                        self.menu.active_names().join(", ")
+                    )));
+                    continue;
+                }
                 out.text = outcome.content.clone();
                 break RunStatus::Done;
             }
@@ -1252,6 +1539,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         repeats: RepeatDetector::default(),
         errors: ErrorStreak::default(),
         written: Vec::new(),
+        reescritas: Default::default(),
         commands: Vec::new(),
         focus_md: None,
         tool_calls: 0,

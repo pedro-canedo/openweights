@@ -18,7 +18,7 @@ use lr_types::agent::{
 };
 
 pub mod command;
-pub use command::{CommandAnalysis, classify};
+pub use command::{CommandAnalysis, classify, needs_shell};
 
 /// O que fazer com uma chamada de ferramenta.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -568,6 +568,7 @@ fn tool_runner(h: &Harness, tools: &PlanTools) -> ToolRunner {
         repeats: RepeatDetector::default(),
         errors: ErrorStreak::default(),
         written: Vec::new(),
+        reescritas: Default::default(),
         commands: Vec::new(),
         focus_md: None,
         tool_calls: 0,
