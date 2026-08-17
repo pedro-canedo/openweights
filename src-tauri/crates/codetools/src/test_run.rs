@@ -284,7 +284,10 @@ mod tests {
             "{}",
             out.content
         );
-        assert!(out.content.contains("src/lib.rs"), "{}", out.content);
+        // O caminho vem do rustc, que usa o separador do sistema: no Windows
+        // a mesma linha sai como `src\lib.rs`.
+        let visto = out.content.replace('\\', "/");
+        assert!(visto.contains("src/lib.rs"), "{}", out.content);
     }
 
     #[tokio::test]

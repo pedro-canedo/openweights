@@ -190,7 +190,11 @@ mod tests {
             "{}",
             out.content
         );
-        assert!(out.content.contains("src/lib.rs:1"), "{}", out.content);
+        // O caminho vem do rustc, que usa o separador do sistema: no Windows
+        // a mesma linha sai como `src\lib.rs:1`. O que se afirma aqui é que o
+        // arquivo e a linha chegaram, não qual barra o compilador escolheu.
+        let visto = out.content.replace('\\', "/");
+        assert!(visto.contains("src/lib.rs:1"), "{}", out.content);
         assert!(out.content.contains("E0308"), "{}", out.content);
         assert!(out.content.contains("saída completa:"), "{}", out.content);
     }
