@@ -277,6 +277,87 @@ const PREVIEW_CHARS: usize = 400;
 /// Mensagens preservadas intactas na compactação (≈ dois passos).
 const KEEP_TAIL_MESSAGES: usize = 6;
 
+/// Erros de ferramenta tolerados no run INTEIRO, contando os que a streak
+/// perdoou. O padrão erro–sucesso–erro–sucesso nunca escalava: qualquer
+/// sucesso zerava a contagem de seguidos — e a leitura "um sucesso é
+/// informação nova" está certa, então a streak fica como está e este teto
+/// TOTAL entra por cima. É o único mecanismo que escala direto, sem cutucar.
+const MAX_ERROS_TOTAIS: u32 = 8;
+
+/// Passos sem progresso até a cutucada, e até escalar.
+///
+/// "Sem progresso" é observável: nenhum arquivo mudou, nenhum comando novo
+/// rodou com sucesso, e todo resultado foi erro ou repetição. Três passos
+/// assim ganham uma cutucada; se nem ela mudar nada, o quinto para o run —
+/// só o teto de erros escala sem avisar antes.
+const STALL_NUDGE: u32 = 3;
+const STALL_ESCALATE: u32 = 5;
+
+/// Contadores que atravessam o run inteiro — inclusive as etapas do modo
+/// laço, que zeram a memória de contexto (`reset_task_memory`) mas NÃO podem
+/// zerar isto: um modelo que só anuncia consumiria o orçamento repetindo o
+/// padrão etapa após etapa, com o contador local sempre voltando a zero.
+#[derive(Debug, Default)]
+pub(crate) struct RunCounters {
+    pub cutucadas: u32,
+    pub nomes_errados: u32,
+    pub jsons_quebrados: u32,
+    /// Erros de ferramenta no run inteiro (a streak é por etapa; isto não).
+    pub erros_totais: u32,
+    /// Passos seguidos sem mudança observável no projeto.
+    pub sem_progresso: u32,
+    /// Confirmações que expiraram sem resposta.
+    pub aprovacoes_expiradas: u32,
+    // Rascunho do passo corrente (zerado a cada passo).
+    pub passo_teve_chamada: bool,
+    pub passo_progrediu: bool,
+    pub passo_teve_recusa: bool,
+}
+
+impl RunCounters {
+    /// Abre o rascunho de um passo novo.
+    fn begin_step(&mut self) {
+        self.passo_teve_chamada = false;
+        self.passo_progrediu = false;
+        self.passo_teve_recusa = false;
+    }
+
+    /// Fecha o passo e diz o que fazer com a estagnação.
+    ///
+    /// Recusa da pessoa NÃO conta como estagnação: o modelo recebeu
+    /// informação real e vai tentar outro caminho — punir isso seria punir o
+    /// uso cuidadoso.
+    fn end_step(&mut self) -> Option<Stall> {
+        if !self.passo_teve_chamada || self.passo_teve_recusa {
+            return None;
+        }
+        if self.passo_progrediu {
+            self.sem_progresso = 0;
+            return None;
+        }
+        self.sem_progresso += 1;
+        if self.sem_progresso >= STALL_ESCALATE {
+            Some(Stall::Escalate)
+        } else if self.sem_progresso == STALL_NUDGE {
+            Some(Stall::Nudge)
+        } else {
+            None
+        }
+    }
+}
+
+/// O veredito de estagnação de um passo.
+#[derive(Debug, PartialEq, Eq)]
+enum Stall {
+    Nudge,
+    Escalate,
+}
+
+const AVISO_ESTAGNACAO: &str = "Os últimos passos não mudaram NADA no projeto: nenhum \
+     arquivo alterado, nenhum comando novo bem-sucedido, só leituras repetidas ou erros. \
+     Pare de explorar e execute a próxima ação concreta da tarefa; se algo estiver \
+     impedindo, diga em texto o que falta.";
+
 // ------------------------------------------------------------ uma chamada ---
 
 /// O que fazer depois de uma chamada de ferramenta.
@@ -331,6 +412,8 @@ pub(crate) struct ToolRunner {
     /// Levantado por uma ferramenta meta quando o trecho de laço atual acabou
     /// (etapa concluída, plano escrito ou pergunta para a pessoa).
     pub halt: Arc<AtomicBool>,
+    /// Contadores do run inteiro (cutucadas, erros totais, estagnação).
+    pub counters: RunCounters,
 }
 
 impl ToolRunner {
@@ -395,6 +478,7 @@ impl ToolRunner {
         tc: &ToolCallReq,
     ) -> CallFlow {
         self.tool_calls += 1;
+        self.counters.passo_teve_chamada = true;
         let call_id = tc.id.clone();
         let name = tc.name.clone();
 
@@ -578,6 +662,13 @@ impl ToolRunner {
                     return self.denied(&call_id, &name, &reason, ApprovalSource::User);
                 }
                 Ask::Cancelled => return CallFlow::Cancelled,
+                Ask::Abandoned => {
+                    return CallFlow::Escalate(
+                        "Duas confirmações expiraram sem resposta; parei a execução \
+                         para você decidir."
+                            .into(),
+                    );
+                }
             },
         };
         let _ = source;
@@ -611,11 +702,20 @@ impl ToolRunner {
             }
         }
 
-        self.execute(&name, &call_id, args, read_key, step_index, analysis)
-            .await
+        self.execute(
+            &name,
+            &call_id,
+            args,
+            read_key,
+            step_index,
+            analysis,
+            spec.category,
+        )
+        .await
     }
 
     /// Roda a ferramenta e traduz o resultado para o modelo.
+    #[allow(clippy::too_many_arguments)]
     async fn execute(
         &mut self,
         name: &str,
@@ -624,6 +724,7 @@ impl ToolRunner {
         read_key: Option<String>,
         step_index: u32,
         analysis: Option<lr_policy::CommandAnalysis>,
+        category: ToolCategory,
     ) -> CallFlow {
         let _ = self.store.set_tool_call_state(call_id, "running");
         self.sink.emit(RunEventKind::ToolStarted {
@@ -667,6 +768,19 @@ impl ToolRunner {
                         .finish_tool_call(call_id, true, &result_json, out.bytes_total, None);
 
                 self.errors.record_success();
+                // Progresso observável do passo: qualquer ferramenta de
+                // verdade que rodou (meta não conta — atualizar o plano em
+                // círculos não é progresso). Mudança de ESTADO, além disso,
+                // esvazia a janela de repetição: reler depois de escrever é
+                // conferência, não laço.
+                if category != ToolCategory::Meta {
+                    self.counters.passo_progrediu = true;
+                }
+                if !out.changed_files.is_empty()
+                    || (category == ToolCategory::Execute && out.exit_code.is_none_or(|c| c == 0))
+                {
+                    self.repeats.note_progress();
+                }
                 if let Some(key) = read_key {
                     self.reads.note(&key, step_index);
                 }
@@ -750,10 +864,26 @@ impl ToolRunner {
                     return Ask::Cancelled;
                 }
                 Err(_) => {
+                    // Expirar não pode custar o run inteiro: a PRIMEIRA vez
+                    // nega só esta chamada (o modelo recebe o motivo e pode
+                    // contornar ou finalizar com o que tem); a segunda diz
+                    // que não há ninguém aí e para como escalado — um run
+                    // desassistido queimando passos é pior que parar.
                     self.handle.clear_pending(call_id);
-                    log::warn!("confirmação de `{name}` expirou; cancelando a execução");
-                    self.handle.cancel();
-                    return Ask::Cancelled;
+                    self.counters.aprovacoes_expiradas += 1;
+                    if self.counters.aprovacoes_expiradas >= 2 {
+                        log::warn!("segunda confirmação expirada; parando o run");
+                        return Ask::Abandoned;
+                    }
+                    log::warn!("confirmação de `{name}` expirou; nego a chamada e sigo");
+                    let _ = self.store.set_run_status(&self.run_id, RunStatus::Running);
+                    self.sink.emit(RunEventKind::RunResumed);
+                    return Ask::Denied(
+                        "ninguém respondeu à confirmação a tempo — a ação foi negada. \
+                         Siga por um caminho que não precise dela, ou finalize em texto \
+                         com o que já tem."
+                            .into(),
+                    );
                 }
             },
         };
@@ -830,6 +960,9 @@ impl ToolRunner {
     }
 
     /// Recusa: o modelo PRECISA saber para tentar outro caminho.
+    ///
+    /// E não conta como estagnação: quem recusou deu informação real ao
+    /// modelo — punir o passo seria punir o uso cuidadoso.
     fn denied(
         &mut self,
         call_id: &str,
@@ -837,6 +970,7 @@ impl ToolRunner {
         reason: &str,
         source: ApprovalSource,
     ) -> CallFlow {
+        self.counters.passo_teve_recusa = true;
         self.sink.emit(RunEventKind::ToolDenied {
             call_id: call_id.to_string(),
             reason: reason.to_string(),
@@ -892,6 +1026,18 @@ impl ToolRunner {
     /// Falha de ferramenta: devolve ao modelo e conta para a escalada.
     fn record_failure(&mut self, call_id: &str, name: &str, message: String) -> CallFlow {
         let msg = ChatMessage::tool_result(call_id, name, format!("ERRO: {message}"));
+        // O teto TOTAL vem antes da streak: erro–sucesso–erro–sucesso nunca
+        // escalava, porque qualquer sucesso zerava os "seguidos" — e zerar
+        // está certo (um sucesso É informação nova); o que faltava era o
+        // teto por cima, que atravessa inclusive as etapas do laço.
+        self.counters.erros_totais += 1;
+        if self.counters.erros_totais >= MAX_ERROS_TOTAIS {
+            return CallFlow::Escalate(format!(
+                "Parei depois de {} erros de ferramenta nesta execução. \
+                 Revise o pedido ou me diga por onde seguir.",
+                self.counters.erros_totais
+            ));
+        }
         if self.errors.record_error() {
             return CallFlow::Escalate(self.errors.escalation_message());
         }
@@ -1028,9 +1174,14 @@ impl ToolRunner {
 
 /// Resultado da conversa com a pessoa sobre uma chamada.
 enum Ask {
-    Approved { source: ApprovalSource, args: Value },
+    Approved {
+        source: ApprovalSource,
+        args: Value,
+    },
     Denied(String),
     Cancelled,
+    /// Duas confirmações expiraram sem resposta: não há ninguém aí.
+    Abandoned,
 }
 
 fn origin_str(origin: &ToolOrigin) -> String {
@@ -1189,9 +1340,9 @@ impl StepEngine<'_> {
         // igual evita reconstruí-lo à toa no primeiro passo.
         let mut last_focus = runner.focus_md.clone();
         let mut local: u32 = 0;
-        let mut cutucadas: u32 = 0;
-        let mut nomes_errados: u32 = 0;
-        let mut jsons_quebrados: u32 = 0;
+        // Os contadores de reparo moram no runner (E5): as etapas do modo
+        // laço zeram a memória de contexto, mas um modelo que só anuncia não
+        // pode ganhar orçamento novo a cada etapa.
 
         let status = 'run: loop {
             if self.handle.is_cancelled() {
@@ -1217,6 +1368,7 @@ impl StepEngine<'_> {
                 step_id: step_id.clone(),
                 index,
             });
+            runner.counters.begin_step();
 
             let api_tools = self.menu.api_tools();
             let mut request = chat_request(self.opts, messages, &api_tools);
@@ -1287,14 +1439,18 @@ impl StepEngine<'_> {
                         // O servidor leu a resposta, mas não conseguiu
                         // decodificar os argumentos da chamada.
                         Err(e)
-                            if e.is_bad_tool_arguments() && jsons_quebrados < MAX_JSON_QUEBRADO =>
+                            if e.is_bad_tool_arguments()
+                                && runner.counters.jsons_quebrados < MAX_JSON_QUEBRADO =>
                         {
-                            jsons_quebrados += 1;
+                            runner.counters.jsons_quebrados += 1;
                             log::warn!(
                                 "tool call com JSON inválido \
-                                 ({jsons_quebrados}/{MAX_JSON_QUEBRADO}): {e}"
+                                 ({}/{MAX_JSON_QUEBRADO}): {e}",
+                                runner.counters.jsons_quebrados
                             );
-                            messages.push(ChatMessage::user(aviso_json_quebrado(jsons_quebrados)));
+                            messages.push(ChatMessage::user(aviso_json_quebrado(
+                                runner.counters.jsons_quebrados,
+                            )));
                             self.sink.emit(RunEventKind::RunError {
                                 message: "O modelo mandou uma chamada com JSON inválido; \
                                           pedi para escrever o arquivo em pedaços."
@@ -1397,8 +1553,9 @@ impl StepEngine<'_> {
                     .tools_on()
                     .then(|| cutucada_para(&outcome.content))
                     .flatten();
-                if let Some(texto) = empurrao.filter(|_| cutucadas < MAX_CUTUCADAS) {
-                    cutucadas += 1;
+                if let Some(texto) = empurrao.filter(|_| runner.counters.cutucadas < MAX_CUTUCADAS)
+                {
+                    runner.counters.cutucadas += 1;
                     messages.push(outcome.to_assistant_message());
                     messages.push(ChatMessage::user(texto.to_string()));
                     continue;
@@ -1437,10 +1594,10 @@ impl StepEngine<'_> {
                 // (um `todos_update` no lugar de `todo_update`). Encerrar aqui
                 // seria desistir de um modelo que estava tentando agir.
                 if self.tools_on()
-                    && nomes_errados < MAX_NOMES_ERRADOS
+                    && runner.counters.nomes_errados < MAX_NOMES_ERRADOS
                     && chamada_em_texto(&outcome.content)
                 {
-                    nomes_errados += 1;
+                    runner.counters.nomes_errados += 1;
                     messages.push(outcome.to_assistant_message());
                     messages.push(ChatMessage::user(format!(
                         "Essa ferramenta não existe. Use exatamente um destes nomes: {}.",
@@ -1469,6 +1626,25 @@ impl StepEngine<'_> {
             if runner.take_halt() {
                 out.text = outcome.content.clone();
                 break RunStatus::Done;
+            }
+
+            // O passo rodou ferramentas e NADA mudou? O run não pode seguir
+            // queimando passos em leitura repetida até o teto — três passos
+            // assim ganham a cutucada; se nem ela mudar nada, o quinto para.
+            match runner.counters.end_step() {
+                Some(Stall::Nudge) => {
+                    messages.push(ChatMessage::user(AVISO_ESTAGNACAO.to_string()));
+                }
+                Some(Stall::Escalate) => {
+                    out.escalation = Some(format!(
+                        "O agente rodou {} passos sem produzir mudança nenhuma \
+                         (nenhum arquivo alterado, nenhum comando novo) e parou \
+                         para você decidir.",
+                        runner.counters.sem_progresso
+                    ));
+                    break RunStatus::Escalated;
+                }
+                None => {}
             }
         };
         out.status = status;
@@ -1674,6 +1850,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
             Vec::new()
         },
         halt: plan_tools.halt.clone(),
+        counters: RunCounters::default(),
     };
 
     let build_prompt = |focus: Option<&String>| {

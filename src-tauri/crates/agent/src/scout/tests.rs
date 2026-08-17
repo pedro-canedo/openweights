@@ -574,6 +574,7 @@ fn tool_runner(h: &Harness, tools: &PlanTools) -> ToolRunner {
         tool_calls: 0,
         local_tools: tools.tools.clone(),
         halt: tools.halt.clone(),
+        counters: Default::default(),
     }
 }
 

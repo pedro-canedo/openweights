@@ -121,12 +121,22 @@ pub enum Repeat {
     Escalate { count: u32 },
 }
 
-/// Detecta a mesma chamada (nome + argumentos) repetida em sequência.
+/// Quantas chamadas recentes o detector lembra. Seis ≈ dois passos: o
+/// bastante para pegar o ciclo A→B→A→B, curto o bastante para uma repetição
+/// legítima de dez passos atrás não virar alarme.
+const REPEAT_WINDOW: usize = 6;
+
+/// Detecta chamada repetida (nome + argumentos) numa JANELA recente.
+///
+/// A versão anterior só comparava com a chamada imediatamente anterior — o
+/// ciclo A→B→A→B, que é como um modelo pequeno gira em falso de verdade,
+/// passava batido. A janela pega o ciclo; e qualquer PROGRESSO real (arquivo
+/// mudou, comando rodou) a esvazia, porque repetir uma leitura depois de uma
+/// mudança de estado é conferência, não laço.
 #[derive(Debug, Clone)]
 pub struct RepeatDetector {
     limit: u32,
-    last: Option<String>,
-    count: u32,
+    window: std::collections::VecDeque<String>,
 }
 
 impl Default for RepeatDetector {
@@ -139,25 +149,29 @@ impl RepeatDetector {
     pub fn new(limit: u32) -> Self {
         Self {
             limit: limit.max(2),
-            last: None,
-            count: 0,
+            window: std::collections::VecDeque::new(),
         }
     }
 
     pub fn observe(&mut self, tool: &str, args: &Value) -> Repeat {
         let key = canonical_call(tool, args);
-        if self.last.as_deref() == Some(key.as_str()) {
-            self.count += 1;
-        } else {
-            self.last = Some(key);
-            self.count = 1;
-            return Repeat::Fresh;
+        let count = 1 + self.window.iter().filter(|k| **k == key).count() as u32;
+        self.window.push_back(key);
+        if self.window.len() > REPEAT_WINDOW {
+            self.window.pop_front();
         }
-        if self.count >= self.limit {
-            Repeat::Escalate { count: self.count }
+        if count == 1 {
+            Repeat::Fresh
+        } else if count >= self.limit {
+            Repeat::Escalate { count }
         } else {
-            Repeat::Warn { count: self.count }
+            Repeat::Warn { count }
         }
+    }
+
+    /// O estado do projeto mudou: repetir uma leitura virou conferência.
+    pub fn note_progress(&mut self) {
+        self.window.clear();
     }
 
     /// Aviso injetado como resultado de ferramenta quando há repetição.
@@ -210,7 +224,11 @@ fn canonical_json(v: &Value) -> String {
 // ------------------------------------------------------------- releitura ---
 
 /// Ferramentas cuja leitura vale a pena deduplicar dentro de um run.
-const READ_TOOLS: &[&str] = &["fs_read"];
+///
+/// `fs_grep` e `git_status` ficam DE FORA de propósito: o resultado deles
+/// muda legitimamente a cada edição, e bloquear a repetição só ensinaria o
+/// modelo a trabalhar às cegas.
+const READ_TOOLS: &[&str] = &["fs_read", "fs_list", "fs_glob"];
 
 /// Lembra o que já foi lido no run para não devolver o mesmo conteúdo duas
 /// vezes (é o maior desperdício de contexto num modelo pequeno).
@@ -225,7 +243,13 @@ impl ReadLedger {
         if !READ_TOOLS.contains(&tool) {
             return None;
         }
-        let path = args.get("path").and_then(Value::as_str)?;
+        // `fs_glob` procura por padrão, não por caminho; `fs_list` sem `path`
+        // lista a raiz — a chave precisa cobrir os dois.
+        let path = match tool {
+            "fs_glob" => args.get("pattern").and_then(Value::as_str)?,
+            "fs_list" => args.get("path").and_then(Value::as_str).unwrap_or("."),
+            _ => args.get("path").and_then(Value::as_str)?,
+        };
         // Uma leitura parcial não substitui a anterior. O schema de `fs_read`
         // usa `offset_lines`/`max_lines`, mas modelos pequenos costumam
         // mandar `offset`/`limit` — as duas grafias contam como a mesma faixa.
@@ -266,8 +290,18 @@ impl ReadLedger {
     /// ensinando o modelo a não conferir o próprio trabalho.
     pub fn invalidate_file(&mut self, path: &str) {
         let alvo = path.trim();
-        self.seen
-            .retain(|key, _| key.split('\x1f').nth(1) != Some(alvo));
+        self.seen.retain(|key, _| {
+            let mut partes = key.split('\x1f');
+            let tool = partes.next().unwrap_or("");
+            let key_path = partes.next();
+            // Listagens e globs enxergam a árvore inteira: QUALQUER mudança
+            // de arquivo os deixa velhos. A leitura de arquivo só envelhece
+            // quando o próprio arquivo muda.
+            if tool == "fs_list" || tool == "fs_glob" {
+                return false;
+            }
+            key_path != Some(alvo)
+        });
     }
 
     /// Resposta devolvida ao modelo no lugar do conteúdo repetido.
@@ -500,6 +534,56 @@ mod tests {
             ReadLedger::key_for("fs_read", &json!({"path": "src/main.rs", "offset": 100})).unwrap();
         assert_ne!(key, partial);
         assert!(ReadLedger::duplicate_message("src/main.rs", 2).contains("passo 2"));
+    }
+
+    /// O ciclo A→B→A→B é como um modelo pequeno gira em falso DE VERDADE —
+    /// e o detector antigo, que só comparava com a chamada anterior, deixava
+    /// passar.
+    #[test]
+    fn an_alternating_cycle_is_caught_by_the_window() {
+        let mut d = RepeatDetector::default();
+        let a = json!({"path": "a.md"});
+        let b = json!({"path": "b.md"});
+        assert_eq!(d.observe("fs_read", &a), Repeat::Fresh);
+        assert_eq!(d.observe("fs_read", &b), Repeat::Fresh);
+        assert_eq!(d.observe("fs_read", &a), Repeat::Warn { count: 2 });
+        assert_eq!(d.observe("fs_read", &b), Repeat::Warn { count: 2 });
+        assert_eq!(d.observe("fs_read", &a), Repeat::Escalate { count: 3 });
+    }
+
+    /// Progresso real (arquivo mudou, comando rodou) esvazia a janela:
+    /// repetir uma leitura depois de uma mudança é conferência, não laço.
+    #[test]
+    fn progress_clears_the_repeat_window() {
+        let mut d = RepeatDetector::default();
+        let a = json!({"path": "a.md"});
+        assert_eq!(d.observe("fs_read", &a), Repeat::Fresh);
+        assert_eq!(d.observe("fs_read", &a), Repeat::Warn { count: 2 });
+        d.note_progress();
+        assert_eq!(d.observe("fs_read", &a), Repeat::Fresh);
+    }
+
+    /// Listagens e globs também gastam janela — e envelhecem com QUALQUER
+    /// escrita, porque enxergam a árvore inteira.
+    #[test]
+    fn listing_and_globbing_age_with_any_write() {
+        let mut led = ReadLedger::default();
+        let lista = ReadLedger::key_for("fs_list", &json!({})).unwrap();
+        let glob = ReadLedger::key_for("fs_glob", &json!({"pattern": "**/*.rs"})).unwrap();
+        let leitura = ReadLedger::key_for("fs_read", &json!({"path": "a.md"})).unwrap();
+        led.note(&lista, 1);
+        led.note(&glob, 2);
+        led.note(&leitura, 3);
+
+        // Uma escrita em QUALQUER arquivo derruba lista e glob; a leitura de
+        // um arquivo que não mudou continua deduplicada.
+        led.invalidate_file("outro/arquivo.rs");
+        assert_eq!(led.seen(&lista), None);
+        assert_eq!(led.seen(&glob), None);
+        assert_eq!(led.seen(&leitura), Some(3));
+
+        // `fs_grep` fica fora do mecanismo: resultado muda a cada edição.
+        assert!(ReadLedger::key_for("fs_grep", &json!({"pattern": "x"})).is_none());
     }
 
     /// O ciclo ler → editar → reler para conferir. A releitura DEPOIS da

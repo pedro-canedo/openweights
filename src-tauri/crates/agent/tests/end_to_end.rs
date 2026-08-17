@@ -327,7 +327,21 @@ impl Harness {
 
     /// Dispara o run e espera ele terminar (ou estourar o tempo).
     async fn run(&self, prompt: &str, mode: RunMode, endpoint: Endpoint) -> RunStatus {
+        self.run_with_steps(prompt, mode, endpoint, 6).await
+    }
+
+    /// Variante com teto de passos próprio — os cenários de estagnação e de
+    /// teto de erros precisam de mais fôlego que os 6 passos do padrão.
+    async fn run_with_steps(
+        &self,
+        prompt: &str,
+        mode: RunMode,
+        endpoint: Endpoint,
+        max_steps: u32,
+    ) -> RunStatus {
         let sink = self.events.clone();
+        let mut options = self.options(mode);
+        options.max_steps = max_steps;
         let handle = self
             .host
             .start(
@@ -335,7 +349,7 @@ impl Harness {
                     prompt: prompt.into(),
                     history: Vec::new(),
                     memory: Vec::new(),
-                    options: self.options(mode),
+                    options,
                     endpoint,
                     work_mode: WorkMode::Agent,
                     plan: None,
@@ -1580,4 +1594,124 @@ async fn rereading_a_file_after_editing_it_returns_fresh_content() {
         !ultimo.contains("já leu"),
         "a releitura de conferência foi bloqueada: {ultimo}"
     );
+}
+
+/// Erro–sucesso–erro–sucesso nunca escalava: qualquer sucesso zerava a
+/// contagem de "seguidos". O teto TOTAL de erros do run pega o padrão.
+#[tokio::test]
+async fn interleaved_errors_hit_the_total_cap() {
+    let h = Harness::new();
+    std::fs::write(h.workspace.join("x.md"), "conteúdo\n").expect("semente");
+    // 8 ferramentas inexistentes (nomes distintos, para não cair no detector
+    // de repetição) intercaladas com leituras que dão certo.
+    let mut roteiro = Vec::new();
+    for i in 0..8 {
+        roteiro.push(tool_call_chunks(
+            &format!("e{i}"),
+            &format!("ferramenta_fantasma_{i}"),
+            r#"{"x":"#,
+            r#"1}"#,
+        ));
+        // Leitura válida e sempre DIFERENTE (max_lines varia): sucesso que
+        // zera a streak sem cair no detector de repetição.
+        roteiro.push(tool_call_chunks(
+            &format!("r{i}"),
+            "fs_read",
+            r#"{"path":"x.md","max_lines":"#,
+            &format!("{}}}", i + 1),
+        ));
+    }
+    let server = FakeLlama::spawn(roteiro);
+
+    let status = h
+        .run_with_steps("faça algo", RunMode::Yolo, server.endpoint(), 30)
+        .await;
+    assert_eq!(status, RunStatus::Escalated, "eventos: {:?}", h.kinds());
+    let resumo = h
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|e| match &e.event {
+            RunEventKind::RunFinished { summary, .. } => Some(summary.clone()),
+            _ => None,
+        });
+    assert!(
+        resumo.unwrap_or_default().contains("8 erros"),
+        "o motivo tinha que ser o teto total"
+    );
+}
+
+/// Passos que rodam ferramenta e NÃO mudam nada (só releitura repetida)
+/// ganham a cutucada no terceiro e param no quinto — antes disso o run
+/// seguia queimando passos até o teto, calado.
+#[tokio::test]
+async fn steps_without_progress_get_nudged_then_stopped() {
+    let h = Harness::new();
+    for f in ["a.md", "b.md", "c.md", "d.md", "e.md"] {
+        std::fs::write(h.workspace.join(f), "conteúdo\n").expect("semente");
+    }
+    let mut roteiro = Vec::new();
+    // Cinco leituras frescas (progresso legítimo de exploração)...
+    for (i, f) in ["a.md", "b.md", "c.md", "d.md", "e.md"].iter().enumerate() {
+        roteiro.push(tool_call_chunks(
+            &format!("p{i}"),
+            "fs_read",
+            r#"{"path":"#,
+            &format!("\"{f}\"}}"),
+        ));
+    }
+    // ...e cinco RELEITURAS, que voltam do ledger sem mudar nada.
+    for (i, f) in ["a.md", "b.md", "c.md", "d.md", "e.md"].iter().enumerate() {
+        roteiro.push(tool_call_chunks(
+            &format!("d{i}"),
+            "fs_read",
+            r#"{"path":"#,
+            &format!("\"{f}\"}}"),
+        ));
+    }
+    let server = FakeLlama::spawn(roteiro);
+
+    let status = h
+        .run_with_steps("explore", RunMode::Yolo, server.endpoint(), 20)
+        .await;
+    assert_eq!(status, RunStatus::Escalated, "eventos: {:?}", h.kinds());
+
+    // A cutucada chegou ao modelo antes de o run parar.
+    let cutucou = (0..server.calls.load(Ordering::SeqCst))
+        .any(|i| server.body(i).contains("não mudaram NADA"));
+    assert!(cutucou, "faltou a cutucada de estagnação antes de parar");
+}
+
+/// Confirmação que expira NEGA a chamada (o modelo recebe o motivo e pode
+/// contornar); só a segunda expiração encerra o run — antes, a primeira já
+/// cancelava tudo, inclusive nas automações onde não há ninguém para clicar.
+#[tokio::test]
+async fn an_expired_approval_denies_once_then_stops() {
+    let h = Harness::with_config(|c| {
+        c.approval_timeout = Duration::from_millis(200);
+    });
+    let server = FakeLlama::spawn(vec![
+        tool_call_chunks("w1", "fs_write", r#"{"path":"um.md","#, r#""content":"a"}"#),
+        tool_call_chunks(
+            "w2",
+            "fs_write",
+            r#"{"path":"dois.md","#,
+            r#""content":"b"}"#,
+        ),
+        vec![text_chunk("Não deveria chegar aqui."), done()],
+    ]);
+
+    // Modo Smart: escrita pede confirmação — e ninguém responde.
+    let status = h.run("escreva", RunMode::Smart, server.endpoint()).await;
+    assert_eq!(status, RunStatus::Escalated, "eventos: {:?}", h.kinds());
+
+    // A primeira expiração virou negação com motivo, entregue ao modelo.
+    assert!(h.has("tool.denied"), "eventos: {:?}", h.kinds());
+    let negacao = (0..server.calls.load(Ordering::SeqCst))
+        .any(|i| server.body(i).contains("ninguém respondeu"));
+    assert!(negacao, "o modelo tinha que receber o motivo da negação");
+    // E nada foi escrito.
+    assert!(!h.workspace.join("um.md").exists());
+    assert!(!h.workspace.join("dois.md").exists());
 }

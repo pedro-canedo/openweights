@@ -221,6 +221,7 @@ impl AgentDelegate {
             // O ajudante não tem ferramenta meta que encerre o trecho: o
             // sinal existe só porque o `ToolRunner` o exige.
             halt: Arc::new(AtomicBool::new(false)),
+            counters: Default::default(),
         }
     }
 
