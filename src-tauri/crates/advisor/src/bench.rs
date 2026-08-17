@@ -211,7 +211,6 @@ pub async fn bench(
         .kill_on_drop(true);
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt as _;
         cmd.creation_flags(0x0800_0000);
     }
 

@@ -198,8 +198,8 @@ pub async fn probe(
         .kill_on_drop(true);
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt as _;
         // Sem janela de console piscando na cara de quem só abriu um painel.
+        // `creation_flags` já vem do `tokio::process::Command` no Windows.
         cmd.creation_flags(0x0800_0000);
     }
 
