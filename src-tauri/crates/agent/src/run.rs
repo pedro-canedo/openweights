@@ -76,11 +76,24 @@ const MAX_JSON_QUEBRADO: u32 = 3;
 ///
 /// Não basta dizer "deu erro": o modelo precisa da SAÍDA. Quem cai aqui está
 /// tentando escrever um arquivo inteiro numa string só, e a saída é escrever
-/// em pedaços.
-const AVISO_JSON_QUEBRADO: &str = "Sua última chamada de ferramenta foi recusada: o JSON \
-     dos argumentos veio inválido (uma aspa não fechada num conteúdo longo). Não mande o \
-     arquivo inteiro de uma vez. Crie primeiro uma base curta com `fs_write` e depois \
-     acrescente o resto com `fs_edit`, em pedaços de até ~40 linhas.";
+/// em pedaços. A mensagem ENDURECE a cada recaída: visto em campo (um 9B
+/// escrevendo um jogo de 14 KB numa chamada), o conselho geral não muda o
+/// comportamento — a ordem concreta com número muda.
+fn aviso_json_quebrado(recaida: u32) -> String {
+    if recaida <= 1 {
+        "Sua última chamada de ferramenta foi recusada: o JSON dos argumentos veio \
+         inválido (uma aspa não fechada num conteúdo longo). Não mande o arquivo \
+         inteiro de uma vez. Crie primeiro uma base curta com `fs_write` e depois \
+         acrescente o resto com `fs_append`, em pedaços de até ~40 linhas."
+            .to_string()
+    } else {
+        "Quebrou de novo pelo MESMO motivo: conteúdo longo demais numa chamada só. \
+         Agora faça exatamente isto: chame `fs_write` com APENAS as primeiras 30 \
+         linhas do arquivo. Nada mais nesta chamada. Depois continue com `fs_append`, \
+         30 linhas por vez, até terminar."
+            .to_string()
+    }
+}
 
 /// Os empurrões. Curtos de propósito: modelo pequeno afogado em instrução
 /// esquece o pedido original.
@@ -868,7 +881,7 @@ impl ToolRunner {
                     "ATENÇÃO: `{arquivo}` já foi escrito {vezes} vezes nesta execução e \
                      encolheu de {maior} para {agora} bytes — sinal de que o conteúdo está \
                      sendo cortado antes do fim. Pare de reescrever o arquivo inteiro: leia \
-                     o que está lá com `fs_read` e acrescente o que falta com `fs_edit`, em \
+                     o que está lá com `fs_read` e acrescente o que falta com `fs_append`, em \
                      pedaços pequenos."
                 ));
             }
@@ -1281,7 +1294,7 @@ impl StepEngine<'_> {
                                 "tool call com JSON inválido \
                                  ({jsons_quebrados}/{MAX_JSON_QUEBRADO}): {e}"
                             );
-                            messages.push(ChatMessage::user(AVISO_JSON_QUEBRADO.to_string()));
+                            messages.push(ChatMessage::user(aviso_json_quebrado(jsons_quebrados)));
                             self.sink.emit(RunEventKind::RunError {
                                 message: "O modelo mandou uma chamada com JSON inválido; \
                                           pedi para escrever o arquivo em pedaços."

@@ -94,11 +94,11 @@ pub fn build_system_prompt(ctx: &PromptContext<'_>) -> String {
         // Só para quem pode escrever: mandar um ajudante somente-leitura usar
         // `fs_write` é anunciar ferramenta que ele não tem.
         let escreve = |t: &str| ctx.tools.iter().any(|n| n == t);
-        if escreve("fs_write") && escreve("fs_edit") {
+        if escreve("fs_write") && escreve("fs_append") {
             out.push_str(
                 "- Arquivo grande não cabe numa chamada só: o JSON dos argumentos quebra no \
                  meio e o servidor recusa o passo inteiro. Escreva uma base curta com \
-                 `fs_write` e complete com `fs_edit`, em pedaços de até ~40 linhas.\n",
+                 `fs_write` e complete com `fs_append`, em pedaços de até ~40 linhas.\n",
             );
         }
         if ctx.tools_partial {

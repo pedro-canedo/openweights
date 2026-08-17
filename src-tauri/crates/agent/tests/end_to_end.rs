@@ -1381,7 +1381,7 @@ async fn a_tool_call_with_broken_json_is_fixable_not_fatal() {
             r#""content":"<!DOCTYPE html>"}"#,
         ),
         vec![
-            text_chunk("Criei a base; agora completo com fs_edit."),
+            text_chunk("Criei a base; agora completo com fs_append."),
             done(),
         ],
     ]);
@@ -1398,7 +1398,7 @@ async fn a_tool_call_with_broken_json_is_fixable_not_fatal() {
     // E o modelo recebeu a saída, não só a notícia do erro.
     let segundo = server.body(1);
     assert!(
-        segundo.contains("fs_edit") && segundo.contains("pedaços"),
+        segundo.contains("fs_append") && segundo.contains("pedaços"),
         "faltou dizer COMO consertar: {segundo}"
     );
 }

@@ -65,7 +65,9 @@ pub fn group_of(spec: &ToolSpec) -> ToolGroup {
         return ToolGroup::Mcp;
     }
     match spec.name.as_str() {
-        "fs_read" | "fs_write" | "fs_edit" | "fs_list" | "fs_glob" | "fs_grep" => ToolGroup::Files,
+        "fs_read" | "fs_write" | "fs_edit" | "fs_append" | "fs_list" | "fs_glob" | "fs_grep" => {
+            ToolGroup::Files
+        }
         "terminal_run" => ToolGroup::Terminal,
         "project_info" | "build_run" | "test_run" | "lint_run" | "format_run" | "code_run" => {
             ToolGroup::Code
@@ -198,6 +200,7 @@ const KEYWORDS: &[(&str, &[&str])] = &[
             "visualiz",
         ],
     ),
+    ("fs_append", &["acrescent", "append", "anexar", "complet"]),
     (
         "project_info",
         &[
@@ -898,7 +901,7 @@ mod tests {
 
     fn category_of(name: &str) -> ToolCategory {
         match name {
-            "fs_write" | "fs_edit" => ToolCategory::Edit,
+            "fs_write" | "fs_edit" | "fs_append" => ToolCategory::Edit,
             "terminal_run" | "build_run" | "test_run" | "lint_run" | "format_run" | "code_run" => {
                 ToolCategory::Execute
             }
@@ -927,6 +930,7 @@ mod tests {
             ("fs_read", "Lê o conteúdo de um arquivo do projeto."),
             ("fs_write", "Escreve um arquivo do projeto."),
             ("fs_edit", "Troca um trecho exato dentro de um arquivo."),
+            ("fs_append", "Acrescenta texto ao fim de um arquivo."),
             ("fs_list", "Lista arquivos e pastas."),
             ("fs_glob", "Encontra arquivos por padrão de nome."),
             ("fs_grep", "Procura um texto dentro dos arquivos."),
@@ -1072,6 +1076,34 @@ mod tests {
 
         assert!(has(&curated.active, "git_commit"));
         assert!(has(&curated.active, "git_status"));
+    }
+
+    #[test]
+    fn fs_append_belongs_to_the_files_group() {
+        // Entrada explícita do mapa: desligar a família Arquivos tem que
+        // desligar o acréscimo em pedaços junto.
+        assert_eq!(
+            group_of(&spec("fs_append", "Acrescenta texto ao fim de um arquivo.")),
+            ToolGroup::Files
+        );
+    }
+
+    #[test]
+    fn an_incremental_writing_goal_brings_fs_append() {
+        // `fs_append` não é núcleo: quem o traz para a janela apertada é a
+        // tabela de palavras-chave ("acrescent").
+        let curated = curate(
+            catalog(),
+            "acrescente o resto da página ao arquivo",
+            &ToolGroup::ALL,
+            Some(8_192),
+        );
+
+        assert!(
+            has(&curated.active, "fs_append"),
+            "{:?}",
+            names(&curated.active)
+        );
     }
 
     #[test]

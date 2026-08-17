@@ -1,4 +1,5 @@
-//! Ferramentas de arquivo: ler, listar, procurar, buscar, escrever e editar.
+//! Ferramentas de arquivo: ler, listar, procurar, buscar, escrever, editar e
+//! acrescentar.
 //!
 //! São as ferramentas que o agente mais usa, então valem duas obsessões:
 //!
@@ -640,7 +641,7 @@ impl Tool for FsWrite {
                 },
                 "content": {
                     "type": "string",
-                    "description": "Conteúdo completo e final do arquivo. Substitui tudo que existia antes."
+                    "description": "Conteúdo completo e final do arquivo. Substitui tudo que existia antes. Acima de ~60 linhas (~4 KB), NÃO mande tudo aqui: o JSON da chamada quebra. Escreva só o começo e continue com fs_append."
                 }
             },
             "required": ["path", "content"],
@@ -851,13 +852,160 @@ impl Tool for FsEdit {
     }
 }
 
+// -------------------------------------------------------------- fs_append ---
+
+/// Acrescenta conteúdo ao fim de um arquivo — a saída para arquivo grande.
+///
+/// Nasceu de um run real: um modelo local (Qwen3.8-27B) tentou escrever uma
+/// landing page inteira (7 KB de HTML) dentro dos argumentos de UMA chamada
+/// `fs_write`, errou o escape no meio da string e o llama.cpp recusou o passo
+/// com HTTP 500 ("Failed to parse tool call arguments as JSON … missing
+/// closing quote"). A saída conhecida é escrever em pedaços — mas a
+/// ferramenta certa para isso não existia: `fs_edit` obriga a repetir
+/// `old_text`, o que DOBRA o tamanho do JSON exatamente onde o modelo pequeno
+/// erra o escape. Daí o `fs_append`: base curta com `fs_write`, resto em
+/// pedaços pequenos, um por chamada.
+pub struct FsAppend;
+
+/// Contagem de linhas com plural correto — "1 linha" ou "N linhas".
+fn lines_label(n: usize) -> String {
+    if n == 1 {
+        "1 linha".to_string()
+    } else {
+        format!("{n} linhas")
+    }
+}
+
+#[async_trait]
+impl Tool for FsAppend {
+    fn name(&self) -> &str {
+        "fs_append"
+    }
+
+    fn description(&self) -> &str {
+        "Acrescenta texto ao FIM de um arquivo (cria o arquivo e as pastas do caminho se não \
+         existirem). É a ferramenta para arquivo grande: escreva a base curta com `fs_write` e \
+         acrescente o resto em pedaços de até ~60 linhas (~4 KB) por chamada — pedaço grande \
+         demais quebra o JSON da chamada. Se o arquivo não termina em quebra de linha e o texto \
+         novo não começa com uma, uma quebra é inserida entre os dois."
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Caminho do arquivo, relativo à pasta do projeto (ex.: site/index.html)."
+                },
+                "content": {
+                    "type": "string",
+                    "description": "Texto a acrescentar ao fim do arquivo. Mande pedaços de até ~60 linhas (~4 KB) por chamada e chame de novo para o pedaço seguinte; não repita o que já está no arquivo. Se o arquivo não terminar em quebra de linha e este texto não começar com uma, uma quebra de linha é inserida entre os dois."
+                }
+            },
+            "required": ["path", "content"],
+            "additionalProperties": false
+        })
+    }
+
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Edit
+    }
+
+    fn within_workspace(&self, args: &Value, ctx: &ToolContext) -> bool {
+        required_path_within(args, ctx)
+    }
+
+    fn files_at_risk(&self, args: &Value, ctx: &ToolContext) -> Vec<String> {
+        risk_path(args, ctx)
+    }
+
+    async fn preview(&self, args: &Value, ctx: &ToolContext) -> Option<ToolPreview> {
+        let rel = arg_str(args, "path").ok()?;
+        let content = arg_str(args, "content").ok()?;
+        let path = ctx.resolve(&rel).ok()?;
+        let before = std::fs::read_to_string(&path).unwrap_or_default();
+        let seam = !before.is_empty() && !before.ends_with('\n') && !content.starts_with('\n');
+        let after = if seam {
+            format!("{before}\n{content}")
+        } else {
+            format!("{before}{content}")
+        };
+        Some(write_preview(&rel, &path, &after))
+    }
+
+    async fn execute(&self, args: Value, ctx: &ToolContext) -> ToolResult<ToolOutput> {
+        let rel = arg_str(&args, "path")?;
+        let content = arg_str(&args, "content")?;
+        if content.is_empty() {
+            return Err(ToolError::InvalidArgs(
+                "`content` está vazio — mande o trecho a acrescentar".into(),
+            ));
+        }
+        let path = ctx.resolve(&rel)?;
+
+        if path.is_dir() {
+            return Err(ToolError::InvalidArgs(format!(
+                "`{rel}` é uma pasta — escolha um caminho de arquivo"
+            )));
+        }
+
+        // O que já existe é lido só para inspeção (binário? termina em `\n`?
+        // quantas linhas?); a gravação é um append de verdade, para nunca
+        // reescrever bytes que não são nossos.
+        let before = if path.exists() {
+            let bytes = std::fs::read(&path)?;
+            if looks_binary(&bytes) {
+                return Err(ToolError::Other(format!(
+                    "`{rel}` é um arquivo binário e não pode receber texto. \
+                     Escolha um arquivo de texto ou crie um caminho novo."
+                )));
+            }
+            bytes
+        } else {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            Vec::new()
+        };
+
+        // Costura de linha: modelo pequeno esquece a quebra e o resultado
+        // seriam duas linhas coladas. Só entra quando falta dos dois lados.
+        let seam =
+            !before.is_empty() && before.last() != Some(&b'\n') && !content.starts_with('\n');
+        let piece = if seam {
+            format!("\n{content}")
+        } else {
+            content.clone()
+        };
+
+        use std::io::Write as _;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)?;
+        file.write_all(piece.as_bytes())?;
+
+        let added = content.lines().count();
+        let total_text = format!("{}{piece}", String::from_utf8_lossy(&before));
+        let total_lines = total_text.lines().count();
+        let total_bytes = before.len() + piece.len();
+        Ok(ToolOutput::text(format!(
+            "Acrescentei {} a `{rel}` (agora {}, {total_bytes} bytes).",
+            lines_label(added),
+            lines_label(total_lines),
+        ))
+        .with_changed(vec![ctx.relativize(&path)]))
+    }
+}
+
 // -------------------------------------------------------------- catálogo ---
 
-/// Registro com as oito ferramentas nativas do agente.
+/// Registro com as nove ferramentas nativas do agente.
 ///
 /// É o cardápio padrão do app: arquivos (ler, listar, procurar, buscar,
-/// escrever, editar), terminal e plano. Conectores MCP entram depois, por
-/// [`ToolRegistry::add_provider`].
+/// escrever, editar, acrescentar), terminal e plano. Conectores MCP entram
+/// depois, por [`ToolRegistry::add_provider`].
 pub fn builtin_registry() -> ToolRegistry {
     let tools: Vec<SharedTool> = vec![
         Arc::new(FsRead),
@@ -866,6 +1014,7 @@ pub fn builtin_registry() -> ToolRegistry {
         Arc::new(FsGrep),
         Arc::new(FsWrite),
         Arc::new(FsEdit),
+        Arc::new(FsAppend),
         Arc::new(crate::terminal::TerminalRun),
         Arc::new(crate::todo::TodoUpdate),
     ];
@@ -1356,16 +1505,129 @@ mod tests {
         assert!(run(&FsEdit, args, &ctx).await.is_err());
     }
 
+    // ----------------------------------------------------------- fs_append ---
+
+    #[tokio::test]
+    async fn appends_to_an_existing_file() {
+        let (dir, ctx) = project();
+        let out = run(
+            &FsAppend,
+            json!({"path": "README.md", "content": "linha três\n"}),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("README.md")).unwrap(),
+            "# Projeto\n\nlinha dois\nlinha três\n"
+        );
+        assert_eq!(out.changed_files, vec!["README.md".to_string()]);
+        assert!(
+            out.content.contains("Acrescentei 1 linha a `README.md`"),
+            "{}",
+            out.content
+        );
+        assert!(out.content.contains("agora 4 linhas"), "{}", out.content);
+    }
+
+    #[tokio::test]
+    async fn creates_the_file_and_folders_when_missing() {
+        let (dir, ctx) = project();
+        let out = run(
+            &FsAppend,
+            json!({"path": "site/partes/rodape.html", "content": "<footer>fim</footer>\n"}),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let written = dir.path().join("site/partes/rodape.html");
+        assert!(written.exists(), "arquivo não foi criado");
+        assert_eq!(
+            std::fs::read_to_string(written).unwrap(),
+            "<footer>fim</footer>\n"
+        );
+        assert_eq!(
+            out.changed_files,
+            vec!["site/partes/rodape.html".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_newline_seam_is_added_only_when_needed() {
+        // Os quatro cruzamentos: arquivo com/sem `\n` final × pedaço com/sem
+        // `\n` inicial. A costura só entra quando falta dos dois lados.
+        let cases = [
+            ("a", "b", "a\nb"),
+            ("a\n", "b", "a\nb"),
+            ("a", "\nb", "a\nb"),
+            ("a\n", "\nb", "a\n\nb"),
+        ];
+        for (before, piece, expected) in cases {
+            let (dir, ctx) = project();
+            std::fs::write(dir.path().join("alvo.txt"), before).unwrap();
+            run(
+                &FsAppend,
+                json!({"path": "alvo.txt", "content": piece}),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                std::fs::read_to_string(dir.path().join("alvo.txt")).unwrap(),
+                expected,
+                "antes {before:?} + pedaço {piece:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn refuses_a_path_outside_the_project() {
+        let (_d, ctx) = project();
+        for bad in ["../fora.txt", "/etc/passwd", "src/../../fora.txt"] {
+            let args = json!({ "path": bad, "content": "x" });
+            let err = run(&FsAppend, args.clone(), &ctx).await.unwrap_err();
+            assert!(
+                matches!(err, ToolError::OutsideWorkspace(_)),
+                "deveria recusar {bad}: {err:?}"
+            );
+            assert!(
+                !FsAppend.within_workspace(&args, &ctx),
+                "a política precisa saber que {bad} escapa"
+            );
+        }
+
+        // Caminho legítimo entra no checkpoint antes da primeira alteração.
+        let args = json!({"path": "src/main.rs", "content": "x"});
+        assert_eq!(FsAppend.files_at_risk(&args, &ctx), vec!["src/main.rs"]);
+    }
+
+    #[tokio::test]
+    async fn refuses_appending_to_a_binary_file() {
+        let (dir, ctx) = project();
+        std::fs::write(dir.path().join("icone.png"), [0x89, b'P', 0x00, 0x01]).unwrap();
+        let err = run(
+            &FsAppend,
+            json!({"path": "icone.png", "content": "texto"}),
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+        let msg = err.to_model_message();
+        assert!(msg.contains("binário"), "{msg}");
+        assert!(msg.contains("icone.png"), "{msg}");
+    }
+
     // ------------------------------------------------------------ catálogo ---
 
     #[tokio::test]
-    async fn builtin_registry_exposes_the_eight_tools() {
+    async fn builtin_registry_exposes_the_nine_tools() {
         let registry = builtin_registry();
         let mut names = registry.builtin_names();
         names.sort();
         assert_eq!(
             names,
             vec![
+                "fs_append",
                 "fs_edit",
                 "fs_glob",
                 "fs_grep",
@@ -1387,7 +1649,10 @@ mod tests {
     async fn read_only_tools_are_marked_as_such() {
         let registry = builtin_registry();
         for spec in registry.specs().await {
-            let expected = matches!(spec.name.as_str(), "terminal_run" | "fs_write" | "fs_edit");
+            let expected = matches!(
+                spec.name.as_str(),
+                "terminal_run" | "fs_write" | "fs_edit" | "fs_append"
+            );
             assert_eq!(spec.read_only, !expected, "read_only de {}", spec.name);
         }
     }
