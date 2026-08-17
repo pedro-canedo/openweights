@@ -6,10 +6,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   engineBusyReason,
-  getModelCtxMap,
+  getModelProfile,
   getServerProps,
   getServerStatus,
-  lookupModelCtx,
   restartServer,
   setModelCtx,
 } from "../../lib/api";
@@ -90,11 +89,12 @@ export default function ContextMeter({
   const ref = useDismiss(open, () => setOpen(false));
 
   const refreshLimit = async () => {
-    const [props, map] = await Promise.all([
+    const [props, profile] = await Promise.all([
       getServerProps(model).catch(() => null),
-      getModelCtxMap().catch(() => ({})),
+      getModelProfile(model).catch(() => null),
     ]);
-    const configured = lookupModelCtx(map, model);
+    const configured =
+      typeof profile?.ctx === "number" && profile.ctx > 0 ? profile.ctx : null;
     setSaved(configured);
     // `nCtx` do roteador é 0 e não descreve janela nenhuma.
     setLimit((describesModel(props) ? props.nCtx : null) ?? configured);

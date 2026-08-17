@@ -420,26 +420,34 @@ fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
                 entry = entry.with_extra(chave, valor);
             }
         }
-        preset_models.push(entry);
 
-        // A companheira com visão, quando há projetor e a pessoa não desligou.
         let modo = perfil
             .as_ref()
             .and_then(|p| p.vision)
             .unwrap_or(VisionMode::OnDemand);
-        if let Some(projetor) = &a.vision_projector
-            && modo == VisionMode::OnDemand
-        {
-            let mut visao = lr_engine::PresetEntry::new(
-                format!("{}{VISION_SUFFIX}", a.name),
-                a.primary_path.clone(),
-            );
-            if let Some(p) = &perfil {
-                for (chave, valor) in p.to_ini_extras() {
-                    visao = visao.with_extra(chave, valor);
+        let mut visao_companheira = None;
+        if let Some(projetor) = &a.vision_projector {
+            let caminho = projetor.to_string_lossy().replace('\\', "/");
+            match modo {
+                VisionMode::Off => {}
+                VisionMode::Always => {
+                    if !entry.extras.iter().any(|(k, _)| k == "mmproj") {
+                        entry = entry.with_extra("mmproj", caminho);
+                    }
+                }
+                VisionMode::OnDemand => {
+                    let mut visao = lr_engine::PresetEntry::new(
+                        format!("{}{VISION_SUFFIX}", a.name),
+                        a.primary_path.clone(),
+                    );
+                    visao.extras.clone_from(&entry.extras);
+                    visao = visao.with_extra("mmproj", caminho);
+                    visao_companheira = Some(visao);
                 }
             }
-            visao = visao.with_extra("mmproj", projetor.to_string_lossy().replace('\\', "/"));
+        }
+        preset_models.push(entry);
+        if let Some(visao) = visao_companheira {
             preset_models.push(visao);
         }
     }
@@ -755,6 +763,58 @@ pub async fn server_props(
     client.props_for(carregado).await.map_err(err_str)
 }
 
+/// Grava o perfil de carga e reescreve o INI. Campo a campo, ausente = o
+/// llama.cpp decide. A etiqueta vira `manual`: editar na mão deixa de ser
+/// "recomendado" mesmo que o resto tenha vindo do ajuste automático.
+fn save_profile(
+    state: &AppState,
+    model: &str,
+    mut perfil: lr_types::tuning::ModelProfile,
+) -> CmdResult<lr_types::tuning::ModelProfile> {
+    if let Some(ctx) = perfil.ctx {
+        perfil.ctx = Some(clamp_ctx(ctx));
+    }
+    if let Some(n) = perfil.parallel {
+        perfil.parallel = Some(n.clamp(1, 64));
+    }
+    perfil.source = lr_types::tuning::ProfileSource::Manual;
+    state
+        .store
+        .set_model_profile(model, &perfil)
+        .map_err(err_str)?;
+    write_router_preset(state)?;
+    Ok(perfil)
+}
+
+/// Perfil de carga gravado para um modelo. `null` = nada escolhido.
+#[tauri::command]
+pub fn model_get_profile(
+    state: State<'_, AppState>,
+    model: String,
+) -> CmdResult<Option<lr_types::tuning::ModelProfile>> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Err("modelo vazio".into());
+    }
+    Ok(profile_for(&state, model))
+}
+
+/// Grava o perfil inteiro (KV cache, MTP, flash attention, janela, …).
+///
+/// Vale no próximo carregamento. Quem chama decide se reinicia o motor.
+#[tauri::command]
+pub fn model_set_profile(
+    state: State<'_, AppState>,
+    model: String,
+    profile: lr_types::tuning::ModelProfile,
+) -> CmdResult<lr_types::tuning::ModelProfile> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Err("modelo vazio".into());
+    }
+    save_profile(&state, model, profile)
+}
+
 /// Grava a janela de contexto de um modelo e atualiza o INI do Router.
 ///
 /// `null` volta ao automático (`--fit`). A janela só entra em vigor no
@@ -770,17 +830,8 @@ pub fn model_set_ctx(
         return Err("modelo vazio".into());
     }
     let mut perfil = profile_for(&state, model).unwrap_or_default();
-    let stored = ctx_len.map(clamp_ctx);
-    perfil.ctx = stored;
-    // Mexer na janela na mão é escolha da pessoa, e a etiqueta precisa dizer
-    // isso: um perfil recomendado deixa de ser recomendado quando é editado.
-    perfil.source = lr_types::tuning::ProfileSource::Manual;
-    state
-        .store
-        .set_model_profile(model, &perfil)
-        .map_err(err_str)?;
-    write_router_preset(&state)?;
-    Ok(stored)
+    perfil.ctx = ctx_len.map(clamp_ctx);
+    Ok(save_profile(&state, model, perfil)?.ctx)
 }
 
 // ---------------------------------------------------------------- chats ---

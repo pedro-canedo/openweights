@@ -123,6 +123,14 @@ pub struct ModelProfile {
     pub mmproj: Option<String>,
     /// Quando carregar o projetor. Ausente = o padrão (sob demanda).
     pub vision: Option<VisionMode>,
+    /// Manter o KV cache na GPU. `false` grava `no-kv-offload`.
+    pub kv_offload: Option<bool>,
+    /// Mapear o arquivo na memória. `false` grava `no-mmap`.
+    pub mmap: Option<bool>,
+    /// Travar o modelo na RAM (`mlock`).
+    pub mlock: Option<bool>,
+    /// Slots paralelos no llama-server (`parallel`).
+    pub parallel: Option<u32>,
     pub source: ProfileSource,
 }
 
@@ -192,6 +200,18 @@ impl ModelProfile {
         if let Some(t) = self.threads {
             push("threads", t.to_string());
         }
+        if let Some(n) = self.parallel {
+            push("parallel", n.to_string());
+        }
+        if let Some(false) = self.kv_offload {
+            push("no-kv-offload", "1".to_string());
+        }
+        if let Some(false) = self.mmap {
+            push("no-mmap", "1".to_string());
+        }
+        if let Some(true) = self.mlock {
+            push("mlock", "1".to_string());
+        }
         if let Some(s) = self.spec
             && s != SpecType::None
         {
@@ -242,6 +262,10 @@ mod tests {
             spec: Some(SpecType::Ngram),
             mmproj: Some(r"C:\modelos\mmproj.gguf".into()),
             vision: Some(VisionMode::Always),
+            kv_offload: Some(false),
+            mmap: Some(false),
+            mlock: Some(true),
+            parallel: Some(4),
             source: ProfileSource::Recommended,
         };
         let m: std::collections::HashMap<_, _> = p.to_ini_extras().into_iter().collect();
@@ -255,6 +279,10 @@ mod tests {
         assert_eq!(m["ubatch-size"], "256");
         assert_eq!(m["threads"], "8");
         assert_eq!(m["spec-type"], "ngram-mod");
+        assert_eq!(m["no-kv-offload"], "1");
+        assert_eq!(m["no-mmap"], "1");
+        assert_eq!(m["mlock"], "1");
+        assert_eq!(m["parallel"], "4");
         // O parser do INI do llama.cpp trata `\` como escape.
         assert_eq!(m["mmproj"], "C:/modelos/mmproj.gguf");
         assert_eq!(m["fit"], "off");

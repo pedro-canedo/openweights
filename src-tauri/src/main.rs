@@ -87,6 +87,8 @@ fn main() {
             commands::server_busy,
             commands::server_props,
             commands::model_set_ctx,
+            commands::model_get_profile,
+            commands::model_set_profile,
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,

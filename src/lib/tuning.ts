@@ -13,6 +13,9 @@ export type KvType = "f16" | "q8_0" | "q4_0";
 /** Especulação: prevê tokens à frente. Só é ligada depois de medida. */
 export type SpecType = "none" | "mtp" | "ngram";
 
+/** Quando carregar o projetor de visão. Ausente = sob demanda. */
+export type VisionMode = "off" | "onDemand" | "always";
+
 /** De onde veio a configuração. */
 export type ProfileSource = "manual" | "recommended" | "tested";
 
@@ -30,7 +33,17 @@ export interface ModelProfile {
   threads?: number | null;
   spec?: SpecType | null;
   mmproj?: string | null;
+  vision?: VisionMode | null;
+  kvOffload?: boolean | null;
+  mmap?: boolean | null;
+  mlock?: boolean | null;
+  parallel?: number | null;
   source: ProfileSource;
+}
+
+/** Nada escolhido: o llama.cpp decide tudo. */
+export function emptyProfile(): ModelProfile {
+  return { source: "manual" };
 }
 
 /** O que a pessoa quer desta máquina — a tela mostra as duas respostas. */

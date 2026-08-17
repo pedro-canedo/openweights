@@ -19,6 +19,8 @@ import type {
   Telemetry,
   WorkspaceFile,
 } from "./types";
+import type { ModelProfile } from "./tuning";
+import { emptyProfile } from "./tuning";
 import * as mocks from "./mocks";
 
 // ------------------------------------------------------------ hardware ---
@@ -231,6 +233,54 @@ export const setSetting = (key: string, value: string) =>
 /** Mapa modelo → janela de contexto (`null` no comando = automático / --fit). */
 export const MODEL_CTX_SETTING = "model_ctx_sizes";
 
+const mockProfileKey = (model: string) => `mock:profile:${model}`;
+
+export async function getModelProfile(
+  model: string,
+): Promise<ModelProfile | null> {
+  if (!model) return null;
+  if (!isTauri) {
+    const raw = localStorage.getItem(mockProfileKey(model));
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as ModelProfile;
+    } catch {
+      return null;
+    }
+  }
+  return invoke<ModelProfile | null>("model_get_profile", { model });
+}
+
+export async function setModelProfile(
+  model: string,
+  profile: ModelProfile,
+): Promise<ModelProfile> {
+  const next: ModelProfile = { ...profile, source: "manual" };
+  if (!isTauri) {
+    const empty =
+      next.ctx == null &&
+      next.ngl == null &&
+      next.ncmoe == null &&
+      next.kvK == null &&
+      next.kvV == null &&
+      next.flashAttn == null &&
+      next.batch == null &&
+      next.ubatch == null &&
+      next.threads == null &&
+      next.spec == null &&
+      next.vision == null &&
+      next.kvOffload == null &&
+      next.mmap == null &&
+      next.mlock == null &&
+      next.parallel == null &&
+      !next.mmproj;
+    if (empty) localStorage.removeItem(mockProfileKey(model));
+    else localStorage.setItem(mockProfileKey(model), JSON.stringify(next));
+    return empty ? emptyProfile() : next;
+  }
+  return invoke<ModelProfile>("model_set_profile", { model, profile: next });
+}
+
 export function lookupModelCtx(
   map: Record<string, number>,
   model: string,
@@ -261,10 +311,8 @@ export const setModelCtx = (model: string, ctxLen: number | null) =>
   isTauri
     ? invoke<number | null>("model_set_ctx", { model, ctxLen })
     : (async () => {
-        const map = await getModelCtxMap();
-        if (ctxLen == null) delete map[model];
-        else map[model] = ctxLen;
-        await setSetting(MODEL_CTX_SETTING, JSON.stringify(map));
+        const cur = (await getModelProfile(model)) ?? emptyProfile();
+        await setModelProfile(model, { ...cur, ctx: ctxLen });
         return ctxLen;
       })();
 
