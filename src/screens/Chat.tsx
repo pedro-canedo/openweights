@@ -69,6 +69,7 @@ import MessageList, { type UiMessage } from "../components/chat/MessageList";
 import ModelSelect from "../components/chat/ModelSelect";
 import ContextMeter from "../components/chat/ContextMeter";
 import ParamsPanel from "../components/chat/ParamsPanel";
+import { sliceFromRun } from "../lib/contextUsage";
 
 /**
  * Opções do seletor: ids servidos pelo Router (GET /v1/models) PRIMEIRO,
@@ -587,6 +588,7 @@ export default function Chat() {
     run?.pendingCallId != null ? (run.tools[run.pendingCallId] ?? null) : null;
   // "Ocupado" para a UI: stream do chat normal OU run do agente.
   const busy = generating || runActive || runStarting;
+  const agentUsage = sliceFromRun(run, runActive || runStarting);
   // Run antigo para o painel quando não há mais run corrente na conversa.
   const traceRunId =
     !run && lastTrace?.chatId === activeChatId ? lastTrace.runId : null;
@@ -1209,6 +1211,7 @@ export default function Chat() {
                         attachments={attachments}
                         systemPrompt={params.systemPrompt}
                         generating={busy}
+                        agent={agentUsage}
                       />
                       <ModelSelect
                         models={models ?? []}

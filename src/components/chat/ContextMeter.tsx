@@ -13,26 +13,18 @@ import {
   setModelCtx,
 } from "../../lib/api";
 import { describesModel } from "../../lib/agent/types";
+import {
+  collectContextBuckets,
+  type AgentUsageSlice,
+} from "../../lib/contextUsage";
 import type { Attachment } from "./AttachmentChips";
 import type { UiMessage } from "./MessageList";
 
 const CTX_CHIPS = [8192, 16384, 32768, 65536];
 const CTX_MIN = 512;
 const CTX_MAX = 262_144;
-const IMAGE_TOKENS = 256;
 const RING_R = 7;
 const RING_C = 2 * Math.PI * RING_R;
-
-type Bucket = {
-  key: string;
-  color: string;
-  tokens: number;
-};
-
-function estimateTokens(text: string): number {
-  if (!text) return 0;
-  return Math.max(0, Math.round(text.length / 4));
-}
 
 function formatTok(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -71,6 +63,7 @@ export default function ContextMeter({
   attachments,
   systemPrompt,
   generating = false,
+  agent = null,
 }: {
   model: string;
   messages: UiMessage[];
@@ -78,6 +71,8 @@ export default function ContextMeter({
   attachments: Attachment[];
   systemPrompt: string;
   generating?: boolean;
+  /** Run do agente vivo: raciocínio e ferramentas não passam pelas bolhas. */
+  agent?: AgentUsageSlice | null;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -108,31 +103,17 @@ export default function ContextMeter({
     if (open) void refreshLimit();
   }, [open, model]);
 
-  const buckets = useMemo<Bucket[]>(() => {
-    let conversation = 0;
-    let reasoning = 0;
-    for (const m of messages) {
-      conversation += estimateTokens(m.content);
-      if (m.images) conversation += m.images.length * IMAGE_TOKENS;
-      reasoning += estimateTokens(m.reasoning ?? "");
-    }
-    let attached = 0;
-    for (const a of attachments) {
-      attached +=
-        a.kind === "image" ? IMAGE_TOKENS : estimateTokens(a.data);
-    }
-    return [
-      {
-        key: "system",
-        color: "#8b909a",
-        tokens: estimateTokens(systemPrompt),
-      },
-      { key: "conversation", color: "#e8a87c", tokens: conversation },
-      { key: "reasoning", color: "#7dcea0", tokens: reasoning },
-      { key: "draft", color: "#7eb8da", tokens: estimateTokens(draft) },
-      { key: "attachments", color: "#c4a7e7", tokens: attached },
-    ].filter((b) => b.tokens > 0);
-  }, [messages, draft, attachments, systemPrompt]);
+  const buckets = useMemo(
+    () =>
+      collectContextBuckets({
+        messages,
+        draft,
+        attachments,
+        systemPrompt,
+        agent,
+      }),
+    [messages, draft, attachments, systemPrompt, agent],
+  );
 
   const used = buckets.reduce((s, b) => s + b.tokens, 0);
   const pct = limit && limit > 0 ? Math.min(1, used / limit) : 0;
