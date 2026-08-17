@@ -71,7 +71,18 @@ pub struct Candidate {
 /// janela e KV comprimido. Flash attention entra sempre que há GPU (é ganho
 /// sem custo de memória relevante); o KV comprimido só entra quando a janela
 /// pedida o exige.
-pub fn candidates(budget: &MemoryBudget, meta: &ModelMeta, file_size_bytes: u64) -> Vec<Candidate> {
+/// `real_layers` vem do CABEÇALHO do GGUF (`block_count`), quando deu para
+/// ler. É a única fonte aceitável para `ngl`: a tabela de chute por faixa de
+/// parâmetros escreveu "48" num modelo de 65 camadas, e com `fit = off` as
+/// 17 que sobraram foram para a CPU — a geração caiu de 23 para 4 tok/s, sem
+/// erro nenhum. Sem o número real, `ngl` fica de fora e o `fit` do llama.cpp
+/// continua ligado, que erra sempre para o lado de carregar.
+pub fn candidates(
+    budget: &MemoryBudget,
+    meta: &ModelMeta,
+    file_size_bytes: u64,
+    real_layers: Option<u32>,
+) -> Vec<Candidate> {
     let tem_gpu = budget.vram_bytes > 0;
     let teto = if tem_gpu {
         budget.vram_bytes.saturating_sub(MARGEM_VRAM_BYTES)
@@ -88,7 +99,8 @@ pub fn candidates(budget: &MemoryBudget, meta: &ModelMeta, file_size_bytes: u64)
     let base = |ctx: u32, kv: Option<KvType>, intent: Intent| Candidate {
         profile: ModelProfile {
             ctx: Some(ctx),
-            ngl: Some(meta.n_layers),
+            // Nunca o chute: ou o número real do arquivo, ou nada (fit on).
+            ngl: real_layers,
             kv_k: kv,
             kv_v: kv,
             flash_attn: tem_gpu.then_some(true),
@@ -161,15 +173,23 @@ pub fn candidates(budget: &MemoryBudget, meta: &ModelMeta, file_size_bytes: u64)
 /// O tamanho do arquivo responde pelo modelo: parâmetros são estimados por
 /// `bytes / 0.6` (a densidade típica de um Q4), e o erro dessa conta só muda
 /// o TIER de compressão do KV — nunca a janela, nunca a carga.
-pub fn agent_profile(budget: &MemoryBudget, file_size_bytes: u64) -> ModelProfile {
+/// `training_ctx` é a janela de TREINO do arquivo (`context_length`), quando
+/// legível: pedir além dela degrada a resposta em silêncio, então a janela
+/// agêntica é o mínimo entre as duas.
+pub fn agent_profile(
+    budget: &MemoryBudget,
+    file_size_bytes: u64,
+    training_ctx: Option<u32>,
+) -> ModelProfile {
     let tem_gpu = budget.vram_bytes > 0;
     let teto = if tem_gpu {
         budget.vram_bytes.saturating_sub(MARGEM_VRAM_BYTES)
     } else {
         (budget.ram_bytes as f64 * crate::RAM_USABLE_FRACTION) as u64
     };
+    let janela = AGENT_MIN_CTX.min(training_ctx.unwrap_or(u32::MAX)).max(1);
     let params = (file_size_bytes as f64 / 0.6) as u64;
-    let meta = ModelMeta::estimate_from_params(params, AGENT_MIN_CTX);
+    let meta = ModelMeta::estimate_from_params(params, janela);
 
     let cabe = |kv: KvType| {
         let m = ModelMeta {
@@ -187,7 +207,7 @@ pub fn agent_profile(budget: &MemoryBudget, file_size_bytes: u64) -> ModelProfil
     };
 
     ModelProfile {
-        ctx: Some(AGENT_MIN_CTX),
+        ctx: Some(janela),
         kv_k: kv,
         kv_v: kv,
         flash_attn: tem_gpu.then_some(true),
@@ -340,21 +360,21 @@ mod tests {
 
     #[test]
     fn a_model_that_fits_gets_the_biggest_window_that_still_fits() {
-        let c = candidates(&placa(16), &modelo_8b(), 5 * GIB);
+        let c = candidates(&placa(16), &modelo_8b(), 5 * GIB, Some(36));
         assert!(!c.is_empty());
         let escolhido = &c[0];
         assert_eq!(escolhido.intent, Intent::Balanced);
         assert!(escolhido.profile.ctx.unwrap() >= 32768, "{:?}", escolhido);
         // Com GPU, flash attention entra: é ganho sem custo de memória.
         assert_eq!(escolhido.profile.flash_attn, Some(true));
-        assert_eq!(escolhido.profile.ngl, Some(modelo_8b().n_layers));
+        assert_eq!(escolhido.profile.ngl, Some(36));
     }
 
     /// A alternativa existe para a explicação ser verificável: "e se eu
     /// quiser mais contexto?" tem resposta com número, não com opinião.
     #[test]
     fn there_is_an_alternative_with_more_window() {
-        let c = candidates(&placa(16), &modelo_8b(), 5 * GIB);
+        let c = candidates(&placa(16), &modelo_8b(), 5 * GIB, Some(36));
         let ampla = c.iter().find(|x| x.intent == Intent::MoreContext);
         if let Some(a) = ampla {
             assert!(a.profile.ctx.unwrap() > c[0].profile.ctx.unwrap());
@@ -366,7 +386,7 @@ mod tests {
     /// "não sei dizer" é pior do que "vai rodar partido, com esta janela".
     #[test]
     fn a_model_too_big_still_gets_a_proposal() {
-        let c = candidates(&placa(8), &modelo_8b(), 40 * GIB);
+        let c = candidates(&placa(8), &modelo_8b(), 40 * GIB, Some(36));
         assert_eq!(c.len(), 1);
         assert!(c[0].profile.ctx.is_some());
     }
@@ -378,7 +398,7 @@ mod tests {
             ram_bytes: 32 * GIB,
             unified: false,
         };
-        let c = candidates(&budget, &modelo_8b(), 5 * GIB);
+        let c = candidates(&budget, &modelo_8b(), 5 * GIB, Some(36));
         assert_eq!(c[0].profile.flash_attn, None);
     }
 
@@ -386,7 +406,7 @@ mod tests {
     /// sobre a mesma placa, e cada uma tem resposta com número.
     #[test]
     fn the_four_profiles_answer_four_different_questions() {
-        let c = candidates(&placa(16), &modelo_8b(), 5 * GIB);
+        let c = candidates(&placa(16), &modelo_8b(), 5 * GIB, Some(36));
         let por_intencao = |i: Intent| c.iter().find(|x| x.intent == i);
 
         let rapida = por_intencao(Intent::Fast).expect("rápida");
@@ -402,7 +422,7 @@ mod tests {
     /// Numa máquina onde nada cabe, oferecer quatro perfis seria teatro.
     #[test]
     fn a_machine_that_cannot_hold_the_model_gets_one_honest_proposal() {
-        let c = candidates(&placa(8), &modelo_8b(), 40 * GIB);
+        let c = candidates(&placa(8), &modelo_8b(), 40 * GIB, Some(36));
         assert_eq!(c.len(), 1);
     }
 
@@ -427,13 +447,38 @@ mod tests {
         }
     }
 
+    /// O bug que derrubou um 27B de 23 para 4 tok/s: a tabela de chute dizia
+    /// 48 camadas, o arquivo tinha 65, e com `fit = off` as 17 restantes
+    /// foram para a CPU. O contrato agora: SEM o número real do cabeçalho,
+    /// `ngl` fica de fora (e o fit continua ligado); com ele, é ele.
+    #[test]
+    fn a_layer_guess_never_becomes_ngl() {
+        let sem_leitura = candidates(&placa(16), &modelo_8b(), 5 * GIB, None);
+        assert!(
+            sem_leitura.iter().all(|c| c.profile.ngl.is_none()),
+            "chute de tabela virou ngl: {sem_leitura:?}"
+        );
+        let com_leitura = candidates(&placa(16), &modelo_8b(), 5 * GIB, Some(65));
+        assert!(com_leitura.iter().all(|c| c.profile.ngl == Some(65)));
+    }
+
+    /// A janela agêntica respeita o TREINO do modelo: pedir 32k a um modelo
+    /// treinado em 16k degrada a resposta em silêncio.
+    #[test]
+    fn the_agent_window_respects_the_training_context() {
+        let curto = agent_profile(&placa(16), 5_500_000_000, Some(16_384));
+        assert_eq!(curto.ctx, Some(16_384));
+        let longo = agent_profile(&placa(16), 5_500_000_000, Some(262_144));
+        assert_eq!(longo.ctx, Some(AGENT_MIN_CTX));
+    }
+
     /// A promessa do perfil agêntico: a janela é SEMPRE 32.768; o que muda
     /// conforme a placa é só quanto o KV comprime — e `ngl` nunca entra,
     /// porque este perfil é gravado no boot, sem rede de desfazer.
     #[test]
     fn the_agent_profile_always_promises_the_agent_window() {
         // 9B Q4 (~5.5 GiB) numa placa de 16 GB: cabe folgado, KV em f16.
-        let folgado = agent_profile(&placa(16), 5_500_000_000);
+        let folgado = agent_profile(&placa(16), 5_500_000_000, None);
         assert_eq!(folgado.ctx, Some(AGENT_MIN_CTX));
         assert_eq!(folgado.kv_k, None, "com folga não se paga compressão");
         assert_eq!(folgado.ngl, None, "o fit continua ligado");
@@ -441,13 +486,13 @@ mod tests {
         assert_eq!(folgado.source, ProfileSource::Recommended);
 
         // Um Q4 de ~20B (12 GB) na mesma placa: aperta, o KV comprime.
-        let apertado = agent_profile(&placa(16), 12_000_000_000);
+        let apertado = agent_profile(&placa(16), 12_000_000_000, None);
         assert_eq!(apertado.ctx, Some(AGENT_MIN_CTX));
         assert!(apertado.kv_k.is_some(), "apertou: comprime");
 
         // Modelo maior que a placa: a janela NÃO cede — o fit divide as
         // camadas com a RAM, mais lento porém agêntico.
-        let transborda = agent_profile(&placa(8), 40_000_000_000);
+        let transborda = agent_profile(&placa(8), 40_000_000_000, None);
         assert_eq!(transborda.ctx, Some(AGENT_MIN_CTX));
         assert_eq!(transborda.kv_k, Some(KvType::Q4_0));
         assert_eq!(transborda.ngl, None);
@@ -460,6 +505,7 @@ mod tests {
                 unified: false,
             },
             5_500_000_000,
+            None,
         );
         assert_eq!(cpu.ctx, Some(AGENT_MIN_CTX));
         assert_eq!(cpu.flash_attn, None);

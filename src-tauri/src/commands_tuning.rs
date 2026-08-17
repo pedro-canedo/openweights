@@ -44,7 +44,10 @@ pub(crate) fn ensure_agent_profiles(state: &AppState) {
         if profile_for(state, &a.name).is_some() {
             continue;
         }
-        let perfil = tune::agent_profile(&budget, a.total_bytes);
+        // O cabeçalho local dá a janela de TREINO (clamp da agêntica) —
+        // ler custa menos de um milissegundo por modelo.
+        let cabecalho = lr_models::read_local_meta(&a.primary_path);
+        let perfil = tune::agent_profile(&budget, a.total_bytes, cabecalho.context_length);
         match state.store.set_model_profile(a.name.trim(), &perfil) {
             Ok(()) => log::info!(
                 "perfil agêntico para {}: janela {}, kv {:?}",
@@ -122,7 +125,13 @@ pub async fn tune_advise(state: State<'_, AppState>, model: String) -> CmdResult
     let params_estimados = artefato.total_bytes.saturating_mul(2);
     let meta = lr_advisor::ModelMeta::estimate_from_params(params_estimados, 8192);
 
-    let candidatos = tune::candidates(&budget, &meta, artefato.total_bytes);
+    // O `ngl` dos candidatos só pode vir do NÚMERO REAL de camadas, lido do
+    // cabeçalho do arquivo. A tabela de chute escreveu "48" num modelo de 65
+    // camadas e, com `fit = off`, as 17 restantes moraram na CPU: 23 → 4
+    // tok/s, sem erro nenhum. Sem leitura, os candidatos vão sem `ngl` e o
+    // `fit` do llama.cpp continua ligado.
+    let cabecalho = lr_models::read_local_meta(&artefato.primary_path);
+    let candidatos = tune::candidates(&budget, &meta, artefato.total_bytes, cabecalho.n_layers);
     let teto_gpu = budget
         .vram_bytes
         .saturating_sub(lr_advisor::tune::MARGEM_VRAM_BYTES);

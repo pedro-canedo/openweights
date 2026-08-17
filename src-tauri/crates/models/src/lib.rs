@@ -17,11 +17,13 @@
 use serde::{Deserialize, Serialize};
 
 mod download;
+mod gguf_local;
 mod hf;
 mod local;
 pub use download::{
     DownloadEvent, DownloadManager, DownloadRequest, DownloadState, DownloadStatus, download_id,
 };
+pub use gguf_local::{LocalGgufMeta, read_local_meta};
 pub use hf::{GgufRepoMeta, HfClient, SortBy};
 pub use local::{LocalArtifact, scan_local};
 
