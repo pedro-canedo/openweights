@@ -179,5 +179,29 @@ pub struct Telemetry {
     pub ram_used_bytes: u64,
     pub ram_total_bytes: u64,
     pub gpus: Vec<GpuTelemetry>,
+    // Campos abaixo são opcionais por contrato com o frontend: `null` quando a
+    // plataforma não expõe a métrica. `#[serde(default)]` para que payloads
+    // antigos (sem os campos) continuem desserializáveis.
+    /// Temperatura da CPU em °C; `None` quando o SO não expõe sensores
+    /// (Windows sem privilégio de administrador, VMs, WSL).
+    #[serde(default)]
+    pub cpu_temp_c: Option<f32>,
+    /// Temperatura da GPU em °C — hoje só NVIDIA via NVML; AMD/Intel ficam
+    /// `None` porque o caminho PDH usado para utilização não tem temperatura.
+    #[serde(default)]
+    pub gpu_temp_c: Option<f32>,
+    /// % usado (0–100) do disco onde fica a pasta de dados do app.
+    #[serde(default)]
+    pub disk_used_pct: Option<f32>,
+    /// Bytes livres do mesmo disco de [`Self::disk_used_pct`].
+    #[serde(default)]
+    pub disk_free_bytes: Option<u64>,
+    /// Taxa de download agregada de TODAS as interfaces (bytes/s) desde a
+    /// última amostra, dividida pelo intervalo REAL medido (não 1 s fixo).
+    #[serde(default)]
+    pub net_rx_bytes_per_sec: Option<u64>,
+    /// Idem para upload.
+    #[serde(default)]
+    pub net_tx_bytes_per_sec: Option<u64>,
     pub ts_ms: u64,
 }

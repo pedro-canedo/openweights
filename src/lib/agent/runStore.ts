@@ -98,6 +98,10 @@ export interface StepItem {
   /** Quanto durou o raciocínio, fechado quando a resposta começa a sair.
    *  `null` enquanto ele ainda está pensando. */
   thoughtMs: number | null;
+  /** Quando o passo terminou (tsMs do `assistant.message`, que É persistido
+   *  — ao contrário dos deltas). É o que faz o tempo por etapa sobreviver
+   *  ao recarregar. */
+  finishedAtMs: number | null;
 }
 
 /**
@@ -284,6 +288,7 @@ function withStep(
       reasoning: "",
       startedAtMs: tsMs,
       thoughtMs: null,
+      finishedAtMs: null,
     };
     return [...items, fn(created)];
   }
@@ -365,12 +370,20 @@ export function reduceEvent(run: RunView, event: RunEvent): RunView {
 
     case "assistant.message":
       // O conteúdo final substitui os deltas (evita texto duplicado quando
-      // o backend emite ambos).
-      next.items = withStep(next.items, event.stepId, (s) => ({
-        ...s,
-        text: event.content || s.text,
-        reasoning: event.reasoning || s.reasoning,
-      }));
+      // o backend emite ambos). O tsMs deste evento fecha o relógio do
+      // passo — e como ele É persistido, o tempo por etapa sobrevive ao
+      // recarregar (os deltas, que alimentavam o cronômetro ao vivo, não).
+      next.items = withStep(
+        next.items,
+        event.stepId,
+        (s) => ({
+          ...s,
+          text: event.content || s.text,
+          reasoning: event.reasoning || s.reasoning,
+          finishedAtMs: event.tsMs,
+        }),
+        event.tsMs,
+      );
       break;
 
     case "tool.requested": {
@@ -729,7 +742,50 @@ function emit(): void {
   for (const fn of listeners) fn();
 }
 
+// ------------------------------------------------- tok/s ao vivo (agente) ---
+//
+// O chat normal mede tok/s no próprio stream do navegador; o laço do agente
+// vive no Rust e os timings só chegam no FIM de cada passo. Para a barra de
+// status não ficar muda por minutos (que é o que faz "trabalhando" parecer
+// "travou"), estimamos ao vivo pelos deltas: caracteres ÷ 4 numa janela
+// deslizante. É estimativa e a interface a mostra como tal (~).
+const TPS_JANELA_MS = 6_000;
+const tpsAmostras = new Map<string, { t: number; chars: number }[]>();
+
+function notaDelta(runId: string, chars: number): void {
+  const agora = Date.now();
+  const lista = tpsAmostras.get(runId) ?? [];
+  lista.push({ t: agora, chars });
+  while (lista.length > 0 && agora - lista[0].t > TPS_JANELA_MS) {
+    lista.shift();
+  }
+  tpsAmostras.set(runId, lista);
+}
+
+/** Estimativa de tokens/s do run vivo desta conversa; `null` sem atividade. */
+function liveTpsOf(chatId: number | null): number | null {
+  if (chatId == null) return null;
+  const runId = byChat.get(chatId);
+  if (!runId) return null;
+  const lista = tpsAmostras.get(runId);
+  if (!lista || lista.length < 3) return null;
+  const agora = Date.now();
+  const ultimo = lista[lista.length - 1];
+  // Sem delta há mais de 2,5 s (pensando, rodando ferramenta): não há taxa.
+  if (agora - ultimo.t > 2_500) return null;
+  const primeiro = lista[0];
+  const dt = (ultimo.t - primeiro.t) / 1000;
+  if (dt < 0.5) return null;
+  const chars = lista.reduce((s, a) => s + a.chars, 0);
+  return chars / 4 / dt;
+}
+
 function handleEvent(event: RunEvent): void {
+  if (event.kind === "assistant.delta" || event.kind === "reasoning.delta") {
+    notaDelta(event.runId, event.text.length);
+  } else if (event.kind === "run.finished") {
+    tpsAmostras.delete(event.runId);
+  }
   const known = runs.get(event.runId);
   let base =
     known ??
@@ -850,6 +906,18 @@ export const runStore = {
   },
 
   /** Conversa ocupada: preparando o servidor ou com run em andamento. */
+  /** Tokens/s estimados do run vivo (qualquer conversa): o maior ativo. */
+  liveTps(): number | null {
+    for (const [chatId, runId] of byChat) {
+      const run = runs.get(runId);
+      if (run && isRunActive(run.status)) {
+        const tps = liveTpsOf(chatId);
+        if (tps != null) return tps;
+      }
+    }
+    return null;
+  },
+
   isBusy(chatId: number | null): boolean {
     if (chatId == null) return false;
     if (starting.has(chatId)) return true;

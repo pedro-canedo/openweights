@@ -2741,6 +2741,7 @@ dependencies = [
  "lr_types",
  "nvml-wrapper",
  "serde",
+ "serde_json",
  "sysinfo",
  "windows 0.62.2",
 ]

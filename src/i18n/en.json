@@ -13,7 +13,11 @@
     "gpu": "GPU",
     "vram": "VRAM",
     "noGpu": "no dedicated GPU",
-    "tokensPerSec": "tok/s"
+    "tokensPerSec": "tok/s",
+    "tpsEstimated": "Estimated from stream chunks — the exact number arrives at the end of the step.",
+    "disk": "DISK",
+    "free": "free",
+    "net": "NET"
   },
   "badge": {
     "fullGpu": "Runs fully on GPU",
@@ -443,7 +447,14 @@
     "revealExplorer": "Open in Explorer",
     "revealFinder": "Open in Finder",
     "revealFolder": "Open in file manager",
-    "revealFile": "Show in file manager"
+    "revealFile": "Show in file manager",
+    "preview": {
+      "open": "Preview",
+      "reload": "Reload preview",
+      "openBrowser": "Open in browser",
+      "code": "Code",
+      "preview": "Preview"
+    }
   },
   "common": {
     "loading": "Loading...",

@@ -272,7 +272,16 @@ function StepBlock({
   const pensando = live && !step.text;
   const agora = useNow(pensando, 10);
   if (!step.text && !step.reasoning) return null;
-  const pensou = step.thoughtMs ?? (pensando ? agora - step.startedAtMs : null);
+  // Três fontes para o tempo do raciocínio, em ordem de precisão: o fecho
+  // pelos deltas (só ao vivo), o relógio correndo, e — no replay, onde os
+  // deltas não existem — a diferença entre os eventos PERSISTIDOS do passo.
+  const pensou =
+    step.thoughtMs ??
+    (pensando
+      ? agora - step.startedAtMs
+      : step.finishedAtMs != null && step.startedAtMs > 0
+        ? step.finishedAtMs - step.startedAtMs
+        : null);
   return (
     <div className="flex flex-col">
       {compact && (

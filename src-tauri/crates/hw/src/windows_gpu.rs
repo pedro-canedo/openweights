@@ -25,6 +25,7 @@ use std::collections::HashMap;
 
 use lr_types::{GpuInfo, GpuTelemetry, GpuVendor};
 use nvml_wrapper::Nvml;
+use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
 use windows::Win32::Foundation::LUID;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
@@ -285,12 +286,16 @@ impl WinGpuMonitor {
         }
     }
 
-    /// Telemetria por GPU, na mesma ordem de `profile_gpus`.
-    pub fn sample(&mut self, profile_gpus: &[GpuInfo]) -> Vec<GpuTelemetry> {
+    /// Telemetria por GPU (na mesma ordem de `profile_gpus`) + temperatura em
+    /// °C da primeira GPU que reportar uma. Hoje só o NVML expõe temperatura;
+    /// o PDH (AMD/Intel) não tem contador de temperatura — fica `None` sem
+    /// inventar valor.
+    pub fn sample(&mut self, profile_gpus: &[GpuInfo]) -> (Vec<GpuTelemetry>, Option<f32>) {
         // Uma coleta PDH por amostra: o valor formatado é a taxa desde a
         // coleta anterior (o Monitor roda a ~1 Hz, intervalo suficiente).
         let pdh_util = self.pdh.as_mut().and_then(PdhGpuUtilQuery::collect);
 
+        let mut temp_c: Option<f32> = None;
         let mut out = Vec::with_capacity(profile_gpus.len());
         for (i, gpu) in profile_gpus.iter().enumerate() {
             let slot = self.slots.get(i).and_then(Option::as_ref);
@@ -311,6 +316,15 @@ impl WinGpuMonitor {
                         vram_used = Some(mem.used);
                         vram_total = mem.total;
                     }
+                    // O payload tem UM campo de temperatura: vale a primeira
+                    // GPU com leitura (na ordem do profile — a dedicada que o
+                    // usuário usa para inferência vem primeiro).
+                    if temp_c.is_none() {
+                        temp_c = dev
+                            .temperature(TemperatureSensor::Gpu)
+                            .ok()
+                            .map(|t| t as f32);
+                    }
                 }
             } else if let (Some(map), Some(slot)) = (pdh_util.as_ref(), slot) {
                 util = map.get(&slot.luid).copied();
@@ -322,7 +336,7 @@ impl WinGpuMonitor {
                 vram_total_bytes: vram_total,
             });
         }
-        out
+        (out, temp_c)
     }
 }
 

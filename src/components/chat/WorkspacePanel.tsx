@@ -24,10 +24,20 @@ import type { WorkspaceFile } from "../../lib/types";
 import CheckpointList from "../agent/CheckpointList";
 import RagPanel from "../agent/RagPanel";
 import MemoryPanel from "../agent/MemoryPanel";
+import PreviewPane, { canShowCode, previewKind } from "./PreviewPane";
 
 function folderName(dir: string): string {
   const parts = dir.replace(/[\\/]+$/, "").split(/[\\/]/);
   return parts[parts.length - 1] || dir;
+}
+
+/**
+ * Caminho absoluto para o protocolo asset: pasta da sessão + caminho relativo.
+ * O dir pode ser `C:\...` no Windows — juntar com `/` funciona nos dois
+ * mundos (o Windows aceita barra normal), então não adivinhamos separador.
+ */
+function joinAbs(dir: string, rel: string): string {
+  return `${dir.replace(/[\\/]+$/, "")}/${rel.replace(/^[\\/]+/, "")}`;
 }
 
 function FolderPlusIcon({ className = "h-4 w-4" }: { className?: string }) {
@@ -68,6 +78,23 @@ function ExternalIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
       <path d="M14 5h5v5" />
       <path d="M10 14L19 5" />
       <path d="M19 13v5a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1h5" />
+    </svg>
+  );
+}
+
+function EyeIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      viewBox="0 0 24 24"
+    >
+      <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z" />
+      <circle cx="12" cy="12" r="2.6" />
     </svg>
   );
 }
@@ -147,6 +174,11 @@ type WorkspaceCtx = {
   saved: boolean;
   visible: WorkspaceFile[];
   openFile: (f: WorkspaceFile) => Promise<void>;
+  /** O modal mostra a prévia (iframe/img) em vez do editor de texto. */
+  previewMode: boolean;
+  setPreviewMode: (p: boolean) => void;
+  /** Abre o arquivo direto na prévia (ação de "olho" na árvore). */
+  openPreview: (f: WorkspaceFile) => Promise<void>;
   closeEditor: () => void;
   save: () => Promise<void>;
   reveal: (rel?: string | null) => Promise<void>;
@@ -185,6 +217,7 @@ export function WorkspaceHost({
   const [query, setQuery] = useState("");
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -229,6 +262,7 @@ export function WorkspaceHost({
     onDirChange(null);
     setOpenPath(null);
     setEditorOpen(false);
+    setPreviewMode(false);
     setDraft("");
     setDirty(false);
   };
@@ -244,15 +278,42 @@ export function WorkspaceHost({
       setOpenPath(file.path);
       setDraft(text);
       setDirty(false);
+      setPreviewMode(false);
       setEditorOpen(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
   };
 
+  const openPreview = async (file: WorkspaceFile) => {
+    if (!dir) return;
+    if (dirty && openPath !== file.path && !window.confirm(t("workspace.discard"))) {
+      return;
+    }
+    setError(null);
+    // HTML/SVG são texto: carregamos o conteúdo junto para o toggle
+    // "código | prévia" já ter o que mostrar. Imagem binária não passa pelo
+    // leitor de texto (a leitura falharia) — e a prévia não precisa dele:
+    // o protocolo asset serve o arquivo direto do disco.
+    let text = "";
+    if (canShowCode(file.name)) {
+      try {
+        text = await readWorkspaceFile(dir, file.path);
+      } catch {
+        // Sem o texto a prévia continua válida; só o toggle nasce vazio.
+      }
+    }
+    setOpenPath(file.path);
+    setDraft(text);
+    setDirty(false);
+    setPreviewMode(true);
+    setEditorOpen(true);
+  };
+
   const closeEditor = () => {
     if (dirty && !window.confirm(t("workspace.discard"))) return;
     setEditorOpen(false);
+    setPreviewMode(false);
     setOpenPath(null);
     setDraft("");
     setDirty(false);
@@ -316,6 +377,9 @@ export function WorkspaceHost({
         saved,
         visible,
         openFile,
+        previewMode,
+        setPreviewMode,
+        openPreview,
         closeEditor,
         save,
         reveal,
@@ -393,7 +457,8 @@ function FileTree({
   nodes: TreeNode[];
   depth: number;
 }) {
-  const { openPath, openFile } = useWorkspace();
+  const { t } = useTranslation();
+  const { openPath, openFile, openPreview } = useWorkspace();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   return (
@@ -424,18 +489,40 @@ function FileTree({
           );
         }
         const active = openPath === node.file?.path;
+        const previewable = previewKind(node.name) !== null;
         return (
-          <button
+          // O nome abre o editor; o "olho" (só em arquivos visualizáveis)
+          // abre a prévia. O olho aparece no hover para a árvore ficar limpa,
+          // e fica fixo na linha ativa para lembrar de onde a prévia veio.
+          <div
             key={node.file?.path ?? key}
-            type="button"
-            onClick={() => node.file && void openFile(node.file)}
-            style={{ paddingLeft: 20 + depth * 12 }}
-            className={`flex w-full items-center py-1 pr-2 text-left text-[12px] hover:bg-panel2 ${
-              active ? "bg-panel2 text-ink" : "text-dim"
+            className={`group flex w-full items-center hover:bg-panel2 ${
+              active ? "bg-panel2" : ""
             }`}
           >
-            <span className="truncate">{node.name}</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => node.file && void openFile(node.file)}
+              style={{ paddingLeft: 20 + depth * 12 }}
+              className={`flex min-w-0 flex-1 items-center py-1 pr-2 text-left text-[12px] ${
+                active ? "text-ink" : "text-dim"
+              }`}
+            >
+              <span className="truncate">{node.name}</span>
+            </button>
+            {previewable && node.file && (
+              <button
+                type="button"
+                onClick={() => node.file && void openPreview(node.file)}
+                title={t("workspace.preview.open")}
+                className={`mr-1 h-5 w-5 shrink-0 items-center justify-center rounded text-dim group-hover:flex hover:text-ink ${
+                  active ? "flex" : "hidden"
+                }`}
+              >
+                <EyeIcon />
+              </button>
+            )}
+          </div>
         );
       })}
     </>
@@ -571,6 +658,8 @@ export function WorkspaceExplorer() {
 function WorkspaceEditor() {
   const { t } = useTranslation();
   const {
+    dir,
+    checkpointsKey,
     editorOpen,
     openPath,
     draft,
@@ -582,6 +671,8 @@ function WorkspaceEditor() {
     save,
     closeEditor,
     reveal,
+    previewMode,
+    setPreviewMode,
   } = useWorkspace();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
@@ -594,19 +685,55 @@ function WorkspaceEditor() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        void save();
+        // Na prévia não há o que salvar — e para imagem binária o rascunho
+        // está vazio: salvar aqui destruiria o arquivo no disco.
+        if (!previewMode) void save();
       }
       if (e.key === "Escape") closeEditor();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [editorOpen, save, closeEditor]);
+  }, [editorOpen, previewMode, save, closeEditor]);
 
   useEffect(() => {
-    if (editorOpen) taRef.current?.focus();
-  }, [editorOpen, openPath]);
+    if (editorOpen && !previewMode) taRef.current?.focus();
+  }, [editorOpen, openPath, previewMode]);
 
   if (!editorOpen || !openPath) return null;
+
+  const fileName = openPath.split(/[\\/]/).pop() ?? openPath;
+  const kind = previewKind(fileName);
+  const absPath = dir ? joinAbs(dir, openPath) : null;
+
+  if (previewMode && kind && absPath) {
+    // A prévia ocupa a MESMA área do leitor de texto (o modal): substituímos
+    // o cartão do editor pelo PreviewPane, no mesmo tamanho e overlay.
+    // Ela lê do disco via protocolo asset — alterações não salvas no editor
+    // não aparecem, igual a abrir o arquivo no navegador.
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) closeEditor();
+        }}
+      >
+        <div className="h-[min(86vh,820px)] w-full max-w-5xl shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
+          <PreviewPane
+            path={absPath}
+            name={fileName}
+            // O agente pode estar mexendo no arquivo: quando ele grava um
+            // checkpoint a lista de arquivos recarrega — reaproveitamos o
+            // mesmo sinal para renovar a prévia, sem inventar watcher novo.
+            refreshKey={checkpointsKey}
+            onClose={closeEditor}
+            onShowCode={
+              canShowCode(fileName) ? () => setPreviewMode(false) : undefined
+            }
+          />
+        </div>
+      </div>
+    );
+  }
 
   const syncScroll = (e: UIEvent<HTMLTextAreaElement>) => {
     if (gutterRef.current) {
@@ -649,6 +776,22 @@ function WorkspaceEditor() {
             {openPath}
             {dirty ? " •" : ""}
           </span>
+          {/* Arquivo visualizável: o mesmo toggle código | prévia da prévia,
+              para os dois lados da moeda ficarem a um clique de distância. */}
+          {kind && (
+            <div className="flex shrink-0 overflow-hidden rounded-md border border-white/15 text-[11px]">
+              <span className="bg-white/10 px-2 py-0.5 text-white/90">
+                {t("workspace.preview.code")}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewMode(true)}
+                className="px-2 py-0.5 text-white/50 hover:text-white"
+              >
+                {t("workspace.preview.preview")}
+              </button>
+            </div>
+          )}
           <button
             type="button"
             onClick={() => void reveal(openPath)}

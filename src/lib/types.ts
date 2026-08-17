@@ -38,6 +38,16 @@ export interface Telemetry {
   ramTotalBytes: number;
   gpus: GpuTelemetry[];
   tsMs: number;
+  /** Temperaturas em °C — `null` quando o sistema não expõe (comum na CPU
+   *  em Windows sem privilégio). Opcionais: build antiga não os manda. */
+  cpuTempC?: number | null;
+  gpuTempC?: number | null;
+  /** Disco onde mora a pasta de dados do app. */
+  diskUsedPct?: number | null;
+  diskFreeBytes?: number | null;
+  /** Taxa agregada de rede desde a última amostra. */
+  netRxBytesPerSec?: number | null;
+  netTxBytesPerSec?: number | null;
 }
 
 // ------------------------------------------------------------- runtime ---

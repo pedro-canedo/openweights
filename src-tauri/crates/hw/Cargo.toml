@@ -11,6 +11,10 @@ serde.workspace = true
 log.workspace = true
 sysinfo = "0.39"
 
+# O teste de contrato do payload (camelCase + null) serializa de verdade.
+[dev-dependencies]
+serde_json.workspace = true
+
 [target.'cfg(windows)'.dependencies]
 nvml-wrapper = "0.12"
 windows = { version = "0.62", features = [
