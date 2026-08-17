@@ -89,6 +89,21 @@ pub fn source_files(root: &Path, dir: &Path, extensions: &[String], cap: usize) 
 
 /// Caminho relativo à raiz do projeto, sempre com `/`.
 pub fn relativize(root: &Path, path: &Path) -> Option<String> {
+    if let Some(rel) = tenta_relativizar(root, path) {
+        return Some(rel);
+    }
+    // Symlink no meio do caminho: no macOS o `TempDir` nasce em
+    // `/var/folders/…`, que é link para `/private/var/folders/…`, e as
+    // ferramentas (rustfmt, prettier) reportam o caminho JÁ RESOLVIDO. Sem
+    // esta segunda tentativa, todo arquivo apontado por elas era descartado
+    // como "fora do projeto" — e o modo conferência dizia que não sabia
+    // quais arquivos estavam tortos.
+    let root_real = root.canonicalize().ok()?;
+    let path_real = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    tenta_relativizar(&root_real, &path_real)
+}
+
+fn tenta_relativizar(root: &Path, path: &Path) -> Option<String> {
     let relative = path.strip_prefix(root).ok()?;
     let text = relative.to_string_lossy().replace('\\', "/");
     (!text.is_empty()).then_some(text)
@@ -98,6 +113,33 @@ pub fn relativize(root: &Path, path: &Path) -> Option<String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    /// O caso do macOS: a raiz chega pelo symlink (`/var/…`) e a ferramenta
+    /// reporta o caminho resolvido (`/private/var/…`). Antes, o arquivo era
+    /// descartado como se fosse de fora do projeto.
+    #[test]
+    fn a_symlinked_root_still_matches_the_resolved_path() {
+        let base = tempfile::tempdir().unwrap();
+        let real = base.path().join("projeto");
+        fs::create_dir_all(real.join("src")).unwrap();
+        fs::write(real.join("src/lib.rs"), "").unwrap();
+
+        let link = base.path().join("atalho");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_dir(&real, &link).is_err() {
+            return; // criar symlink no Windows exige privilégio; sem ele, pula
+        }
+
+        // Raiz pelo atalho, caminho pelo destino real: tem de casar.
+        let resolvido = real.join("src/lib.rs");
+        assert_eq!(relativize(&link, &resolvido).as_deref(), Some("src/lib.rs"));
+        // E o caminho de sempre (sem symlink) continua igual.
+        assert_eq!(relativize(&real, &resolvido).as_deref(), Some("src/lib.rs"));
+        // Fora do projeto continua fora.
+        assert!(relativize(&link, Path::new("/outro/x.rs")).is_none());
+    }
 
     #[test]
     fn finds_sources_and_skips_ignored_folders() {
