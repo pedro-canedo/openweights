@@ -320,7 +320,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = resolve_under(dir.path(), "src/main.rs").unwrap();
         assert!(p.ends_with("main.rs"));
-        assert!(p.starts_with(dir.path().canonicalize().unwrap_or(dir.path().into())));
+        // O contrato é "sob a raiz QUE FOI PASSADA" — `resolve_under` compõe
+        // a partir dela e não resolve symlink. Canonicalizar só o lado
+        // esperado quebrava no macOS, onde o temporário nasce em
+        // `/var/folders/…` e o canônico é `/private/var/folders/…`: a
+        // asserção comparava dois caminhos legítimos que nunca casariam.
+        assert!(p.starts_with(dir.path()), "{p:?} fora de {:?}", dir.path());
     }
 
     #[test]
