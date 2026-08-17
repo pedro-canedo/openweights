@@ -2,119 +2,203 @@
 
 **Models. Your machine. Your rules.**
 
-Rode LLMs no seu PC sem terminal, sem CUDA e sem chute de quantização.
+***English** · [Português](README.pt-BR.md)*
 
-OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://github.com/ggml-org/llama.cpp) atrás de uma interface simples: detecta o hardware, instala o runtime certo e indica quais modelos cabem na sua máquina. Tudo local — nada vai para a nuvem. Windows primeiro; macOS em seguida.
+[![CI](https://github.com/pedro-canedo/openweights/actions/workflows/ci.yml/badge.svg)](https://github.com/pedro-canedo/openweights/actions/workflows/ci.yml)
+[![Release](https://github.com/pedro-canedo/openweights/actions/workflows/release.yml/badge.svg)](https://github.com/pedro-canedo/openweights/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Windows and macOS](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS-lightgrey)
 
-- 🔍 **Hardware no piloto automático** — identifica CPU, RAM, GPU e VRAM e baixa o build do llama.cpp que combina (CUDA, Vulkan ou só CPU).
-- 🤗 **Modelos do Hugging Face, já filtrados** — busca GGUF e recomenda a quantização para o *seu* PC: verde roda inteiro na GPU, amarelo divide com a CPU, cinza fica só no processador.
-- 💬 **Chat local** — streaming, markdown e histórico no disco.
-- 🤖 **Modo agente** — o modelo lê e edita arquivos, roda comandos, usa Git, consulta a internet e analisa dados. Cada ação passa pela sua confirmação (ou não, se você preferir), e uma foto do projeto é tirada antes da primeira alteração: dá para voltar atrás.
-- 🎛️ **Ajustar para esta máquina** — o app pergunta ao próprio llama.cpp quanta memória cada configuração custa na *sua* placa, recomenda uma (com o porquê, em números), aplica e volta atrás sozinho se o modelo não carregar. Depois, se você quiser, mede tokens/s de verdade e substitui a estimativa pelo que a máquina deu.
-- 🧭 **Feito para modelo pequeno** — o objetivo vira entregas curtas, cada uma com contexto novo, e o cardápio de ferramentas se ajusta à janela do modelo: o que não cabe, ele pede quando precisa.
-- 🧠 **Memória e índice do projeto** — o agente lembra do que aprendeu e busca por significado no seu código.
-- 🧩 **Conectores MCP** — servidores do padrão Model Context Protocol entram como ferramentas, com aprovação por servidor.
-- 🔌 **API compatível com OpenAI** — outros apps apontam para `localhost` e usam o mesmo modelo.
-- 📊 **Uso em tempo real** — CPU, RAM, GPU, VRAM e tokens/s enquanto você conversa.
-- 🪶 **Leve de verdade** — núcleo em Rust + Tauri 2. Instalador de poucos MB, sem Electron.
+Run LLMs on your own PC — no terminal, no CUDA setup, no guessing which
+quantization fits.
 
-## Rodando o projeto (desenvolvimento)
+OpenWeights is an open-source desktop app that hides [llama.cpp](https://github.com/ggml-org/llama.cpp)
+behind a simple interface: it detects your hardware, installs the right runtime
+and tells you which models actually fit your machine. Everything runs locally —
+nothing is sent to a server of ours, because there is no server of ours.
+Windows first; macOS next.
 
-### 1. Pré-requisitos
+- 🔍 **Hardware on autopilot** — detects CPU, RAM, GPU and VRAM, then downloads
+  the llama.cpp build that matches (CUDA, Vulkan or CPU-only).
+- 🤗 **Hugging Face models, already filtered** — searches GGUF and recommends the
+  quantization for *your* PC: green runs fully on the GPU, yellow splits with the
+  CPU, grey is CPU-only.
+- 💬 **Local chat** — streaming, markdown and history on disk.
+- 🤖 **Agent mode** — the model reads and edits files, runs commands, uses Git,
+  browses the web and analyses data. Every action goes through your approval (or
+  not, if you prefer), and a snapshot of the project is taken before the first
+  change: you can always go back.
+- 🎛️ **Tune for this machine** — the app asks llama.cpp itself how much memory
+  each configuration costs on *your* card, recommends one (with the numbers
+  behind it), applies it and rolls back on its own if the model fails to load.
+  Then, if you want, it measures real tokens/s and replaces the estimate with
+  what your machine actually delivered.
+- 🧭 **Built for small models** — the goal becomes short deliverables, each with a
+  fresh context, and the tool menu adapts to the model's window: what doesn't fit
+  is requested on demand.
+- 🧠 **Memory and project index** — the agent remembers what it learned and
+  searches your code by meaning.
+- 🧩 **MCP connectors** — Model Context Protocol servers become tools, approved
+  per server.
+- 🔌 **OpenAI-compatible API** — other apps point at `localhost` and use the same
+  model.
+- 📊 **Live usage** — CPU, RAM, GPU, VRAM and tokens/s while you talk.
+- 🪶 **Genuinely light** — Rust + Tauri 2 core. Installer of a few MB, no Electron.
 
-| Ferramenta | Versão | Para quê |
+## Install
+
+Grab the installer from the **[latest release](https://github.com/pedro-canedo/openweights/releases/latest)**:
+
+| System | File |
+|---|---|
+| Windows 10/11 (x64) | `OpenWeights_x.y.z_x64-setup.exe` |
+| macOS (Apple Silicon) | `OpenWeights_x.y.z_aarch64.dmg` |
+| macOS (Intel) | `OpenWeights_x.y.z_x64.dmg` |
+
+**The binaries are not signed** — signing requires a paid, yearly certificate the
+project doesn't have yet. Your system will warn you; here is the way around it:
+
+- **Windows**: on "Windows protected your PC", click *More info* → *Run anyway*.
+- **macOS**: right-click the app → *Open* (first launch only), or run
+  `xattr -cr /Applications/OpenWeights.app`.
+
+On first launch the app **downloads the llama.cpp runtime** that matches your
+card (CUDA, Vulkan or CPU) — a few hundred MB. That's why the installer is
+small: no GPU stack ships inside the package.
+
+> Prefer to build it yourself? The section below has the walkthrough.
+
+## Running from source (development)
+
+### 1. Prerequisites
+
+| Tool | Version | What for |
 |---|---|---|
 | [Node.js](https://nodejs.org/) | 22+ | frontend (React + Vite) |
-| [Rust](https://rustup.rs/) | estável (1.85+) | núcleo do app (Tauri) |
-| Ferramentas de build C++ | — | linker do Rust em cada SO (ver abaixo) |
+| [Rust](https://rustup.rs/) | stable (1.85+) | app core (Tauri) |
+| C++ build tools | — | Rust linker on each OS (see below) |
 
 #### Windows
 
 ```powershell
-# 1. Node.js (se ainda não tiver)
+# 1. Node.js (if you don't have it yet)
 winget install OpenJS.NodeJS.LTS
 
-# 2. Rust — quando o instalador perguntar sobre o Visual Studio,
-#    ACEITE a instalação automática dos "Visual Studio Build Tools"
-#    (obrigatório: é ele que fornece o linker). Download de alguns GB.
+# 2. Rust — when the installer asks about Visual Studio,
+#    ACCEPT the automatic "Visual Studio Build Tools" install
+#    (required: it provides the linker). A few GB of download.
 winget install Rustlang.Rustup
 ```
 
-> **Importante:** depois de instalar, **feche e abra um PowerShell novo** — o
-> PATH só atualiza em sessões novas. Confirme com `cargo --version`.
+> **Important:** after installing, **close and open a new PowerShell** — PATH
+> only updates in new sessions. Confirm with `cargo --version`.
 
-Se o instalador do Rust não ofereceu os Build Tools, instale manualmente:
+If the Rust installer didn't offer the Build Tools, install them manually:
 
 ```powershell
 winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
 ```
 
-O PowerShell costuma bloquear o `npm.ps1` ("execução de scripts foi
-desabilitada"). Libere scripts locais só para o seu usuário (sem admin):
+PowerShell usually blocks `npm.ps1` ("running scripts is disabled"). Allow local
+scripts for your user only (no admin needed):
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-*(Alternativa sem mudar a política: use `npm.cmd` no lugar de `npm`.)*
+*(Alternative, without changing the policy: use `npm.cmd` instead of `npm`.)*
 
-O WebView2 (motor da interface) já vem instalado no Windows 10/11.
+WebView2 (the UI engine) already ships with Windows 10/11.
 
 #### macOS
 
 ```bash
-xcode-select --install          # ferramentas de linha de comando (linker)
+xcode-select --install          # command line tools (linker)
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-#### Linux (para quem for contribuir)
+#### Linux (for contributors)
 
 ```bash
 curl https://sh.rustup.rs -sSf | sh
-# Dependências do Tauri (Debian/Ubuntu):
+# Tauri dependencies (Debian/Ubuntu):
 sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev build-essential \
   libayatana-appindicator3-dev librsvg2-dev
 ```
 
-### 2. Instalar e rodar
+### 2. Install and run
 
-```powershell
-cd C:\AI\LammaRunner        # ou onde você clonou
-npm install                 # dependências do frontend
-npm run tauri dev           # compila e abre o app
+```bash
+git clone https://github.com/pedro-canedo/openweights.git
+cd openweights
+npm install                 # frontend dependencies
+npm run tauri dev           # compiles and opens the app
 ```
 
-> ⏳ A **primeira** execução compila ~500 crates Rust e leva de 5 a 15
-> minutos. As seguintes são incrementais (segundos).
+> ⏳ The **first** run compiles ~500 Rust crates and takes 5 to 15 minutes.
+> The following ones are incremental (seconds).
 
-Na primeira abertura, o app detecta seu hardware e oferece baixar o motor de
-IA (build do llama.cpp adequado à sua GPU, ~100–600 MB) — isso acontece uma
-única vez.
+On first launch the app detects your hardware and offers to download the AI
+engine (the llama.cpp build suited to your GPU, ~100–600 MB) — once only.
 
-### 3. Comandos úteis
+### 3. Useful commands
 
-| Comando | O que faz |
+| Command | What it does |
 |---|---|
-| `npm run tauri dev` | roda o app em modo desenvolvimento (hot reload) |
-| `npm run tauri build` | gera o instalador de produção (NSIS no Windows) |
-| `npm run build` | checagem de tipos + build só do frontend |
-| `npm run dev` | UI no navegador com dados simulados (sem Rust) |
-| `cd src-tauri && cargo test --workspace` | testes do backend Rust |
+| `npm run tauri dev` | runs the app in development mode (hot reload) |
+| `npm run tauri build` | builds the production installer (NSIS on Windows) |
+| `npm run build` | type check + frontend-only build |
+| `npm run dev` | UI in the browser with mocked data (no Rust) |
+| `cd src-tauri && cargo test --workspace` | Rust backend tests |
 
-### Estrutura
+### Layout
 
 ```
-src/                  frontend React (telas, componentes, i18n pt-BR/en)
-src-tauri/src/        app Tauri (comandos, estado, telemetria)
-src-tauri/crates/     núcleo Rust, um crate por assunto:
-                        hw, runtime, models, advisor    hardware e modelos
-                        engine, store, types            llama-server, SQLite, contratos
-                        agent, tools, policy            laço do agente, ferramentas, permissões
-                        checkpoint, mcp, memory, rag    desfazer, conectores, memória, índice
-                        webtools, codetools,            internet, build/teste,
+src/                  React frontend (screens, components, i18n pt-BR/en)
+src-tauri/src/        Tauri app (commands, state, telemetry)
+src-tauri/crates/     Rust core, one crate per concern:
+                        hw, runtime, models, advisor    hardware and models
+                        engine, store, types            llama-server, SQLite, contracts
+                        agent, tools, policy            agent loop, tools, permissions
+                        checkpoint, mcp, memory, rag    undo, connectors, memory, index
+                        webtools, codetools,            internet, build/test,
                         gittools, datatools             Git, CSV/SQLite
 ```
 
-## Licença
+## Contributing
 
-MIT
+Issues and pull requests are welcome. Before opening a PR, run what CI runs:
+
+```bash
+npm run build                                   # types + frontend build
+cd src-tauri
+cargo test --workspace                          # ~960 tests
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
+```
+
+Project conventions, one line each:
+
+- **Comments and commit messages in Portuguese**, explaining the **why** — what
+  the code does is already in the code. (Code identifiers and test names are in
+  English.)
+- **Test names in English, as sentences** (`a_cancelled_run_keeps_what_it_already_said`).
+- **Every behaviour change ships with a test**; a test that doesn't fail without
+  the fix proves nothing.
+- The UI is bilingual: new keys go into `src/i18n/pt-BR.json` **and** `en.json`,
+  always both.
+
+## Credits
+
+The engine is [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT),
+downloaded on first launch and used in *Router mode*. Models come from the
+[Hugging Face Hub](https://huggingface.co/).
+
+On NVIDIA cards the app also downloads the **CUDA Runtime** redistributed by the
+llama.cpp release, subject to the [NVIDIA CUDA EULA](https://docs.nvidia.com/cuda/eula/).
+That download happens on your machine, straight from upstream: the OpenWeights
+installer does not distribute NVIDIA libraries.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

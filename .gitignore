@@ -5,3 +5,7 @@ src-tauri/target
 .DS_Store
 npm-debug.log*
 graphify-out/
+
+# Pacotes baixados para montar o sysroot GTK no WSL (ver CONTRIBUTING).
+*.deb
+*.rpm

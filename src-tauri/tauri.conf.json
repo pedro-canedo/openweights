@@ -26,7 +26,16 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "dmg"],
+    "publisher": "OpenWeights contributors",
+    "copyright": "© 2026 OpenWeights contributors",
+    "category": "DeveloperTool",
+    "shortDescription": "Rode LLMs locais sem terminal",
+    "longDescription": "OpenWeights esconde o llama.cpp atrás de uma interface simples: detecta o hardware, instala o runtime certo, indica quais modelos cabem na máquina e traz um agente que lê e edita arquivos, roda comandos e consulta a internet — tudo local.",
+    "licenseFile": "../LICENSE",
+    "targets": [
+      "nsis",
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

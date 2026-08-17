@@ -1,0 +1,91 @@
+name: Bug report
+description: Something did not work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The fields below exist because almost every issue
+        in this app depends on your hardware and model — without them,
+        investigating turns into guesswork.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: And what you expected to happen instead.
+      placeholder: |
+        I asked the agent to create a file and the run finished as "done"
+        without creating anything.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Chat with model X
+        2. Pick Agent mode
+        3. Ask "…"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: OpenWeights version
+      description: Shown in the bottom-left corner of the window.
+      placeholder: "v0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: CPU, RAM, GPU and VRAM
+      description: The status bar at the bottom of the app shows all of it.
+      placeholder: "Ryzen 5 4600G · 32 GB · RTX 5060 Ti · 16 GB"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Runtime downloaded
+      description: The "Local Server" screen shows which variant was installed.
+      options:
+        - CUDA
+        - Vulkan
+        - CPU only
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Model in use
+      placeholder: "unsloth/Qwen3.8-27B-GGUF · Q2_K_XL"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or run trail
+      description: >
+        The run trail ("view run") is usually enough. Server logs help too.
+        Paste as text, not as a screenshot.
+      render: text

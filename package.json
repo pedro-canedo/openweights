@@ -2,6 +2,16 @@
   "name": "openweights",
   "private": true,
   "version": "0.1.0",
+  "description": "App desktop open source para rodar LLMs locais (llama.cpp) com harness agêntico — sem terminal, sem CUDA, sem chute de quantização.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pedro-canedo/openweights.git"
+  },
+  "homepage": "https://github.com/pedro-canedo/openweights",
+  "bugs": {
+    "url": "https://github.com/pedro-canedo/openweights/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

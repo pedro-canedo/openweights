@@ -1,0 +1,25 @@
+name: Feature request
+description: An idea for the app
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: >
+        Start with the problem, not the solution — there is often a better path,
+        and it only shows up once the problem is clear.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: How you imagine the solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you already tried or considered

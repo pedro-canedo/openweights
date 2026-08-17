@@ -1,0 +1,95 @@
+# Instalador pronto a cada tag `v*`.
+#
+# O `ci.yml` responde "o código está são?"; este responde "dá para instalar?".
+# São coisas diferentes: `cargo check` passa em coisa que não empacota (ícone
+# faltando, identifier inválido, alvo de bundle indisponível), e descobrir isso
+# na hora do lançamento é o pior momento possível.
+#
+# O release nasce como RASCUNHO: o binário é gerado, anexado e fica esperando
+# alguém ler as notas e apertar publicar. Publicar sozinho, a partir de um
+# push, é rápido demais para uma ação que não tem desfazer.
+#
+# Os binários NÃO são assinados (não há certificado de code signing, que custa
+# caro e é anual). O Windows mostra o aviso do SmartScreen e o macOS bloqueia
+# no Gatekeeper — o README explica o contorno. Assinar é o caminho quando o
+# projeto tiver orçamento; fingir que já está assinado seria pior.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Permite ensaiar o empacotamento inteiro sem criar tag nenhuma.
+  workflow_dispatch:
+
+# Só um lançamento por vez: dois workflows escrevendo no mesmo release se
+# atropelam e um sobrescreve o artefato do outro.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            nome: Windows (x64)
+          - os: macos-14
+            target: aarch64-apple-darwin
+            nome: macOS (Apple Silicon)
+          - os: macos-13
+            target: x86_64-apple-darwin
+            nome: macOS (Intel)
+
+    name: ${{ matrix.nome }}
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # O cache do Rust é o que separa um lançamento de 10 minutos de um de
+      # 40: o workspace tem 20+ crates e o Tauri arrasta a árvore inteira.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - name: Instalar dependências do frontend
+        run: npm ci
+
+      - name: Empacotar e anexar ao rascunho do release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # A tag manda; num `workflow_dispatch` (sem tag) o rascunho sai como
+          # `v0.0.0-dev` e é descartável.
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.0.0-dev' }}
+          releaseName: OpenWeights ${{ github.ref_type == 'tag' && github.ref_name || 'v0.0.0-dev' }}
+          releaseBody: |
+            Installers below. **No binary is signed** — your system will warn you:
+
+            - **Windows**: on "Windows protected your PC" → *More info* → *Run anyway*.
+            - **macOS**: right-click the app → *Open* on first launch, or run
+              `xattr -cr /Applications/OpenWeights.app`.
+
+            On first launch the app downloads the llama.cpp runtime that matches
+            your GPU (a few hundred MB) — that is why the installer is small.
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}

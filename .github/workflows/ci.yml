@@ -11,10 +11,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        # Linux entra porque o README convida contribuidores Linux: sem CI
+        # que compile lá, quem contribui de lá quebra o build sem saber.
+        os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Dependências do sistema (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev             libayatana-appindicator3-dev librsvg2-dev
 
       - uses: actions/setup-node@v4
         with:
@@ -44,3 +52,9 @@ jobs:
       - name: Cargo fmt
         working-directory: src-tauri
         run: cargo fmt --all --check
+
+      # Clippy entra como ERRO, não aviso: num projeto público, aviso que não
+      # quebra o CI vira dívida que ninguém paga.
+      - name: Cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
