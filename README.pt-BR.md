@@ -32,8 +32,7 @@ Baixe o instalador da **[última versão](https://github.com/pedro-canedo/openwe
 | Sistema | Arquivo |
 |---|---|
 | Windows 10/11 (x64) | `OpenWeights_x.y.z_x64-setup.exe` |
-| macOS (Apple Silicon) | `OpenWeights_x.y.z_aarch64.dmg` |
-| macOS (Intel) | `OpenWeights_x.y.z_x64.dmg` |
+| macOS 11+ (Apple Silicon e Intel) | `OpenWeights_x.y.z_universal.dmg` |
 
 **Os binários não são assinados** — assinar exige um certificado pago e anual, que
 o projeto ainda não tem. O sistema vai avisar, e o contorno é este:

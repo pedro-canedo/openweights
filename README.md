@@ -52,8 +52,7 @@ Grab the installer from the **[latest release](https://github.com/pedro-canedo/o
 | System | File |
 |---|---|
 | Windows 10/11 (x64) | `OpenWeights_x.y.z_x64-setup.exe` |
-| macOS (Apple Silicon) | `OpenWeights_x.y.z_aarch64.dmg` |
-| macOS (Intel) | `OpenWeights_x.y.z_x64.dmg` |
+| macOS 11+ (Apple Silicon and Intel) | `OpenWeights_x.y.z_universal.dmg` |
 
 **The binaries are not signed** — signing requires a paid, yearly certificate the
 project doesn't have yet. Your system will warn you; here is the way around it:

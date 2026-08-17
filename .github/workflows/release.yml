@@ -40,12 +40,14 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             nome: Windows (x64)
+          # Um `.dmg` universal em vez de um por arquitetura: o runner Intel
+          # (`macos-13`) está em fim de vida e ficou uma hora na fila no
+          # primeiro ensaio — um lançamento não pode depender de máquina que
+          # talvez não venha. O Apple Silicon compila as duas fatias e junta.
           - os: macos-14
-            target: aarch64-apple-darwin
-            nome: macOS (Apple Silicon)
-          - os: macos-13
-            target: x86_64-apple-darwin
-            nome: macOS (Intel)
+            target: universal-apple-darwin
+            rustup: aarch64-apple-darwin,x86_64-apple-darwin
+            nome: macOS (universal)
 
     name: ${{ matrix.nome }}
     runs-on: ${{ matrix.os }}
@@ -60,7 +62,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          # `universal-apple-darwin` não é alvo de rustup: é a junção de dois.
+          targets: ${{ matrix.rustup || matrix.target }}
 
       # O cache do Rust é o que separa um lançamento de 10 minutos de um de
       # 40: o workspace tem 20+ crates e o Tauri arrasta a árvore inteira.
