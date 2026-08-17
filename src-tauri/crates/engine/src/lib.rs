@@ -60,6 +60,15 @@ pub enum EngineError {
     /// Resposta bem-sucedida porém fora do formato esperado.
     #[error("resposta inesperada do engine: {0}")]
     Protocol(String),
+    /// O stream abriu e depois emudeceu: nenhum byte dentro do prazo.
+    ///
+    /// Sem esta variante um `chat_stream` pendurado (servidor travado, GPU
+    /// presa, conexão zumbi) segurava o run PARA SEMPRE — o cliente não tem
+    /// timeout global de propósito, porque geração longa é legítima. O que
+    /// não é legítimo é silêncio: `fase` diz se foi antes do primeiro token
+    /// (prompt processing) ou entre pedaços (geração).
+    #[error("o modelo ficou {segundos}s sem emitir nada ({fase})")]
+    Stalled { fase: &'static str, segundos: u64 },
 }
 
 impl EngineError {
@@ -76,6 +85,29 @@ impl EngineError {
             EngineError::Http { body, .. } => {
                 let b = body.to_lowercase();
                 b.contains("parse tool call") || b.contains("tool call arguments")
+            }
+            _ => false,
+        }
+    }
+
+    /// O servidor recusou o pedido por causa da LISTA de ferramentas.
+    ///
+    /// É o único erro em que refazer o passo sem `tools` faz sentido: o
+    /// template do modelo não sabe renderizá-las, e vai recusar de novo em
+    /// toda tentativa. Qualquer outro erro (rede, 503, silêncio) é transitório
+    /// e merece retry DO MESMO pedido — tratá-lo como recusa de template era o
+    /// que fazia um blip de rede rebaixar o agente a chatbot pelo resto do
+    /// run. Cheque `is_bad_tool_arguments` antes: aquele corpo também fala em
+    /// "tool", mas o conserto é outro.
+    pub fn is_tools_rejection(&self) -> bool {
+        match self {
+            EngineError::Http { body, .. } => {
+                let b = body.to_lowercase();
+                b.contains("jinja")
+                    || b.contains("template")
+                    || b.contains("grammar")
+                    || b.contains("tools param")
+                    || b.contains("does not support tools")
             }
             _ => false,
         }

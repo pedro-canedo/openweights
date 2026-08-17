@@ -222,7 +222,11 @@ impl Tool for TerminalRun {
             body.push_str("\n\n[...saída cortada no limite; rode algo mais específico...]");
         }
 
-        Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes))
+        // O código declarado no campo, e não só no texto: é o que blinda a
+        // verificação contra um stdout que por acaso contenha "exit code N".
+        Ok(ToolOutput::text(body)
+            .with_exit_code(outcome.exit_code)
+            .truncated_to(ctx.max_output_bytes))
     }
 }
 

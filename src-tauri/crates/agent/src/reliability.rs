@@ -239,7 +239,7 @@ impl ReadLedger {
                 b.and_then(Value::as_u64).unwrap_or(0)
             ),
         };
-        Some(format!("{tool}:{}{range}", path.trim()))
+        Some(format!("{tool}\x1f{}\x1f{range}", path.trim()))
     }
 
     /// Em que passo esta leitura já aconteceu, se aconteceu.
@@ -256,6 +256,18 @@ impl ReadLedger {
                 None
             }
         }
+    }
+
+    /// Esquece as leituras de um arquivo que acabou de MUDAR.
+    ///
+    /// Sem isto, o ciclo mais comum de um modelo pequeno — ler, editar,
+    /// **reler para conferir** — recebia "você já leu no passo N", que vira
+    /// mentira no instante em que a edição acontece. O harness estava
+    /// ensinando o modelo a não conferir o próprio trabalho.
+    pub fn invalidate_file(&mut self, path: &str) {
+        let alvo = path.trim();
+        self.seen
+            .retain(|key, _| key.split('\x1f').nth(1) != Some(alvo));
     }
 
     /// Resposta devolvida ao modelo no lugar do conteúdo repetido.
@@ -488,6 +500,27 @@ mod tests {
             ReadLedger::key_for("fs_read", &json!({"path": "src/main.rs", "offset": 100})).unwrap();
         assert_ne!(key, partial);
         assert!(ReadLedger::duplicate_message("src/main.rs", 2).contains("passo 2"));
+    }
+
+    /// O ciclo ler → editar → reler para conferir. A releitura DEPOIS da
+    /// edição tem que passar: o conteúdo do histórico ficou velho, e apontar
+    /// para ele seria ensinar o modelo a não conferir o próprio trabalho.
+    #[test]
+    fn editing_a_file_lets_the_model_read_it_again() {
+        let mut led = ReadLedger::default();
+        let key = ReadLedger::key_for("fs_read", &json!({"path": "app.py"})).unwrap();
+        let parcial =
+            ReadLedger::key_for("fs_read", &json!({"path": "app.py", "offset": 10})).unwrap();
+        let outra = ReadLedger::key_for("fs_read", &json!({"path": "outro.py"})).unwrap();
+        led.note(&key, 1);
+        led.note(&parcial, 2);
+        led.note(&outra, 3);
+
+        led.invalidate_file("app.py");
+
+        assert_eq!(led.seen(&key), None, "a edição invalida a leitura inteira");
+        assert_eq!(led.seen(&parcial), None, "e as leituras parciais também");
+        assert_eq!(led.seen(&outra), Some(3), "arquivo que não mudou continua");
     }
 
     #[test]

@@ -53,6 +53,20 @@ const MAX_CUTUCADAS: u32 = 2;
 /// tentando agir — só errou o nome —, e errar o nome é consertável.
 const MAX_NOMES_ERRADOS: u32 = 3;
 
+/// Novas tentativas para um erro TRANSITÓRIO de stream (rede, 5xx genérico,
+/// silêncio no prazo). O retry é do MESMO pedido, com as MESMAS ferramentas,
+/// e acontece antes de qualquer ferramenta rodar — repetir a chamada ao
+/// modelo é seguro; repetir um `git commit` não seria.
+pub(crate) const MAX_TENTATIVAS_STREAM: u32 = 2;
+
+/// Recusas de template toleradas antes de desligar as ferramentas de vez.
+///
+/// A recusa é quase determinística (o template não sabe renderizar `tools`),
+/// mas UMA recusa pode ser outro 500 vestido de template — e o desligamento
+/// permanente custa o recurso inteiro. Na primeira, o passo segue sem
+/// ferramentas e o próximo volta a oferecê-las; na segunda, desliga e avisa.
+const MAX_RECUSAS_DE_TOOLS: u32 = 2;
+
 /// Quantas vezes o laço aceita que o modelo emita uma chamada com JSON
 /// quebrado antes de desistir. Três: é erro comum e consertável, mas se ele
 /// não conserta com a dica, insistir só queima a placa.
@@ -647,12 +661,21 @@ impl ToolRunner {
                     if !self.written.contains(file) {
                         self.written.push(file.clone());
                     }
+                    // O arquivo MUDOU: a leitura antiga que está no histórico
+                    // ficou velha, e a releitura de conferência tem que passar.
+                    self.reads.invalidate_file(file);
                 }
                 if let Some(a) = &analysis {
                     self.commands.push(CommandRecord {
                         display: a.program.clone(),
                         ok: true,
-                        exit_code: verify::extract_exit_code(&out.content),
+                        // O código de saída DECLARADO pela ferramenta vence o
+                        // marcador textual: um log que contenha "exit code 1"
+                        // não pode derrubar a verificação de um comando que
+                        // saiu com 0.
+                        exit_code: out
+                            .exit_code
+                            .or_else(|| verify::extract_exit_code(&out.content)),
                     });
                 }
                 if name == FOCUS_TOOL {
@@ -1088,6 +1111,10 @@ pub(crate) struct StepEngine<'a> {
     /// app tenta com ferramentas sem ter conseguido ler o template e o
     /// servidor recusa, o passo é refeito sem elas e o resto do run já sabe.
     pub tools_on: AtomicBool,
+    /// Quantas vezes o servidor já recusou o pedido POR CAUSA das
+    /// ferramentas. Vive no engine (e não no laço) para atravessar as etapas
+    /// do modo laço — é a contagem que decide o desligamento definitivo.
+    pub recusas_de_tools: std::sync::atomic::AtomicU32,
     pub context: ContextBudget,
 }
 
@@ -1218,68 +1245,113 @@ impl StepEngine<'_> {
                     // Fragmentos de tool call viram eventos completos depois.
                     ChatDelta::ToolCall { .. } => {}
                 };
-                let primeira = tokio::select! {
-                    biased;
-                    _ = self.handle.cancelled() => {
-                        out.text = parcial.lock().unwrap().clone();
-                        break RunStatus::Cancelled;
-                    }
-                    r = self.client.chat_stream(&request, &mut on_delta) => r,
-                };
-                match primeira {
-                    Ok(outcome) => outcome,
-                    // O servidor leu a resposta, mas não conseguiu decodificar
-                    // os argumentos da chamada. Isso é conserto, não fim de
-                    // run: devolvemos o erro ao modelo com a saída.
-                    Err(e) if e.is_bad_tool_arguments() && jsons_quebrados < MAX_JSON_QUEBRADO => {
-                        jsons_quebrados += 1;
-                        log::warn!(
-                            "tool call com JSON inválido ({jsons_quebrados}/{MAX_JSON_QUEBRADO}): {e}"
-                        );
-                        messages.push(ChatMessage::user(AVISO_JSON_QUEBRADO.to_string()));
-                        self.sink.emit(RunEventKind::RunError {
-                            message: "O modelo mandou uma chamada com JSON inválido; \
-                                      pedi para escrever o arquivo em pedaços."
-                                .into(),
-                            retryable: true,
-                        });
-                        continue;
-                    }
-                    Err(e) => {
-                        // Pode ter sido a própria lista de ferramentas: há
-                        // template que não sabe renderizar `tools` e o
-                        // servidor recusa o pedido inteiro. Como o app agora
-                        // TENTA com ferramentas quando não conseguiu ler as
-                        // capacidades, essa recusa não pode custar o run —
-                        // refazemos o passo sem elas, uma vez.
-                        let segunda = if self.tools_on() && !api_tools.is_empty() {
+                // Três destinos para um erro de stream, e a ordem importa:
+                // (1) JSON de tool call inválido → devolve ao modelo com a
+                //     saída (é erro DELE, e tem conserto);
+                // (2) recusa do template por causa de `tools` → refaz o passo
+                //     sem elas, e só desliga de vez na segunda recusa;
+                // (3) o resto — rede, 5xx genérico, silêncio no prazo — é
+                //     transitório: retry do MESMO pedido, com as MESMAS
+                //     ferramentas. Antes, qualquer erro caía no caminho (2), e
+                //     um blip de rede rebaixava o agente a chatbot em
+                //     silêncio pelo resto do run.
+                //
+                // O retry pertence EXCLUSIVAMENTE à chamada ao modelo, antes
+                // de qualquer ferramenta rodar — repetir a chamada é seguro;
+                // repetir um `git commit` não seria.
+                let mut tentativa: u32 = 0;
+                loop {
+                    let resultado = tokio::select! {
+                        biased;
+                        _ = self.handle.cancelled() => {
+                            out.text = parcial.lock().unwrap().clone();
+                            break 'run RunStatus::Cancelled;
+                        }
+                        r = self.client.chat_stream(&request, &mut on_delta) => r,
+                    };
+                    match resultado {
+                        Ok(outcome) => break outcome,
+                        // O servidor leu a resposta, mas não conseguiu
+                        // decodificar os argumentos da chamada.
+                        Err(e)
+                            if e.is_bad_tool_arguments() && jsons_quebrados < MAX_JSON_QUEBRADO =>
+                        {
+                            jsons_quebrados += 1;
+                            log::warn!(
+                                "tool call com JSON inválido \
+                                 ({jsons_quebrados}/{MAX_JSON_QUEBRADO}): {e}"
+                            );
+                            messages.push(ChatMessage::user(AVISO_JSON_QUEBRADO.to_string()));
+                            self.sink.emit(RunEventKind::RunError {
+                                message: "O modelo mandou uma chamada com JSON inválido; \
+                                          pedi para escrever o arquivo em pedaços."
+                                    .into(),
+                                retryable: true,
+                            });
+                            continue 'run;
+                        }
+                        // O template não sabe renderizar `tools`: este passo
+                        // segue sem elas; o desligamento só vira definitivo na
+                        // segunda recusa.
+                        Err(e)
+                            if e.is_tools_rejection()
+                                && self.tools_on()
+                                && !api_tools.is_empty() =>
+                        {
+                            log::warn!("o servidor recusou as ferramentas: {e}");
                             let sem_tools = chat_request(self.opts, messages, &[]);
-                            tokio::select! {
+                            let retomada = tokio::select! {
                                 biased;
                                 _ = self.handle.cancelled() => {
                                     out.text = parcial.lock().unwrap().clone();
-                                    break RunStatus::Cancelled;
+                                    break 'run RunStatus::Cancelled;
                                 }
-                                r = self.client.chat_stream(&sem_tools, &mut on_delta) => r.ok(),
+                                r = self.client.chat_stream(&sem_tools, &mut on_delta) => r,
+                            };
+                            match retomada {
+                                Ok(outcome) => {
+                                    let recusas =
+                                        self.recusas_de_tools.fetch_add(1, Ordering::Relaxed) + 1;
+                                    if recusas >= MAX_RECUSAS_DE_TOOLS {
+                                        self.tools_on.store(false, Ordering::Relaxed);
+                                        self.sink.emit(RunEventKind::ToolsOff {
+                                            reason: ToolsOffReason::Rejected,
+                                        });
+                                    }
+                                    break outcome;
+                                }
+                                Err(e2) => {
+                                    out.text = parcial.lock().unwrap().clone();
+                                    self.sink.emit(RunEventKind::RunError {
+                                        message: format!("O modelo não respondeu: {e2}"),
+                                        retryable: true,
+                                    });
+                                    break 'run RunStatus::Error;
+                                }
                             }
-                        } else {
-                            None
-                        };
-                        match segunda {
-                            Some(outcome) => {
-                                self.tools_on.store(false, Ordering::Relaxed);
-                                self.sink.emit(RunEventKind::ToolsOff {
-                                    reason: ToolsOffReason::Rejected,
-                                });
-                                outcome
-                            }
-                            None => {
-                                self.sink.emit(RunEventKind::RunError {
-                                    message: format!("O modelo não respondeu: {e}"),
-                                    retryable: true,
-                                });
-                                break RunStatus::Error;
-                            }
+                        }
+                        // Transitório: tenta de novo, com recuo. O acumulador
+                        // zera para a resposta final não sair dobrada; os
+                        // deltas já emitidos se corrigem sozinhos quando o
+                        // `assistant.message` chega com o texto final.
+                        Err(e) if tentativa < MAX_TENTATIVAS_STREAM => {
+                            tentativa += 1;
+                            log::warn!(
+                                "stream falhou (tentativa {tentativa}/{MAX_TENTATIVAS_STREAM}): {e}"
+                            );
+                            parcial.lock().unwrap().clear();
+                            tokio::time::sleep(std::time::Duration::from_millis(
+                                400 * u64::from(tentativa),
+                            ))
+                            .await;
+                        }
+                        Err(e) => {
+                            out.text = parcial.lock().unwrap().clone();
+                            self.sink.emit(RunEventKind::RunError {
+                                message: format!("O modelo não respondeu: {e}"),
+                                retryable: true,
+                            });
+                            break 'run RunStatus::Error;
                         }
                     }
                 }
@@ -1411,8 +1483,12 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         .map(PathBuf::from);
     let started_at = Instant::now();
 
-    let client =
-        LlamaClient::new(&endpoint.base_url).with_optional_api_key(endpoint.api_key.clone());
+    let client = LlamaClient::new(&endpoint.base_url)
+        .with_optional_api_key(endpoint.api_key.clone())
+        .with_stream_deadlines(
+            Some(deps.config.first_token_timeout),
+            Some(deps.config.idle_timeout),
+        );
 
     // Capacidades do modelo DESTE run — perguntadas pelo nome dele.
     //
@@ -1609,6 +1685,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         menu: menu.clone(),
         groups,
         tools_on: AtomicBool::new(tools_on),
+        recusas_de_tools: std::sync::atomic::AtomicU32::new(0),
         context: ContextBudget::new(props.n_ctx, deps.config.context_ratio),
     };
     let window = props.n_ctx.map(WindowBudget::new).unwrap_or_default();

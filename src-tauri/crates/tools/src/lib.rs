@@ -164,6 +164,14 @@ pub struct ToolOutput {
     pub bytes_total: u64,
     /// Caminhos relativos alterados (alimenta o checkpoint e a UI).
     pub changed_files: Vec<String>,
+    /// Código de saída, quando a ferramenta rodou um processo.
+    ///
+    /// Existe para a verificação não depender de MARCADOR TEXTUAL: procurar
+    /// "exit code N" no texto pegava o "exit code 1" de dentro do log de um
+    /// `cargo test` que na verdade saiu com 0 — e derrubava a verificação de
+    /// um comando que passou. Quem roda processo DECLARA o código; o marcador
+    /// fica só como reserva para ferramentas que não sabem (MCP).
+    pub exit_code: Option<i32>,
 }
 
 impl ToolOutput {
@@ -173,11 +181,18 @@ impl ToolOutput {
             bytes_total: content.len() as u64,
             content,
             changed_files: Vec::new(),
+            exit_code: None,
         }
     }
 
     pub fn with_changed(mut self, files: Vec<String>) -> Self {
         self.changed_files = files;
+        self
+    }
+
+    /// Declara o código de saída do processo que a ferramenta rodou.
+    pub fn with_exit_code(mut self, code: Option<i32>) -> Self {
+        self.exit_code = code;
         self
     }
 

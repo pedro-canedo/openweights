@@ -334,8 +334,12 @@ impl Tool for AgentDelegate {
         let tool_names = menu.active_names();
 
         let mut runner = self.helper_runner(finder.into_iter().collect());
-        let client =
-            LlamaClient::new(&self.deps.base_url).with_optional_api_key(self.deps.api_key.clone());
+        let client = LlamaClient::new(&self.deps.base_url)
+            .with_optional_api_key(self.deps.api_key.clone())
+            .with_stream_deadlines(
+                Some(self.deps.config.first_token_timeout),
+                Some(self.deps.config.idle_timeout),
+            );
         let engine = StepEngine {
             client: &client,
             sink: self.deps.sink.clone(),
@@ -346,6 +350,7 @@ impl Tool for AgentDelegate {
             menu: menu.clone(),
             groups: self.deps.groups.clone(),
             tools_on: std::sync::atomic::AtomicBool::new(true),
+            recusas_de_tools: std::sync::atomic::AtomicU32::new(0),
             context: ContextBudget::new(self.deps.n_ctx, self.deps.config.context_ratio),
         };
 

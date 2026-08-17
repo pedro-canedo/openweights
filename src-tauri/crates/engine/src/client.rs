@@ -437,6 +437,13 @@ pub struct LlamaClient {
     base_url: String,
     http: reqwest::Client,
     api_key: Option<String>,
+    /// Prazo até o PRIMEIRO pedaço do stream. Generoso de propósito: processar
+    /// um prompt de 8k tokens em CPU leva minutos, e isso não é travamento.
+    first_token_timeout: Option<Duration>,
+    /// Prazo ENTRE pedaços, depois que a geração começou. Mais apertado: um
+    /// modelo gerando emite algo a cada poucos segundos; silêncio longo aqui é
+    /// servidor travado ou conexão zumbi.
+    idle_timeout: Option<Duration>,
 }
 
 /// Requisições curtas (props/tokenize/embeddings) não podem pendurar o loop.
@@ -458,7 +465,21 @@ impl LlamaClient {
                 .build()
                 .unwrap_or_default(),
             api_key: None,
+            first_token_timeout: None,
+            idle_timeout: None,
         }
+    }
+
+    /// Liga os dois relógios do stream (ver os campos). `None` mantém o
+    /// comportamento antigo — sem prazo — para quem não é o laço do agente.
+    pub fn with_stream_deadlines(
+        mut self,
+        first_token: Option<Duration>,
+        idle: Option<Duration>,
+    ) -> Self {
+        self.first_token_timeout = first_token;
+        self.idle_timeout = idle;
+        self
     }
 
     pub fn with_api_key(mut self, key: impl Into<String>) -> Self {
@@ -584,11 +605,37 @@ impl LlamaClient {
         // multibyte — logo, cortar por '\n' sempre cai em fronteira válida.
         let mut buf: Vec<u8> = Vec::new();
         let mut done = false;
+        let mut primeiro_pedaco = true;
 
         while !done {
-            let Some(chunk) = res.chunk().await? else {
+            // Dois relógios, não um timeout global: geração longa é legítima,
+            // silêncio prolongado não é. Antes do primeiro pedaço vale o prazo
+            // largo (prompt processing em CPU leva minutos); depois, o curto.
+            let prazo = if primeiro_pedaco {
+                self.first_token_timeout
+            } else {
+                self.idle_timeout
+            };
+            let pedaco = match prazo {
+                Some(t) => match tokio::time::timeout(t, res.chunk()).await {
+                    Ok(r) => r?,
+                    Err(_) => {
+                        return Err(EngineError::Stalled {
+                            fase: if primeiro_pedaco {
+                                "esperando o primeiro token"
+                            } else {
+                                "no meio da geração"
+                            },
+                            segundos: t.as_secs(),
+                        });
+                    }
+                },
+                None => res.chunk().await?,
+            };
+            let Some(chunk) = pedaco else {
                 break;
             };
+            primeiro_pedaco = false;
             buf.extend_from_slice(&chunk);
             while let Some(nl) = buf.iter().position(|b| *b == b'\n') {
                 let line: Vec<u8> = buf.drain(..=nl).collect();
@@ -612,11 +659,16 @@ impl LlamaClient {
     /// atrapalha.
     pub async fn complete_once(&self, req: &ChatRequest) -> Result<ChatOutcome, EngineError> {
         let body = req.with_stream(false);
-        let mut res = self
+        // Sem stream não há "pedaços" para vigiar: o teto aqui é total, e só
+        // existe quando os prazos foram ligados (o laço do agente). Largo o
+        // bastante para uma sumarização longa em CPU.
+        let mut rb = self
             .auth(self.http.post(self.url("/v1/chat/completions")))
-            .json(&body)
-            .send()
-            .await?;
+            .json(&body);
+        if let Some(ft) = self.first_token_timeout {
+            rb = rb.timeout(ft + Duration::from_secs(600));
+        }
+        let mut res = rb.send().await?;
         ensure_ok(&mut res).await?;
         let v: Value = read_json(res).await?;
         Ok(parse_completion(&v))

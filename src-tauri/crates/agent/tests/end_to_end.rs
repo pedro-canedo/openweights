@@ -163,6 +163,13 @@ fn read_request(stream: &mut TcpStream) -> Option<(String, String)> {
     Some((path, String::from_utf8_lossy(&body).to_string()))
 }
 
+/// Marcador de roteiro: dorme N ms naquele ponto do stream — simula um
+/// servidor que emudeceu no meio da geração (o caso do relógio de ociosidade).
+const SLEEP_MARKER: &str = "__SLEEP__";
+/// Marcador de roteiro: fecha a conexão SEM o terminador do chunked encoding —
+/// simula queda de rede no meio do stream (erro transitório).
+const CLOSE_MARKER: &str = "__CLOSE__";
+
 fn write_sse(stream: &mut TcpStream, chunks: &[String]) {
     let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\
                 Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
@@ -170,6 +177,15 @@ fn write_sse(stream: &mut TcpStream, chunks: &[String]) {
         return;
     }
     for c in chunks {
+        if let Some(ms) = c.strip_prefix(SLEEP_MARKER) {
+            std::thread::sleep(Duration::from_millis(ms.parse().unwrap_or(50)));
+            continue;
+        }
+        if c == CLOSE_MARKER {
+            // Sem o "0\r\n\r\n" final: o cliente vê corpo incompleto e erra.
+            let _ = stream.flush();
+            return;
+        }
         let framed = format!("{:x}\r\n{c}\r\n", c.len());
         if stream.write_all(framed.as_bytes()).is_err() {
             return;
@@ -258,6 +274,19 @@ impl Harness {
     }
 
     fn with_tools(extra: Vec<lr_tools::SharedTool>) -> Self {
+        Self::with_tools_and_config(extra, |_| {})
+    }
+
+    /// Variante que deixa o teste apertar os relógios do harness — é como o
+    /// teste de stream emudecido roda em milissegundos e não em minutos.
+    fn with_config(ajusta: impl FnOnce(&mut AgentConfig)) -> Self {
+        Self::with_tools_and_config(Vec::new(), ajusta)
+    }
+
+    fn with_tools_and_config(
+        extra: Vec<lr_tools::SharedTool>,
+        ajusta: impl FnOnce(&mut AgentConfig),
+    ) -> Self {
         let dir = tempfile::tempdir().expect("workspace");
         let data = tempfile::tempdir().expect("data");
         let workspace = dir.path().to_path_buf();
@@ -267,11 +296,9 @@ impl Harness {
             reg.register(tool);
         }
         let registry = Arc::new(reg);
-        let host = AgentHost::new(
-            store.clone(),
-            registry,
-            AgentConfig::new(data.path().to_path_buf()),
-        );
+        let mut config = AgentConfig::new(data.path().to_path_buf());
+        ajusta(&mut config);
+        let host = AgentHost::new(store.clone(), registry, config);
         Self {
             _dir: dir,
             _data: data,
@@ -1373,5 +1400,184 @@ async fn a_tool_call_with_broken_json_is_fixable_not_fatal() {
     assert!(
         segundo.contains("fs_edit") && segundo.contains("pedaços"),
         "faltou dizer COMO consertar: {segundo}"
+    );
+}
+
+/// Um blip de rede no meio do stream NÃO pode rebaixar o agente a chatbot.
+///
+/// Era o que acontecia: qualquer erro refazia o passo sem ferramentas e, se a
+/// segunda tentativa passasse, `tools_on` era desligado para o resto do run —
+/// o agente respondia "não tenho acesso a arquivos" e terminava `Done`.
+/// Agora erro transitório é retry do MESMO pedido, com as MESMAS ferramentas.
+#[tokio::test]
+async fn a_dropped_connection_retries_with_tools_intact() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn(vec![
+        // Cai no meio da fala: corpo incompleto, erro de rede no cliente.
+        vec![text_chunk("começando"), CLOSE_MARKER.to_string()],
+        tool_call_chunks(
+            "call_1",
+            "fs_write",
+            r#"{"path":"notas.md","#,
+            r#""content":"oi"}"#,
+        ),
+        vec![text_chunk("Criei o notas.md."), done()],
+    ]);
+
+    let status = h
+        .run("crie notas.md", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+    assert!(h.workspace.join("notas.md").exists());
+
+    // O retry (2º pedido) ainda oferece as ferramentas, e nada foi desligado.
+    assert!(
+        server.body(1).contains("\"tools\""),
+        "o retry perdeu as ferramentas"
+    );
+    assert!(!h.has("tools.off"), "blip de rede não desliga ferramenta");
+}
+
+/// Stream que emudece no meio da geração estoura o relógio de ociosidade e
+/// vira retry — antes, segurava o run PARA SEMPRE.
+#[tokio::test]
+async fn a_stalled_stream_times_out_and_retries() {
+    let h = Harness::with_config(|c| {
+        c.idle_timeout = Duration::from_millis(150);
+    });
+    let server = FakeLlama::spawn(vec![
+        vec![
+            text_chunk("a"),
+            format!("{SLEEP_MARKER}600"),
+            text_chunk("b"),
+            done(),
+        ],
+        vec![text_chunk("Pronto."), done()],
+    ]);
+
+    let status = h.run("responda", RunMode::Yolo, server.endpoint()).await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+    assert!(
+        server.calls.load(Ordering::SeqCst) >= 2,
+        "o prazo não disparou o retry"
+    );
+    assert!(!h.has("tools.off"));
+}
+
+/// A recusa do template por causa de `tools` continua caindo para o caminho
+/// sem ferramentas — mas UMA recusa não desliga nada: o passo seguinte volta
+/// a oferecê-las, e só a SEGUNDA recusa desliga de vez, avisando.
+#[tokio::test]
+async fn a_template_rejection_only_disarms_after_the_second_strike() {
+    let h = Harness::new();
+    let recusa = || {
+        erro_500(
+            r#"{"error":{"code":500,"message":"the jinja template of this model does not support tools"}}"#,
+        )
+    };
+    let server = FakeLlama::spawn(vec![
+        recusa(),
+        // Sem ferramentas, o modelo só anuncia — a cutucada refaz o passo.
+        vec![text_chunk("Vou criar os arquivos agora:"), done()],
+        recusa(),
+        vec![text_chunk("Não consegui usar ferramentas."), done()],
+    ]);
+
+    let status = h
+        .run("crie notas.md", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    // 1º pedido: com tools. 2º: a retomada sem tools. 3º: o passo seguinte
+    // OFERECE DE NOVO (é a prova do rearme por passo). 4º: sem tools de novo.
+    assert!(server.body(0).contains("\"tools\""));
+    assert!(!server.body(1).contains("\"tools\""));
+    assert!(
+        server.body(2).contains("\"tools\""),
+        "uma recusa só não pode desligar o passo seguinte: {}",
+        server.body(2)
+    );
+    assert!(!server.body(3).contains("\"tools\""));
+    // Na segunda recusa o desligamento vira definitivo e é anunciado.
+    assert!(h.has("tools.off"), "a segunda recusa tinha que avisar");
+}
+
+/// O código de saída declarado pela ferramenta vence o marcador textual: um
+/// stdout que por acaso contenha "exit code 1" não pode derrubar a
+/// verificação de um comando que saiu com 0.
+#[tokio::test]
+async fn a_log_that_mentions_an_exit_code_does_not_fail_verification() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn(vec![
+        tool_call_chunks(
+            "c1",
+            "terminal_run",
+            r#"{"command":"echo exit"#,
+            r#" code 1"}"#,
+        ),
+        tool_call_chunks(
+            "c2",
+            "fs_write",
+            r#"{"path":"nota.md","#,
+            r#""content":"fim"}"#,
+        ),
+        vec![text_chunk("Pronto."), done()],
+    ]);
+
+    let status = h
+        .run("rode e grave", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let verificacao = h
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|e| match &e.event {
+            RunEventKind::Verification { passed, notes } => Some((*passed, notes.clone())),
+            _ => None,
+        });
+    let (passed, notes) = verificacao.expect("houve escrita: a verificação roda");
+    assert!(
+        passed,
+        "o eco de 'exit code 1' derrubou a verificação: {notes}"
+    );
+}
+
+/// Ler → editar → reler para conferir. A releitura DEPOIS da edição devolve o
+/// conteúdo novo — antes, devolvia "você já leu no passo N", que vira mentira
+/// no instante em que a edição acontece.
+#[tokio::test]
+async fn rereading_a_file_after_editing_it_returns_fresh_content() {
+    let h = Harness::new();
+    std::fs::write(h.workspace.join("app.py"), "v1\n").expect("semente");
+    let server = FakeLlama::spawn(vec![
+        tool_call_chunks("c1", "fs_read", r#"{"path":"#, r#""app.py"}"#),
+        tool_call_chunks(
+            "c2",
+            "fs_write",
+            r#"{"path":"app.py","#,
+            r#""content":"v2\n"}"#,
+        ),
+        tool_call_chunks("c3", "fs_read", r#"{"path":"#, r#""app.py"}"#),
+        vec![text_chunk("Conferido."), done()],
+    ]);
+
+    let status = h
+        .run("edite e confira", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    // O último pedido ao modelo carrega o resultado da releitura: tem que ser
+    // o conteúdo NOVO, não o ponteiro "você já leu".
+    let ultimo = server.body(3);
+    assert!(
+        ultimo.contains("v2"),
+        "a releitura depois da edição não devolveu o conteúdo novo: {ultimo}"
+    );
+    assert!(
+        !ultimo.contains("já leu"),
+        "a releitura de conferência foi bloqueada: {ultimo}"
     );
 }

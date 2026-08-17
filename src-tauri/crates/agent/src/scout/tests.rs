@@ -591,6 +591,7 @@ fn engine<'a>(h: &Harness, client: &'a LlamaClient, opts: &'a RunOptions) -> Ste
         )),
         groups: lr_types::agent::ToolGroup::ALL.to_vec(),
         tools_on: std::sync::atomic::AtomicBool::new(true),
+        recusas_de_tools: std::sync::atomic::AtomicU32::new(0),
         context: crate::reliability::ContextBudget::new(Some(8_192), 0.85),
     }
 }
@@ -763,7 +764,11 @@ async fn a_task_that_fails_twice_is_blocked_and_the_loop_moves_on() {
         .into_iter()
         .filter(|b| b.contains("\"stream\":true") && b.contains("MARCA-ALFA"))
         .count();
-    assert_eq!(tentativas, 2, "tenta duas vezes, não mais");
+    // Duas tentativas da ETAPA, e cada uma paga os retries transitórios do
+    // stream (o 500 genérico é indistinguível de um blip de rede — e retry
+    // com as ferramentas intactas é o comportamento certo para blip).
+    let esperado = 2 * (1 + crate::run::MAX_TENTATIVAS_STREAM as usize);
+    assert_eq!(tentativas, esperado, "duas tentativas × retries do stream");
 }
 
 #[tokio::test]

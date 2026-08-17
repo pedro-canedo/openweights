@@ -107,6 +107,28 @@ pub fn extract_exit_code(text: &str) -> Option<i32> {
         "exit status",
     ];
     let lower = text.to_lowercase();
+    // Reserva para ferramentas que não declaram o código no campo próprio
+    // (`ToolOutput::exit_code`). Uma LINHA que começa com o marcador é o
+    // formato do próprio harness e vence qualquer menção no meio do log —
+    // era o `rfind` cru que pegava o "exit code 1" de dentro da saída de um
+    // `cargo test` que tinha saído com 0.
+    let de_linha = lower.lines().find_map(|l| {
+        let l = l.trim_start();
+        MARKERS
+            .iter()
+            .find_map(|m| l.strip_prefix(m))
+            .and_then(|resto| {
+                let n: String = resto
+                    .chars()
+                    .skip_while(|c| !c.is_ascii_digit() && *c != '-')
+                    .take_while(|c| c.is_ascii_digit() || *c == '-')
+                    .collect();
+                n.parse().ok()
+            })
+    });
+    if de_linha.is_some() {
+        return de_linha;
+    }
     let marker = MARKERS
         .iter()
         .filter_map(|m| lower.rfind(m).map(|i| i + m.len()))
@@ -176,9 +198,18 @@ mod tests {
         assert_eq!(extract_exit_code("saída...\n[código de saída: 0]"), Some(0));
         assert_eq!(extract_exit_code("erro\n[exit code: 127]"), Some(127));
         assert_eq!(extract_exit_code("nenhuma marca aqui"), None);
-        // Duas marcas: vale a última (a do comando que acabou de rodar).
+        // O formato do harness põe o marcador NA PRIMEIRA LINHA e o stdout
+        // depois. A linha que começa com o marcador vence qualquer menção no
+        // meio do log — "valer a última" era exatamente o bug: um `cargo
+        // test` que imprimia "exit code 2" no log derrubava um comando que
+        // saiu com 0.
         assert_eq!(
-            extract_exit_code("exit code: 0\n...\nexit code: 2"),
+            extract_exit_code("exit code 0\n\n[stdout]\nexit code 2 apareceu no log"),
+            Some(0)
+        );
+        // Sem linha própria, a reserva antiga continua: vale a última menção.
+        assert_eq!(
+            extract_exit_code("rodei com exit code: 0 e depois exit code: 2"),
             Some(2)
         );
     }

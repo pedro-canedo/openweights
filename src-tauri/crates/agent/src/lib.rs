@@ -9,7 +9,7 @@ mod menu;
 mod plan_tools;
 mod prompt;
 mod reliability;
-mod run;
+pub(crate) mod run;
 mod scout;
 mod subagent;
 mod verify;
@@ -53,6 +53,13 @@ pub struct AgentConfig {
     pub approval_timeout: Duration,
     /// Fração da janela de contexto que dispara compactação (0.0–1.0).
     pub context_ratio: f32,
+    /// Prazo até o primeiro pedaço do stream. Generoso: processar um prompt
+    /// de 8k tokens em CPU leva minutos, e isso não é travamento.
+    pub first_token_timeout: Duration,
+    /// Prazo entre pedaços depois que a geração começou. Silêncio além disso
+    /// é servidor travado — sem este relógio, um stream pendurado segurava o
+    /// run para sempre.
+    pub idle_timeout: Duration,
 }
 
 impl AgentConfig {
@@ -62,6 +69,8 @@ impl AgentConfig {
             max_output_bytes: 30_000,
             approval_timeout: Duration::from_secs(15 * 60),
             context_ratio: 0.85,
+            first_token_timeout: Duration::from_secs(180),
+            idle_timeout: Duration::from_secs(90),
         }
     }
 }
