@@ -138,6 +138,8 @@ export interface LocalModel {
   repoId: string;
   name: string;
   primaryPath: string;
+  /** Projetor de visão no mesmo repositório, quando há. */
+  visionProjector?: string | null;
   totalBytes: number;
   files: string[];
   quantLabel: string;
@@ -219,7 +221,8 @@ export interface ChatParams {
   /**
    * Modo agente desta conversa: em vez de uma resposta única, o pedido vira
    * um run com ferramentas (o laço vive no Rust). Opcional para não quebrar
-   * os `paramsJson` já gravados — ausente = desligado.
+   * os `paramsJson` já gravados — ausente cai no padrão (ligado: o app é
+   * agent-first). `false` gravado explicitamente preserva o modo Chat.
    */
   agent?: boolean;
   /** Nível de autorização do agente. Ausente = `"smart"`. */
@@ -249,7 +252,9 @@ export const DEFAULT_CHAT_PARAMS: ChatParams = {
   effort: "high",
   workspaceDir: null,
   model: null,
-  agent: false,
+  // Agent-first: conversa nova já nasce no modo agente. Quem prefere o chat
+  // puro escolhe no seletor, e a escolha fica gravada nos params da conversa.
+  agent: true,
   mode: "smart",
   workMode: "agent",
 };

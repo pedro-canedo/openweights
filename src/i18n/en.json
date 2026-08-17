@@ -169,6 +169,74 @@
         "attachments": "Attachments"
       }
     },
+    "engine": {
+      "title": "Model load",
+      "hint": "These apply at load time, not per message. Reload the model to take effect.",
+      "saved": "Saved. Reload to apply.",
+      "autoPlaceholder": "auto",
+      "kv": {
+        "label": "KV cache",
+        "hint": "Conversation memory on the GPU. Compressing fits a larger window in the same VRAM, with a small quality trade-off.",
+        "auto": "Automatic",
+        "f16": "Precise",
+        "q8": "Balanced",
+        "q4": "Compact"
+      },
+      "flash": {
+        "label": "Flash attention",
+        "hint": "Faster generation at the same memory. Turn off only if the model fails to load.",
+        "auto": "Automatic",
+        "on": "On",
+        "off": "Off"
+      },
+      "spec": {
+        "label": "Speculation",
+        "hint": "Predicts tokens ahead. MTP uses layers already in the file; n-gram helps more on code.",
+        "off": "Off",
+        "mtp": "MTP",
+        "ngram": "N-gram",
+        "mtpHint": "This file includes MTP — turning it on often speeds up generation."
+      },
+      "vision": {
+        "label": "Vision",
+        "hint": "The projector uses VRAM. On demand loads it only when there is an image.",
+        "off": "Off",
+        "onDemand": "On demand",
+        "always": "Always",
+        "none": "This model has no vision projector."
+      },
+      "kvOffload": {
+        "label": "KV on GPU",
+        "hint": "On the GPU is faster. On the CPU frees VRAM and is slower.",
+        "auto": "Automatic",
+        "on": "GPU",
+        "off": "CPU"
+      },
+      "more": "More options",
+      "ngl": "GPU layers",
+      "nglHint": "How many layers go on the GPU. Empty = the engine decides.",
+      "ncmoe": "Experts on CPU (MoE)",
+      "ncmoeHint": "Expert layers kept in RAM. Helps a large MoE fit.",
+      "batch": "Batch",
+      "ubatch": "μ-batch",
+      "threads": "Threads",
+      "parallel": "Parallel slots",
+      "parallelHint": "Concurrent requests. More slots use more memory.",
+      "mmap": {
+        "label": "mmap",
+        "hint": "Maps the file into memory. Turning it off copies the whole model into RAM.",
+        "auto": "Automatic",
+        "on": "On",
+        "off": "Off"
+      },
+      "mlock": {
+        "label": "mlock",
+        "hint": "Locks the model in RAM so the OS cannot page it out. Only turn on if you have spare RAM.",
+        "auto": "Automatic",
+        "on": "On",
+        "off": "Off"
+      }
+    },
     "preset": "Preset",
     "presetSave": "Save as preset",
     "presetName": "Preset name",
@@ -373,6 +441,8 @@
   },
   "agent": {
     "toggle": "Agent",
+    "modeChat": "Chat",
+    "modeAgent": "Agent",
     "toggleOn": "Agent mode on",
     "toggleOff": "Agent mode off",
     "unsupported": "This model does not advertise tool support. Agent mode may work poorly.",

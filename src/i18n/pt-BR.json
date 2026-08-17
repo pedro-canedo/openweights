@@ -169,6 +169,74 @@
         "attachments": "Anexos"
       }
     },
+    "engine": {
+      "title": "Carga do modelo",
+      "hint": "Valem no carregamento, não por mensagem. Recarregue o modelo para aplicar.",
+      "saved": "Salvo. Recarregue para aplicar.",
+      "autoPlaceholder": "auto",
+      "kv": {
+        "label": "KV cache",
+        "hint": "Memória da conversa na placa. Comprimir cabe mais janela na mesma VRAM, com uma perda pequena.",
+        "auto": "Automático",
+        "f16": "Preciso",
+        "q8": "Equilibrado",
+        "q4": "Compacto"
+      },
+      "flash": {
+        "label": "Flash attention",
+        "hint": "Gera mais rápido com a mesma memória. Desligue só se o modelo falhar ao carregar.",
+        "auto": "Automático",
+        "on": "Ligado",
+        "off": "Desligado"
+      },
+      "spec": {
+        "label": "Especulação",
+        "hint": "Prevê tokens à frente. MTP usa camadas do próprio arquivo; n-grama rende mais em código.",
+        "off": "Desligada",
+        "mtp": "MTP",
+        "ngram": "N-grama",
+        "mtpHint": "Este arquivo traz MTP — ligar costuma acelerar a geração."
+      },
+      "vision": {
+        "label": "Visão",
+        "hint": "O projetor custa memória de vídeo. Sob demanda só carrega quando há imagem.",
+        "off": "Desligada",
+        "onDemand": "Sob demanda",
+        "always": "Sempre",
+        "none": "Este modelo não tem projetor de visão."
+      },
+      "kvOffload": {
+        "label": "KV na GPU",
+        "hint": "Na placa é mais rápido. Na CPU libera VRAM e fica mais lento.",
+        "auto": "Automático",
+        "on": "GPU",
+        "off": "CPU"
+      },
+      "more": "Mais opções",
+      "ngl": "Camadas na GPU",
+      "nglHint": "Quantas camadas sobem para a placa. Vazio = o motor decide.",
+      "ncmoe": "Especialistas na CPU (MoE)",
+      "ncmoeHint": "Camadas de especialistas que ficam na RAM. Ajuda um MoE grande a caber.",
+      "batch": "Batch",
+      "ubatch": "μ-batch",
+      "threads": "Threads",
+      "parallel": "Slots paralelos",
+      "parallelHint": "Pedidos ao mesmo tempo. Mais slots usam mais memória.",
+      "mmap": {
+        "label": "mmap",
+        "hint": "Mapeia o arquivo na memória. Desligar copia o modelo inteiro para a RAM.",
+        "auto": "Automático",
+        "on": "Ligado",
+        "off": "Desligado"
+      },
+      "mlock": {
+        "label": "mlock",
+        "hint": "Trava o modelo na RAM para o sistema não paginar. Só ligue se tiver RAM de sobra.",
+        "auto": "Automático",
+        "on": "Ligado",
+        "off": "Desligado"
+      }
+    },
     "preset": "Preset",
     "presetSave": "Salvar como preset",
     "presetName": "Nome do preset",
@@ -373,6 +441,8 @@
   },
   "agent": {
     "toggle": "Agente",
+    "modeChat": "Chat",
+    "modeAgent": "Agente",
     "toggleOn": "Modo agente ligado",
     "toggleOff": "Modo agente desligado",
     "unsupported": "Este modelo não declara suporte a ferramentas. O modo agente pode funcionar de forma limitada.",

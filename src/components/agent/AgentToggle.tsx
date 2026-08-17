@@ -1,11 +1,12 @@
-// Liga/desliga o modo agente da conversa (persistido em `ChatParams.agent`).
-// A capacidade de ferramentas vem do chat template do modelo carregado
-// (GET /props) — nunca do nome do modelo. Sem suporte, o botão fica
-// desabilitado com a explicação no tooltip.
+// Seletor segmentado Chat | Agente (persistido em `ChatParams.agent`).
+// O app é agent-first: o modo agente é o padrão, então as duas opções
+// precisam estar visíveis lado a lado — um toggle escondido atrás de um
+// ícone fazia sentido quando o agente era exceção, não agora que é regra.
 //
-// É só o ícone, no tamanho dos outros botões redondos da barra: o seletor ao
-// lado já escreve em que modo o agente está ("Agente", "Plano", "Laço"), e
-// duas palavras iguais lado a lado não informavam nada. Ligado, ele acende.
+// A capacidade de ferramentas vem do chat template do modelo carregado
+// (GET /props) — nunca do nome do modelo. Sem suporte declarado, o segmento
+// Agente NÃO bloqueia: o backend já degrada com aviso visível na trilha
+// (evento `tools.off`); aqui só avisamos no tooltip e no pontinho de alerta.
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -36,7 +37,7 @@ export default function AgentToggle({
     void getServerProps(model)
       .then((props) => {
         // Resposta do roteador não fala deste modelo: continua desconhecido,
-        // e desconhecido NÃO desabilita o botão.
+        // e desconhecido NÃO gera aviso.
         if (cancelled) return;
         setSupportsTools(
           describesModel(props) ? props.chatTemplateCaps.supportsTools : null,
@@ -50,55 +51,56 @@ export default function AgentToggle({
     };
   }, [model]);
 
-  const on = params.agent === true;
+  const agentOn = params.agent === true;
   const unsupported = supportsTools === false;
 
-  const title = unsupported
-    ? t("agent.unsupported")
-    : on
-      ? t("agent.toggleOn")
-      : t("agent.toggleOff");
+  // Mesmo idioma visual dos botões da barra: ativo acende em accent,
+  // inativo fica apagado até o hover.
+  const segment = (active: boolean) =>
+    `flex h-full items-center rounded-full px-2.5 text-xs transition-colors disabled:opacity-40 ${
+      active ? "bg-accent/15 text-accent" : "text-dim hover:text-ink"
+    }`;
 
   return (
-    <button
-      type="button"
-      disabled={disabled || unsupported}
-      title={title}
-      aria-pressed={on}
-      onClick={() =>
-        onChange({
-          ...params,
-          agent: !on,
-          // Primeira vez: entra no modo conservador (lê sozinho, pede para
-          // alterar) em vez de já sair executando.
-          mode: params.mode ?? "smart",
-        })
-      }
-      className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40 ${
-        on
-          ? "bg-accent/15 text-accent"
-          : "text-dim hover:bg-panel hover:text-ink"
-      }`}
+    <div
+      role="group"
+      aria-label={t("agent.toggle")}
+      className="flex h-8 shrink-0 items-center rounded-full border border-edge bg-panel p-0.5"
     >
-      <svg
-        className="h-[18px] w-[18px] shrink-0"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        viewBox="0 0 24 24"
+      <button
+        type="button"
+        disabled={disabled}
+        title={t("agent.toggleOff")}
+        aria-pressed={!agentOn}
+        onClick={() => onChange({ ...params, agent: false })}
+        className={segment(!agentOn)}
       >
-        <rect x="4" y="8" width="16" height="12" rx="3" />
-        <path d="M12 8V4M9 14h.01M15 14h.01M2 13v3M22 13v3" />
-      </svg>
-      <span className="sr-only">{t("agent.toggle")}</span>
-      {unsupported && (
-        <span
-          aria-label={t("agent.unsupportedShort")}
-          className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-warn"
-        />
-      )}
-    </button>
+        {t("agent.modeChat")}
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        title={unsupported ? t("agent.unsupported") : t("agent.toggleOn")}
+        aria-pressed={agentOn}
+        onClick={() =>
+          onChange({
+            ...params,
+            agent: true,
+            // Primeira vez: entra no modo conservador (lê sozinho, pede para
+            // alterar) em vez de já sair executando.
+            mode: params.mode ?? "smart",
+          })
+        }
+        className={`relative ${segment(agentOn)}`}
+      >
+        {t("agent.modeAgent")}
+        {unsupported && (
+          <span
+            aria-label={t("agent.unsupportedShort")}
+            className="absolute top-0.5 right-0.5 h-1.5 w-1.5 rounded-full bg-warn"
+          />
+        )}
+      </button>
+    </div>
   );
 }
