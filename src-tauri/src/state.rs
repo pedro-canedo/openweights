@@ -96,6 +96,14 @@ impl AppState {
         {
             log::info!("{n} execução(ões) interrompida(s) por fechamento anterior");
         }
+        // O mesmo acerto vale para as automações: com o run já marcado como
+        // falha mas o status da tarefa ainda vazio, o card diria "rodando"
+        // para sempre.
+        if let Ok(n) = store.fail_orphan_scheduled_tasks()
+            && n > 0
+        {
+            log::info!("{n} automação(ões) marcada(s) como interrompida(s)");
+        }
 
         let rag = Arc::new(lr_rag::RagHandle::new(db_path.clone()));
         let mcp = lr_mcp::McpHost::new(store.clone());

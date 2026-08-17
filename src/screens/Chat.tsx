@@ -871,6 +871,15 @@ export default function Chat() {
       if (chatId == null) return;
       parkFinishedRun(chatId);
       if (agentOn) {
+        // A última execução parou ESPERANDO esta resposta (pergunta do
+        // agente, etapa bloqueada)? Então a mensagem retoma o plano de onde
+        // parou, em vez de começar um trabalho novo do zero.
+        if (run && run.status === "escalated") {
+          const continuou = await runStore
+            .answer(chatId, run.runId, content)
+            .catch(() => false);
+          if (continuou) return;
+        }
         // O laço do agente monta o próprio histórico a partir do banco (a
         // mensagem acima já está gravada); aqui só entregamos o pedido.
         void runStore.start({

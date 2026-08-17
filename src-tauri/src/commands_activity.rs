@@ -4,7 +4,7 @@
 //! do harness — o que faltava era a pergunta atravessando todas elas.
 
 use crate::state::AppState;
-use lr_store::activity::{ActivityCall, ActivityStats};
+use lr_store::activity::{ActivityCall, ActivityStats, CallOutput};
 use lr_types::agent::RunSummary;
 use tauri::State;
 
@@ -43,6 +43,14 @@ pub fn activity_run_calls(
         .store
         .list_run_calls_with_decision(&run_id)
         .map_err(err_str)
+}
+
+/// As saídas completas das ações de uma execução. O streaming não sobrevive
+/// ao reload de propósito — o que sobrevive é o `result_json` gravado no fim
+/// de cada chamada, e é dele que a trilha reidrata a saída das ferramentas.
+#[tauri::command]
+pub fn run_call_outputs(state: State<'_, AppState>, run_id: String) -> CmdResult<Vec<CallOutput>> {
+    state.store.run_call_outputs(&run_id).map_err(err_str)
 }
 
 /// Contas do período. `since` é epoch em SEGUNDOS (a unidade de

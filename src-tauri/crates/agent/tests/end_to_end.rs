@@ -33,6 +33,9 @@ struct FakeLlama {
     /// Corpo de cada pedido de chat, na ordem — é onde se vê se as
     /// ferramentas foram mesmo oferecidas ao modelo.
     bodies: Arc<Mutex<Vec<String>>>,
+    /// Contagem devolvida em `/input_tokens`/`/tokenize`. Ajustável porque a
+    /// compactação era IMPOSSÍVEL de acionar em teste com o "10" fixo.
+    tokens: Arc<AtomicUsize>,
 }
 
 /// `/props` de um llama-server comum: fala do modelo e suporta ferramentas.
@@ -56,6 +59,8 @@ impl FakeLlama {
         let replies = Arc::new(Mutex::new(chat_replies));
         let bodies: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
         let vistos = bodies.clone();
+        let tokens = Arc::new(AtomicUsize::new(10));
+        let contagem = tokens.clone();
         let props_json = props.to_string();
 
         std::thread::spawn(move || {
@@ -67,6 +72,16 @@ impl FakeLlama {
                             continue;
                         };
                         if path.contains("/chat/completions") && !path.contains("input_tokens") {
+                            // Pedido SEM stream (resumo de compactação, título):
+                            // responde JSON vazio sem consumir o roteiro — o
+                            // roteiro é dos passos do agente.
+                            if body.contains("\"stream\":false") {
+                                write_json(
+                                    &mut stream,
+                                    r#"{"choices":[{"message":{"content":""}}]}"#,
+                                );
+                                continue;
+                            }
                             vistos.lock().unwrap().push(body);
                             // Roteiro pode pedir uma recusa do servidor: o
                             // primeiro pedaço vira o corpo do erro.
@@ -93,7 +108,8 @@ impl FakeLlama {
                         } else if path.contains("/props") {
                             write_json(&mut stream, &props_json);
                         } else {
-                            write_json(&mut stream, r#"{"count":10}"#);
+                            let n = contagem.load(Ordering::SeqCst);
+                            write_json(&mut stream, &format!(r#"{{"count":{n}}}"#));
                         }
                     }
                     Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -109,6 +125,7 @@ impl FakeLlama {
             stop,
             calls,
             bodies,
+            tokens,
         }
     }
 
@@ -1776,4 +1793,100 @@ async fn a_failed_verification_gets_one_repair_round() {
     assert_eq!(verificacoes.len(), 2, "reprovada + re-verificada");
     assert!(!verificacoes[0] && verificacoes[1], "{verificacoes:?}");
     assert!(h.workspace.join("faltando.txt").exists());
+}
+
+/// Dois runs na MESMA pasta de projeto se atropelam (escrevem no mesmo
+/// arquivo, cruzam checkpoints): o segundo é recusado na entrada. O cenário
+/// real é o relógio disparando uma automação enquanto a pessoa usa o agente.
+#[tokio::test]
+async fn a_second_run_in_the_same_workspace_is_refused() {
+    let h = Harness::new();
+    // Primeiro run fica vivo esperando o stream que nunca anda.
+    let server = FakeLlama::spawn(vec![
+        vec![format!("{SLEEP_MARKER}2000"), text_chunk("fim"), done()],
+        vec![text_chunk("fim"), done()],
+    ]);
+    let sink = h.events.clone();
+    let _vivo = h
+        .host
+        .start(
+            StartRun {
+                prompt: "primeiro".into(),
+                history: Vec::new(),
+                memory: Vec::new(),
+                options: h.options(RunMode::Yolo),
+                endpoint: server.endpoint(),
+                work_mode: WorkMode::Agent,
+                plan: None,
+            },
+            Some(Arc::new(move |ev: RunEvent| {
+                sink.lock().unwrap().push(ev);
+            })),
+        )
+        .expect("primeiro começou");
+
+    let recusa = h.host.start(
+        StartRun {
+            prompt: "segundo".into(),
+            history: Vec::new(),
+            memory: Vec::new(),
+            options: h.options(RunMode::Yolo),
+            endpoint: server.endpoint(),
+            work_mode: WorkMode::Agent,
+            plan: None,
+        },
+        None,
+    );
+    let erro = recusa.err().expect("o segundo tinha que ser recusado");
+    assert!(
+        erro.contains("mesma") || erro.contains("nesta pasta"),
+        "{erro}"
+    );
+}
+
+/// A compactação agora é acionável em teste — e quando o resumo falha, o
+/// plano B determinístico corta o miolo com um marcador em vez de deixar o
+/// passo seguinte estourar a janela em silêncio.
+#[tokio::test]
+async fn compaction_fires_and_survives_a_failed_summary() {
+    let h = Harness::new();
+    for f in ["a.md", "b.md", "c.md", "d.md", "e.md"] {
+        std::fs::write(h.workspace.join(f), "x\n".repeat(40)).expect("semente");
+    }
+    // Janela minúscula anunciada pelo servidor: o orçamento fica apertado
+    // desde o começo. A contagem "exata" também vem alta.
+    let server = FakeLlama::spawn_with_props(
+        vec![
+            tool_call_chunks("c1", "fs_read", r#"{"path":"#, r#""a.md"}"#),
+            tool_call_chunks("c2", "fs_read", r#"{"path":"#, r#""b.md"}"#),
+            tool_call_chunks("c3", "fs_read", r#"{"path":"#, r#""c.md"}"#),
+            tool_call_chunks("c4", "fs_read", r#"{"path":"#, r#""d.md"}"#),
+            tool_call_chunks("c5", "fs_read", r#"{"path":"#, r#""e.md"}"#),
+            vec![text_chunk("Terminei a leitura."), done()],
+        ],
+        r#"{"model_path":"/m/a.gguf",
+            "chat_template_caps":{"supports_tools":true},
+            "default_generation_settings":{"n_ctx":512}}"#,
+    );
+    server.tokens.store(9_999, Ordering::SeqCst);
+
+    let status = h
+        .run_with_steps(
+            "leia os cinco arquivos",
+            RunMode::Yolo,
+            server.endpoint(),
+            10,
+        )
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+    assert!(
+        h.has("context.compacted"),
+        "a janela minúscula tinha que compactar: {:?}",
+        h.kinds()
+    );
+    // O resumo veio vazio (o fake responde conteúdo vazio sem stream), então
+    // o marcador do plano B tem que estar no histórico enviado depois.
+    let marcado = (0..server.calls.load(Ordering::SeqCst))
+        .any(|i| server.body(i).contains("mensagens antigas foram removidas"));
+    assert!(marcado, "faltou o marcador do plano B no histórico");
 }

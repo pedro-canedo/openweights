@@ -16,8 +16,10 @@
 import { ensureServer, errorMessage, listLoadedModels, matchServerModel } from "../serverSession";
 import type { ChatParams } from "../types";
 import {
+  runAnswer,
   runApprove,
   runAttach,
+  runCallOutputs,
   runCancel,
   runEventsList,
   runPlanApprove,
@@ -25,6 +27,7 @@ import {
   runPlanReplan,
   runStart,
   runsList,
+  type RunCallOutput,
   type RunStartOptions,
 } from "./agentApi";
 import type { TaskPlan, WorkMode } from "./scout";
@@ -616,6 +619,64 @@ export function buildRunView(runId: string, events: RunEvent[]): RunView {
   return view;
 }
 
+/** Extrai o `content` do `result_json` gravado; linha ilegível vira vazio. */
+function storedContent(resultJson: string | null): string {
+  if (!resultJson) return "";
+  try {
+    const parsed = JSON.parse(resultJson) as { content?: unknown };
+    return typeof parsed.content === "string" ? parsed.content : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Hidrata a visão reconstruída com as saídas que ficaram no banco.
+ *
+ * O replay dos eventos não traz `tool.output` (o streaming não é persistido
+ * de propósito), então a trilha reaberta ficava só com o preview de 400
+ * caracteres — um `terminal_run` que falhou perdia o stdout inteiro. Só
+ * preenche campo VAZIO: saída viva, recém-reduzida dos eventos, nunca é
+ * sobrescrita.
+ */
+function hydrateStoredOutputs(view: RunView, rows: RunCallOutput[]): RunView {
+  if (rows.length === 0) return view;
+  let tools = view.tools;
+  let changed = false;
+  for (const row of rows) {
+    const tool = tools[row.callId];
+    if (!tool) continue;
+    let next = tool;
+    if (next.output === "") {
+      // Sucesso: o conteúdo completo. Falha: a mensagem inteira de erro —
+      // é o que o modelo viu, e o preview a cortava em 400 caracteres.
+      const content =
+        storedContent(row.resultJson) ||
+        (next.state === "failed" && row.error ? row.error : "");
+      if (content !== "") {
+        const overflow = content.length > OUTPUT_CAP;
+        next = {
+          ...next,
+          output: overflow
+            ? content.slice(content.length - OUTPUT_CAP)
+            : content,
+          outputTruncated: next.outputTruncated || overflow,
+        };
+      }
+    }
+    // Negação sem motivo na trilha (evento antigo/estragado): o banco tem.
+    if (next.state === "denied" && !next.denyReason && row.error) {
+      next = { ...next, denyReason: row.error };
+    }
+    if (next !== tool) {
+      if (!changed) tools = { ...tools };
+      tools[row.callId] = next;
+      changed = true;
+    }
+  }
+  return changed ? { ...view, tools } : view;
+}
+
 /**
  * Carrega um run antigo (usado pelo painel de execução). Não vira ativo.
  *
@@ -624,7 +685,9 @@ export function buildRunView(runId: string, events: RunEvent[]): RunView {
  */
 export async function loadRunView(runId: string): Promise<RunView> {
   const events = await runEventsList(runId, 0);
-  const view = buildRunView(runId, events);
+  let view = buildRunView(runId, events);
+  // A saída completa das ferramentas não viaja nos eventos: vem do banco.
+  view = hydrateStoredOutputs(view, await runCallOutputs(runId));
   view.workMode = workModeByRun.get(runId) ?? view.workMode;
   view.plan = await runPlanGet(runId).catch(() => null);
   return view;
@@ -944,6 +1007,23 @@ export const runStore = {
   },
 
   /** Pede outra divisão do mesmo objetivo (volta para "dividindo a tarefa"). */
+  /**
+   * Responde a uma execução que parou esperando a pessoa (escalada com
+   * pergunta, etapa bloqueada) e ADOTA a continuação: o run novo assume a
+   * conversa, senão a resposta rodaria invisível enquanto o chat olha para o
+   * run que já acabou.
+   */
+  async answer(chatId: number | null, runId: string, text: string): Promise<boolean> {
+    const novo = await runAnswer(runId, text, handleEvent);
+    if (!novo) return false;
+    if (novo !== runId) {
+      if (chatId != null) byChat.set(chatId, novo);
+      emit();
+      schedulePlanFetch(novo);
+    }
+    return true;
+  },
+
   async replan(chatId: number | null): Promise<void> {
     const run = this.runFor(chatId);
     if (!run) return;
@@ -981,7 +1061,9 @@ export const runStore = {
     }
     const events = await runEventsList(runId, 0).catch(() => [] as RunEvent[]);
     if (events.length === 0) return;
-    const view = buildRunView(runId, events);
+    let view = buildRunView(runId, events);
+    // Saída das ferramentas: o replay não traz `tool.output`; o banco traz.
+    view = hydrateStoredOutputs(view, await runCallOutputs(runId));
     runs.set(runId, view);
     emit();
     if (isRunActive(view.status)) await attachTo(view);
@@ -1043,7 +1125,9 @@ export const runStore = {
     const active = list.find((r) => isRunActive(r.status));
     if (!active) return;
     const events = await runEventsList(active.id, 0).catch(() => [] as RunEvent[]);
-    const view = buildRunView(active.id, events);
+    let view = buildRunView(active.id, events);
+    // Saída das ferramentas: o replay não traz `tool.output`; o banco traz.
+    view = hydrateStoredOutputs(view, await runCallOutputs(active.id));
     view.chatId = chatId;
     view.workMode = workModeByChat.get(chatId) ?? view.workMode;
     runs.set(view.runId, view);

@@ -353,6 +353,13 @@ pub struct CompactionPlan {
     pub tail: Vec<ChatMessage>,
 }
 
+impl CompactionPlan {
+    /// Quantas mensagens o resumo substitui (para o plano B dizer o número).
+    pub fn summarized_count(&self) -> usize {
+        self.summarize.len()
+    }
+}
+
 /// Separa o histórico em "resumir" e "preservar".
 ///
 /// Regras que não podem ser quebradas:

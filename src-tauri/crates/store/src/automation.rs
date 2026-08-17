@@ -192,6 +192,26 @@ impl Store {
         Ok(())
     }
 
+    /// Marca como erro as automações órfãs de um fechamento abrupto.
+    ///
+    /// Órfã é a que começou (`last_run_at` preenchido) e nunca recebeu
+    /// resultado (`last_status` nulo): o run dela já foi marcado como falha
+    /// por `fail_orphan_runs`, mas sem este acerto o card continuaria
+    /// calculando "rodando" para sempre a partir do status vazio.
+    pub fn fail_orphan_scheduled_tasks(&self) -> Result<usize, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let n = conn.execute(
+            "UPDATE scheduled_tasks
+                SET last_status = ?1, last_summary = ?2
+              WHERE last_status IS NULL AND last_run_at IS NOT NULL",
+            params![
+                crate::agent::enum_str(&RunStatus::Error),
+                "interrompida quando o app fechou",
+            ],
+        )?;
+        Ok(n)
+    }
+
     /// Como terminou (ou por que nem começou).
     pub fn scheduled_task_finished(
         &self,
@@ -323,6 +343,53 @@ mod tests {
         let t = store.scheduled_task(&id).unwrap().unwrap();
         assert_eq!(t.last_summary.as_deref(), Some("3 arquivos"));
         assert_eq!(t.last_run_id.as_deref(), Some("run_1"));
+    }
+
+    /// Reproduz o fechamento abrupto: `scheduled_task_started` preencheu
+    /// `last_run_at` e limpou o status, e o app morreu antes do resultado.
+    /// No reinício ela tem que virar erro — senão o card diz "rodando"
+    /// eternamente. As que terminaram ou nunca rodaram ficam intactas.
+    #[test]
+    fn automations_interrupted_by_an_abrupt_close_are_marked_as_error() {
+        let store = Store::open_in_memory().unwrap();
+
+        let orfa = store
+            .save_scheduled_task(&input("Órfã"), "auto_1", 1)
+            .unwrap();
+        store
+            .scheduled_task_started(&orfa, Some("run_1"), 10_000)
+            .unwrap();
+
+        let pronta = store
+            .save_scheduled_task(&input("Pronta"), "auto_2", 1)
+            .unwrap();
+        store
+            .scheduled_task_started(&pronta, Some("run_2"), 10_000)
+            .unwrap();
+        store
+            .scheduled_task_finished(&pronta, Some(RunStatus::Done), "tudo certo")
+            .unwrap();
+
+        let nunca = store
+            .save_scheduled_task(&input("Nunca rodou"), "auto_3", 1)
+            .unwrap();
+
+        assert_eq!(store.fail_orphan_scheduled_tasks().unwrap(), 1);
+
+        let t = store.scheduled_task(&orfa).unwrap().unwrap();
+        assert_eq!(t.last_status, Some(RunStatus::Error));
+        assert_eq!(
+            t.last_summary.as_deref(),
+            Some("interrompida quando o app fechou")
+        );
+
+        let t = store.scheduled_task(&pronta).unwrap().unwrap();
+        assert_eq!(t.last_status, Some(RunStatus::Done));
+        assert_eq!(t.last_summary.as_deref(), Some("tudo certo"));
+
+        let t = store.scheduled_task(&nunca).unwrap().unwrap();
+        assert!(t.last_status.is_none());
+        assert!(t.last_run_at.is_none());
     }
 
     #[test]

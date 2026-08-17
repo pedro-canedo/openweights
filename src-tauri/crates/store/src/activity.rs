@@ -34,6 +34,24 @@ pub struct ActivityCall {
     pub source: Option<String>,
 }
 
+/// A saída completa de uma ação, como ficou gravada quando ela terminou.
+///
+/// O streaming (`tool.output`) não é persistido de propósito; o que sobrevive
+/// é o `result_json` que `finish_tool_call` grava no fim da chamada. Esta
+/// linha carrega só o necessário para reidratar a trilha depois de um reload
+/// — devolver a `ToolCallRow` inteira arrastaria o `args_json` de novo para
+/// uma tela que já o tem pelos eventos.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallOutput {
+    pub call_id: String,
+    /// `{"content": …, "changedFiles": …}` no sucesso; vazio quando falhou.
+    /// `None` = a chamada ainda não terminou.
+    pub result_json: Option<String>,
+    /// Mensagem de erro ou motivo da negação, quando houve.
+    pub error: Option<String>,
+}
+
 /// Contas de um período.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,6 +121,30 @@ impl Store {
         )?;
         let rows = stmt
             .query_map([run_id], call_from)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Saídas gravadas das ações de uma execução, na ordem em que rodaram.
+    ///
+    /// É o caminho de LEITURA que faltava: o conteúdo completo sempre esteve
+    /// em `tool_calls.result_json`, mas sem esta consulta a trilha reaberta
+    /// ficava só com o preview de 400 caracteres do evento `tool.result` — um
+    /// `terminal_run` que falhou perdia o stdout inteiro.
+    pub fn run_call_outputs(&self, run_id: &str) -> Result<Vec<CallOutput>, StoreError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, result_json, error FROM tool_calls
+             WHERE run_id = ?1 ORDER BY rowid",
+        )?;
+        let rows = stmt
+            .query_map([run_id], |r| {
+                Ok(CallOutput {
+                    call_id: r.get(0)?,
+                    result_json: r.get(1)?,
+                    error: r.get(2)?,
+                })
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -272,6 +314,46 @@ mod tests {
         assert_eq!(s.activity_stats(0).unwrap().runs, 1);
         let futuro = Store::now() + 60;
         assert_eq!(s.activity_stats(futuro).unwrap().runs, 0);
+    }
+
+    #[test]
+    fn stored_outputs_come_back_whole_after_the_run() {
+        let s = store();
+        run(&s, "r1");
+        run(&s, "r2");
+        s.create_tool_call("c1", "r1", None, "terminal_run", "builtin", "{}")
+            .unwrap();
+        s.create_tool_call("c2", "r1", None, "fs_write", "builtin", "{}")
+            .unwrap();
+        // Chamada de OUTRO run: não pode vazar para a leitura de r1.
+        s.create_tool_call("x1", "r2", None, "fs_read", "builtin", "{}")
+            .unwrap();
+        let json = r#"{"content":"stdout completo do comando","changedFiles":[]}"#;
+        s.finish_tool_call("c1", true, json, 27, None).unwrap();
+        // Falha: o laço grava `result_json` vazio e a mensagem em `error`.
+        s.finish_tool_call("c2", false, "", 0, Some("negada pelo usuário"))
+            .unwrap();
+
+        let outs = s.run_call_outputs("r1").unwrap();
+        assert_eq!(outs.len(), 2, "só as chamadas de r1");
+        assert_eq!(outs[0].call_id, "c1");
+        assert_eq!(outs[0].result_json.as_deref(), Some(json));
+        assert!(outs[0].error.is_none());
+        assert_eq!(outs[1].error.as_deref(), Some("negada pelo usuário"));
+    }
+
+    #[test]
+    fn a_call_still_running_has_no_stored_output_yet() {
+        let s = store();
+        run(&s, "r1");
+        s.create_tool_call("c1", "r1", None, "fs_read", "builtin", "{}")
+            .unwrap();
+
+        let outs = s.run_call_outputs("r1").unwrap();
+        assert_eq!(outs.len(), 1);
+        // `None` (e não string vazia): ninguém gravou o fim ainda.
+        assert!(outs[0].result_json.is_none());
+        assert!(outs[0].error.is_none());
     }
 
     #[test]

@@ -167,9 +167,10 @@ async fn launch(app: &AppHandle, task: &ScheduledTask) -> Result<String, String>
             _ => return,
         };
         let _ = store.scheduled_task_finished(&id_tarefa, Some(status), &resumo);
-        if status != RunStatus::WaitingApproval {
-            notify(&app_evento, &tarefa_evento, Some(status));
-        }
+        // A pausa também avisa: a automação fica parada esperando um clique
+        // de confirmação, e sem o aviso do sistema ninguém sabe que deve dar
+        // esse clique — ela expira em silêncio.
+        notify(&app_evento, &tarefa_evento, Some(status));
     });
 
     let handle = state
@@ -220,8 +221,8 @@ async fn ensure_server(app: &AppHandle) -> Result<(), String> {
     }
 }
 
-/// Avisa que uma automação terminou: a interface, para atualizar a lista, e a
-/// pessoa, por um aviso do sistema.
+/// Avisa que uma automação terminou — ou parou esperando confirmação: a
+/// interface, para atualizar a lista, e a pessoa, por um aviso do sistema.
 ///
 /// O aviso do sistema é o ponto da automação: ela roda quando ninguém está
 /// olhando a tela, então a notícia precisa sair da janela.

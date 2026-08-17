@@ -185,6 +185,8 @@ pub struct AgentHost {
     /// que mais o ouvinte tiver capturado. Ele também é a resposta para
     /// "esta execução ainda está de pé?".
     runs: Arc<Mutex<HashMap<String, Arc<RunHandle>>>>,
+    /// Pasta de projeto de cada run vivo — a trava de "um por workspace".
+    workspaces: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl AgentHost {
@@ -194,6 +196,7 @@ impl AgentHost {
             registry: RwLock::new(registry),
             config: Arc::new(config),
             runs: Arc::new(Mutex::new(HashMap::new())),
+            workspaces: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -202,6 +205,30 @@ impl AgentHost {
         req: StartRun,
         on_event: Option<EventCallback>,
     ) -> Result<Arc<RunHandle>, String> {
+        // Uma execução por pasta de projeto. Dois runs no mesmo workspace se
+        // atropelam de verdade: escrevem no mesmo arquivo, cruzam checkpoints
+        // e cada um "verifica" o trabalho do outro. O cenário real é o
+        // relógio disparando uma automação enquanto a pessoa usa o agente.
+        // A trava é o próprio mapa de runs vivos (que se limpa sozinho) —
+        // nunca um arquivo em disco, que um travamento deixaria para sempre.
+        let workspace = req
+            .options
+            .workspace_dir
+            .as_deref()
+            .map(str::trim)
+            .filter(|d| !d.is_empty())
+            .map(str::to_string);
+        if let Some(dir) = &workspace {
+            let ocupados = self.workspaces.lock().unwrap_or_else(|e| e.into_inner());
+            if ocupados.values().any(|w| w == dir) {
+                return Err(
+                    "já existe uma execução em andamento nesta pasta de projeto — \
+                     espere-a terminar ou cancele-a antes de começar outra"
+                        .to_string(),
+                );
+            }
+        }
+
         let id = new_id("run");
         let chat_id = (req.options.chat_id > 0).then_some(req.options.chat_id);
         self.store
@@ -224,7 +251,13 @@ impl AgentHost {
         self.runs
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(id, handle.clone());
+            .insert(id.clone(), handle.clone());
+        if let Some(dir) = workspace {
+            self.workspaces
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(id, dir);
+        }
 
         let deps = RunDeps {
             store: self.store.clone(),
@@ -233,10 +266,15 @@ impl AgentHost {
         };
         let h = handle.clone();
         let vivos = self.runs.clone();
+        let travas = self.workspaces.clone();
         let terminado = h.id.clone();
         tokio::spawn(async move {
             execute_run(req, h, deps).await;
             vivos
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&terminado);
+            travas
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .remove(&terminado);

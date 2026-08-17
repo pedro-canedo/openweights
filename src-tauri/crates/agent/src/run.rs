@@ -351,6 +351,17 @@ impl RunCounters {
     }
 }
 
+/// Completa as chamadas de um lote interrompido com um resultado sintético.
+///
+/// A invariante "toda tool call produz uma mensagem `role: \"tool\"`, na
+/// ordem" não é estética: sem ela, um histórico retomado depois quebra o
+/// pareamento do template e o passo seguinte sai incoerente.
+fn fecha_lote(messages: &mut Vec<ChatMessage>, restantes: &[ToolCallReq], motivo: &str) {
+    for tc in restantes {
+        messages.push(ChatMessage::tool_result(&tc.id, &tc.name, motivo));
+    }
+}
+
 /// O veredito de estagnação de um passo.
 #[derive(Debug, PartialEq, Eq)]
 enum Stall {
@@ -1619,11 +1630,24 @@ impl StepEngine<'_> {
             }
 
             messages.push(outcome.to_assistant_message());
-            for tc in &outcome.tool_calls {
+            let lote = &outcome.tool_calls;
+            for (i, tc) in lote.iter().enumerate() {
                 match runner.call(&step_id, index, tc).await {
                     CallFlow::Result(msg) => messages.push(msg),
-                    CallFlow::Cancelled => break 'run RunStatus::Cancelled,
+                    // Parar no MEIO do lote não pode deixar chamadas sem a
+                    // mensagem `role: "tool"` — é a invariante do topo do
+                    // arquivo, e é o que permite RETOMAR este histórico
+                    // depois sem o template perder o pareamento.
+                    CallFlow::Cancelled => {
+                        fecha_lote(
+                            messages,
+                            &lote[i..],
+                            "não executada: a execução foi cancelada",
+                        );
+                        break 'run RunStatus::Cancelled;
+                    }
                     CallFlow::Escalate(reason) => {
+                        fecha_lote(messages, &lote[i..], "não executada: a execução parou aqui");
                         out.escalation = Some(reason);
                         break 'run RunStatus::Escalated;
                     }
@@ -2185,6 +2209,19 @@ fn chat_request(opts: &RunOptions, messages: &[ChatMessage], tools: &[Value]) ->
 }
 
 /// Compacta o histórico quando ele encosta no teto da janela de contexto.
+/// Estimativa local de tokens (~4 caracteres por token) — o porteiro que
+/// evita perguntar ao servidor a cada passo.
+fn tokens_estimados(messages: &[ChatMessage], tools: &[Value]) -> u32 {
+    let texto: usize = messages.iter().map(|m| m.text().len()).sum();
+    let ferramentas: usize = tools.iter().map(|t| t.to_string().len()).sum();
+    ((texto + ferramentas) / 4) as u32
+}
+
+/// Fração do limite a partir da qual vale PERGUNTAR ao servidor a contagem
+/// exata. Abaixo disso a estimativa local basta — e perguntar custava uma
+/// retokenização do histórico INTEIRO por passo (O(n²) ao longo do run).
+const PORTEIRO_DA_CONTAGEM: f32 = 0.7;
+
 async fn compact_if_needed(
     client: &LlamaClient,
     sink: &Arc<EventSink>,
@@ -2193,10 +2230,20 @@ async fn compact_if_needed(
     tools: &[Value],
     messages: &mut Vec<ChatMessage>,
 ) {
-    let request = chat_request(opts, messages, tools);
-    let Ok(before) = client.input_tokens(&request).await else {
+    // Porteiro barato: só pergunta ao servidor quando a estimativa local diz
+    // que estamos chegando perto do limite.
+    let Some(limite) = context.limit() else {
         return;
     };
+    let estimado = tokens_estimados(messages, tools);
+    if (estimado as f32) < limite as f32 * PORTEIRO_DA_CONTAGEM {
+        return;
+    }
+
+    let request = chat_request(opts, messages, tools);
+    // Servidor sem o endpoint de contagem: a estimativa decide sozinha —
+    // melhor compactar por estimativa do que estourar a janela por rigor.
+    let before = client.input_tokens(&request).await.unwrap_or(estimado);
     if !context.needs_compaction(before) {
         return;
     }
@@ -2209,12 +2256,22 @@ async fn compact_if_needed(
         &opts.model,
         vec![ChatMessage::user(compaction_request(&plan))],
     );
+    // O resumo pelo modelo é o caminho bom; quando ele falha (servidor caiu,
+    // resposta vazia), o plano B determinístico corta o miolo com um
+    // marcador — feio, mas o passo seguinte NÃO estoura a janela. Antes, a
+    // falha era silenciosa e o run seguia direto para o estouro.
     let summary = match client.complete_once(&ask).await {
         Ok(o) if !o.content.trim().is_empty() => o.content,
-        Ok(_) => return,
-        Err(e) => {
-            log::warn!("não consegui resumir o histórico: {e}");
-            return;
+        outro => {
+            if let Err(e) = outro {
+                log::warn!("não consegui resumir o histórico: {e}");
+            }
+            format!(
+                "[{} mensagens antigas foram removidas para caber na janela; \
+                 o resumo automático falhou. O que vale é o plano acima e as \
+                 últimas mensagens abaixo.]",
+                plan.summarized_count()
+            )
         }
     };
 
@@ -2223,7 +2280,7 @@ async fn compact_if_needed(
     let after = client
         .input_tokens(&chat_request(opts, messages, tools))
         .await
-        .unwrap_or(before);
+        .unwrap_or_else(|_| tokens_estimados(messages, tools));
     sink.emit(RunEventKind::ContextCompacted {
         tokens_before: before,
         tokens_after: after,

@@ -121,6 +121,7 @@ fn main() {
             commands_agent::run_events_list,
             commands_agent::run_plan_get,
             commands_agent::run_plan_approve,
+            commands_agent::run_answer,
             commands_agent::run_plan_replan,
             commands_agent::tool_permissions_list,
             commands_agent::tool_permission_set,
@@ -136,6 +137,7 @@ fn main() {
             commands_activity::activity_calls,
             commands_activity::activity_run_calls,
             commands_activity::activity_stats,
+            commands_activity::run_call_outputs,
             // Automações (tarefas que rodam sozinhas).
             commands_automation::automations_list,
             commands_automation::automation_save,

@@ -142,6 +142,35 @@ export function runEventsList(
   );
 }
 
+/** Saída gravada de uma chamada de ferramenta, como ficou ao fim dela. */
+export interface RunCallOutput {
+  callId: string;
+  /** `{"content": …, "changedFiles": …}` no sucesso; vazio quando falhou.
+   *  `null` = a chamada ainda não terminou. */
+  resultJson: string | null;
+  /** Mensagem de erro ou motivo da negação, quando houve. */
+  error: string | null;
+}
+
+/**
+ * Saídas completas das ferramentas de um run, lidas do banco. O streaming
+ * (`tool.output`) não é persistido de propósito, então a trilha reconstruída
+ * pelos eventos só teria o preview de 400 caracteres do `tool.result` — este
+ * é o caminho de volta do conteúdo inteiro depois de um reload.
+ *
+ * Nunca lança: comando ausente (build antiga) ou erro do banco viram lista
+ * vazia — a trilha fica com o preview, como antes. No navegador a lista vazia
+ * é a resposta certa: os eventos simulados moram na memória e o replay do
+ * `mockRunAttach` já traz o `tool.output`.
+ */
+export function runCallOutputs(runId: string): Promise<RunCallOutput[]> {
+  if (!isTauri) return Promise.resolve([]);
+  return invoke<RunCallOutput[]>("run_call_outputs", { runId }).catch((e) => {
+    console.warn("run_call_outputs falhou:", e);
+    return [];
+  });
+}
+
 /**
  * Plano estruturado do run (Scout Rule). O `focus.updated` só carrega o
  * markdown; o quadro precisa dos campos (status, handoff, arquivos), que
@@ -181,6 +210,33 @@ export async function runPlanApprove(
     return null;
   }
 }
+
+/**
+ * Retoma uma execução que parou esperando a pessoa: a resposta destrava o
+ * plano persistido e um run NOVO continua de onde parou (id diferente de
+ * propósito — a trilha antiga fica íntegra).
+ */
+export async function runAnswer(
+  runId: string,
+  answer: string,
+  onEvent: RunEventHandler,
+): Promise<string | null> {
+  if (!isTauri) return null;
+  try {
+    const { Channel, invoke: rawInvoke } = await core();
+    const ch = new Channel<RunEvent>();
+    ch.onmessage = onEvent;
+    return await rawInvoke<string>("run_answer", {
+      runId,
+      answer,
+      onEvent: ch,
+    });
+  } catch (e) {
+    console.warn("run_answer falhou:", e);
+    return null;
+  }
+}
+
 
 /** Pede uma nova divisão do mesmo objetivo. */
 export function runPlanReplan(runId: string): Promise<void> {

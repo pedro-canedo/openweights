@@ -280,6 +280,117 @@ pub async fn run_plan_approve(
     Ok(handle.id.clone())
 }
 
+/// Retoma uma execução que parou esperando a pessoa (pergunta do agente,
+/// etapa bloqueada, escalada).
+///
+/// A resposta NÃO começa do zero: quando há plano persistido, as etapas
+/// bloqueadas/falhadas voltam para a fila e um run novo continua o MESMO
+/// plano em modo laço, com a resposta anexada ao objetivo; sem plano, a
+/// continuação vira um run de agente com o histórico da conversa (que já
+/// carrega o que o agente disse antes de parar). O run retomado tem OUTRO
+/// id de propósito: a trilha antiga fica íntegra no painel — o que
+/// atravessa é o plano, com status e handoffs.
+#[tauri::command]
+pub async fn run_answer(
+    state: State<'_, AppState>,
+    run_id: String,
+    answer: String,
+    on_event: Channel<RunEvent>,
+) -> CmdResult<String> {
+    let answer = answer.trim().to_string();
+    if answer.is_empty() {
+        return Err("resposta vazia".into());
+    }
+    let run = state
+        .store
+        .get_run(&run_id)
+        .map_err(err_str)?
+        .ok_or("execução não encontrada")?;
+
+    let plano = state
+        .store
+        .get_run_plan(&run_id)
+        .map_err(err_str)?
+        .filter(|raw| !raw.trim().is_empty())
+        .and_then(|raw| serde_json::from_str::<TaskPlan>(&raw).ok());
+
+    let endpoint = state.agent_endpoint().await?;
+    let chat_id = run.chat_id.unwrap_or(0);
+    let history = if chat_id > 0 {
+        let rows = state.store.list_messages(chat_id).map_err(err_str)?;
+        lr_agent::history_from_messages(&rows, 40)
+    } else {
+        Vec::new()
+    };
+    let memory = state
+        .store
+        .list_memory_facts(run.workspace_dir.as_deref())
+        .map(|f| f.into_iter().map(|x| x.content).collect())
+        .unwrap_or_default();
+
+    let (prompt, work_mode, plan) = match plano {
+        Some(mut plan) => {
+            plan.approved = true;
+            // A resposta destrava: bloqueada e falhada voltam para a fila
+            // (com o erro limpo — a pessoa acabou de responder o que
+            // faltava); uma etapa que ficou correndo volta como pendente.
+            for task in &mut plan.tasks {
+                match task.status {
+                    TaskStatus::Blocked | TaskStatus::Failed => {
+                        task.status = TaskStatus::Pending;
+                        task.error = None;
+                    }
+                    TaskStatus::Running => task.status = TaskStatus::Pending,
+                    _ => {}
+                }
+            }
+            if let Ok(json) = serde_json::to_string(&plan) {
+                let _ = state.store.set_run_plan(&run_id, &json);
+            }
+            (
+                format!(
+                    "{}
+
+Resposta da pessoa: {answer}",
+                    run.prompt
+                ),
+                WorkMode::Loop,
+                Some(plan),
+            )
+        }
+        None => (answer.clone(), WorkMode::Agent, None),
+    };
+
+    let handle = state
+        .agent
+        .start(
+            lr_agent::StartRun {
+                prompt,
+                history,
+                memory,
+                options: RunOptions {
+                    chat_id,
+                    model: run.model.clone(),
+                    mode: run.mode,
+                    workspace_dir: run.workspace_dir.clone(),
+                    max_steps: 24,
+                    mcp_servers: Vec::new(),
+                    temperature: None,
+                    top_p: None,
+                    top_k: None,
+                    max_tokens: None,
+                    system_prompt: None,
+                },
+                endpoint,
+                work_mode,
+                plan,
+            },
+            Some(channel_sink(on_event)),
+        )
+        .map_err(err_str)?;
+    Ok(handle.id.clone())
+}
+
 /// Descarta o plano proposto para que a próxima execução divida de novo.
 #[tauri::command]
 pub fn run_plan_replan(state: State<'_, AppState>, run_id: String) -> CmdResult<()> {
