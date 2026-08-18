@@ -164,6 +164,19 @@ pub struct ToolOutput {
     pub bytes_total: u64,
     /// Caminhos relativos alterados (alimenta o checkpoint e a UI).
     pub changed_files: Vec<String>,
+    /// O mesmo resultado em forma de DADO, quando ele tem forma.
+    ///
+    /// O `content` é escrito para um leitor: `fs_glob` devolve "12 arquivos
+    /// casaram: …" e o `fs_read` numera as linhas. Isso ajuda o modelo e
+    /// atrapalha um programa — medido: no Code Mode o modelo escreveu
+    /// `for (const arquivo of await fs_glob(...))` e iterou a FRASE, caractere
+    /// por caractere, pedindo `fs_read({path: "1"})`.
+    ///
+    /// Quem consome isto é a ponte do Code Mode; o modelo continua recebendo
+    /// `content` como sempre. Ferramenta sem forma natural (um resumo, um
+    /// diff) deixa `None` e o programa recebe o texto.
+    pub data: Option<Value>,
+
     /// Código de saída, quando a ferramenta rodou um processo.
     ///
     /// Existe para a verificação não depender de MARCADOR TEXTUAL: procurar
@@ -182,7 +195,14 @@ impl ToolOutput {
             content,
             changed_files: Vec::new(),
             exit_code: None,
+            data: None,
         }
+    }
+
+    /// Acrescenta a forma estruturada do mesmo resultado (ver [`Self::data`]).
+    pub fn with_data(mut self, data: Value) -> Self {
+        self.data = Some(data);
+        self
     }
 
     pub fn with_changed(mut self, files: Vec<String>) -> Self {

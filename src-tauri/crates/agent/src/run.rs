@@ -434,7 +434,13 @@ pub(crate) enum CallFlow {
     /// nativo os dois viram texto na conversa e o modelo se vira; quem chama
     /// de dentro de um programa precisa da diferença, para transformar a
     /// falha numa exceção que o `catch` do script consegue tratar.
-    Result { msg: ChatMessage, ok: bool },
+    Result {
+        msg: ChatMessage,
+        ok: bool,
+        /// A forma estruturada do resultado, quando a ferramenta tem uma.
+        /// Só o programa do Code Mode consome isto — o modelo recebe o texto.
+        data: Option<Value>,
+    },
     /// Guard-rail estourou: encerra o run e explica para a pessoa.
     Escalate(String),
     /// O run foi cancelado no meio da chamada.
@@ -635,6 +641,7 @@ impl ToolRunner {
                 return CallFlow::Result {
                     msg: ChatMessage::tool_result(&call_id, &name, message),
                     ok: false,
+                    data: None,
                 };
             }
             Repeat::Escalate { .. } => {
@@ -664,6 +671,7 @@ impl ToolRunner {
             return CallFlow::Result {
                 msg: ChatMessage::tool_result(&call_id, &name, message),
                 ok: true,
+                data: None,
             };
         }
 
@@ -1094,6 +1102,7 @@ impl ToolRunner {
                     self.update_focus(&args, &out.content);
                 }
 
+                let dados = out.data;
                 let mut resposta = out.content;
                 if let Some(aviso) = self.aviso_de_reescrita(&out.changed_files) {
                     resposta.push_str("\n\n");
@@ -1102,6 +1111,7 @@ impl ToolRunner {
                 CallFlow::Result {
                     msg: ChatMessage::tool_result(call_id, name, resposta),
                     ok: true,
+                    data: dados,
                 }
             }
             Err(e) => {
@@ -1279,6 +1289,7 @@ impl ToolRunner {
                 ),
             ),
             ok: false,
+            data: None,
         }
     }
 
@@ -1332,7 +1343,11 @@ impl ToolRunner {
         if self.errors.record_error() {
             return CallFlow::Escalate(self.errors.escalation_message());
         }
-        CallFlow::Result { msg, ok: false }
+        CallFlow::Result {
+            msg,
+            ok: false,
+            data: None,
+        }
     }
 
     /// Registra na trilha uma chamada que nem chegou a rodar.
@@ -1558,14 +1573,14 @@ impl codemode::Despachante for DespachoDoScript<'_> {
         // `Box::pin` porque isto é recursão assíncrona: `call` volta a passar
         // por `despachar`, e o tipo do futuro não pode se conter.
         match Box::pin(self.runner.call(&self.step_id, self.step_index, &tc)).await {
-            CallFlow::Result { msg, ok } => {
+            CallFlow::Result { msg, ok, data } => {
                 let texto = msg
                     .content
                     .as_ref()
                     .map(|c| c.as_plain_text())
                     .unwrap_or_default();
                 if ok {
-                    codemode::Resposta::Ok(texto)
+                    codemode::Resposta::Ok(texto, data)
                 } else {
                     codemode::Resposta::Erro(texto)
                 }

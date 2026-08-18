@@ -80,8 +80,8 @@ pub(crate) fn secao_do_prompt(assinaturas: &str, mode: RunMode) -> String {
            resto em vez de deixar o programa morrer.\n\
          - Só as funções acima tocam o projeto: `require`, `import` de módulo do \
            Node e `fs` não funcionam — o programa roda isolado.\n\
-         - Cada função devolve o MESMO texto que a ferramenta devolveria a você \
-           (o `fs_read` traz cabeçalho e número de linha): trate como texto.\n\
+         - `fs_read` devolve o texto do arquivo; `fs_list`, `fs_glob` e `fs_grep` \
+           devolvem ARRAY. As demais devolvem texto.\n\
          - Imprima pouco: o que você imprimir é o que ocupa a sua janela.\n\
          - Falta uma peça que você vai usar muitas vezes? Escreva \
            `.openweights/plugins/<nome>.mjs` com `// @tool {\"name\":\"...\",\
@@ -107,6 +107,13 @@ pub(crate) fn secao_do_prompt(assinaturas: &str, mode: RunMode) -> String {
 /// texto (`arquivo_em_texto`), e é o que faz um modelo sem tool call nativo
 /// trabalhar de verdade.
 pub(crate) fn bloco_de_codigo(texto: &str) -> Option<String> {
+    // O outro protocolo de texto do harness tem prioridade: `ARQUIVO: x.js`
+    // seguido de um bloco cercado é um arquivo para GRAVAR, e o conteúdo dele
+    // pode ser JavaScript com `await` — que aqui passaria por programa e
+    // seria executado em vez de salvo.
+    if texto.contains("ARQUIVO:") {
+        return None;
+    }
     let mut candidato_sem_idioma = None;
 
     let mut resto = texto;
@@ -163,7 +170,9 @@ impl Contagem {
 
 /// A resposta do harness a uma chamada pedida pelo script.
 pub(crate) enum Resposta {
-    Ok(String),
+    /// Texto para a trilha e, quando a ferramenta tem uma forma, o dado que
+    /// o programa recebe de verdade.
+    Ok(String, Option<Value>),
     /// Erro que o script pode tratar (política negou, argumento inválido).
     Erro(String),
     /// O run acabou no meio: o script tem que morrer junto.
@@ -210,8 +219,8 @@ where
                 };
                 contagem.chamadas += 1;
                 match despachante.chamar(&pedido.tool, pedido.args).await {
-                    Resposta::Ok(texto) => {
-                        let _ = pedido.reply.send(CallReply::ok(texto));
+                    Resposta::Ok(texto, dados) => {
+                        let _ = pedido.reply.send(CallReply::dados(texto, dados));
                     }
                     Resposta::Erro(texto) => {
                         contagem.falhas += 1;
@@ -256,6 +265,14 @@ mod tests {
     fn bloco_sem_idioma_que_parece_programa_e_aceito() {
         let texto = "```\nconst t = await fs_read({path:\"a\"});\nsay(t);\n```";
         assert!(bloco_de_codigo(texto).is_some());
+    }
+
+    /// Um arquivo JavaScript entregue pelo protocolo de texto continua sendo
+    /// um arquivo: gravar e executar não são a mesma coisa.
+    #[test]
+    fn arquivo_entregue_em_texto_nao_vira_programa() {
+        let texto = "ARQUIVO: soma.js\n```js\nconst t = await fs_read({path:\"a\"});\n```\n";
+        assert!(bloco_de_codigo(texto).is_none());
     }
 
     #[test]
@@ -303,7 +320,7 @@ mod tests {
         async fn chamar(&mut self, _tool: &str, _args: Value) -> Resposta {
             match self.respostas.pop() {
                 Some(r) => r,
-                None => Resposta::Ok("vazio".into()),
+                None => Resposta::Ok("vazio".into(), None),
             }
         }
     }
@@ -324,7 +341,7 @@ mod tests {
     async fn as_chamadas_do_script_sao_atendidas_ate_ele_terminar() {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut falso = Falso {
-            respostas: vec![Resposta::Ok("conteúdo".into())],
+            respostas: vec![Resposta::Ok("conteúdo".into(), None)],
         };
 
         let (fim_tx, fim_rx) = oneshot::channel::<u8>();
@@ -350,7 +367,7 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut falso = Falso {
             respostas: vec![
-                Resposta::Ok("segunda".into()),
+                Resposta::Ok("segunda".into(), None),
                 Resposta::Erro("negado pela política".into()),
             ],
         };

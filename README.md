@@ -33,6 +33,12 @@ Windows, macOS and Linux.
   behind it), applies it and rolls back on its own if the model fails to load.
   Then, if you want, it measures real tokens/s and replaces the estimate with
   what your machine actually delivered.
+- ⚡ **Code Mode** — instead of asking for one tool at a time, the agent writes a
+  program that uses them all at once: a whole task becomes a single step, and
+  only the result comes back to the conversation. It spends far less context,
+  and it gets work out of models that can't emit tool calls at all. The program
+  runs sandboxed — no file or command access outside the tools, which still go
+  through your approval.
 - 🧭 **Built for small models** — the goal becomes short deliverables, each with a
   fresh context, and the tool menu adapts to the model's window: what doesn't fit
   is requested on demand.

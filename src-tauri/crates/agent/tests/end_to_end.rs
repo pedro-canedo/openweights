@@ -2224,7 +2224,7 @@ async fn uma_peca_escrita_na_conversa_e_usada_no_programa_seguinte() {
                 \"required\":[\"path\"]}}\n\
                 export default async function ({ path }) {\n\
                   const texto = await fs_read({ path });\n\
-                  return texto.split(\"\\n\").filter((l) => l.includes(\"|\")).length;\n\
+                  return texto.trim().split(\"\\n\").length;\n\
                 }\n";
 
     let server = FakeLlama::spawn(vec![
@@ -2261,7 +2261,57 @@ async fn uma_peca_escrita_na_conversa_e_usada_no_programa_seguinte() {
         .find(|c| c.tool_name == "run_code")
         .and_then(|c| c.result_json)
         .unwrap_or_default();
-    // O `fs_read` numera as linhas com `N| `, então as três linhas do arquivo
-    // viram três — a peça rodou de verdade e chamou a ferramenta.
+    // A peça chamou a ferramenta e contou as três linhas do arquivo.
     assert!(saida.contains("linhas: 3"), "{saida}");
+}
+
+/// O que o programa recebe de uma ferramenta é DADO, não a frase que o modelo
+/// leria. Sem isto, `for (const arquivo of await fs_glob(...))` itera a frase
+/// caractere por caractere — foi o que aconteceu na primeira medição com o
+/// qwen2.5-coder:14b, e o programa acabou pedindo `fs_read({path: "1"})`.
+#[tokio::test]
+async fn o_programa_recebe_lista_e_texto_cru_das_ferramentas() {
+    if !tem_node() {
+        eprintln!("pulando: `node` não está instalado");
+        return;
+    }
+    let h = Harness::new();
+    std::fs::create_dir_all(h.workspace.join("logs")).unwrap();
+    for (nome, texto) in [("a.log", "um\ndois\n"), ("b.log", "três\n")] {
+        std::fs::write(h.workspace.join("logs").join(nome), texto).unwrap();
+    }
+
+    let server = FakeLlama::spawn(vec![
+        programa(
+            "call_1",
+            "const arquivos = await fs_glob({ pattern: \"logs/*.log\" });\n\
+             say(\"tipo:\", Array.isArray(arquivos) ? \"array\" : typeof arquivos);\n\
+             let linhas = 0;\n\
+             for (const arquivo of arquivos) {\n\
+               const texto = await fs_read({ path: arquivo });\n\
+               linhas += texto.trim().split(\"\\n\").length;\n\
+             }\n\
+             say(\"arquivos:\", arquivos.length, \"linhas:\", linhas);\n",
+        ),
+        vec![text_chunk("Contei as linhas."), done()],
+    ]);
+
+    let status = h
+        .run_code_mode("conte as linhas", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let run_id = h.events.lock().unwrap()[0].run_id.clone();
+    let saida = h
+        .store
+        .list_tool_calls(&run_id)
+        .unwrap()
+        .into_iter()
+        .find(|c| c.tool_name == "run_code")
+        .and_then(|c| c.result_json)
+        .unwrap_or_default();
+    assert!(saida.contains("tipo: array"), "{saida}");
+    // Três linhas ao todo, contadas do texto CRU (com cabeçalho e numeração
+    // daria outro número).
+    assert!(saida.contains("arquivos: 2 linhas: 3"), "{saida}");
 }

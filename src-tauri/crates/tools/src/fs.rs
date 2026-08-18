@@ -230,9 +230,10 @@ impl Tool for FsRead {
 
         let total = text.lines().count();
         if total == 0 {
-            return Ok(ToolOutput::text(format!(
-                "{rel} — arquivo vazio (0 linhas)"
-            )));
+            return Ok(
+                ToolOutput::text(format!("{rel} — arquivo vazio (0 linhas)"))
+                    .with_data(Value::String(String::new())),
+            );
         }
 
         let offset = read_offset(&args) as usize;
@@ -259,7 +260,19 @@ impl Tool for FsRead {
             );
         }
 
-        Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes))
+        // Para um programa, o mesmo pedaço do arquivo sem cabeçalho e sem
+        // numeração: numerar é para o modelo ler e apontar a linha, e é
+        // exatamente o que atrapalha quem vai processar o conteúdo.
+        let cru: String = text
+            .lines()
+            .skip(start)
+            .take(limit)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        Ok(ToolOutput::text(body)
+            .with_data(Value::String(cru))
+            .truncated_to(ctx.max_output_bytes))
     }
 }
 
@@ -339,9 +352,11 @@ impl Tool for FsList {
         if entries.is_empty() {
             return Ok(ToolOutput::text(format!(
                 "`{rel}` está vazia (ou tudo dentro dela está no .gitignore)."
-            )));
+            ))
+            .with_data(Value::Array(Vec::new())));
         }
 
+        let dados = Value::Array(entries.iter().map(|e| Value::String(e.clone())).collect());
         let mut body = format!("{} itens em `{rel}`:\n", total.min(MAX_WALK_ENTRIES));
         for entry in &entries {
             let _ = writeln!(body, "{entry}");
@@ -354,7 +369,9 @@ impl Tool for FsList {
             );
         }
 
-        Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes))
+        Ok(ToolOutput::text(body)
+            .with_data(dados)
+            .truncated_to(ctx.max_output_bytes))
     }
 }
 
@@ -445,9 +462,11 @@ impl Tool for FsGlob {
             return Ok(ToolOutput::text(format!(
                 "Nenhum arquivo casou com `{pattern}`. Comece com `**/` para procurar em todas as \
                  subpastas (ex.: `**/*.rs`) ou use `fs_list` para ver a estrutura."
-            )));
+            ))
+            .with_data(Value::Array(Vec::new())));
         }
 
+        let dados = Value::Array(found.iter().map(|p| Value::String(p.clone())).collect());
         let mut body = format!("{total} arquivos casaram com `{pattern}`:\n");
         for path in &found {
             let _ = writeln!(body, "{path}");
@@ -460,7 +479,9 @@ impl Tool for FsGlob {
             );
         }
 
-        Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes))
+        Ok(ToolOutput::text(body)
+            .with_data(dados)
+            .truncated_to(ctx.max_output_bytes))
     }
 }
 
@@ -593,7 +614,8 @@ impl Tool for FsGrep {
                 "Nenhuma ocorrência de `{needle}` em `{rel}`. A busca é literal (sem expressão \
                  regular): confira maiúsculas e minúsculas ou tente `ignore_case: true`, ou use \
                  um trecho menor."
-            )));
+            ))
+            .with_data(Value::Array(Vec::new())));
         }
 
         let mut body = if capped {
@@ -601,6 +623,7 @@ impl Tool for FsGrep {
         } else {
             format!("{total} achados de `{needle}`:\n")
         };
+        let dados = Value::Array(hits.iter().map(|h| Value::String(h.clone())).collect());
         for hit in &hits {
             let _ = writeln!(body, "{hit}");
         }
@@ -611,7 +634,9 @@ impl Tool for FsGrep {
             );
         }
 
-        Ok(ToolOutput::text(body).truncated_to(ctx.max_output_bytes))
+        Ok(ToolOutput::text(body)
+            .with_data(dados)
+            .truncated_to(ctx.max_output_bytes))
     }
 }
 

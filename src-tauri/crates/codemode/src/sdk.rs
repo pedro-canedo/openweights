@@ -183,7 +183,9 @@ async function __chamar(tool, args) {
   });
   const dado = await resposta.json();
   if (!dado.ok) throw new ToolError(dado.content);
-  return dado.content;
+  // `data` é o resultado em forma de dado (lista de caminhos, texto do
+  // arquivo); `content` é a mesma coisa escrita para uma pessoa ler.
+  return dado.data !== undefined && dado.data !== null ? dado.data : dado.content;
 }
 
 /** Imprime o resultado. Só o que for impresso volta para o modelo. */

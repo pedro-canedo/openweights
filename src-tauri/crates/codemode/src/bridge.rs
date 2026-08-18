@@ -65,6 +65,12 @@ pub struct CallReply {
     /// `false` faz o SDK levantar `ToolError` do lado do script.
     pub ok: bool,
     pub content: String,
+    /// O mesmo resultado em forma de dado, quando a ferramenta tem uma.
+    ///
+    /// É o que o programa recebe: uma lista de caminhos é uma lista, e não a
+    /// frase "12 arquivos casaram com …". Ausente, o programa recebe o texto.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
 }
 
 impl CallReply {
@@ -72,6 +78,16 @@ impl CallReply {
         Self {
             ok: true,
             content: content.into(),
+            data: None,
+        }
+    }
+
+    /// Resposta boa com a forma estruturada junto.
+    pub fn dados(content: impl Into<String>, data: Option<Value>) -> Self {
+        Self {
+            ok: true,
+            content: content.into(),
+            data,
         }
     }
 
@@ -79,6 +95,7 @@ impl CallReply {
         Self {
             ok: false,
             content: content.into(),
+            data: None,
         }
     }
 }

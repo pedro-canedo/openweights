@@ -18,6 +18,7 @@ OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://gith
 - 💬 **Chat local** — streaming, markdown e histórico no disco.
 - 🤖 **Modo agente** — o modelo lê e edita arquivos, roda comandos, usa Git, consulta a internet e analisa dados. Cada ação passa pela sua confirmação (ou não, se você preferir), e uma foto do projeto é tirada antes da primeira alteração: dá para voltar atrás.
 - 🎛️ **Ajustar para esta máquina** — o app pergunta ao próprio llama.cpp quanta memória cada configuração custa na *sua* placa, recomenda uma (com o porquê, em números), aplica e volta atrás sozinho se o modelo não carregar. Depois, se você quiser, mede tokens/s de verdade e substitui a estimativa pelo que a máquina deu.
+- ⚡ **Code Mode** — em vez de pedir uma ferramenta por vez, o agente escreve um programa que usa todas de uma vez: uma tarefa inteira vira um passo, e só o resultado volta para a conversa. Gasta muito menos contexto, e faz trabalhar até o modelo que não sabe emitir chamada de ferramenta. O programa roda isolado — sem acesso a arquivo nem a comandos por fora das ferramentas, que continuam passando pela sua autorização.
 - 🧭 **Feito para modelo pequeno** — o objetivo vira entregas curtas, cada uma com contexto novo, e o cardápio de ferramentas se ajusta à janela do modelo: o que não cabe, ele pede quando precisa.
 - 🧠 **Memória e índice do projeto** — o agente lembra do que aprendeu e busca por significado no seu código.
 - 🧩 **Conectores MCP** — servidores do padrão Model Context Protocol entram como ferramentas, com aprovação por servidor.
