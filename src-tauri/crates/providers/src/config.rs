@@ -54,6 +54,14 @@ pub struct NineRouterConfig {
     /// gravou o hash dela; depois disso trocá-la aqui não muda nada.
     pub password: String,
     pub jwt_secret: String,
+    /// Chave de API do 9router que o app usa para falar com o `/v1` dele.
+    ///
+    /// O painel tem um interruptor "Require API key"; com ele ligado, uma
+    /// requisição sem `Authorization` responde 401 e a conversa morre com
+    /// "Missing API key". Guardar a chave aqui faz esse interruptor deixar de
+    /// afetar o app — quem a obtém é o `ninerouter_start`, pela API interna
+    /// do próprio 9router.
+    pub api_key: String,
 }
 
 impl Default for NineRouterConfig {
@@ -64,6 +72,7 @@ impl Default for NineRouterConfig {
             port: NINEROUTER_DEFAULT_PORT,
             password: String::new(),
             jwt_secret: String::new(),
+            api_key: String::new(),
         }
     }
 }
@@ -156,12 +165,16 @@ impl ProvidersConfig {
                 if !cfg.installed {
                     return Err(EndpointError::NotInstalled);
                 }
+                let chave = cfg.api_key.trim();
                 Ok(ResolvedEndpoint {
                     provider,
                     // Sempre loopback: o 9router guarda credenciais OAuth de
                     // contas de terceiros e não pode escutar na rede.
                     base_url: format!("http://127.0.0.1:{}", cfg.port),
-                    api_key: None,
+                    // Vazia é legítimo: com "Require API key" desligado o
+                    // 9router atende sem `Authorization`, e mandar cabeçalho
+                    // vazio seria pior que não mandar nada.
+                    api_key: (!chave.is_empty()).then(|| chave.to_string()),
                     headers: Vec::new(),
                 })
             }

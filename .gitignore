@@ -9,3 +9,4 @@ graphify-out/
 # Pacotes baixados para montar o sysroot GTK no WSL (ver CONTRIBUTING).
 *.deb
 *.rpm
+settings.local.json

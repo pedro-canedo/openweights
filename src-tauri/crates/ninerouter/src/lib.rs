@@ -370,6 +370,123 @@ pub async fn aguardar_pronto(porta: u16, prazo: Duration) -> Result<(), NineRout
     }
 }
 
+// ------------------------------------------------------------- chave de API ---
+
+/// Sal do token de CLI do 9router. Vem do `src/cli/api/client.js` dele.
+const CLI_TOKEN_SALT: &str = "9r-cli-auth";
+
+/// Token que autentica a API interna do 9router sem passar pelo painel.
+///
+/// O 9router aceita o header `x-9r-cli-token` como credencial equivalente à
+/// sessão do painel, e o valor é derivado de dois arquivos que ele mesmo
+/// escreve no `DATA_DIR` — que é NOSSO. É por isso que o app consegue pegar
+/// a chave de API sem pedir para a pessoa copiar nada da tela dele:
+///
+/// ```text
+/// sha256(machine-id + "9r-cli-auth" + auth/cli-secret)[..16]
+/// ```
+///
+/// `None` antes do primeiro boot: os dois arquivos nascem com o servidor.
+pub fn cli_token(layout: &Layout) -> Option<String> {
+    use sha2::{Digest as _, Sha256};
+    let ler = |p: PathBuf| -> Option<String> {
+        let texto = std::fs::read_to_string(p).ok()?;
+        let texto = texto.trim().to_string();
+        (!texto.is_empty()).then_some(texto)
+    };
+    let machine = ler(layout.data().join("machine-id"))?;
+    let segredo = ler(layout.data().join("auth/cli-secret"))?;
+    let hash = Sha256::digest(format!("{machine}{CLI_TOKEN_SALT}{segredo}").as_bytes());
+    Some(hash.iter().map(|b| format!("{b:02x}")).collect::<String>()[..16].to_string())
+}
+
+/// Nome da chave que o app cria para si no 9router.
+///
+/// Nomeada em vez de reaproveitar a "Default Key": quem olhar a lista de
+/// chaves no painel precisa conseguir dizer de quem é cada uma — e revogar a
+/// nossa sem derrubar as outras.
+pub const NOME_DA_CHAVE: &str = "OpenWeights";
+
+/// Escolhe a chave a usar entre as que o 9router já tem.
+///
+/// Prefere a nossa; qualquer outra serve como segunda opção — se a pessoa já
+/// criou uma chave à mão, reaproveitá-la evita encher a lista dela.
+pub fn escolher_chave(json: &str) -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct Chave {
+        key: Option<String>,
+        name: Option<String>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Lista {
+        keys: Vec<Chave>,
+    }
+    let lista = serde_json::from_str::<Lista>(json).ok()?;
+    let validas: Vec<&Chave> = lista
+        .keys
+        .iter()
+        .filter(|c| c.key.as_deref().is_some_and(|k| !k.trim().is_empty()))
+        .collect();
+    validas
+        .iter()
+        .find(|c| c.name.as_deref() == Some(NOME_DA_CHAVE))
+        .or_else(|| validas.first())
+        .and_then(|c| c.key.clone())
+}
+
+/// Garante uma chave de API utilizável e devolve o valor dela.
+///
+/// Existe porque o 9router tem um interruptor "Require API key" no painel: se
+/// a pessoa o ligar, todo `/v1/chat/completions` sem `Authorization` passa a
+/// responder 401 — e a conversa morre com "Missing API key" sem que ela
+/// tenha mudado nada do lado de cá. Pegar a chave ANTES de precisar dela faz
+/// o interruptor deixar de ser um problema nosso.
+pub async fn garantir_api_key(
+    layout: &Layout,
+    porta: u16,
+) -> Result<String, NineRouterError> {
+    let token = cli_token(layout)
+        .ok_or_else(|| NineRouterError::Verification("sem token de CLI do 9router".into()))?;
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+    let base = format!("http://127.0.0.1:{porta}/api/keys");
+
+    let existentes = http
+        .get(&base)
+        .header("x-9r-cli-token", &token)
+        .send()
+        .await
+        .map_err(|e| NineRouterError::Verification(e.to_string()))?;
+    if existentes.status().is_success() {
+        let corpo = existentes.text().await.unwrap_or_default();
+        if let Some(chave) = escolher_chave(&corpo) {
+            return Ok(chave);
+        }
+    }
+
+    let criada = http
+        .post(&base)
+        .header("x-9r-cli-token", &token)
+        .json(&serde_json::json!({ "name": NOME_DA_CHAVE }))
+        .send()
+        .await
+        .map_err(|e| NineRouterError::Verification(e.to_string()))?;
+    if !criada.status().is_success() {
+        return Err(NineRouterError::Verification(format!(
+            "POST /api/keys devolveu {}",
+            criada.status()
+        )));
+    }
+    let corpo = criada.text().await.unwrap_or_default();
+    serde_json::from_str::<serde_json::Value>(&corpo)
+        .ok()
+        .and_then(|v| v.get("key")?.as_str().map(str::to_string))
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| NineRouterError::Verification("resposta sem chave".into()))
+}
+
 /// Um modelo publicado pelo 9router em `GET /v1/models`.
 ///
 /// O que interessa aqui não é o catálogo inteiro do upstream: é o que a
@@ -619,6 +736,57 @@ mod tests {
         assert!(layout.data().starts_with(dir.path()));
         assert_eq!(env.get("HOSTNAME").unwrap(), "127.0.0.1");
         assert_eq!(env.get("NODE_ENV").unwrap(), "production");
+    }
+
+    /// Vetor conferido contra a implementação do upstream
+    /// (`src/cli/api/client.js`): mesmo `machine-id`, mesmo segredo, mesmo
+    /// token. Se o 9router mudar o sal ou a fatia, é aqui que quebra — e o
+    /// sintoma sem este teste seria um 401 mudo na conversa.
+    #[test]
+    fn the_cli_token_matches_the_upstream_derivation() {
+        let dir = tempfile::tempdir().unwrap();
+        let layout = Layout::new(dir.path());
+        std::fs::create_dir_all(layout.data().join("auth")).unwrap();
+        std::fs::write(layout.data().join("machine-id"), "  abc123\n").unwrap();
+        std::fs::write(layout.data().join("auth/cli-secret"), "segredo\n").unwrap();
+
+        // sha256("abc123" + "9r-cli-auth" + "segredo")[..16]
+        let esperado = {
+            use sha2::{Digest as _, Sha256};
+            let h = Sha256::digest(b"abc1239r-cli-authsegredo");
+            h.iter().map(|b| format!("{b:02x}")).collect::<String>()[..16].to_string()
+        };
+        assert_eq!(cli_token(&layout).as_deref(), Some(esperado.as_str()));
+        assert_eq!(esperado.len(), 16);
+    }
+
+    /// Antes do primeiro boot os arquivos não existem — e pedir a chave nesse
+    /// momento não pode virar pânico.
+    #[test]
+    fn without_the_secret_files_there_is_no_cli_token() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(cli_token(&Layout::new(dir.path())), None);
+    }
+
+    /// A chave do app tem precedência sobre a "Default Key" do 9router: é a
+    /// que a pessoa pode revogar sem derrubar o resto.
+    #[test]
+    fn our_own_key_wins_over_the_others() {
+        let json = r#"{"keys":[
+            {"id":1,"name":"Default Key","key":"sk-outra"},
+            {"id":2,"name":"OpenWeights","key":"sk-nossa"}
+        ]}"#;
+        assert_eq!(escolher_chave(json).as_deref(), Some("sk-nossa"));
+    }
+
+    /// Sem chave nossa, aproveitar a que já existe evita encher a lista dela.
+    /// Entrada sem valor de chave não conta.
+    #[test]
+    fn an_existing_key_is_reused_and_empty_ones_are_ignored() {
+        let json = r#"{"keys":[{"name":"vazia","key":"  "},{"name":"Default Key","key":"sk-outra"}]}"#;
+        assert_eq!(escolher_chave(json).as_deref(), Some("sk-outra"));
+        assert_eq!(escolher_chave(r#"{"keys":[]}"#), None);
+        assert_eq!(escolher_chave("não é json"), None);
     }
 
     /// Payload real do 9router 0.5.55 com um combo e um modelo conectado.
