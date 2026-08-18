@@ -78,6 +78,8 @@ pub(crate) fn secao_do_prompt(assinaturas: &str, mode: RunMode) -> String {
            dentro, sem gastar um passo por arquivo.\n\
          - Uma ferramenta que falha levanta `ToolError`: trate com `try/catch` e siga com o \
            resto em vez de deixar o programa morrer.\n\
+         - Só as funções acima tocam o projeto: `require`, `import` de módulo do \
+           Node e `fs` não funcionam — o programa roda isolado.\n\
          - Cada função devolve o MESMO texto que a ferramenta devolveria a você \
            (o `fs_read` traz cabeçalho e número de linha): trate como texto.\n\
          - Imprima pouco: o que você imprimir é o que ocupa a sua janela.\n\

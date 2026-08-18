@@ -207,19 +207,37 @@ fn a_tool_call_typed_as_text_is_not_an_answer() {
 /// Os três empurrões, e o silêncio quando a resposta está pronta.
 #[test]
 fn only_an_unfinished_turn_gets_pushed() {
-    assert_eq!(super::cutucada_para("   "), Some(super::CUTUCADA_VAZIA));
     assert_eq!(
-        super::cutucada_para("Vou criar o arquivo agora:"),
+        super::cutucada_para("   ", false),
+        Some(super::CUTUCADA_VAZIA)
+    );
+    assert_eq!(
+        super::cutucada_para("Vou criar o arquivo agora:", false),
         Some(super::CUTUCADA_ANUNCIO)
     );
     assert_eq!(
-        super::cutucada_para("```json\n{\"name\":\"x\",\"arguments\":{}}\n```"),
+        super::cutucada_para("```json\n{\"name\":\"x\",\"arguments\":{}}\n```", false),
         Some(super::CUTUCADA_TEXTO)
     );
     assert_eq!(
-        super::cutucada_para("Pronto: criei os três arquivos."),
+        super::cutucada_para("Pronto: criei os três arquivos.", false),
         None
     );
+}
+
+/// No Code Mode o empurrão é outro: pedir "use tool call" a um modelo que não
+/// consegue emitir tool call o mantém escrevendo o mesmo JSON quebrado. O que
+/// destrava é pedir o programa em bloco de código — que o texto sempre
+/// aguenta.
+#[test]
+fn code_mode_asks_for_a_code_block_not_for_a_tool_call() {
+    let escrita = "```json\n{\"name\":\"run_code\",\"arguments\":{\"code\":\"say(1)\"}}\n```";
+    assert_eq!(
+        super::cutucada_para(escrita, true),
+        Some(super::CUTUCADA_PROGRAMA)
+    );
+    // As outras duas continuam iguais: elas não falam de formato.
+    assert_eq!(super::cutucada_para("   ", true), Some(super::CUTUCADA_VAZIA));
 }
 
 /// O fallback de arquivo em texto: o formato que o modelo usa quando o JSON

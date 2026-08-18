@@ -142,18 +142,32 @@ const CUTUCADA_VAZIA: &str = "Você não respondeu nada. Continue a tarefa: cham
 const CUTUCADA_TEXTO: &str = "Você escreveu a chamada da ferramenta como TEXTO, então \
                               ela não rodou. Use o mecanismo de ferramentas do próprio \
                               modelo (tool call), não um bloco de código.";
+/// A cutucada do Code Mode.
+///
+/// Sem ela o modelo respondia à cutucada genérica insistindo no MESMO JSON —
+/// e o JSON de um programa é justamente o que ele não consegue produzir: o
+/// código tem aspas e quebras de linha, e a string sai inválida. Medido com o
+/// `qwen2.5-coder:14b`: seis passos, nenhum programa executado. Pedindo o
+/// bloco de código, o texto nunca quebra e o harness monta a chamada.
+const CUTUCADA_PROGRAMA: &str = "O programa não rodou porque veio embrulhado em JSON, e o \
+                                 JSON quebrou. Responda SÓ com o programa, dentro de um \
+                                 único bloco ```js — sem JSON em volta, sem explicação.";
 
 /// Este passo precisa de um empurrão? Devolve o que dizer.
 ///
 /// Três formas de um modelo pequeno encerrar a tarefa sem fazê-la — e as três
 /// terminavam com o run marcado como CONCLUÍDO, que é o pior desfecho
 /// possível: sucesso anunciado, trabalho nenhum.
-fn cutucada_para(texto: &str) -> Option<&'static str> {
+fn cutucada_para(texto: &str, code_mode: bool) -> Option<&'static str> {
     if texto.trim().is_empty() {
         return Some(CUTUCADA_VAZIA);
     }
     if chamada_em_texto(texto) {
-        return Some(CUTUCADA_TEXTO);
+        return Some(if code_mode {
+            CUTUCADA_PROGRAMA
+        } else {
+            CUTUCADA_TEXTO
+        });
     }
     if anuncio_sem_acao(texto) {
         return Some(CUTUCADA_ANUNCIO);
@@ -1996,7 +2010,7 @@ impl StepEngine<'_> {
                 }
                 let empurrao = self
                     .tools_on()
-                    .then(|| cutucada_para(&outcome.content))
+                    .then(|| cutucada_para(&outcome.content, runner.code_menu.is_some()))
                     .flatten();
                 if let Some(texto) = empurrao.filter(|_| runner.counters.cutucadas < MAX_CUTUCADAS)
                 {

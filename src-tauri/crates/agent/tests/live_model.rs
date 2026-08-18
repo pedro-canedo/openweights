@@ -59,6 +59,23 @@ Quando terminar, rode `python3 -m py_compile app.py` para conferir que o \
 servidor não tem erro de sintaxe.";
 
 /// Tempo de sobra POR CASO: um 9B gerando alguns milhares de tokens leva
+/// O pedido do cenário de logs: é o trabalho repetitivo que o Code Mode
+/// resolve num programa e o modo nativo resolve em dezenas de idas e voltas.
+/// Doze arquivos, uma conta por arquivo, uma ordenação e um segundo passo que
+/// depende do resultado do primeiro.
+const PEDIDO_LOGS: &str = "\
+A pasta `logs/` deste projeto tem 12 arquivos `.log`. Cada linha começa com a \
+data e traz um nível: INFO, WARN ou ERROR.
+
+1. Crie `resumo.csv` com uma linha por arquivo e as colunas \
+`arquivo,info,warn,error,pct_erro` — `pct_erro` é a porcentagem de linhas \
+ERROR sobre o total de linhas do arquivo, com uma casa decimal. Ordene do \
+maior `pct_erro` para o menor.
+2. Depois disso, para cada arquivo cujo `pct_erro` passe de 25%, escreva em \
+`criticos.md` o nome do arquivo, a PRIMEIRA e a ÚLTIMA linha ERROR dele.
+
+Não altere os arquivos de log.";
+
 /// minutos. Estourar o prazo não derruba a suíte — vira falha no placar.
 const LIMITE: Duration = Duration::from_secs(900);
 
@@ -85,11 +102,17 @@ struct Caso {
     /// Checagens determinísticas sobre o resultado, além das universais que o
     /// runner acrescenta sozinho.
     checa: fn(&Path, &[RunEvent]) -> Vec<Checagem>,
+    /// Code Mode: o modelo escreve um programa em vez de pedir uma
+    /// ferramenta por passo.
+    code_mode: bool,
 }
 
 /// O que cada caso deixa no placar.
 struct Placar {
     nome: &'static str,
+    /// "nativo" ou "programa" — sem isto, o mesmo caso rodado nos dois modos
+    /// vira duas linhas indistinguíveis.
+    modo: &'static str,
     /// `None` = estourou o `LIMITE` (a linha vira "PRAZO").
     status: Option<RunStatus>,
     passos: u32,
@@ -113,6 +136,7 @@ fn casos() -> Vec<Caso> {
             max_steps: 30,
             prepara: nada,
             checa: checa_crud,
+            code_mode: false,
         },
         // Modelo pequeno adora "consertar" reescrevendo o arquivo inteiro —
         // e truncando no meio. Aqui a régua é manter o arquivo do tamanho
@@ -128,6 +152,7 @@ fn casos() -> Vec<Caso> {
             max_steps: 30,
             prepara: prepara_utilitario,
             checa: checa_edicao,
+            code_mode: false,
         },
         // O ciclo vermelho→verde: rodar o teste, ler a falha, mexer no código
         // certo (e NÃO no teste) e rodar de novo.
@@ -142,6 +167,7 @@ fn casos() -> Vec<Caso> {
             max_steps: 30,
             prepara: prepara_calc,
             checa: checa_conserto,
+            code_mode: false,
         },
         // Pedido sem a informação essencial: o comportamento certo é
         // perguntar, não fabricar credencial.
@@ -154,6 +180,7 @@ fn casos() -> Vec<Caso> {
             max_steps: 30,
             prepara: nada,
             checa: checa_pergunta,
+            code_mode: false,
         },
         // Saída longa de uma vez: pega truncamento e a espiral de reescrita
         // (gera 100 linhas, relê, gera de novo, nunca termina).
@@ -168,6 +195,29 @@ fn casos() -> Vec<Caso> {
             max_steps: 30,
             prepara: nada,
             checa: checa_arquivo_grande,
+            code_mode: false,
+        },
+        // O cenário de logs nos DOIS modos, para o placar mostrar a conta
+        // lado a lado: mesmo pedido, mesmo modelo, mesma máquina. É a única
+        // forma honesta de dizer quanto o Code Mode economiza AQUI, em vez
+        // de repetir o número medido por outra pessoa.
+        Caso {
+            nome: "logs-12-arquivos",
+            prompt: PEDIDO_LOGS.into(),
+            work_mode: WorkMode::Agent,
+            max_steps: 40,
+            prepara: prepara_logs,
+            checa: checa_logs,
+            code_mode: false,
+        },
+        Caso {
+            nome: "logs-12-arquivos",
+            prompt: PEDIDO_LOGS.into(),
+            work_mode: WorkMode::Agent,
+            max_steps: 40,
+            prepara: prepara_logs,
+            checa: checa_logs,
+            code_mode: true,
         },
         // O mesmo CRUD, mas no modo laço (divide em etapas com contexto novo
         // por tarefa) — é onde o fio se perde entre um handoff e outro.
@@ -178,11 +228,63 @@ fn casos() -> Vec<Caso> {
             max_steps: 40,
             prepara: nada,
             checa: checa_crud,
+            code_mode: false,
         },
     ]
 }
 
 // ------------------------------------------------------------------ preparos ---
+
+/// Doze arquivos de log com contagens **conhecidas**: o arquivo `app-NN` tem
+/// `(NN-1) * 3` linhas ERROR em 40 linhas. Assim o percentual de erro vai de
+/// 0% a 82,5% e a régua dos 25% cai exatamente entre o `app-04` (22,5%) e o
+/// `app-05` (30%) — sem empate para o modelo escorregar.
+fn prepara_logs(ws: &Path) {
+    let dir = ws.join("logs");
+    std::fs::create_dir_all(&dir).expect("pasta logs");
+    for n in 1..=12u32 {
+        let erros = (n - 1) * 3;
+        let mut linhas = Vec::with_capacity(40);
+        for i in 0..40u32 {
+            // Os ERROR ficam espalhados (não em bloco) para a primeira e a
+            // última linha de erro serem de verdade a primeira e a última.
+            let nivel = if i % 4 == 0 && (i / 4) * 3 < erros {
+                "ERROR"
+            } else if i % 5 == 0 {
+                "WARN"
+            } else {
+                "INFO"
+            };
+            linhas.push(format!(
+                "2026-08-{:02}T10:{:02}:00 {nivel} evento {i}",
+                n, i
+            ));
+        }
+        // Ajuste fino: garante o número exato de ERROR pedido acima.
+        let mut atuais = linhas.iter().filter(|l| l.contains(" ERROR ")).count() as u32;
+        let mut i = 0;
+        while atuais < erros && i < linhas.len() {
+            if linhas[i].contains(" INFO ") {
+                linhas[i] = linhas[i].replace(" INFO ", " ERROR ");
+                atuais += 1;
+            }
+            i += 1;
+        }
+        let mut i = linhas.len();
+        while atuais > erros && i > 0 {
+            i -= 1;
+            if linhas[i].contains(" ERROR ") {
+                linhas[i] = linhas[i].replace(" ERROR ", " INFO ");
+                atuais -= 1;
+            }
+        }
+        std::fs::write(
+            dir.join(format!("app-{n:02}.log")),
+            linhas.join("\n") + "\n",
+        )
+        .expect("log");
+    }
+}
 
 /// A maioria dos casos começa com o workspace vazio.
 fn nada(_: &Path) {}
@@ -402,6 +504,70 @@ fn checa_arquivo_grande(ws: &Path, _eventos: &[RunEvent]) -> Vec<Checagem> {
 /// O `ok` do evento não basta: ele diz que o comando EXECUTOU — o exit code
 /// vai no corpo do resultado ("exit code N..."). Sem olhar o "exit code 0",
 /// um teste vermelho contaria como verde.
+/// O cenário de logs: a conta tem resposta certa, e ela é conferível.
+fn checa_logs(ws: &Path, _eventos: &[RunEvent]) -> Vec<Checagem> {
+    let resumo = std::fs::read_to_string(ws.join("resumo.csv")).unwrap_or_default();
+    let criticos = std::fs::read_to_string(ws.join("criticos.md")).unwrap_or_default();
+
+    let linhas: Vec<&str> = resumo
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    // Cabeçalho + 12 arquivos (aceita sem cabeçalho: o que importa é ter os 12).
+    let doze = linhas.iter().filter(|l| l.contains("app-")).count() == 12;
+
+    // O `app-12` tem 33 erros em 40 linhas = 82,5%. Se essa linha está certa,
+    // a contagem foi feita de verdade — não estimada.
+    let conta_certa = linhas
+        .iter()
+        .find(|l| l.contains("app-12"))
+        .is_some_and(|l| l.contains("33") && (l.contains("82.5") || l.contains("82,5")));
+
+    // Ordenado do maior percentual para o menor: o primeiro arquivo listado
+    // tem de ser o `app-12`.
+    let ordenado = linhas
+        .iter()
+        .find(|l| l.contains("app-"))
+        .is_some_and(|l| l.contains("app-12"));
+
+    // Acima de 25% são exatamente os `app-05`..`app-12`.
+    let acima: Vec<String> = (5..=12).map(|n| format!("app-{n:02}")).collect();
+    let abaixo: Vec<String> = (1..=4).map(|n| format!("app-{n:02}")).collect();
+    let so_os_criticos =
+        acima.iter().all(|a| criticos.contains(a)) && abaixo.iter().all(|a| !criticos.contains(a));
+
+    // O primeiro e o último erro do `app-12` são linhas específicas do
+    // arquivo — citar as duas prova que ele leu o arquivo inteiro.
+    let log12 = std::fs::read_to_string(ws.join("logs/app-12.log")).unwrap_or_default();
+    let erros: Vec<&str> = log12.lines().filter(|l| l.contains(" ERROR ")).collect();
+    let extremos = match (erros.first(), erros.last()) {
+        (Some(primeiro), Some(ultimo)) => {
+            let evento = |l: &str| l.split_whitespace().last().unwrap_or("").to_string();
+            criticos.contains(&evento(primeiro)) && criticos.contains(&evento(ultimo))
+        }
+        _ => false,
+    };
+
+    let intactos = (1..=12u32).all(|n| {
+        std::fs::read_to_string(ws.join(format!("logs/app-{n:02}.log")))
+            .map(|t| t.lines().count() == 40)
+            .unwrap_or(false)
+    });
+
+    vec![
+        ("resumo.csv com as 12 linhas".into(), doze),
+        (
+            "contagem e percentual do app-12 corretos".into(),
+            conta_certa,
+        ),
+        ("ordenado pelo maior percentual".into(), ordenado),
+        ("criticos.md tem só os acima de 25%".into(), so_os_criticos),
+        ("primeiro e último erro citados".into(), extremos),
+        ("logs originais intactos".into(), intactos),
+    ]
+}
+
 fn execucoes_de_comando(eventos: &[RunEvent], padroes: &[&str]) -> Vec<bool> {
     eventos
         .iter()
@@ -519,8 +685,8 @@ fn iso_de_epoch(segundos: u64) -> String {
 fn tabela(placares: &[Placar], model: &str) -> String {
     let mut s = format!("modelo: {model}\n");
     s.push_str(&format!(
-        "{:<28} {:<10} {:>6} {:>8} {:>8} {:>8} {:>7} {:>7}\n",
-        "caso", "status", "passos", "chamadas", "tok-in", "tok-out", "seg", "checks"
+        "{:<28} {:<9} {:<10} {:>6} {:>8} {:>8} {:>8} {:>7} {:>7}\n",
+        "caso", "modo", "status", "passos", "chamadas", "tok-in", "tok-out", "seg", "checks"
     ));
     for p in placares {
         let status = p
@@ -528,8 +694,8 @@ fn tabela(placares: &[Placar], model: &str) -> String {
             .map_or_else(|| "PRAZO".to_string(), |st| format!("{st:?}"));
         let checks = format!("{}/{}", p.ok, p.total);
         s.push_str(&format!(
-            "{:<28} {:<10} {:>6} {:>8} {:>8} {:>8} {:>7.1} {:>7}\n",
-            p.nome, status, p.passos, p.chamadas, p.tok_in, p.tok_out, p.segundos, checks
+            "{:<28} {:<9} {:<10} {:>6} {:>8} {:>8} {:>8} {:>7.1} {:>7}\n",
+            p.nome, p.modo, status, p.passos, p.chamadas, p.tok_in, p.tok_out, p.segundos, checks
         ));
     }
     s
@@ -568,7 +734,7 @@ async fn roda_caso(caso: &Caso, base_url: &str, model: &str) -> Placar {
                 history: Vec::new(),
                 memory: Vec::new(),
                 options: RunOptions {
-                    code_mode: false,
+                    code_mode: caso.code_mode,
                     chat_id: 0,
                     model: model.to_string(),
                     // Sem confirmação: o teste não tem quem clique.
@@ -677,6 +843,7 @@ async fn roda_caso(caso: &Caso, base_url: &str, model: &str) -> Placar {
 
     Placar {
         nome: caso.nome,
+        modo: if caso.code_mode { "programa" } else { "nativo" },
         status,
         passos: usage.steps,
         chamadas: usage.tool_calls,
@@ -747,11 +914,27 @@ async fn the_agent_survives_the_live_eval_suite() {
 #[ignore = "precisa de um llama-server real e de OW_LIVE_CASE com o nome do caso"]
 async fn a_single_named_case_runs_for_debugging() {
     let (base_url, model) = ambiente();
-    let nome = std::env::var("OW_LIVE_CASE").expect("defina OW_LIVE_CASE com o nome do caso");
+    let pedido = std::env::var("OW_LIVE_CASE").expect("defina OW_LIVE_CASE com o nome do caso");
+    // `nome:programa` escolhe a variante em Code Mode do caso — dois casos
+    // podem dividir o nome e diferir só no modo.
+    let (nome, modo) = match pedido.split_once(':') {
+        Some((n, m)) => (n.to_string(), Some(m.to_string())),
+        None => (pedido.clone(), None),
+    };
     let todos = casos();
-    let Some(caso) = todos.iter().find(|c| c.nome == nome) else {
-        let nomes: Vec<_> = todos.iter().map(|c| c.nome).collect();
-        panic!("caso {nome:?} não existe; escolha entre {nomes:?}");
+    let Some(caso) = todos.iter().find(|c| {
+        c.nome == nome
+            && match modo.as_deref() {
+                Some("programa") => c.code_mode,
+                Some("nativo") => !c.code_mode,
+                _ => true,
+            }
+    }) else {
+        let nomes: Vec<String> = todos
+            .iter()
+            .map(|c| format!("{}{}", c.nome, if c.code_mode { ":programa" } else { "" }))
+            .collect();
+        panic!("caso {pedido:?} não existe; escolha entre {nomes:?}");
     };
 
     println!("\n=== caso único: {} ===", caso.nome);
@@ -768,6 +951,105 @@ async fn a_single_named_case_runs_for_debugging() {
         placar.ok, placar.total,
         "checagens falharam: {}/{} passaram",
         placar.ok, placar.total
+    );
+}
+
+/// Code Mode contra modo nativo, no mesmo caso, com o mesmo modelo.
+///
+/// É o teste que substitui um número de vídeo por um número desta máquina.
+/// Ele não afirma que um modo é mais rápido — imprime a razão medida e só
+/// cobra que os dois cheguem ao fim; qual ganha depende do modelo, e é
+/// exatamente isso que queremos poder observar a cada mudança do harness.
+#[tokio::test]
+#[ignore = "precisa de um llama-server real (OW_LIVE_URL/OW_LIVE_MODEL)"]
+async fn code_mode_and_native_mode_run_the_same_case() {
+    let (base_url, model) = ambiente();
+    let todos = casos();
+    let dupla: Vec<&Caso> = todos
+        .iter()
+        .filter(|c| c.nome == "logs-12-arquivos")
+        .collect();
+    assert_eq!(dupla.len(), 2, "o caso dos logs existe nos dois modos");
+
+    let mut placares = Vec::new();
+    for caso in dupla {
+        let modo = if caso.code_mode { "programa" } else { "nativo" };
+        println!("\n=== logs-12-arquivos ({modo}) ===");
+        placares.push(roda_caso(caso, &base_url, &model).await);
+    }
+
+    let tab = tabela(&placares, &model);
+    println!("\n{tab}");
+
+    let (nativo, programa) = (&placares[0], &placares[1]);
+    let razao = |a: f64, b: f64| if b > 0.0 { a / b } else { f64::NAN };
+    println!(
+        "Code Mode contra nativo neste modelo:\n  \
+         tempo: {:.1}s contra {:.1}s ({:.1}x)\n  \
+         chamadas ao modelo: {} contra {}\n  \
+         tokens de entrada: {} contra {} ({:.1}x)\n  \
+         checagens: {}/{} contra {}/{}",
+        programa.segundos,
+        nativo.segundos,
+        razao(nativo.segundos, programa.segundos),
+        programa.passos,
+        nativo.passos,
+        programa.tok_in,
+        nativo.tok_in,
+        razao(nativo.tok_in as f64, programa.tok_in as f64),
+        programa.ok,
+        programa.total,
+        nativo.ok,
+        nativo.total,
+    );
+
+    if let Ok(caminho) = std::env::var("OW_PLACAR") {
+        use std::io::Write as _;
+        if let Some(pai) = std::path::Path::new(&caminho).parent() {
+            let _ = std::fs::create_dir_all(pai);
+        }
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&caminho)
+        {
+            let _ = writeln!(f, "## {} — {model} (code mode A/B)\n{tab}", agora_iso());
+        }
+    }
+
+    assert!(
+        placares.iter().any(|p| p.status.is_some()),
+        "nenhum dos dois modos chegou a um run.finished — servidor fora do ar?"
+    );
+}
+
+/// A régua do caso dos logs é conferida SEM modelo: se o preparo mudar de
+/// contagem, as checagens passariam a medir outra coisa em silêncio.
+#[test]
+fn the_log_fixture_has_the_counts_the_checks_expect() {
+    let dir = tempfile::tempdir().expect("tmp");
+    prepara_logs(dir.path());
+
+    for n in 1..=12u32 {
+        let texto = std::fs::read_to_string(dir.path().join(format!("logs/app-{n:02}.log")))
+            .expect("log gerado");
+        let linhas = texto.lines().count();
+        let erros = texto.lines().filter(|l| l.contains(" ERROR ")).count();
+        assert_eq!(linhas, 40, "app-{n:02} tem 40 linhas");
+        assert_eq!(erros as u32, (n - 1) * 3, "app-{n:02} tem (n-1)*3 erros");
+    }
+
+    // A régua dos 25% cai entre o app-04 (22,5%) e o app-05 (30%): sem
+    // empate, o modelo não tem como acertar por sorte nem errar por
+    // arredondamento.
+    assert!((4 - 1) as f64 * 3.0 / 40.0 * 100.0 < 25.0);
+    assert!((5 - 1) as f64 * 3.0 / 40.0 * 100.0 > 25.0);
+
+    // E as checagens reprovam um projeto onde nada foi feito.
+    let checks = checa_logs(dir.path(), &[]);
+    assert!(
+        checks.iter().filter(|(_, ok)| *ok).count() == 1,
+        "só `logs originais intactos` pode passar num projeto sem resposta: {checks:?}"
     );
 }
 
