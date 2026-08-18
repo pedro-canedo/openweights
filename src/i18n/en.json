@@ -904,5 +904,11 @@
         "prose": "prose"
       }
     }
+  },
+  "update": {
+    "available": "Update to {{version}}",
+    "downloading": "Downloading…",
+    "downloadingPct": "Downloading… {{pct}}%",
+    "failed": "Update failed:"
   }
 }

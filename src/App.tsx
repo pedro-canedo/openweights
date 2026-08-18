@@ -6,6 +6,7 @@ import DownloadsPanel from "./components/DownloadsPanel";
 import GenerationPanel from "./components/GenerationPanel";
 import Onboarding from "./components/Onboarding";
 import NavConversations from "./components/NavConversations";
+import UpdateBadge from "./components/UpdateBadge";
 import { OwWordmark } from "./components/OpenWeightsLogo";
 import Discover from "./screens/Discover";
 import MyModels from "./screens/MyModels";
@@ -76,7 +77,7 @@ export default function App() {
           </div>
           <div className="mx-3 mt-3 h-px bg-edge" />
           <NavConversations />
-          <div className="shrink-0 px-4 py-2.5 text-[11px] text-dim">v0.1.0</div>
+          <UpdateBadge />
         </nav>
 
         <main className="min-w-0 flex-1 overflow-y-auto">

@@ -904,5 +904,11 @@
         "prose": "prosa"
       }
     }
+  },
+  "update": {
+    "available": "Atualizar para {{version}}",
+    "downloading": "Baixando…",
+    "downloadingPct": "Baixando… {{pct}}%",
+    "failed": "Não deu para atualizar:"
   }
 }

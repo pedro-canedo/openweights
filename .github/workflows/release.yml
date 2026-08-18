@@ -92,7 +92,15 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Assinatura do updater (minisign). Sem ela o app instalado recusa
+          # a atualização — e é isso que queremos: o pacote tem de provar que
+          # veio deste projeto antes de substituir o binário de alguém.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
+          # O `latest.json` é o que o app consulta para saber se há versão
+          # nova; sem ele os instaladores existem e ninguém é avisado.
+          includeUpdaterJson: true
           # A tag manda; num `workflow_dispatch` (sem tag) o rascunho sai como
           # `v0.0.0-dev` e é descartável.
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.0.0-dev' }}

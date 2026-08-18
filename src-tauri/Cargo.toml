@@ -48,6 +48,11 @@ tauri-plugin-opener = "2"
 # os plugins oficiais — o crate `lr_desktop` só define o contrato.
 tauri-plugin-notification = "2"
 tauri-plugin-clipboard-manager = "2"
+# Atualização de dentro do app. A assinatura é do próprio updater (minisign,
+# de graça) e não tem relação com o certificado de code signing que falta:
+# ela garante que o pacote baixado veio deste projeto, não que o sistema
+# operacional confie no binário.
+tauri-plugin-updater = "2"
 rfd = "0.15"
 serde.workspace = true
 serde_json.workspace = true

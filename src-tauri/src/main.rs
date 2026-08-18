@@ -14,6 +14,7 @@ mod scheduler;
 mod spec_bench;
 mod state;
 mod telemetry;
+mod update;
 #[cfg(windows)]
 mod webview_perm;
 mod workspace;
@@ -27,6 +28,7 @@ fn main() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let profile = lr_hw::detect();
             log::info!(
@@ -68,6 +70,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::hardware_profile,
             commands::app_version,
+            update::update_check,
+            update::update_install,
             commands::app_paths,
             commands::runtime_status,
             commands::runtime_ensure,

@@ -345,3 +345,30 @@ export const revealWorkspace = (root: string, rel?: string | null) =>
   isTauri
     ? invoke<void>("workspace_reveal", { root, rel: rel ?? null })
     : Promise.reject(new Error("indisponível no navegador"));
+
+// ----------------------------------------------------------- atualização ---
+
+/** O que o `latest.json` do release diz sobre a versão nova. */
+export type UpdateInfo = {
+  version: string;
+  current: string;
+  notes: string | null;
+  date: string | null;
+};
+
+/** `null` quando já estamos na última. Erro de rede propaga (não vira "ok"). */
+export const checkForUpdate = () =>
+  isTauri
+    ? invoke<UpdateInfo | null>("update_check")
+    : Promise.resolve<UpdateInfo | null>(null);
+
+/** Baixa, instala e reinicia — não retorna em caso de sucesso. */
+export const installUpdate = () =>
+  isTauri
+    ? invoke<void>("update_install")
+    : Promise.reject(new Error("indisponível no navegador"));
+
+export type UpdateProgress = { baixado: number; total: number | null };
+
+export const onUpdateProgress = (fn: (p: UpdateProgress) => void) =>
+  listen<UpdateProgress>("update://progress", fn);
