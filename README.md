@@ -42,6 +42,16 @@ Windows, macOS and Linux.
   per server.
 - 🔌 **OpenAI-compatible API** — other apps point at `localhost` and use the same
   model.
+- 🌐 **Other model sources** — besides your own machine, conversations can be
+  answered by **OpenRouter** (hundreds of models behind one key, with a native
+  catalogue showing price and context) or by **9router**, a local router with
+  its own dashboard that the app installs, runs and removes in an isolated
+  folder — portable Node included, nothing touching your system. The 9router
+  dashboard opens embedded in the app.
+- 🚪 **Single entry point (optional)** — a local Traefik that forwards one
+  address to the local engine and to 9router by prefix, so another tool can
+  point at OpenWeights without memorising ports. Not a tunnel: nothing becomes
+  reachable from the internet.
 - 📊 **Live usage** — CPU, RAM, GPU, VRAM and tokens/s while you talk.
 - 🪶 **Genuinely light** — Rust + Tauri 2 core. Installer of a few MB, no Electron.
 
@@ -75,8 +85,15 @@ update — no need to come back here.
 project doesn't have yet. Your system will warn you; here is the way around it:
 
 - **Windows**: on "Windows protected your PC", click *More info* → *Run anyway*.
-- **macOS**: right-click the app → *Open* (first launch only), or run
-  `xattr -cr /Applications/OpenWeights.app`.
+- **macOS**: the simplest path is the command line above — the installer script
+  already clears the app. If you downloaded the `.dmg` by hand and got *"Apple
+  could not verify this app is free of malware"*:
+  - **macOS 15 (Sequoia) or newer**: try to open it once, then go to *System
+    Settings → Privacy & Security*, scroll to the notice about OpenWeights and
+    click *Open Anyway*.
+  - **macOS 14 or older**: right-click the app → *Open*.
+  - **On any version**, this settles it from the Terminal:
+    `xattr -dr com.apple.quarantine /Applications/OpenWeights.app`
 
 On first launch the app **downloads the llama.cpp runtime** that matches your
 card (CUDA, Vulkan or CPU) — a few hundred MB. That's why the installer is
@@ -203,6 +220,14 @@ Project conventions, one line each:
   the fix proves nothing.
 - The UI is bilingual: new keys go into `src/i18n/pt-BR.json` **and** `en.json`,
   always both.
+
+### About your API keys
+
+Keys you paste into the app (OpenRouter, Hugging Face, web search) are stored in
+plain text in the local SQLite database, next to the rest of the settings. There
+is no OS keyring integration yet — the same is true of every secret the app
+already handled, so this is a known limitation rather than something new. The
+file never leaves your machine.
 
 ## Credits
 

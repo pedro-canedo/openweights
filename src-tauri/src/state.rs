@@ -111,11 +111,26 @@ impl AppState {
             Arc::new(crate::desktop_host::TauriDesktop::new(app.clone()));
         let tools = build_tool_registry(&mcp, &store, &rag, &desktop)?;
 
-        let agent = lr_agent::AgentHost::new(
-            store.clone(),
-            tools.clone(),
-            lr_agent::AgentConfig::new(data_dir.clone()),
+        let mut agent_config = lr_agent::AgentConfig::new(data_dir.clone());
+        // Onde achar o Node para o Code Mode. É um fechamento, e não um
+        // caminho: o Node portátil pode ser baixado DEPOIS de o app subir, e
+        // um valor lido aqui ficaria `None` até alguém reiniciar. Construir
+        // um `NodeManager` a cada consulta é barato — dois caminhos e duas
+        // strings, sem I/O.
+        let (providers_dir, os_n, arch_n) = (
+            data_dir.join("providers"),
+            profile.os.clone(),
+            profile.arch.clone(),
         );
+        agent_config.node_path = Some(Arc::new(move || {
+            lr_nodejs::NodeManager::new(providers_dir.clone(), os_n.clone(), arch_n.clone())
+                .node_exe()
+        }));
+        let agent = lr_agent::AgentHost::new(store.clone(), tools.clone(), agent_config);
+
+        // Copiados antes do literal: `profile` é movido logo na primeira
+        // linha dele, e o Node precisa saber a plataforma.
+        let (os, arch) = (profile.os.clone(), profile.arch.clone());
 
         Ok(Self {
             profile,

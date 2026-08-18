@@ -9,10 +9,14 @@
 # alguém ler as notas e apertar publicar. Publicar sozinho, a partir de um
 # push, é rápido demais para uma ação que não tem desfazer.
 #
-# Os binários NÃO são assinados (não há certificado de code signing, que custa
-# caro e é anual). O Windows mostra o aviso do SmartScreen e o macOS bloqueia
-# no Gatekeeper — o README explica o contorno. Assinar é o caminho quando o
-# projeto tiver orçamento; fingir que já está assinado seria pior.
+# Os binários NÃO são assinados por autoridade nenhuma (não há certificado de
+# code signing, que custa caro e é anual). O Windows mostra o aviso do
+# SmartScreen e o macOS diz que não conseguiu verificar o app — o README
+# explica o contorno de cada um. O que existe no macOS é uma assinatura
+# AD-HOC, feita pela própria máquina que compila: ela não vale como
+# procedência, e serve só para o sistema não recusar o bundle de saída.
+# Assinar de verdade é o caminho quando o projeto tiver orçamento; fingir que
+# já está assinado seria pior.
 
 name: Release
 
@@ -101,6 +105,21 @@ jobs:
           # o app usa a voz do sistema. Ver o aviso honesto em `build.rs` —
           # isto embute, não esconde.
           OW_DEEPGRAM_KEY: ${{ secrets.OW_DEEPGRAM_KEY }}
+          # Notarização da Apple — o que faria o aviso do Gatekeeper sumir de
+          # vez. Exige conta paga (Apple Developer Program, anual). Enquanto
+          # não houver, o bundle sai com assinatura AD-HOC (`signingIdentity:
+          # "-"` no tauri.conf.json): não tira o aviso, mas evita o "app está
+          # danificado" num `.dmg` universal sem assinatura nenhuma.
+          #
+          # No dia em que houver conta, basta criar estes quatro secrets — o
+          # `tauri-action` faz o resto (assina com o Developer ID, envia para
+          # a Apple e grampeia o ticket no `.dmg`):
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           # O `latest.json` é o que o app consulta para saber se há versão
           # nova; sem ele os instaladores existem e ninguém é avisado.
@@ -113,8 +132,10 @@ jobs:
             Installers below. **No binary is signed** — your system will warn you:
 
             - **Windows**: on "Windows protected your PC" → *More info* → *Run anyway*.
-            - **macOS**: right-click the app → *Open* on first launch, or run
-              `xattr -cr /Applications/OpenWeights.app`.
+            - **macOS**: on macOS 15+, try to open it once and then allow it in
+              *System Settings → Privacy & Security → Open Anyway*; on macOS 14 or
+              older, right-click the app → *Open*. From the Terminal, this settles
+              it: `xattr -dr com.apple.quarantine /Applications/OpenWeights.app`.
 
             On first launch the app downloads the llama.cpp runtime that matches
             your GPU (a few hundred MB) — that is why the installer is small.

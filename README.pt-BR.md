@@ -22,6 +22,8 @@ OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://gith
 - 🧠 **Memória e índice do projeto** — o agente lembra do que aprendeu e busca por significado no seu código.
 - 🧩 **Conectores MCP** — servidores do padrão Model Context Protocol entram como ferramentas, com aprovação por servidor.
 - 🔌 **API compatível com OpenAI** — outros apps apontam para `localhost` e usam o mesmo modelo.
+- 🌐 **Outras fontes de modelo** — além da sua máquina, as conversas podem ser atendidas pelo **OpenRouter** (centenas de modelos por uma chave só, com catálogo nativo mostrando preço e contexto) ou pelo **9router**, um roteador local com painel próprio que o app instala, roda e remove numa pasta isolada — Node portátil incluído, sem tocar no seu sistema. O painel do 9router abre embutido no app.
+- 🚪 **Ponto de entrada único (opcional)** — um Traefik local que encaminha um endereço só para o motor local e para o 9router, por prefixo, para apontar outra ferramenta ao OpenWeights sem decorar portas. Não é túnel: nada fica acessível pela internet.
 - 📊 **Uso em tempo real** — CPU, RAM, GPU, VRAM e tokens/s enquanto você conversa.
 - 🪶 **Leve de verdade** — núcleo em Rust + Tauri 2. Instalador de poucos MB, sem Electron.
 
@@ -56,8 +58,15 @@ o projeto ainda não tem. O sistema vai avisar, e o contorno é este:
 
 - **Windows**: em "Windows protegeu o computador", clique em *Mais informações* →
   *Executar assim mesmo*.
-- **macOS**: clique com o botão direito no app → *Abrir* (só na primeira vez), ou
-  rode `xattr -cr /Applications/OpenWeights.app`.
+- **macOS**: o jeito mais simples é instalar pela linha de comando acima — o
+  script já libera o app. Se você baixou o `.dmg` à mão e apareceu *"a Apple não
+  conseguiu verificar se este app tem software malicioso"*:
+  - **macOS 15 (Sequoia) ou mais novo**: tente abrir uma vez, depois vá em
+    *Ajustes do Sistema → Privacidade e Segurança*, role até o aviso sobre o
+    OpenWeights e clique em *Abrir assim mesmo*.
+  - **macOS 14 ou mais antigo**: clique com o botão direito no app → *Abrir*.
+  - **Em qualquer versão**, isto resolve de uma vez pelo Terminal:
+    `xattr -dr com.apple.quarantine /Applications/OpenWeights.app`
 
 Na primeira execução o app **baixa o runtime do llama.cpp** que combina com a sua
 placa (CUDA, Vulkan ou CPU) — algumas centenas de MB. É por isso que o instalador
@@ -184,6 +193,14 @@ Convenções do projeto, em uma linha cada:
   correção não prova nada.
 - A interface é bilíngue: chaves novas entram em `src/i18n/pt-BR.json` **e** em
   `en.json`, sempre nas duas.
+
+### Sobre suas chaves de API
+
+As chaves que você cola no app (OpenRouter, Hugging Face, busca na web) ficam em
+texto puro no banco SQLite local, ao lado das demais configurações. Ainda não há
+integração com o cofre de senhas do sistema — o mesmo já valia para todos os
+segredos que o app guardava, então isto é uma limitação conhecida, não uma
+novidade. O arquivo nunca sai da sua máquina.
 
 ## Créditos
 
