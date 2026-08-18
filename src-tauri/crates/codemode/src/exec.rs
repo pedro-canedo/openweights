@@ -19,6 +19,23 @@
 //! O `main.mjs` derrama o SDK em `globalThis` antes do programa: assim
 //! `await fs_read({path})` funciona sem `import`, que é como o modelo pequeno
 //! escreve quando não é lembrado. Quem preferir `ow.fs_read` também tem.
+//!
+//! ## Por que o Node roda com `--permission`
+//!
+//! Sem isso o Code Mode seria uma porta dos fundos com outro nome: o programa
+//! passa pela política a cada `await fs_write(...)`, mas nada o impediria de
+//! fazer `require("node:fs").writeFileSync("/etc/qualquer-coisa")` e pular a
+//! política inteira. O modo de permissões do Node 22 fecha isso — sem
+//! `--allow-fs-write` o programa **não escreve arquivo nenhum**, sem
+//! `--allow-child-process` não abre processo, e a única saída que resta é a
+//! ponte, que é justamente onde a política mora.
+//!
+//! A leitura fica liberada só para a pasta temporária do próprio programa
+//! (ele precisa importar o `ow.mjs`). Rede não entra no modelo de permissões
+//! do Node, e é o que a ponte usa.
+//!
+//! Node mais antigo não conhece a flag: nesse caso o programa roda sem o
+//! isolamento e o resultado **diz isso** em vez de fingir que está protegido.
 
 use crate::sdk;
 use lr_tools::spawner::{self, SpawnOutcome, SpawnRequest};
@@ -105,12 +122,21 @@ pub fn node_program(portable: Option<&Path>) -> String {
     }
 }
 
+/// O que a execução produziu.
+#[derive(Debug)]
+pub struct ScriptOutcome {
+    pub spawn: SpawnOutcome,
+    /// O programa rodou com o modo de permissões do Node (sem acesso a
+    /// arquivo nem a processo por fora da ponte).
+    pub isolado: bool,
+}
+
 /// Roda o script. A saída vai chegando por `on_output` (para a UI mostrar em
-/// tempo real) e volta inteira no [`SpawnOutcome`].
+/// tempo real) e volta inteira no [`ScriptOutcome`].
 pub async fn run_script(
     req: ScriptRequest,
-    on_output: impl FnMut(&str) + Send,
-) -> Result<SpawnOutcome, ScriptError> {
+    mut on_output: impl FnMut(&str) + Send,
+) -> Result<ScriptOutcome, ScriptError> {
     if req.code.len() > MAX_CODE_BYTES {
         return Err(ScriptError::GrandeDemais(req.code.len()));
     }
@@ -127,23 +153,59 @@ pub async fn run_script(
     let main = dir.join("main.mjs");
     std::fs::write(&main, montar_main(&req.code))?;
 
-    let pedido = SpawnRequest::new(
-        req.node.clone(),
-        vec![main.to_string_lossy().into_owned()],
-        req.workspace.clone(),
-    )
-    .with_timeout(req.timeout_secs)
-    .with_max_output(req.max_output_bytes)
-    // Ambiente, e não argumento: argumento aparece na lista de processos da
-    // máquina, e o token é o que separa a ponte de qualquer outro programa.
-    .with_env("OW_BRIDGE_URL", &req.bridge_url)
-    .with_env("OW_BRIDGE_TOKEN", &req.bridge_token);
+    let caminho_main = main.to_string_lossy().into_owned();
+    let monta = |args: Vec<String>| {
+        SpawnRequest::new(req.node.clone(), args, req.workspace.clone())
+            .with_timeout(req.timeout_secs)
+            .with_max_output(req.max_output_bytes)
+            // Ambiente, e não argumento: argumento aparece na lista de
+            // processos da máquina, e o token é o que separa a ponte de
+            // qualquer outro programa.
+            .with_env("OW_BRIDGE_URL", &req.bridge_url)
+            .with_env("OW_BRIDGE_TOKEN", &req.bridge_token)
+    };
 
-    match spawner::run(pedido, on_output).await {
-        Ok(outcome) => Ok(outcome),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(ScriptError::SemNode(req.node)),
-        Err(e) => Err(ScriptError::Io(e)),
+    let com_permissoes = vec![
+        "--permission".to_string(),
+        format!("--allow-fs-read={}", dir.to_string_lossy()),
+        caminho_main.clone(),
+    ];
+    let primeiro = match spawner::run(monta(com_permissoes), &mut on_output).await {
+        Ok(outcome) => outcome,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(ScriptError::SemNode(req.node));
+        }
+        Err(e) => return Err(ScriptError::Io(e)),
+    };
+
+    if !flag_desconhecida(&primeiro) {
+        return Ok(ScriptOutcome {
+            spawn: primeiro,
+            isolado: true,
+        });
     }
+
+    // Node antigo: roda sem isolamento, e quem chamou fica sabendo.
+    log::warn!(
+        "`{}` não conhece `--permission`: o programa do Code Mode roda sem isolamento de arquivos",
+        req.node
+    );
+    let spawn = spawner::run(monta(vec![caminho_main]), on_output)
+        .await
+        .map_err(ScriptError::Io)?;
+    Ok(ScriptOutcome {
+        spawn,
+        isolado: false,
+    })
+}
+
+/// O Node recusou a flag (versão anterior à 22)?
+///
+/// Ele sai com código 9 e escreve `bad option` — nada disso vem de um
+/// programa que rodou, então não há como confundir com falha do modelo.
+fn flag_desconhecida(outcome: &SpawnOutcome) -> bool {
+    outcome.exit_code == Some(9)
+        && (outcome.stderr.contains("bad option") || outcome.stderr.contains("--permission"))
 }
 
 /// O arquivo que o Node roda.
@@ -257,7 +319,8 @@ mod tests {
         .with_bridge(ponte.url(), ponte.token())
         .with_timeout(30);
 
-        let outcome = run_script(req, |_| {}).await.expect("rodou");
+        let resultado = run_script(req, |_| {}).await.expect("rodou");
+        let outcome = &resultado.spawn;
         assert!(outcome.success(), "{outcome:?}");
         assert!(outcome.stdout.contains("olá do harness"), "{outcome:?}");
 
@@ -292,7 +355,7 @@ mod tests {
         .with_bridge(ponte.url(), ponte.token())
         .with_timeout(30);
 
-        let outcome = run_script(req, |_| {}).await.expect("rodou");
+        let outcome = run_script(req, |_| {}).await.expect("rodou").spawn;
         assert!(
             outcome.stdout.contains("peguei: negado pela política"),
             "{outcome:?}"
@@ -312,12 +375,51 @@ mod tests {
             .with_bridge(ponte.url(), ponte.token())
             .with_timeout(1);
 
-        let outcome = run_script(req, |_| {}).await.expect("rodou");
+        let outcome = run_script(req, |_| {}).await.expect("rodou").spawn;
         assert!(outcome.timed_out, "{outcome:?}");
         assert!(
             !projeto.path().join(SCRATCH_DIR).exists(),
             "a pasta temporária ficou para trás"
         );
+    }
+
+    /// O que separa o Code Mode de um `eval`: o programa não escreve arquivo
+    /// por fora da ponte, nem abre processo. Se um dia alguém tirar a flag,
+    /// este teste cai.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn o_programa_nao_escreve_arquivo_por_fora_da_ponte() {
+        if !tem_node() {
+            eprintln!("pulando: `node` não está instalado");
+            return;
+        }
+        let projeto = TempDir::new().unwrap();
+        let (ponte, _rx) = Bridge::start().unwrap();
+        let alvo = projeto.path().join("escapou.txt");
+
+        let req = ScriptRequest::new(
+            format!(
+                "import fs from \"node:fs\";\n\
+                 try {{ fs.writeFileSync({:?}, \"x\"); say(\"escreveu\"); }}\n\
+                 catch (e) {{ say(\"bloqueado:\", e.code); }}\n\
+                 try {{ const cp = await import(\"node:child_process\"); cp.execSync(\"echo oi\"); say(\"rodou comando\"); }}\n\
+                 catch (e) {{ say(\"sem processo:\", e.code); }}\n",
+                alvo.to_string_lossy()
+            ),
+            projeto.path().to_path_buf(),
+            vec![eco()],
+        )
+        .with_bridge(ponte.url(), ponte.token())
+        .with_timeout(30);
+
+        let resultado = run_script(req, |_| {}).await.expect("rodou");
+        if !resultado.isolado {
+            eprintln!("pulando a régua: este `node` não conhece --permission");
+            return;
+        }
+        let saida = &resultado.spawn.stdout;
+        assert!(saida.contains("bloqueado: ERR_ACCESS_DENIED"), "{saida}");
+        assert!(saida.contains("sem processo:"), "{saida}");
+        assert!(!alvo.exists(), "o arquivo não podia ter sido criado");
     }
 
     #[tokio::test(flavor = "multi_thread")]

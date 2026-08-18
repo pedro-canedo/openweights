@@ -911,8 +911,8 @@ impl ToolRunner {
             self.escalonar_apos_programa = Some(motivo.clone());
             return Err(ToolError::Other(motivo));
         }
-        let outcome = match saida {
-            Some(Ok(outcome)) => outcome,
+        let resultado = match saida {
+            Some(Ok(resultado)) => resultado,
             Some(Err(e)) => return Err(ToolError::Other(e.to_string())),
             None => {
                 return Err(ToolError::Other(
@@ -921,6 +921,7 @@ impl ToolRunner {
             }
         };
 
+        let outcome = resultado.spawn;
         let mut corpo = String::new();
         let stdout = outcome.stdout.trim_end();
         let stderr = outcome.stderr.trim_end();
@@ -940,6 +941,14 @@ impl ToolRunner {
             );
         }
         corpo.push_str(&contagem.rodape());
+        if !resultado.isolado {
+            // Honestidade na trilha: sem o modo de permissões do Node, o
+            // programa PODE ter mexido em arquivo sem passar pela política.
+            corpo.push_str(
+                "\n[atenção: o Node desta máquina é anterior à versão 22 e o programa rodou \
+                 sem isolamento de arquivos]",
+            );
+        }
 
         Ok(ToolOutput::text(corpo)
             .with_exit_code(outcome.exit_code)

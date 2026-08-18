@@ -34,5 +34,5 @@ pub mod exec;
 pub mod sdk;
 
 pub use bridge::{Bridge, BridgeRequest, CallReply};
-pub use exec::{ScriptRequest, node_program, run_script};
+pub use exec::{ScriptOutcome, ScriptRequest, node_program, run_script};
 pub use sdk::{render_module, render_signatures, safe_ident};
