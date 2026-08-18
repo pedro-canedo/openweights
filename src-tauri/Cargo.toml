@@ -54,6 +54,8 @@ tauri-plugin-clipboard-manager = "2"
 # operacional confie no binário.
 tauri-plugin-updater = "2"
 rfd = "0.15"
+# A voz neutra é uma chamada HTTP direta; o cliente já é o do workspace.
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

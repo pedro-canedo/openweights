@@ -3447,6 +3447,7 @@ dependencies = [
  "lr_tools",
  "lr_types",
  "lr_webtools",
+ "reqwest 0.12.28",
  "rfd",
  "serde",
  "serde_json",

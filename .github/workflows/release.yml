@@ -97,6 +97,10 @@ jobs:
           # veio deste projeto antes de substituir o binário de alguém.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          # Chave da voz neutra. Só existe aqui: compilar sem ela é normal e
+          # o app usa a voz do sistema. Ver o aviso honesto em `build.rs` —
+          # isto embute, não esconde.
+          OW_DEEPGRAM_KEY: ${{ secrets.OW_DEEPGRAM_KEY }}
         with:
           # O `latest.json` é o que o app consulta para saber se há versão
           # nova; sem ele os instaladores existem e ninguém é avisado.

@@ -372,3 +372,15 @@ export type UpdateProgress = { baixado: number; total: number | null };
 
 export const onUpdateProgress = (fn: (p: UpdateProgress) => void) =>
   listen<UpdateProgress>("update://progress", fn);
+
+// ------------------------------------------------------------------ voz ---
+
+/**
+ * Áudio da fala (mp3) pela voz neutra. Rejeita quando não há voz neutra para
+ * o caso — sem chave no build, idioma não atendido, serviço fora — e quem
+ * chama cai para a voz do sistema.
+ */
+export const ttsSpeak = (text: string, lang: string) =>
+  isTauri
+    ? invoke<ArrayBuffer>("tts_speak", { text, lang })
+    : Promise.reject(new Error("indisponível no navegador"));

@@ -14,6 +14,7 @@ mod scheduler;
 mod spec_bench;
 mod state;
 mod telemetry;
+mod tts;
 mod update;
 #[cfg(windows)]
 mod webview_perm;
@@ -70,6 +71,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::hardware_profile,
             commands::app_version,
+            tts::tts_speak,
             update::update_check,
             update::update_install,
             commands::app_paths,
