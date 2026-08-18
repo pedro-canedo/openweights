@@ -37,6 +37,7 @@
 //! Node mais antigo não conhece a flag: nesse caso o programa roda sem o
 //! isolamento e o resultado **diz isso** em vez de fingir que está protegido.
 
+use crate::plugins::Plugin;
 use crate::sdk;
 use lr_tools::spawner::{self, SpawnOutcome, SpawnRequest};
 use lr_types::agent::ToolSpec;
@@ -73,6 +74,8 @@ pub struct ScriptRequest {
     pub workspace: PathBuf,
     /// Ferramentas que o script pode chamar (viram o `ow.mjs`).
     pub specs: Vec<ToolSpec>,
+    /// Peças que o projeto criou (viram funções a mais no programa).
+    pub plugins: Vec<Plugin>,
     /// Programa do Node (ver [`node_program`]).
     pub node: String,
     pub bridge_url: String,
@@ -90,6 +93,7 @@ impl ScriptRequest {
             code: code.into(),
             workspace,
             specs,
+            plugins: Vec::new(),
             node: node_program(None),
             bridge_url: String::new(),
             bridge_token: String::new(),
@@ -97,6 +101,11 @@ impl ScriptRequest {
             max_output_bytes: spawner::DEFAULT_MAX_OUTPUT_BYTES,
             call_id: String::new(),
         }
+    }
+
+    pub fn with_plugins(mut self, plugins: Vec<Plugin>) -> Self {
+        self.plugins = plugins;
+        self
     }
 
     pub fn with_bridge(mut self, url: impl Into<String>, token: impl Into<String>) -> Self {
@@ -150,8 +159,17 @@ pub async fn run_script(
     let _guarda = Scratch { dir: dir.clone() };
 
     std::fs::write(dir.join("ow.mjs"), sdk::render_module(&req.specs))?;
+    // As peças do projeto são COPIADAS para a pasta da execução, em vez de
+    // importadas de onde moram: assim a leitura liberada pelo modo de
+    // permissões continua sendo um diretório só, o da execução.
+    for plugin in &req.plugins {
+        let destino = dir.join(format!("{}.mjs", plugin.nome));
+        if let Err(e) = std::fs::copy(&plugin.arquivo, &destino) {
+            log::warn!("não consegui copiar {}: {e}", plugin.arquivo.display());
+        }
+    }
     let main = dir.join("main.mjs");
-    std::fs::write(&main, montar_main(&req.code))?;
+    std::fs::write(&main, montar_main(&req.code, &req.plugins))?;
 
     let caminho_main = main.to_string_lossy().into_owned();
     let monta = |args: Vec<String>| {
@@ -209,12 +227,22 @@ fn flag_desconhecida(outcome: &SpawnOutcome) -> bool {
 }
 
 /// O arquivo que o Node roda.
-fn montar_main(code: &str) -> String {
-    format!(
-        "import * as ow from \"./ow.mjs\";\n\
-         Object.assign(globalThis, ow);\n\
-         // ——— programa do modelo ———\n{code}\n"
-    )
+fn montar_main(code: &str, plugins: &[Plugin]) -> String {
+    let mut out =
+        String::from("import * as ow from \"./ow.mjs\";\nObject.assign(globalThis, ow);\n");
+    // As peças entram como globais também, com o mesmo nome que aparece nas
+    // assinaturas. Importadas ANTES do programa: um `import` no meio do
+    // arquivo é içado pelo ESM, mas o `globalThis` não seria.
+    for (i, plugin) in plugins.iter().enumerate() {
+        out.push_str(&format!(
+            "import __peca{i} from \"./{}.mjs\";\nglobalThis.{} = __peca{i};\n",
+            plugin.nome, plugin.nome
+        ));
+    }
+    out.push_str("// ——— programa do modelo ———\n");
+    out.push_str(code);
+    out.push('\n');
+    out
 }
 
 /// Sufixo único e seguro para nome de pasta (o `call_id` vem de fora).
@@ -435,9 +463,48 @@ mod tests {
 
     #[test]
     fn o_main_derrama_o_sdk_em_global_antes_do_programa() {
-        let main = montar_main("say(1)");
+        let main = montar_main("say(1)", &[]);
         assert!(main.starts_with("import * as ow from \"./ow.mjs\";"));
         assert!(main.contains("Object.assign(globalThis, ow);"));
         assert!(main.trim_end().ends_with("say(1)"));
+    }
+
+    /// A peça que o agente escreveu roda dentro do MESMO processo isolado, e
+    /// pode usar as ferramentas como qualquer outro trecho do programa.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn uma_peca_do_projeto_vira_funcao_do_programa() {
+        if !tem_node() {
+            eprintln!("pulando: `node` não está instalado");
+            return;
+        }
+        let projeto = TempDir::new().unwrap();
+        let dir_plugins = projeto.path().join(crate::plugins::PLUGINS_DIR);
+        std::fs::create_dir_all(&dir_plugins).unwrap();
+        std::fs::write(
+            dir_plugins.join("dobro.mjs"),
+            "// @tool {\"name\":\"dobro\",\"description\":\"Dobra e usa uma ferramenta.\"}\n\
+             export default async function ({ n }) {\n\
+               const lido = await fs_read({ path: \"x\" });\n\
+               return `${n * 2} com ${lido}`;\n\
+             }\n",
+        )
+        .unwrap();
+        let plugins = crate::plugins::carregar(projeto.path());
+        assert_eq!(plugins.len(), 1);
+
+        let (ponte, rx) = Bridge::start().unwrap();
+        let _hospedeiro = hospedar(rx);
+
+        let req = ScriptRequest::new(
+            "say(await plugin_dobro({ n: 21 }));",
+            projeto.path().to_path_buf(),
+            vec![eco()],
+        )
+        .with_plugins(plugins)
+        .with_bridge(ponte.url(), ponte.token())
+        .with_timeout(30);
+
+        let saida = run_script(req, |_| {}).await.expect("rodou").spawn;
+        assert!(saida.stdout.contains("42 com olá do harness"), "{saida:?}");
     }
 }

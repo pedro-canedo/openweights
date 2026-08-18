@@ -869,12 +869,16 @@ impl ToolRunner {
             .as_ref()
             .map(|m| m.script_specs())
             .unwrap_or_default();
+        // As peças que o projeto criou entram junto: elas são funções do
+        // programa, não ferramentas do registro (ver `lr_codemode::plugins`).
+        let plugins = lr_codemode::carregar_plugins(&root);
 
         let (ponte, fila) = lr_codemode::Bridge::start().map_err(|e| {
             ToolError::Other(format!("não consegui abrir a ponte do Code Mode: {e}"))
         })?;
 
         let mut pedido = lr_codemode::ScriptRequest::new(code, root, specs)
+            .with_plugins(plugins)
             .with_bridge(ponte.url(), ponte.token());
         // O caminho do Node é perguntado agora, não no boot do app: quem
         // baixou o runtime no meio da sessão passa a poder rodar programa
@@ -1561,10 +1565,14 @@ impl codemode::Despachante for DespachoDoScript<'_> {
     }
 }
 
-/// As assinaturas das ferramentas do cardápio, para o prompt e para a
-/// descrição da `run_code`.
-fn menu_assinaturas(menu: &menu::MenuState) -> String {
-    lr_codemode::render_signatures(&menu.script_specs())
+/// As assinaturas do que o programa pode chamar: as ferramentas do cardápio
+/// mais as peças que o próprio projeto criou.
+fn menu_assinaturas(menu: &menu::MenuState, workspace: Option<&PathBuf>) -> String {
+    let mut specs = menu.script_specs();
+    if let Some(raiz) = workspace {
+        specs.extend(lr_codemode::carregar_plugins(raiz).iter().map(|p| p.spec()));
+    }
+    lr_codemode::render_signatures(&specs)
 }
 
 pub fn history_from_messages(rows: &[lr_store::MessageRow], max: usize) -> Vec<ChatMessage> {
@@ -2000,8 +2008,17 @@ impl StepEngine<'_> {
                 // Pedimos duas vezes e ele continua escrevendo a chamada em
                 // vez de fazê-la. Antes de encerrar um run que não fez nada,
                 // rodamos o que ele escreveu — pelo caminho de sempre.
+                // O `run_code` não está no cardápio ativo (ele vive à parte,
+                // com as assinaturas do run na descrição), e sem ele nesta
+                // lista a chamada escrita em texto era recusada por "nome
+                // desconhecido" — justamente no modo feito para o modelo que
+                // não emite tool call.
+                let mut permitidas = self.menu.active_names();
+                if runner.code_menu.is_some() {
+                    permitidas.push(codemode::RUN_CODE.to_string());
+                }
                 if self.tools_on()
-                    && let Some(tc) = chamada_escrita(&outcome.content, &self.menu.active_names())
+                    && let Some(tc) = chamada_escrita(&outcome.content, &permitidas)
                 {
                     let como_pedido = ChatMessage::assistant_with_tool_calls(
                         outcome.content.clone(),
@@ -2259,7 +2276,10 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     // escrevê-lo), e sem ferramentas também não.
     let code_mode = opts.code_mode && tools_on && workspace.is_some();
     if code_mode {
-        menu.usar_programa(codemode::spec_run_code(&menu_assinaturas(&menu)));
+        menu.usar_programa(codemode::spec_run_code(&menu_assinaturas(
+            &menu,
+            workspace.as_ref(),
+        )));
     }
 
     let tools_partial = menu.is_partial();
@@ -2323,7 +2343,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         // As assinaturas são lidas do cardápio a cada montagem: no modo laço
         // ele é recurado por etapa, e um prompt com a lista velha mandaria o
         // modelo chamar função que não existe mais.
-        let assinaturas = code_mode.then(|| menu_assinaturas(&menu_prompt));
+        let assinaturas = code_mode.then(|| menu_assinaturas(&menu_prompt, workspace.as_ref()));
         build_system_prompt(&PromptContext {
             workspace: workspace_str.as_deref(),
             focus_md: focus.map(String::as_str),

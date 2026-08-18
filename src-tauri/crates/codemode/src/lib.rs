@@ -20,6 +20,8 @@
 //! - [`bridge`] sobe um servidor de uma linha só em `127.0.0.1`, com token,
 //!   por onde o script pede cada ferramenta de volta ao harness.
 //! - [`exec`] escreve os arquivos, roda o Node com prazo e mata a árvore.
+//! - [`plugins`] carrega as peças que o agente escreveu no projeto e que
+//!   viram funções a mais dentro do programa.
 //!
 //! ## O que este crate NÃO faz
 //!
@@ -31,8 +33,10 @@
 
 pub mod bridge;
 pub mod exec;
+pub mod plugins;
 pub mod sdk;
 
 pub use bridge::{Bridge, BridgeRequest, CallReply};
 pub use exec::{ScriptOutcome, ScriptRequest, node_program, run_script};
+pub use plugins::{Plugin, carregar as carregar_plugins};
 pub use sdk::{render_module, render_signatures, safe_ident};

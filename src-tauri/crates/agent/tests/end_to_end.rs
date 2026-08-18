@@ -2199,3 +2199,69 @@ async fn escrita_fora_do_projeto_dentro_do_programa_ainda_pede_confirmacao() {
         .unwrap_or_default();
     assert!(saida.contains("recusado:"), "{saida}");
 }
+
+/// A peça que o agente escreve na conversa vira função do programa seguinte.
+///
+/// É o "modo de criação" do DeepSeek Harness na versão que cabe num harness
+/// compilado: a peça não vira ferramenta nativa (isso exigiria recompilar o
+/// app), vira uma função dentro do programa — e roda no mesmo cerco de
+/// permissões, sem acesso a arquivo por fora da ponte.
+#[tokio::test]
+async fn uma_peca_escrita_na_conversa_e_usada_no_programa_seguinte() {
+    if !tem_node() {
+        eprintln!("pulando: `node` não está instalado");
+        return;
+    }
+    let h = Harness::new();
+    std::fs::write(
+        h.workspace.join("a.txt"),
+        "linha um\nlinha dois\nlinha três\n",
+    )
+    .unwrap();
+
+    let peca = "// @tool {\"name\":\"conta_linhas\",\"description\":\"Conta as linhas de um arquivo.\",\
+                \"parameters\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}},\
+                \"required\":[\"path\"]}}\n\
+                export default async function ({ path }) {\n\
+                  const texto = await fs_read({ path });\n\
+                  return texto.split(\"\\n\").filter((l) => l.includes(\"|\")).length;\n\
+                }\n";
+
+    let server = FakeLlama::spawn(vec![
+        // Passo 1: o agente escreve a peça com a ferramenta que já tem.
+        tool_call_chunks(
+            "call_1",
+            "fs_write",
+            &serde_json::json!({
+                "path": ".openweights/plugins/conta_linhas.mjs",
+                "content": peca,
+            })
+            .to_string(),
+            "",
+        ),
+        // Passo 2: o programa usa a peça pelo nome, sem importar nada.
+        programa(
+            "call_2",
+            "say(\"linhas:\", await plugin_conta_linhas({ path: \"a.txt\" }));",
+        ),
+        vec![text_chunk("Criei a peça e usei."), done()],
+    ]);
+
+    let status = h
+        .run_code_mode("crie uma peça e use", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let run_id = h.events.lock().unwrap()[0].run_id.clone();
+    let saida = h
+        .store
+        .list_tool_calls(&run_id)
+        .unwrap()
+        .into_iter()
+        .find(|c| c.tool_name == "run_code")
+        .and_then(|c| c.result_json)
+        .unwrap_or_default();
+    // O `fs_read` numera as linhas com `N| `, então as três linhas do arquivo
+    // viram três — a peça rodou de verdade e chamou a ferramenta.
+    assert!(saida.contains("linhas: 3"), "{saida}");
+}

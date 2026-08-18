@@ -80,7 +80,12 @@ pub(crate) fn secao_do_prompt(assinaturas: &str, mode: RunMode) -> String {
            resto em vez de deixar o programa morrer.\n\
          - Cada função devolve o MESMO texto que a ferramenta devolveria a você \
            (o `fs_read` traz cabeçalho e número de linha): trate como texto.\n\
-         - Imprima pouco: o que você imprimir é o que ocupa a sua janela.\n",
+         - Imprima pouco: o que você imprimir é o que ocupa a sua janela.\n\
+         - Falta uma peça que você vai usar muitas vezes? Escreva \
+           `.openweights/plugins/<nome>.mjs` com `// @tool {\"name\":\"...\",\
+           \"description\":\"...\"}` na primeira linha e \
+           `export default async function (args) {...}`; ela vira uma função \
+           disponível no próximo programa.\n",
     );
     if mode == RunMode::Approve {
         out.push_str(
