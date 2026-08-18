@@ -289,7 +289,9 @@ impl Tool for FsList {
 
     fn description(&self) -> &str {
         "Lista arquivos e pastas do projeto (respeita o .gitignore e pula node_modules, target, \
-         dist e .git). Use para descobrir a estrutura antes de abrir arquivos."
+         dist e .git). Use para descobrir a estrutura antes de abrir arquivos. Os caminhos vêm \
+         completos a partir da pasta do projeto — use como vieram, sem juntar com a pasta que \
+         você pediu."
     }
 
     fn parameters(&self) -> Value {
@@ -388,7 +390,8 @@ impl Tool for FsGlob {
 
     fn description(&self) -> &str {
         "Encontra arquivos por padrão de nome, com * (um trecho) e ** (qualquer subpasta). Use \
-         quando souber o nome ou a extensão, mas não onde o arquivo está."
+         quando souber o nome ou a extensão, mas não onde o arquivo está. Os caminhos vêm \
+         completos a partir da pasta do projeto — use como vieram."
     }
 
     fn parameters(&self) -> Value {

@@ -147,6 +147,33 @@ fn parece_programa(corpo: &str) -> bool {
     (corpo.contains("await ") || corpo.contains("say(")) && corpo.contains('(')
 }
 
+/// Traduz os erros de Node que um modelo pequeno mais comete em instrução.
+///
+/// O stack trace do Node é preciso e inútil para quem precisa se corrigir:
+/// `ReferenceError: require is not defined in ES module scope` não diz o que
+/// fazer. Medido com o `qwen2.5-coder:14b`, que começou dois programas
+/// seguidos com `require("fs")` mesmo com o prompt avisando — uma linha
+/// acionável no RESULTADO vale mais do que outra no prompt, porque chega
+/// exatamente no momento do erro.
+pub(crate) fn dica_para(erros: &str) -> Option<&'static str> {
+    if erros.contains("require is not defined") {
+        return Some(
+            "Dica: `require` não existe aqui. As ferramentas já são funções globais — \
+             chame `await fs_read({path})` direto, sem importar nada.",
+        );
+    }
+    if erros.contains("ERR_ACCESS_DENIED") {
+        return Some(
+            "Dica: o programa não tem acesso a arquivo por fora das ferramentas. \
+             Use `await fs_write({path, content})` em vez de `fs` do Node.",
+        );
+    }
+    if erros.contains("is not a function") {
+        return Some("Dica: chame só as funções listadas, com o nome exato, e sempre com `await`.");
+    }
+    None
+}
+
 /// O que o script fez, para o rodapé que volta ao modelo.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Contagem {
@@ -294,6 +321,14 @@ mod tests {
         assert!(spec.description.contains("await fs_read({ path })"));
         assert!(spec.description.contains("say("));
         assert_eq!(spec.category, ToolCategory::Execute);
+    }
+
+    #[test]
+    fn erro_de_node_vira_instrucao() {
+        let erro = "ReferenceError: require is not defined in ES module scope";
+        assert!(dica_para(erro).is_some_and(|d| d.contains("funções globais")));
+        assert!(dica_para("Error: ERR_ACCESS_DENIED").is_some_and(|d| d.contains("fs_write")));
+        assert!(dica_para("tudo certo").is_none());
     }
 
     #[test]

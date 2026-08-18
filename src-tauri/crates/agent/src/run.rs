@@ -957,6 +957,11 @@ impl ToolRunner {
         if !stderr.is_empty() {
             corpo.push_str("\n\n[erros do programa]\n");
             corpo.push_str(stderr);
+            // O stack trace do Node é preciso e não diz o que fazer.
+            if let Some(dica) = codemode::dica_para(stderr) {
+                corpo.push_str("\n\n");
+                corpo.push_str(dica);
+            }
         }
         if outcome.timed_out {
             corpo.push_str("\n\n[o programa passou do tempo e foi interrompido]");
