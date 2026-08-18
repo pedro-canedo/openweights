@@ -568,6 +568,7 @@ async fn roda_caso(caso: &Caso, base_url: &str, model: &str) -> Placar {
                 history: Vec::new(),
                 memory: Vec::new(),
                 options: RunOptions {
+                    code_mode: false,
                     chat_id: 0,
                     model: model.to_string(),
                     // Sem confirmação: o teste não tem quem clique.
@@ -582,6 +583,8 @@ async fn roda_caso(caso: &Caso, base_url: &str, model: &str) -> Placar {
                     system_prompt: None,
                 },
                 endpoint: Endpoint {
+                    headers: Vec::new(),
+                    dialect: lr_engine::Dialect::LlamaCpp,
                     base_url: base_url.to_string(),
                     api_key: None,
                 },

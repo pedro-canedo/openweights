@@ -484,6 +484,12 @@
       "smartHint": "Leitura roda sozinha; escrita e comandos pedem confirmação.",
       "yoloHint": "Roda sozinho dentro da pasta do projeto. Um checkpoint é criado antes da primeira alteração."
     },
+    "codeMode": {
+      "label": "Code Mode",
+      "on": "Code Mode ligado",
+      "off": "Code Mode desligado",
+      "hint": "O agente escreve um programa que usa as ferramentas de uma vez, em vez de pedir uma por passo: menos idas ao modelo, menos contexto gasto. Precisa do Node na máquina."
+    },
     "yolo": {
       "badge": "YOLO",
       "banner": "Executando automaticamente dentro de {{dir}} — checkpoint criado.",
@@ -620,7 +626,8 @@
       "clipboardRead": "Ler a área de transferência",
       "clipboardWrite": "Copiar para a área de transferência",
       "notifyUser": "Avisar você",
-      "openPath": "Abrir arquivo ou link"
+      "openPath": "Abrir arquivo ou link",
+      "runCode": "Rodar programa"
     },
     "toolGroups": {
       "title": "Famílias de ferramentas",

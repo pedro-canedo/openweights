@@ -2658,6 +2658,7 @@ dependencies = [
  "async-trait",
  "log",
  "lr_checkpoint",
+ "lr_codemode",
  "lr_engine",
  "lr_policy",
  "lr_store",

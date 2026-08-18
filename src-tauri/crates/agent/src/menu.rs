@@ -594,6 +594,11 @@ struct Menu {
     rest: Vec<ToolSpec>,
     /// Nomes que o modelo ativou por `tools_find` — imunes à recuragem.
     pinned: Vec<String>,
+    /// Code Mode ligado: a `run_code` que o modelo vê no lugar do cardápio.
+    ///
+    /// O cardápio continua sendo curado do mesmo jeito — ele deixa de ser a
+    /// lista da API e passa a ser a biblioteca que o programa importa.
+    programa: Option<ToolSpec>,
     /// Formato da API já pronto. Refeito só quando o cardápio muda, porque é
     /// serializado a cada passo do laço.
     api: Option<Vec<Value>>,
@@ -616,6 +621,7 @@ impl MenuState {
                 active: curated.active,
                 rest: curated.rest,
                 pinned: Vec::new(),
+                programa: None,
                 api: None,
             }),
             limit: curated.limit,
@@ -630,13 +636,57 @@ impl MenuState {
     }
 
     /// Formato da API OpenAI, pronto para o request.
+    ///
+    /// No Code Mode a lista encolhe para `run_code` mais as ferramentas do
+    /// plano: as outras não somem — elas mudam de porta, e passam a ser
+    /// funções dentro do programa. É daqui que vem a maior parte da economia
+    /// de janela, porque o JSON Schema de cada ferramenta ia junto do pedido
+    /// a CADA passo.
     pub fn api_tools(&self) -> Vec<Value> {
         let mut menu = self.lock();
         if menu.api.is_none() {
-            let api = tool_specs_to_api(&menu.active);
+            let api = match &menu.programa {
+                Some(run_code) => {
+                    let mut visiveis = vec![run_code.clone()];
+                    visiveis.extend(
+                        menu.active
+                            .iter()
+                            .filter(|s| group_of(s) == ToolGroup::Plan)
+                            .cloned(),
+                    );
+                    tool_specs_to_api(&visiveis)
+                }
+                None => tool_specs_to_api(&menu.active),
+            };
             menu.api = Some(api);
         }
         menu.api.clone().unwrap_or_default()
+    }
+
+    /// Liga o Code Mode: a partir daqui a API mostra `run_code`.
+    pub fn usar_programa(&self, run_code: ToolSpec) {
+        let mut menu = self.lock();
+        menu.programa = Some(run_code);
+        menu.api = None;
+    }
+
+    /// A `run_code` deste run, quando o Code Mode está ligado.
+    pub fn programa_spec(&self) -> Option<ToolSpec> {
+        self.lock().programa.clone()
+    }
+
+    /// As ferramentas que viram funções dentro do programa.
+    ///
+    /// São as ativas menos as do plano: `task_done` e `ask_user` encerram o
+    /// trecho do laço, e uma chamada dessas no meio de um programa deixaria o
+    /// harness terminando uma etapa que ainda está rodando.
+    pub fn script_specs(&self) -> Vec<ToolSpec> {
+        self.lock()
+            .active
+            .iter()
+            .filter(|s| group_of(s) != ToolGroup::Plan)
+            .cloned()
+            .collect()
     }
 
     pub fn active_names(&self) -> Vec<String> {

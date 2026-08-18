@@ -18,6 +18,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { setSetting } from "../../lib/api";
 import { canExecute, type WorkMode } from "../../lib/agent/scout";
 import type { RunMode } from "../../lib/agent/types";
 import type { ChatParams } from "../../lib/types";
@@ -47,6 +48,22 @@ function WorkIcon({ mode }: { mode: WorkMode }) {
     >
       {mode === "agent" && <rect x="4" y="8" width="16" height="12" rx="3" />}
       <path d={WORK_ICONS[mode]} />
+    </svg>
+  );
+}
+
+function CodeIcon() {
+  return (
+    <svg
+      className="h-4 w-4 shrink-0"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      viewBox="0 0 24 24"
+    >
+      <path d="M8 6l-5 6 5 6M16 6l5 6-5 6" />
     </svg>
   );
 }
@@ -148,6 +165,7 @@ export default function ModeSelect({
   const workOptions =
     params.agent === true ? WORK_MODES : WORK_MODES.filter((m) => m !== "loop");
   const executa = canExecute(workMode);
+  const codeMode = params.codeMode === true;
 
   const pickAuth = (next: RunMode) => {
     if (next === "yolo") {
@@ -167,6 +185,7 @@ export default function ModeSelect({
   const title = [
     `${t("plan.title")}: ${t(`plan.mode.${workMode}`)}`,
     executa ? `${t("agent.mode.label")}: ${t(`agent.mode.${auth}`)}` : null,
+    executa && codeMode ? t("agent.codeMode.on") : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -187,6 +206,11 @@ export default function ModeSelect({
         {executa && (
           <span className={auth === "yolo" ? "text-warn" : "text-dim"}>
             <ModeIcon mode={auth} />
+          </span>
+        )}
+        {executa && codeMode && (
+          <span className="text-ok">
+            <CodeIcon />
           </span>
         )}
         <Caret />
@@ -255,6 +279,38 @@ export default function ModeSelect({
                   {t("agent.yolo.needWorkspace")}
                 </p>
               )}
+
+              <p className="mt-1 border-t border-edge px-3 pt-2.5 pb-1.5 text-[11px] tracking-wide text-dim uppercase">
+                {t("agent.codeMode.label")}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const proximo = !codeMode;
+                  onChange({ ...params, codeMode: proximo });
+                  // A preferência também fica gravada: quem roda o agente de
+                  // fora da tela (retomada de plano, automação) lê daqui.
+                  void setSetting(
+                    "agent.code_mode",
+                    proximo ? "1" : "0",
+                  ).catch(() => {});
+                  setOpen(false);
+                }}
+                className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-panel2"
+              >
+                <span className={`mt-0.5 ${codeMode ? "text-ok" : "text-dim"}`}>
+                  <CodeIcon />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] text-ink">
+                    {t(`agent.codeMode.${codeMode ? "on" : "off"}`)}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-relaxed text-dim">
+                    {t("agent.codeMode.hint")}
+                  </span>
+                </span>
+                {codeMode && <Check />}
+              </button>
             </>
           )}
 

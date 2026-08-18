@@ -25,6 +25,13 @@ pub struct PromptContext<'a> {
     /// Instruções que a pessoa configurou para a conversa.
     pub user_system: Option<&'a str>,
     pub mode: RunMode,
+    /// Code Mode ligado: as assinaturas das ferramentas, como funções.
+    ///
+    /// Quando existe, a seção de ferramentas muda de "lista o que chamar"
+    /// para "eis a biblioteca, escreva o programa" — que é o que faz o
+    /// modelo pequeno acertar, porque ele viu muito mais código na vida do
+    /// que formulário JSON preenchido.
+    pub code_signatures: Option<&'a str>,
 }
 
 /// Quantos fatos de memória entram no prompt (o resto vira ruído).
@@ -70,6 +77,20 @@ pub fn build_system_prompt(ctx: &PromptContext<'_>) -> String {
         for fact in facts {
             out.push_str(&format!("- {}\n", fact.trim()));
         }
+    }
+
+    if let Some(assinaturas) = ctx
+        .code_signatures
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && ctx.mode != RunMode::Chat)
+    {
+        out.push_str(&crate::codemode::secao_do_prompt(assinaturas, ctx.mode));
+        if let Some(extra) = ctx.user_system.map(str::trim).filter(|s| !s.is_empty()) {
+            out.push_str("\n## Instruções da pessoa\n");
+            out.push_str(extra);
+            out.push('\n');
+        }
+        return out;
     }
 
     out.push_str("\n## Ferramentas\n");
@@ -135,6 +156,7 @@ mod tests {
         let tools = tools();
         let memory = vec!["Usa pnpm, não npm.".to_string()];
         let p = build_system_prompt(&PromptContext {
+            code_signatures: None,
             workspace: Some("/home/u/projeto"),
             focus_md: Some("- [ ] criar notas.md"),
             memory: &memory,

@@ -222,6 +222,12 @@ impl AgentDelegate {
             // sinal existe só porque o `ToolRunner` o exige.
             halt: Arc::new(AtomicBool::new(false)),
             counters: Default::default(),
+            escalonar_apos_programa: None,
+            // O ajudante trabalha no modo nativo: ele existe para poupar a
+            // janela do agente principal com uma investigação curta, e um
+            // programa dentro de um subagente esconderia duas camadas de
+            // chamadas atrás de um único resultado.
+            code_menu: None,
         }
     }
 

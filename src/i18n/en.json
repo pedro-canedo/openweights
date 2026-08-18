@@ -484,6 +484,12 @@
       "smartHint": "Reading runs on its own; writes and commands ask first.",
       "yoloHint": "Runs on its own inside the project folder. A checkpoint is created before the first change."
     },
+    "codeMode": {
+      "label": "Code Mode",
+      "on": "Code Mode on",
+      "off": "Code Mode off",
+      "hint": "The agent writes a program that uses the tools all at once instead of asking for one per step: fewer round trips, far less context. Requires Node on the machine."
+    },
     "yolo": {
       "badge": "YOLO",
       "banner": "Running automatically inside {{dir}} — checkpoint created.",
@@ -620,7 +626,8 @@
       "clipboardRead": "Read the clipboard",
       "clipboardWrite": "Copy to clipboard",
       "notifyUser": "Notify you",
-      "openPath": "Open file or link"
+      "openPath": "Open file or link",
+      "runCode": "Run program"
     },
     "toolGroups": {
       "title": "Tool families",

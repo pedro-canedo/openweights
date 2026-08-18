@@ -215,6 +215,8 @@ export interface RunOptions {
   topK?: number;
   maxTokens?: number | null;
   systemPrompt?: string;
+  /** O modelo escreve um programa em vez de pedir uma ferramenta por passo. */
+  codeMode?: boolean;
 }
 
 export interface RunSummary {

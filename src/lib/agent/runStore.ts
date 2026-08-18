@@ -988,6 +988,7 @@ export const runStore = {
         maxTokens: opts.params.maxTokens,
         systemPrompt: opts.params.systemPrompt || undefined,
         maxSteps: opts.maxSteps,
+        codeMode: opts.params.codeMode === true,
       };
       const runId = await runStart(opts.prompt, runOptions, handleEvent);
       workModeByRun.set(runId, workMode);

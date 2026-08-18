@@ -56,6 +56,8 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   ask_user: "askUser",
   tools_find: "toolsFind",
   agent_delegate: "agentDelegate",
+  // Code Mode
+  run_code: "runCode",
 };
 
 /**

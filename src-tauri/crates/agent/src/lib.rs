@@ -4,6 +4,7 @@
 //! laço, entrega eventos e espera decisões de aprovação sem bloquear o app.
 
 mod checkpoint;
+mod codemode;
 mod events;
 mod menu;
 mod plan_tools;
@@ -60,6 +61,28 @@ pub struct AgentConfig {
     /// é servidor travado — sem este relógio, um stream pendurado segurava o
     /// run para sempre.
     pub idle_timeout: Duration,
+    /// Onde achar o Node que o Code Mode usa, perguntado A CADA execução.
+    ///
+    /// É uma função, e não um caminho, porque o app instala o Node **depois**
+    /// de subir: um valor fixado no boot ficaria `None` para sempre na
+    /// máquina que ainda não tinha baixado, e o Code Mode nunca passaria a
+    /// funcionar sem reiniciar o app. Devolver `None` aqui cai no `node` do
+    /// PATH.
+    pub node_path: Option<Arc<dyn Fn() -> Option<PathBuf> + Send + Sync>>,
+}
+
+impl std::fmt::Debug for AgentConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AgentConfig")
+            .field("store_dir", &self.store_dir)
+            .field("max_output_bytes", &self.max_output_bytes)
+            .field("approval_timeout", &self.approval_timeout)
+            .field("context_ratio", &self.context_ratio)
+            .field("first_token_timeout", &self.first_token_timeout)
+            .field("idle_timeout", &self.idle_timeout)
+            .field("node_path", &self.node_path.is_some())
+            .finish()
+    }
 }
 
 impl AgentConfig {
@@ -71,6 +94,7 @@ impl AgentConfig {
             context_ratio: 0.85,
             first_token_timeout: Duration::from_secs(180),
             idle_timeout: Duration::from_secs(90),
+            node_path: None,
         }
     }
 }

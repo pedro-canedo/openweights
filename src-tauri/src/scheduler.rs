@@ -150,6 +150,16 @@ async fn launch(app: &AppHandle, task: &ScheduledTask) -> Result<String, String>
         top_k: None,
         max_tokens: None,
         system_prompt: None,
+        // A automação herda o Code Mode da preferência: quem ligou o modo na
+        // tela espera que a tarefa agendada trabalhe do mesmo jeito.
+        code_mode: RunOptions::code_mode_from_setting(
+            state
+                .store
+                .get_setting(RunOptions::CODE_MODE_SETTING)
+                .ok()
+                .flatten()
+                .as_deref(),
+        ),
     };
 
     let store = state.store.clone();

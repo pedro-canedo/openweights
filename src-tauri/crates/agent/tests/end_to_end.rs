@@ -143,6 +143,8 @@ impl FakeLlama {
         Endpoint {
             base_url: format!("http://{}", self.addr),
             api_key: None,
+            headers: Vec::new(),
+            dialect: lr_engine::Dialect::LlamaCpp,
         }
     }
 }
@@ -339,7 +341,15 @@ impl Harness {
             top_k: None,
             max_tokens: None,
             system_prompt: None,
+            code_mode: false,
         }
+    }
+
+    /// Dispara um run com o Code Mode ligado.
+    async fn run_code_mode(&self, prompt: &str, mode: RunMode, endpoint: Endpoint) -> RunStatus {
+        let mut options = self.options(mode);
+        options.code_mode = true;
+        self.run_with_options(prompt, options, endpoint).await
     }
 
     /// Dispara o run e espera ele terminar (ou estourar o tempo).
@@ -356,9 +366,18 @@ impl Harness {
         endpoint: Endpoint,
         max_steps: u32,
     ) -> RunStatus {
-        let sink = self.events.clone();
         let mut options = self.options(mode);
         options.max_steps = max_steps;
+        self.run_with_options(prompt, options, endpoint).await
+    }
+
+    async fn run_with_options(
+        &self,
+        prompt: &str,
+        options: RunOptions,
+        endpoint: Endpoint,
+    ) -> RunStatus {
+        let sink = self.events.clone();
         let handle = self
             .host
             .start(
@@ -1937,4 +1956,246 @@ async fn a_file_that_breaks_json_twice_arrives_as_plain_text() {
     let pediu_texto = (0..server.calls.load(Ordering::SeqCst))
         .any(|i| server.body(i).contains("ARQUIVO: caminho"));
     assert!(pediu_texto, "faltou a instrução do formato de texto");
+}
+
+// ------------------------------------------------------------- code mode ---
+
+/// O Node é necessário para o programa rodar de verdade. Sem ele o teste não
+/// falha: ele diz por que não rodou. O CI dos três sistemas tem Node.
+fn tem_node() -> bool {
+    std::process::Command::new("node")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Pedido de `run_code` com um programa — o caminho normal do Code Mode.
+fn programa(id: &str, code: &str) -> Vec<String> {
+    let args = serde_json::json!({ "code": code }).to_string();
+    tool_call_chunks(id, "run_code", &args, "")
+}
+
+/// A promessa do Code Mode, medida: três leituras em UM passo do modelo.
+///
+/// No modo nativo isto seriam três idas e voltas, com os três conteúdos
+/// empilhados na janela. Aqui o modelo gasta um passo, o harness executa as
+/// três chamadas (cada uma registrada na trilha, com política) e o que volta
+/// é só o que o programa imprimiu.
+#[tokio::test]
+async fn um_passo_do_modelo_vira_tres_chamadas_de_ferramenta() {
+    if !tem_node() {
+        eprintln!("pulando: `node` não está instalado");
+        return;
+    }
+    let h = Harness::new();
+    for (nome, texto) in [("a.txt", "um"), ("b.txt", "dois"), ("c.txt", "três")] {
+        std::fs::write(h.workspace.join(nome), texto).unwrap();
+    }
+
+    let server = FakeLlama::spawn(vec![
+        programa(
+            "call_1",
+            "const partes = [];\n\
+             for (const nome of [\"a.txt\", \"b.txt\", \"c.txt\"]) {\n\
+               partes.push((await fs_read({ path: nome })).trim());\n\
+             }\n\
+             say(\"juntos:\", partes.join(\"|\"));\n",
+        ),
+        vec![text_chunk("Li os três arquivos."), done()],
+    ]);
+
+    let status = h
+        .run_code_mode("leia os três arquivos", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let run_id = h.events.lock().unwrap()[0].run_id.clone();
+    let chamadas = h.store.list_tool_calls(&run_id).expect("chamadas");
+    let nomes: Vec<&str> = chamadas.iter().map(|c| c.tool_name.as_str()).collect();
+    assert_eq!(
+        nomes.iter().filter(|n| **n == "fs_read").count(),
+        3,
+        "as três leituras precisam estar na trilha: {nomes:?}"
+    );
+    assert_eq!(nomes.iter().filter(|n| **n == "run_code").count(), 1);
+
+    // O modelo foi chamado duas vezes: o programa e a resposta final. No modo
+    // nativo seriam cinco (três leituras + o pedido inicial + o fecho).
+    assert_eq!(
+        server.calls.load(Ordering::SeqCst),
+        2,
+        "um passo para o programa, um para o fecho"
+    );
+
+    // O resultado do programa — e só ele — voltou para a conversa.
+    let saida = h
+        .store
+        .list_tool_calls(&run_id)
+        .unwrap()
+        .into_iter()
+        .find(|c| c.tool_name == "run_code")
+        .and_then(|c| c.result_json)
+        .unwrap_or_default();
+    assert!(saida.contains("juntos:"), "{saida}");
+    // O programa recebe de cada ferramenta o MESMO texto que o modelo
+    // receberia — com cabeçalho e número de linha, no caso do `fs_read`.
+    for pedaco in ["um", "dois", "três"] {
+        assert!(saida.contains(pedaco), "faltou {pedaco} em {saida}");
+    }
+    assert!(
+        saida.contains("3 chamadas de ferramenta"),
+        "o rodapé conta o que o modelo não viu: {saida}"
+    );
+}
+
+/// Modelo que não emite tool call: o programa vem num bloco de código e ainda
+/// assim é executado. É o caso do `qwen2.5-coder:14b` nesta máquina.
+#[tokio::test]
+async fn programa_entregue_em_texto_puro_e_executado() {
+    if !tem_node() {
+        eprintln!("pulando: `node` não está instalado");
+        return;
+    }
+    let h = Harness::new();
+    std::fs::write(h.workspace.join("a.txt"), "conteúdo").unwrap();
+
+    let server = FakeLlama::spawn(vec![
+        vec![
+            text_chunk("Claro, vou fazer assim:\n\n```js\n"),
+            text_chunk("const t = await fs_read({ path: \"a.txt\" });\nsay(t.trim());\n"),
+            text_chunk("```\n"),
+            done(),
+        ],
+        vec![text_chunk("Pronto: o arquivo tem \"conteúdo\"."), done()],
+    ]);
+
+    let status = h
+        .run_code_mode("leia a.txt", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let run_id = h.events.lock().unwrap()[0].run_id.clone();
+    let chamadas = h.store.list_tool_calls(&run_id).expect("chamadas");
+    let nomes: Vec<&str> = chamadas.iter().map(|c| c.tool_name.as_str()).collect();
+    assert!(
+        nomes.contains(&"run_code") && nomes.contains(&"fs_read"),
+        "o bloco de código virou execução: {nomes:?}"
+    );
+}
+
+/// O programa não é uma porta dos fundos: escrever fora do projeto continua
+/// pedindo confirmação — em modo automático, inclusive — e a recusa volta
+/// para dentro do programa como exceção, sem derrubá-lo.
+///
+/// Este é o teste que separa o Code Mode de um `eval` com outro nome. A
+/// pessoa autorizou UM programa; o que ele faz continua passando pela mesma
+/// política, uma chamada de cada vez.
+#[tokio::test]
+async fn escrita_fora_do_projeto_dentro_do_programa_ainda_pede_confirmacao() {
+    if !tem_node() {
+        eprintln!("pulando: `node` não está instalado");
+        return;
+    }
+    let h = Harness::new();
+    let server = FakeLlama::spawn(vec![
+        programa(
+            "call_1",
+            "try {\n\
+               await fs_write({ path: \"../fora.txt\", content: \"x\" });\n\
+               say(\"escreveu\");\n\
+             } catch (e) {\n\
+               say(\"recusado:\", e.message);\n\
+             }\n",
+        ),
+        vec![text_chunk("Não deu para escrever fora do projeto."), done()],
+    ]);
+
+    let sink = h.events.clone();
+    let mut options = h.options(RunMode::Yolo);
+    options.code_mode = true;
+    let handle = h
+        .host
+        .start(
+            StartRun {
+                prompt: "escreva fora".into(),
+                history: Vec::new(),
+                memory: Vec::new(),
+                options,
+                endpoint: server.endpoint(),
+                work_mode: WorkMode::Agent,
+                plan: None,
+            },
+            Some(Arc::new(move |ev: RunEvent| {
+                sink.lock().unwrap().push(ev);
+            })),
+        )
+        .expect("run começou");
+
+    // A segunda confirmação pedida é a do `fs_write` (a primeira é a do
+    // próprio programa, que o modo automático libera sozinho).
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let call_id = loop {
+        let pedido = h
+            .events
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find_map(|e| match &e.event {
+                RunEventKind::ToolRequested {
+                    call_id,
+                    tool,
+                    requires_approval: true,
+                    ..
+                } if tool == "fs_write" => Some(call_id.clone()),
+                _ => None,
+            });
+        if let Some(id) = pedido {
+            break id;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "escrever fora do projeto tinha que pedir confirmação: {:?}",
+            h.kinds()
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+
+    assert!(handle.resolve(
+        &call_id,
+        lr_types::agent::ApprovalDecision::Deny {
+            reason: Some("fora do projeto, não".into()),
+        },
+    ));
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while h.finished_status().is_none() {
+        assert!(
+            Instant::now() < deadline,
+            "o run não terminou: {:?}",
+            h.kinds()
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    assert!(
+        !h.workspace.parent().unwrap().join("fora.txt").exists(),
+        "o arquivo não pode ter sido criado fora do projeto"
+    );
+    assert!(h.has("tool.denied"));
+
+    // E o programa seguiu vivo depois da recusa: quem imprimiu foi o `catch`.
+    let run_id = h.events.lock().unwrap()[0].run_id.clone();
+    let saida = h
+        .store
+        .list_tool_calls(&run_id)
+        .unwrap()
+        .into_iter()
+        .find(|c| c.tool_name == "run_code")
+        .and_then(|c| c.result_json)
+        .unwrap_or_default();
+    assert!(saida.contains("recusado:"), "{saida}");
 }

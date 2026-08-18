@@ -12,6 +12,7 @@ lr_store = { path = "../store" }
 lr_policy = { path = "../policy" }
 lr_tools = { path = "../tools" }
 lr_checkpoint = { path = "../checkpoint" }
+lr_codemode = { path = "../codemode" }
 async-trait = "0.1"
 serde.workspace = true
 serde_json.workspace = true

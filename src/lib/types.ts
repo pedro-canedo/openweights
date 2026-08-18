@@ -244,6 +244,13 @@ export interface ChatParams {
    * ausente = `"agent"`.
    */
   workMode?: WorkMode;
+  /**
+   * Code Mode: em vez de pedir uma ferramenta por passo, o agente escreve um
+   * programa que usa todas de uma vez — mais rápido e muito mais barato em
+   * contexto, e o único caminho que funciona com modelo que não emite tool
+   * call. Ausente = desligado (depende do Node na máquina).
+   */
+  codeMode?: boolean;
 }
 
 export interface WorkspaceFile {

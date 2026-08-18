@@ -550,6 +550,13 @@ pub struct RunOptions {
     pub max_tokens: Option<u32>,
     #[serde(default)]
     pub system_prompt: Option<String>,
+    /// Code Mode: em vez de pedir uma ferramenta por passo, o modelo escreve
+    /// um programa que usa todas as ferramentas de uma vez.
+    ///
+    /// Fica desligado por padrão porque depende do Node na máquina; quando o
+    /// app já traz o seu, vira o caminho recomendado.
+    #[serde(default)]
+    pub code_mode: bool,
 }
 
 fn default_max_steps() -> u32 {
@@ -557,6 +564,16 @@ fn default_max_steps() -> u32 {
 }
 
 impl RunOptions {
+    /// Preferência que guarda o Code Mode para os runs que NÃO vêm da tela
+    /// do chat: a retomada de um plano e as automações. Sem ela, uma
+    /// automação criada com o Code Mode ligado rodaria no modo nativo.
+    pub const CODE_MODE_SETTING: &'static str = "agent.code_mode";
+
+    /// Lê a preferência acima (ausente = desligado).
+    pub fn code_mode_from_setting(raw: Option<&str>) -> bool {
+        matches!(raw.map(str::trim), Some("1") | Some("true"))
+    }
+
     pub fn yolo(&self) -> bool {
         matches!(self.mode, RunMode::Yolo)
     }

@@ -11,6 +11,7 @@
 //! o template perde o pareamento e o passo seguinte sai incoerente.
 
 use crate::checkpoint;
+use crate::codemode;
 use crate::events::EventSink;
 use crate::menu;
 use crate::plan_tools::{PlanTools, SharedPlan, shared_plan, snapshot};
@@ -26,7 +27,7 @@ use crate::{AgentConfig, RunHandle, StartRun, new_id};
 use lr_engine::{ChatDelta, ChatMessage, ChatRequest, LlamaClient, ServerProps, ToolCallReq};
 use lr_policy::{Decision, PermissionOverride, PolicyEngine, ToolRequest, classify};
 use lr_store::Store;
-use lr_tools::{SharedTool, ToolContext, ToolOutput, ToolRegistry, ToolResult};
+use lr_tools::{SharedTool, ToolContext, ToolError, ToolOutput, ToolRegistry, ToolResult};
 use lr_types::agent::{
     ApprovalDecision, ApprovalSource, PolicyScope, RunEventKind, RunMode, RunOptions, RunStatus,
     ToolCategory, ToolGroup, ToolOrigin, ToolPolicy, ToolSpec, ToolTier, ToolsOffReason,
@@ -413,8 +414,13 @@ const AVISO_ESTAGNACAO: &str = "Os últimos passos não mudaram NADA no projeto:
 
 /// O que fazer depois de uma chamada de ferramenta.
 pub(crate) enum CallFlow {
-    /// Resultado (bom ou ruim) para devolver ao modelo.
-    Result(ChatMessage),
+    /// Resultado para devolver ao modelo.
+    ///
+    /// `ok` separa "a ferramenta rodou" de "falhou ou foi recusada". No modo
+    /// nativo os dois viram texto na conversa e o modelo se vira; quem chama
+    /// de dentro de um programa precisa da diferença, para transformar a
+    /// falha numa exceção que o `catch` do script consegue tratar.
+    Result { msg: ChatMessage, ok: bool },
     /// Guard-rail estourou: encerra o run e explica para a pessoa.
     Escalate(String),
     /// O run foi cancelado no meio da chamada.
@@ -465,6 +471,17 @@ pub(crate) struct ToolRunner {
     pub halt: Arc<AtomicBool>,
     /// Contadores do run inteiro (cutucadas, erros totais, estagnação).
     pub counters: RunCounters,
+    /// Guard-rail que estourou DENTRO de um programa (teto de erros, por
+    /// exemplo). O resultado da ferramenta volta como erro, e o laço encerra
+    /// o run no passo seguinte — que é o que `CallFlow::Escalate` faria se
+    /// coubesse no tipo de retorno de uma ferramenta.
+    pub escalonar_apos_programa: Option<String>,
+    /// Cardápio vivo, quando o Code Mode está ligado (`None` = modo nativo).
+    ///
+    /// É o cardápio, e não uma cópia das specs, porque o modo laço recura as
+    /// ferramentas a cada etapa: a biblioteca que o programa importa tem que
+    /// acompanhar o que está ativo AGORA.
+    pub code_menu: Option<Arc<menu::MenuState>>,
 }
 
 impl ToolRunner {
@@ -482,8 +499,19 @@ impl ToolRunner {
             .map(Arc::clone)
     }
 
-    /// Metadados da ferramenta: local primeiro, registro depois.
+    /// Metadados da ferramenta: o programa primeiro, depois as locais do run,
+    /// depois o registro.
+    ///
+    /// `run_code` não está em registro nenhum de propósito: ela existe só
+    /// enquanto o Code Mode está ligado, e a descrição dela carrega as
+    /// assinaturas do cardápio DESTE run.
     async fn spec_for(&self, name: &str) -> Option<ToolSpec> {
+        if name == codemode::RUN_CODE
+            && let Some(menu) = &self.code_menu
+            && let Some(spec) = menu.programa_spec()
+        {
+            return Some(spec);
+        }
         match self.local(name) {
             Some(tool) => Some(tool.spec()),
             None => self.registry.spec_of(name).await,
@@ -590,7 +618,10 @@ impl ToolRunner {
                     Some(&spec),
                     &message,
                 );
-                return CallFlow::Result(ChatMessage::tool_result(&call_id, &name, message));
+                return CallFlow::Result {
+                    msg: ChatMessage::tool_result(&call_id, &name, message),
+                    ok: false,
+                };
             }
             Repeat::Escalate { .. } => {
                 return CallFlow::Escalate(RepeatDetector::escalation_message(&name));
@@ -616,7 +647,10 @@ impl ToolRunner {
                 Some(&spec),
                 &message,
             );
-            return CallFlow::Result(ChatMessage::tool_result(&call_id, &name, message));
+            return CallFlow::Result {
+                msg: ChatMessage::tool_result(&call_id, &name, message),
+                ok: true,
+            };
         }
 
         let ctx = self.tool_context(&call_id);
@@ -625,6 +659,16 @@ impl ToolRunner {
             .or_else(|| self.registry.get(&name).cloned());
         let preview = match &builtin {
             Some(tool) => tool.preview(&args, &ctx).await,
+            // O programa não é uma ferramenta do registro, mas é justamente o
+            // caso em que a prévia mais importa: aprovar um programa é
+            // aprovar tudo que ele vai fazer.
+            None if name == codemode::RUN_CODE => {
+                args.get("code").and_then(Value::as_str).map(|code| {
+                    lr_types::agent::ToolPreview::Text {
+                        body: format!("Rodar este programa:\n\n{}", head_chars(code, 2_000)),
+                    }
+                })
+            }
             None => None,
         };
         let within = builtin
@@ -758,11 +802,148 @@ impl ToolRunner {
             &call_id,
             args,
             read_key,
+            step_id,
             step_index,
             command_text,
             spec.category,
         )
         .await
+    }
+
+    /// Executa a chamada: pelo registro, ou rodando o programa do Code Mode.
+    ///
+    /// `run_code` não pode ser uma ferramenta comum do registro porque ela
+    /// **reentra no runner**: cada chamada que o programa faz volta por
+    /// `ToolRunner::call`, com política, foto do projeto e trilha. Uma
+    /// `Tool` recebe `&self`, e isso não caberia.
+    async fn despachar(
+        &mut self,
+        name: &str,
+        call_id: &str,
+        args: Value,
+        step_id: &str,
+        step_index: u32,
+        ctx: &ToolContext,
+    ) -> ToolResult<ToolOutput> {
+        if name == codemode::RUN_CODE {
+            return self
+                .rodar_programa(call_id, args, step_id, step_index)
+                .await;
+        }
+        self.dispatch(name, args, ctx).await
+    }
+
+    /// Roda o programa do Code Mode.
+    ///
+    /// Sobe a ponte, executa o Node e atende cada chamada que o programa
+    /// fizer — cada uma voltando por [`ToolRunner::call`], com política,
+    /// confirmação, foto do projeto e trilha. Do lado do modelo isto é UM
+    /// passo; do lado do harness podem ser dezenas de chamadas, e é essa a
+    /// diferença que o Code Mode compra.
+    async fn rodar_programa(
+        &mut self,
+        call_id: &str,
+        args: Value,
+        step_id: &str,
+        step_index: u32,
+    ) -> ToolResult<ToolOutput> {
+        let Some(root) = self.workspace.clone() else {
+            return Err(ToolError::Other(
+                "o Code Mode precisa de uma pasta de projeto escolhida.".into(),
+            ));
+        };
+        let code = args
+            .get("code")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if code.is_empty() {
+            return Err(ToolError::InvalidArgs(
+                "`code` está vazio — mande o programa que resolve a tarefa".into(),
+            ));
+        }
+
+        let specs = self
+            .code_menu
+            .as_ref()
+            .map(|m| m.script_specs())
+            .unwrap_or_default();
+
+        let (ponte, fila) = lr_codemode::Bridge::start().map_err(|e| {
+            ToolError::Other(format!("não consegui abrir a ponte do Code Mode: {e}"))
+        })?;
+
+        let mut pedido = lr_codemode::ScriptRequest::new(code, root, specs)
+            .with_bridge(ponte.url(), ponte.token());
+        // O caminho do Node é perguntado agora, não no boot do app: quem
+        // baixou o runtime no meio da sessão passa a poder rodar programa
+        // sem reiniciar nada.
+        let node = self.config.node_path.as_ref().and_then(|resolve| resolve());
+        pedido.node = lr_codemode::node_program(node.as_deref());
+        pedido.max_output_bytes = self.config.max_output_bytes;
+
+        // A saída aparece na UI enquanto o programa roda, como a de qualquer
+        // comando: um programa que demora não pode parecer travado.
+        let sink = self.sink.clone();
+        let cid = call_id.to_string();
+        let script = lr_codemode::run_script(pedido, move |pedaco| {
+            sink.emit(RunEventKind::ToolOutput {
+                call_id: cid.clone(),
+                chunk: pedaco.to_string(),
+                truncated: false,
+            });
+        });
+
+        let mut despacho = DespachoDoScript {
+            runner: self,
+            step_id: step_id.to_string(),
+            step_index,
+            chamadas: 0,
+            escalonar: None,
+        };
+        let (saida, contagem, parada) = codemode::hospedar(fila, script, &mut despacho).await;
+        let escalonar = despacho.escalonar.take();
+        // A ponte fecha aqui: nenhuma chamada é atendida depois do programa.
+        drop(ponte);
+
+        if let Some(motivo) = escalonar {
+            self.escalonar_apos_programa = Some(motivo.clone());
+            return Err(ToolError::Other(motivo));
+        }
+        let outcome = match saida {
+            Some(Ok(outcome)) => outcome,
+            Some(Err(e)) => return Err(ToolError::Other(e.to_string())),
+            None => {
+                return Err(ToolError::Other(
+                    parada.unwrap_or_else(|| "o programa foi interrompido".into()),
+                ));
+            }
+        };
+
+        let mut corpo = String::new();
+        let stdout = outcome.stdout.trim_end();
+        let stderr = outcome.stderr.trim_end();
+        if !stdout.is_empty() {
+            corpo.push_str(stdout);
+        }
+        if !stderr.is_empty() {
+            corpo.push_str("\n\n[erros do programa]\n");
+            corpo.push_str(stderr);
+        }
+        if outcome.timed_out {
+            corpo.push_str("\n\n[o programa passou do tempo e foi interrompido]");
+        } else if stdout.is_empty() {
+            corpo.push_str(
+                "(o programa não imprimiu nada — use `say(...)` para o resultado voltar \
+                 para você)",
+            );
+        }
+        corpo.push_str(&contagem.rodape());
+
+        Ok(ToolOutput::text(corpo)
+            .with_exit_code(outcome.exit_code)
+            .truncated_to(self.config.max_output_bytes))
     }
 
     /// Roda a ferramenta e traduz o resultado para o modelo.
@@ -773,6 +954,7 @@ impl ToolRunner {
         call_id: &str,
         args: Value,
         read_key: Option<String>,
+        step_id: &str,
         step_index: u32,
         comando: Option<String>,
         category: ToolCategory,
@@ -784,15 +966,36 @@ impl ToolRunner {
 
         let ctx = self.tool_context(call_id);
         let started = Instant::now();
+        // O handle é clonado porque o outro braço do `select!` precisa do
+        // `&mut self` (o programa do Code Mode reentra no runner a cada
+        // chamada que faz).
+        let handle = self.handle.clone();
         let outcome = tokio::select! {
             biased;
-            _ = self.handle.cancelled() => {
+            _ = handle.cancelled() => {
                 let _ = self.store.finish_tool_call(call_id, false, "", 0, Some("cancelado"));
                 return CallFlow::Cancelled;
             }
-            r = self.dispatch(name, args.clone(), &ctx) => r,
+            r = self.despachar(name, call_id, args.clone(), step_id, step_index, &ctx) => r,
         };
         let duration_ms = started.elapsed().as_millis() as u64;
+
+        // Um teto estourado DENTRO do programa não cabe no retorno de uma
+        // ferramenta, então ele viaja num campo e é lido aqui: o run encerra
+        // igual ao que aconteceria se a chamada fosse solta.
+        if let Some(motivo) = self.escalonar_apos_programa.take() {
+            let _ = self
+                .store
+                .finish_tool_call(call_id, false, "", 0, Some(&motivo));
+            self.sink.emit(RunEventKind::ToolResult {
+                call_id: call_id.to_string(),
+                ok: false,
+                result_preview: head_chars(&motivo, PREVIEW_CHARS),
+                bytes_total: motivo.len() as u64,
+                duration_ms,
+            });
+            return CallFlow::Escalate(motivo);
+        }
 
         match outcome {
             Ok(out) => {
@@ -869,7 +1072,10 @@ impl ToolRunner {
                     resposta.push_str("\n\n");
                     resposta.push_str(&aviso);
                 }
-                CallFlow::Result(ChatMessage::tool_result(call_id, name, resposta))
+                CallFlow::Result {
+                    msg: ChatMessage::tool_result(call_id, name, resposta),
+                    ok: true,
+                }
             }
             Err(e) => {
                 let message = e.to_model_message();
@@ -1036,14 +1242,17 @@ impl ToolRunner {
         let _ = self
             .store
             .log_approval(&self.run_id, call_id, name, "deny", source, "");
-        CallFlow::Result(ChatMessage::tool_result(
-            call_id,
-            name,
-            format!(
-                "A ação foi recusada: {reason} Não tente de novo do mesmo jeito — \
-                 proponha outro caminho ou explique o que precisa."
+        CallFlow::Result {
+            msg: ChatMessage::tool_result(
+                call_id,
+                name,
+                format!(
+                    "A ação foi recusada: {reason} Não tente de novo do mesmo jeito — \
+                     proponha outro caminho ou explique o que precisa."
+                ),
             ),
-        ))
+            ok: false,
+        }
     }
 
     /// Aviso quando o modelo entra na espiral de reescrever o mesmo arquivo,
@@ -1096,7 +1305,7 @@ impl ToolRunner {
         if self.errors.record_error() {
             return CallFlow::Escalate(self.errors.escalation_message());
         }
-        CallFlow::Result(msg)
+        CallFlow::Result { msg, ok: false }
     }
 
     /// Registra na trilha uma chamada que nem chegou a rodar.
@@ -1266,6 +1475,89 @@ pub(crate) fn head_chars(s: &str, max: usize) -> String {
 // ------------------------------------------------------------------ laço ---
 
 /// Histórico do chat convertido em mensagens para o modelo.
+/// Atende as chamadas de um programa do Code Mode.
+///
+/// É um empréstimo do runner com o passo atual em mãos: cada chamada do
+/// programa vira uma chamada normal, no mesmo passo, e o que a política
+/// decidir vale igual. O programa não é um caminho paralelo — é o mesmo
+/// caminho, percorrido mais vezes sem passar pelo modelo.
+struct DespachoDoScript<'a> {
+    runner: &'a mut ToolRunner,
+    step_id: String,
+    step_index: u32,
+    chamadas: u32,
+    /// Guard-rail que estourou no meio (teto de erros, repetição).
+    escalonar: Option<String>,
+}
+
+/// Teto de chamadas de um único programa.
+///
+/// O prazo do processo já cobre o laço infinito, mas um programa que chama
+/// ferramenta dentro de um `for` sobre mil arquivos gastaria o dia. Este teto
+/// é alto o bastante para o trabalho de verdade (doze arquivos de log, uma
+/// varredura de pasta) e baixo o bastante para a pessoa não ficar refém.
+const MAX_CHAMADAS_POR_PROGRAMA: u32 = 200;
+
+#[async_trait::async_trait]
+impl codemode::Despachante for DespachoDoScript<'_> {
+    async fn chamar(&mut self, tool: &str, args: Value) -> codemode::Resposta {
+        if self.runner.handle.is_cancelled() {
+            return codemode::Resposta::Parar("a execução foi cancelada".into());
+        }
+        // Programa que roda programa: recusado. O aninhamento não acrescenta
+        // nada (o programa já pode tudo) e tornaria o teto acima contornável.
+        if tool == codemode::RUN_CODE {
+            return codemode::Resposta::Erro(
+                "`run_code` não pode ser chamada de dentro de um programa: você já está \
+                 dentro de um."
+                    .into(),
+            );
+        }
+        self.chamadas += 1;
+        if self.chamadas > MAX_CHAMADAS_POR_PROGRAMA {
+            let motivo = format!(
+                "O programa passou de {MAX_CHAMADAS_POR_PROGRAMA} chamadas de ferramenta e foi \
+                 interrompido. Divida a tarefa ou filtre antes de chamar."
+            );
+            self.escalonar = Some(motivo.clone());
+            return codemode::Resposta::Parar(motivo);
+        }
+
+        let tc = ToolCallReq {
+            id: new_id("call"),
+            name: tool.to_string(),
+            arguments_json: args.to_string(),
+        };
+        // `Box::pin` porque isto é recursão assíncrona: `call` volta a passar
+        // por `despachar`, e o tipo do futuro não pode se conter.
+        match Box::pin(self.runner.call(&self.step_id, self.step_index, &tc)).await {
+            CallFlow::Result { msg, ok } => {
+                let texto = msg
+                    .content
+                    .as_ref()
+                    .map(|c| c.as_plain_text())
+                    .unwrap_or_default();
+                if ok {
+                    codemode::Resposta::Ok(texto)
+                } else {
+                    codemode::Resposta::Erro(texto)
+                }
+            }
+            CallFlow::Cancelled => codemode::Resposta::Parar("a execução foi cancelada".into()),
+            CallFlow::Escalate(motivo) => {
+                self.escalonar = Some(motivo.clone());
+                codemode::Resposta::Parar(motivo)
+            }
+        }
+    }
+}
+
+/// As assinaturas das ferramentas do cardápio, para o prompt e para a
+/// descrição da `run_code`.
+fn menu_assinaturas(menu: &menu::MenuState) -> String {
+    lr_codemode::render_signatures(&menu.script_specs())
+}
+
 pub fn history_from_messages(rows: &[lr_store::MessageRow], max: usize) -> Vec<ChatMessage> {
     let usable: Vec<&lr_store::MessageRow> = rows
         .iter()
@@ -1608,6 +1900,46 @@ impl StepEngine<'_> {
                 // o harness monta a chamada de escrita com o escape certo e
                 // ela passa pela política e pelo checkpoint como qualquer
                 // outra. O conteúdo veio pelo stream, que não quebra.
+                // Code Mode: o programa entregue como bloco de código.
+                //
+                // Modelo que não fala o protocolo de tool call escreve o
+                // programa numa cerca e encerra o passo — e o run terminava
+                // sem ter feito nada. Aqui o bloco vira a chamada `run_code`,
+                // que passa pela política como qualquer outra. É o que faz um
+                // modelo sem tool call nativo trabalhar de verdade.
+                if self.tools_on()
+                    && runner.code_menu.is_some()
+                    && let Some(programa) = codemode::bloco_de_codigo(&outcome.content)
+                {
+                    let tc = ToolCallReq {
+                        id: new_id("call"),
+                        name: codemode::RUN_CODE.into(),
+                        arguments_json: serde_json::json!({ "code": programa }).to_string(),
+                    };
+                    let como_pedido = ChatMessage::assistant_with_tool_calls(
+                        outcome.content.clone(),
+                        vec![lr_engine::ToolCallMsg {
+                            id: tc.id.clone(),
+                            kind: "function".into(),
+                            function: lr_engine::FunctionCallMsg {
+                                name: tc.name.clone(),
+                                arguments: tc.arguments_json.clone(),
+                            },
+                        }],
+                    );
+                    messages.push(como_pedido);
+                    match runner.call(&step_id, index, &tc).await {
+                        CallFlow::Result { msg, .. } => {
+                            messages.push(msg);
+                            continue;
+                        }
+                        CallFlow::Cancelled => break 'run RunStatus::Cancelled,
+                        CallFlow::Escalate(reason) => {
+                            out.escalation = Some(reason);
+                            break 'run RunStatus::Escalated;
+                        }
+                    }
+                }
                 if self.tools_on()
                     && self.menu.active_names().iter().any(|n| n == "fs_write")
                     && let Some((caminho, conteudo)) = arquivo_em_texto(&outcome.content)
@@ -1634,7 +1966,7 @@ impl StepEngine<'_> {
                     );
                     messages.push(como_pedido);
                     match runner.call(&step_id, index, &tc).await {
-                        CallFlow::Result(msg) => {
+                        CallFlow::Result { msg, .. } => {
                             messages.push(msg);
                             continue;
                         }
@@ -1675,7 +2007,7 @@ impl StepEngine<'_> {
                     );
                     messages.push(como_pedido);
                     match runner.call(&step_id, index, &tc).await {
-                        CallFlow::Result(msg) => {
+                        CallFlow::Result { msg, .. } => {
                             messages.push(msg);
                             continue;
                         }
@@ -1709,7 +2041,7 @@ impl StepEngine<'_> {
             let lote = &outcome.tool_calls;
             for (i, tc) in lote.iter().enumerate() {
                 match runner.call(&step_id, index, tc).await {
-                    CallFlow::Result(msg) => messages.push(msg),
+                    CallFlow::Result { msg, .. } => messages.push(msg),
                     // Parar no MEIO do lote não pode deixar chamadas sem a
                     // mensagem `role: "tool"` — é a invariante do topo do
                     // arquivo, e é o que permite RETOMAR este histórico
@@ -1783,6 +2115,8 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
 
     let client = LlamaClient::new(&endpoint.base_url)
         .with_optional_api_key(endpoint.api_key.clone())
+        .with_dialect(endpoint.dialect)
+        .with_headers(endpoint.headers.clone())
         .with_stream_deadlines(
             Some(deps.config.first_token_timeout),
             Some(deps.config.idle_timeout),
@@ -1886,6 +2220,8 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         let tool: SharedTool = Arc::new(subagent::AgentDelegate::new(subagent::SubagentDeps {
             base_url: endpoint.base_url.clone(),
             api_key: endpoint.api_key.clone(),
+            headers: endpoint.headers.clone(),
+            dialect: endpoint.dialect,
             registry: deps.registry.clone(),
             store: deps.store.clone(),
             config: deps.config.clone(),
@@ -1907,6 +2243,15 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         menu.pin_active(tool.spec());
         tool
     });
+
+    // Code Mode: o cardápio curado continua valendo, mas muda de porta —
+    // vira a biblioteca do programa, e a API passa a mostrar `run_code`.
+    // Sem pasta de projeto não há programa que faça sentido (nem onde
+    // escrevê-lo), e sem ferramentas também não.
+    let code_mode = opts.code_mode && tools_on && workspace.is_some();
+    if code_mode {
+        menu.usar_programa(codemode::spec_run_code(&menu_assinaturas(&menu)));
+    }
 
     let tools_partial = menu.is_partial();
     let tool_names: Vec<String> = menu.active_names();
@@ -1960,9 +2305,16 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         },
         halt: plan_tools.halt.clone(),
         counters: RunCounters::default(),
+        escalonar_apos_programa: None,
+        code_menu: code_mode.then(|| menu.clone()),
     };
 
+    let menu_prompt = menu.clone();
     let build_prompt = |focus: Option<&String>| {
+        // As assinaturas são lidas do cardápio a cada montagem: no modo laço
+        // ele é recurado por etapa, e um prompt com a lista velha mandaria o
+        // modelo chamar função que não existe mais.
+        let assinaturas = code_mode.then(|| menu_assinaturas(&menu_prompt));
         build_system_prompt(&PromptContext {
             workspace: workspace_str.as_deref(),
             focus_md: focus.map(String::as_str),
@@ -1971,6 +2323,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
             user_system: opts.system_prompt.as_deref(),
             mode: opts.mode,
             tools_partial,
+            code_signatures: assinaturas.as_deref(),
         })
     };
 

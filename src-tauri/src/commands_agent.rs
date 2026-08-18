@@ -269,6 +269,16 @@ pub async fn run_plan_approve(
                     top_k: None,
                     max_tokens: None,
                     system_prompt: None,
+                    // Runs que não vêm da tela (retomada de plano,
+                    // automação) herdam o Code Mode da preferência.
+                    code_mode: RunOptions::code_mode_from_setting(
+                        state
+                            .store
+                            .get_setting(RunOptions::CODE_MODE_SETTING)
+                            .ok()
+                            .flatten()
+                            .as_deref(),
+                    ),
                 },
                 endpoint,
                 work_mode: WorkMode::Loop,
@@ -380,6 +390,16 @@ Resposta da pessoa: {answer}",
                     top_k: None,
                     max_tokens: None,
                     system_prompt: None,
+                    // Runs que não vêm da tela (retomada de plano,
+                    // automação) herdam o Code Mode da preferência.
+                    code_mode: RunOptions::code_mode_from_setting(
+                        state
+                            .store
+                            .get_setting(RunOptions::CODE_MODE_SETTING)
+                            .ok()
+                            .flatten()
+                            .as_deref(),
+                    ),
                 },
                 endpoint,
                 work_mode,
