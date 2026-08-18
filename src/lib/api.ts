@@ -354,6 +354,9 @@ export type UpdateInfo = {
   current: string;
   notes: string | null;
   date: string | null;
+  /** `false` numa instalação de gerenciador de pacotes (`.deb`): a UI manda
+   *  para a página do release em vez de oferecer um botão que ia falhar. */
+  canInstall: boolean;
 };
 
 /** `null` quando já estamos na última. Erro de rede propaga (não vira "ok"). */

@@ -24,6 +24,17 @@ pub struct UpdateInfo {
     /// Notas do release, quando existirem.
     pub notes: Option<String>,
     pub date: Option<String>,
+    /// Dá para trocar o binário daqui de dentro? No Linux, só quando o app
+    /// está rodando como AppImage — um `.deb` é do gerenciador de pacotes, e
+    /// mexer nele por fora deixaria o sistema achando que instalou uma coisa
+    /// e tendo outra. Quando é `false`, a UI leva à página do release em vez
+    /// de oferecer um botão que ia falhar.
+    pub can_install: bool,
+}
+
+/// Ver o comentário de `can_install`.
+fn da_para_instalar() -> bool {
+    !cfg!(target_os = "linux") || std::env::var_os("APPIMAGE").is_some()
 }
 
 /// Progresso do download, para a barra da UI.
@@ -51,6 +62,7 @@ pub async fn update_check(app: AppHandle) -> Result<Option<UpdateInfo>, String> 
             current,
             notes: u.body.clone(),
             date: u.date.map(|d| d.to_string()),
+            can_install: da_para_instalar(),
         })),
         Ok(None) => Ok(None),
         Err(e) => Err(e.to_string()),
@@ -65,6 +77,9 @@ pub async fn update_check(app: AppHandle) -> Result<Option<UpdateInfo>, String> 
 /// que não é mais a última".
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), String> {
+    if !da_para_instalar() {
+        return Err("esta instalação é do gerenciador de pacotes: atualize por ele".into());
+    }
     let updater = app.updater().map_err(|e| e.to_string())?;
     let update = updater
         .check()
@@ -89,4 +104,17 @@ pub async fn update_install(app: AppHandle) -> Result<(), String> {
     // macOS e no Linux o pacote já foi trocado no disco e quem reinicia somos
     // nós. `restart` não retorna.
     app.restart()
+}
+
+#[cfg(test)]
+mod tests {
+    /// No Linux o updater troca AppImage e mais nada: quem instalou pelo
+    /// `.deb` tem de atualizar pelo gerenciador de pacotes, e é melhor a UI
+    /// dizer isso do que oferecer um botão que falha no clique.
+    #[test]
+    fn a_package_manager_install_does_not_offer_the_button() {
+        // O processo de teste não é um AppImage — logo, no Linux a resposta
+        // é "não" e nos outros sistemas é "sim".
+        assert_eq!(super::da_para_instalar(), !cfg!(target_os = "linux"));
+    }
 }

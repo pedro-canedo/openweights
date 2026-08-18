@@ -909,6 +909,7 @@
     "available": "Update to {{version}}",
     "downloading": "Downloading…",
     "downloadingPct": "Downloading… {{pct}}%",
-    "failed": "Update failed:"
+    "failed": "Update failed:",
+    "availableManual": "Version {{version}} available"
   }
 }

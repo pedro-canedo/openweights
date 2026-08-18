@@ -18,6 +18,8 @@ import {
 
 type Fase = "parado" | "baixando" | "erro";
 
+const RELEASES = "https://github.com/pedro-canedo/openweights/releases/latest";
+
 export default function UpdateBadge() {
   const { t } = useTranslation();
   const [versao, setVersao] = useState<string | null>(null);
@@ -56,6 +58,13 @@ export default function UpdateBadge() {
   }, [fase]);
 
   async function atualizar() {
+    // Instalação por gerenciador de pacotes não se troca por fora: o clique
+    // leva à página do release, que é onde a atualização de fato acontece.
+    if (nova && !nova.canInstall) {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(RELEASES);
+      return;
+    }
     setFase("baixando");
     setErro(null);
     try {
@@ -100,7 +109,9 @@ export default function UpdateBadge() {
             ? pct === null
               ? t("update.downloading")
               : t("update.downloadingPct", { pct: Math.round(pct) })
-            : t("update.available", { version: nova.version })}
+            : nova.canInstall
+              ? t("update.available", { version: nova.version })
+              : t("update.availableManual", { version: nova.version })}
         </span>
       </button>
 
