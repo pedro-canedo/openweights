@@ -552,6 +552,7 @@ fn harness() -> Harness {
 
 fn tool_runner(h: &Harness, tools: &PlanTools) -> ToolRunner {
     ToolRunner {
+        dentro_de_programa: false,
         escalonar_apos_programa: None,
         code_menu: None,
         run_id: "r1".into(),

@@ -496,6 +496,24 @@ pub(crate) struct ToolRunner {
     /// o run no passo seguinte — que é o que `CallFlow::Escalate` faria se
     /// coubesse no tipo de retorno de uma ferramenta.
     pub escalonar_apos_programa: Option<String>,
+    /// Esta chamada veio de DENTRO de um programa do Code Mode.
+    ///
+    /// Dois guard-rails são do modelo, não do programa, e precisam ficar de
+    /// fora aqui:
+    ///
+    /// - **repetição**: o detector existe para o modelo que gira em falso.
+    ///   Um programa que relê a mesma pasta depois de ser corrigido é
+    ///   determinístico, não teimoso — e o run era ESCALADO por isso
+    ///   (medido com o `qwen2.5-coder:14b`: o segundo programa morria na
+    ///   primeira chamada).
+    /// - **ledger de leitura**: ele responde "você já leu isso, está no seu
+    ///   histórico". O conteúdo lido por um programa **não** está no
+    ///   histórico do modelo — ele foi para dentro do programa. Registrar
+    ///   aqui faria o harness mentir na leitura seguinte.
+    ///
+    /// O que continua valendo por dentro: política, confirmação, foto do
+    /// projeto, trilha, contadores de erro e o teto de chamadas.
+    pub dentro_de_programa: bool,
     /// Cardápio vivo, quando o Code Mode está ligado (`None` = modo nativo).
     ///
     /// É o cardápio, e não uma cópia das specs, porque o modo laço recura as
@@ -626,7 +644,12 @@ impl ToolRunner {
         };
 
         // Girando em falso: avisa e, se insistir, devolve para a pessoa.
-        match self.repeats.observe(&name, &args) {
+        // (Dentro de um programa não se aplica — ver `dentro_de_programa`.)
+        match if self.dentro_de_programa {
+            Repeat::Fresh
+        } else {
+            self.repeats.observe(&name, &args)
+        } {
             Repeat::Fresh => {}
             Repeat::Warn { .. } => {
                 let message = RepeatDetector::warning_for(&name);
@@ -650,7 +673,9 @@ impl ToolRunner {
         }
 
         // Releitura: devolve o ponteiro para o que já está no histórico.
-        let read_key = ReadLedger::key_for(&name, &args);
+        let read_key = (!self.dentro_de_programa)
+            .then(|| ReadLedger::key_for(&name, &args))
+            .flatten();
         if let Some(key) = &read_key
             && let Some(previous) = self.reads.seen(key)
         {
@@ -1577,7 +1602,10 @@ impl codemode::Despachante for DespachoDoScript<'_> {
         };
         // `Box::pin` porque isto é recursão assíncrona: `call` volta a passar
         // por `despachar`, e o tipo do futuro não pode se conter.
-        match Box::pin(self.runner.call(&self.step_id, self.step_index, &tc)).await {
+        self.runner.dentro_de_programa = true;
+        let fluxo = Box::pin(self.runner.call(&self.step_id, self.step_index, &tc)).await;
+        self.runner.dentro_de_programa = false;
+        match fluxo {
             CallFlow::Result { msg, ok, data } => {
                 let texto = msg
                     .content
@@ -2368,6 +2396,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         },
         halt: plan_tools.halt.clone(),
         counters: RunCounters::default(),
+        dentro_de_programa: false,
         escalonar_apos_programa: None,
         code_menu: code_mode.then(|| menu.clone()),
     };

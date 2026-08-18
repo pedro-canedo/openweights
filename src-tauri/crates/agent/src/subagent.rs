@@ -76,9 +76,13 @@ const MAX_OBJECTIVE_CHARS: usize = 600;
 /// escreveu e rodou precisa chegar na verificação final e no `UsageStats` do
 /// run, senão o trabalho dele não é conferido nem contado.
 pub struct SubagentDeps {
-    /// Onde o llama-server escuta. Cada ajudante abre o próprio cliente.
+    /// Onde o modelo atende. Cada ajudante abre o próprio cliente.
     pub base_url: String,
     pub api_key: Option<String>,
+    /// Cabeçalhos e dialeto do provedor: o ajudante fala com o MESMO destino
+    /// do run que o criou, senão herdaria o local sem querer.
+    pub headers: Vec<(String, String)>,
+    pub dialect: lr_engine::Dialect,
     pub registry: Arc<ToolRegistry>,
     pub store: Arc<Store>,
     pub config: Arc<AgentConfig>,
@@ -222,6 +226,7 @@ impl AgentDelegate {
             // sinal existe só porque o `ToolRunner` o exige.
             halt: Arc::new(AtomicBool::new(false)),
             counters: Default::default(),
+            dentro_de_programa: false,
             escalonar_apos_programa: None,
             // O ajudante trabalha no modo nativo: ele existe para poupar a
             // janela do agente principal com uma investigação curta, e um
@@ -343,6 +348,8 @@ impl Tool for AgentDelegate {
         let mut runner = self.helper_runner(finder.into_iter().collect());
         let client = LlamaClient::new(&self.deps.base_url)
             .with_optional_api_key(self.deps.api_key.clone())
+            .with_dialect(self.deps.dialect)
+            .with_headers(self.deps.headers.clone())
             .with_stream_deadlines(
                 Some(self.deps.config.first_token_timeout),
                 Some(self.deps.config.idle_timeout),
@@ -374,6 +381,7 @@ impl Tool for AgentDelegate {
         // prompt não muda de um passo para o outro.
         let build_system = move |_focus: Option<&String>| -> String {
             let mut prompt = build_system_prompt(&PromptContext {
+                code_signatures: None,
                 workspace: workspace.as_deref(),
                 focus_md: None,
                 memory: &memory,

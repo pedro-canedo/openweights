@@ -2315,3 +2315,53 @@ async fn o_programa_recebe_lista_e_texto_cru_das_ferramentas() {
     // daria outro número).
     assert!(saida.contains("arquivos: 2 linhas: 3"), "{saida}");
 }
+
+/// Dois programas seguidos podem repetir a mesma chamada.
+///
+/// O detector de repetição existe para o MODELO que gira em falso. Um
+/// programa corrigido que relê a mesma pasta é determinístico, não teimoso —
+/// e com o `qwen2.5-coder:14b` o run era ESCALADO por isso, matando o segundo
+/// programa na primeira chamada que ele fazia.
+#[tokio::test]
+async fn o_segundo_programa_pode_repetir_a_chamada_do_primeiro() {
+    if !tem_node() {
+        eprintln!("pulando: `node` não está instalado");
+        return;
+    }
+    let h = Harness::new();
+    std::fs::write(h.workspace.join("a.txt"), "conteúdo\n").unwrap();
+
+    let server = FakeLlama::spawn(vec![
+        programa(
+            "call_1",
+            "const t = await fs_read({ path: \"a.txt\" });\nsay(\"leu:\", t.trim());\n",
+        ),
+        // Outro programa repetindo a MESMA chamada do primeiro, e ainda duas
+        // vezes dentro de si: nada disso pode virar aviso de repetição nem
+        // escalar o run.
+        programa(
+            "call_2",
+            "const a = await fs_read({ path: \"a.txt\" });\n\
+             const b = await fs_read({ path: \"a.txt\" });\n\
+             say(\"leu duas vezes:\", a.trim(), b.trim());\n",
+        ),
+        vec![text_chunk("Li o arquivo."), done()],
+    ]);
+
+    let status = h
+        .run_code_mode("leia duas vezes", RunMode::Yolo, server.endpoint())
+        .await;
+    assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
+
+    let run_id = h.events.lock().unwrap()[0].run_id.clone();
+    let chamadas = h.store.list_tool_calls(&run_id).expect("chamadas");
+    let leituras = chamadas.iter().filter(|c| c.tool_name == "fs_read").count();
+    assert_eq!(leituras, 3, "as três leituras rodaram de verdade");
+    for chamada in &chamadas {
+        let saida = chamada.result_json.clone().unwrap_or_default();
+        assert!(
+            !saida.contains("Repetir não vai mudar o resultado"),
+            "chamada de dentro do programa foi barrada como repetição: {saida}"
+        );
+    }
+}
