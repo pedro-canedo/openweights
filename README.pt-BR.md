@@ -7,11 +7,11 @@
 [![CI](https://github.com/pedro-canedo/openweights/actions/workflows/ci.yml/badge.svg)](https://github.com/pedro-canedo/openweights/actions/workflows/ci.yml)
 [![Release](https://github.com/pedro-canedo/openweights/actions/workflows/release.yml/badge.svg)](https://github.com/pedro-canedo/openweights/releases)
 [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-blue.svg)](LICENSE)
-![Windows e macOS](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20macOS-lightgrey)
+![Windows, macOS e Linux](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
 Rode LLMs no seu PC sem terminal, sem CUDA e sem chute de quantização.
 
-OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://github.com/ggml-org/llama.cpp) atrás de uma interface simples: detecta o hardware, instala o runtime certo e indica quais modelos cabem na sua máquina. Tudo local — nada vai para a nuvem. Windows primeiro; macOS em seguida.
+OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://github.com/ggml-org/llama.cpp) atrás de uma interface simples: detecta o hardware, instala o runtime certo e indica quais modelos cabem na sua máquina. Tudo local — nada vai para a nuvem. Windows, macOS e Linux.
 
 - 🔍 **Hardware no piloto automático** — identifica CPU, RAM, GPU e VRAM e baixa o build do llama.cpp que combina (CUDA, Vulkan ou só CPU).
 - 🤗 **Modelos do Hugging Face, já filtrados** — busca GGUF e recomenda a quantização para o *seu* PC: verde roda inteiro na GPU, amarelo divide com a CPU, cinza fica só no processador.
@@ -27,12 +27,29 @@ OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://gith
 
 ## Instalar
 
-Baixe o instalador da **[última versão](https://github.com/pedro-canedo/openweights/releases/latest)**:
+Uma linha, sempre a versão mais recente:
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/pedro-canedo/openweights/main/scripts/install.ps1 | iex
+```
+
+```bash
+# macOS e Linux
+curl -fsSL https://raw.githubusercontent.com/pedro-canedo/openweights/main/scripts/install.sh | sh
+```
+
+Ou baixe o instalador à mão, da **[última versão](https://github.com/pedro-canedo/openweights/releases/latest)**:
 
 | Sistema | Arquivo |
 |---|---|
 | Windows 10/11 (x64) | `OpenWeights_x.y.z_x64-setup.exe` |
 | macOS 11+ (Apple Silicon e Intel) | `OpenWeights_x.y.z_universal.dmg` |
+| Linux x64 (Debian/Ubuntu) | `OpenWeights_x.y.z_amd64.deb` |
+| Linux x64 (qualquer distro) | `OpenWeights_x.y.z_amd64.AppImage` |
+
+Depois de instalado, o app **procura versão nova sozinho** e atualiza com um clique —
+não precisa voltar aqui.
 
 **Os binários não são assinados** — assinar exige um certificado pago e anual, que
 o projeto ainda não tem. O sistema vai avisar, e o contorno é este:

@@ -7,7 +7,7 @@
 [![CI](https://github.com/pedro-canedo/openweights/actions/workflows/ci.yml/badge.svg)](https://github.com/pedro-canedo/openweights/actions/workflows/ci.yml)
 [![Release](https://github.com/pedro-canedo/openweights/actions/workflows/release.yml/badge.svg)](https://github.com/pedro-canedo/openweights/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Windows and macOS](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS-lightgrey)
+![Windows, macOS and Linux](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
 Run LLMs on your own PC — no terminal, no CUDA setup, no guessing which
 quantization fits.
@@ -16,7 +16,7 @@ OpenWeights is an open-source desktop app that hides [llama.cpp](https://github.
 behind a simple interface: it detects your hardware, installs the right runtime
 and tells you which models actually fit your machine. Everything runs locally —
 nothing is sent to a server of ours, because there is no server of ours.
-Windows first; macOS next.
+Windows, macOS and Linux.
 
 - 🔍 **Hardware on autopilot** — detects CPU, RAM, GPU and VRAM, then downloads
   the llama.cpp build that matches (CUDA, Vulkan or CPU-only).
@@ -47,12 +47,29 @@ Windows first; macOS next.
 
 ## Install
 
-Grab the installer from the **[latest release](https://github.com/pedro-canedo/openweights/releases/latest)**:
+One line, latest version:
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/pedro-canedo/openweights/main/scripts/install.ps1 | iex
+```
+
+```bash
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/pedro-canedo/openweights/main/scripts/install.sh | sh
+```
+
+Or grab the installer by hand from the **[latest release](https://github.com/pedro-canedo/openweights/releases/latest)**:
 
 | System | File |
 |---|---|
 | Windows 10/11 (x64) | `OpenWeights_x.y.z_x64-setup.exe` |
 | macOS 11+ (Apple Silicon and Intel) | `OpenWeights_x.y.z_universal.dmg` |
+| Linux x64 (Debian/Ubuntu) | `OpenWeights_x.y.z_amd64.deb` |
+| Linux x64 (any distro) | `OpenWeights_x.y.z_amd64.AppImage` |
+
+Once installed, the app **checks for new versions on its own** and offers a one-click
+update — no need to come back here.
 
 **The binaries are not signed** — signing requires a paid, yearly certificate the
 project doesn't have yet. Your system will warn you; here is the way around it:
