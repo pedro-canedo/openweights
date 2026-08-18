@@ -1,23 +1,22 @@
 [package]
-name = "lr_runtime"
+name = "lr_fetch"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Baixa, verifica e seleciona os binários prebuilt do llama.cpp"
+description = "Baixa, verifica por SHA256 e extrai pacotes de release em instalação atômica"
 
 [dependencies]
-lr_types.workspace = true
-lr_fetch = { path = "../fetch" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 log.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
-
-[dev-dependencies]
-tempfile = "3"
-# Só para montar pacotes de mentira nos testes; em produção quem extrai é o lr_fetch.
+sha2 = "0.10"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 flate2 = "1"
 tar = "0.4"
+futures-util = "0.3"
+
+[dev-dependencies]
+tempfile = "3"

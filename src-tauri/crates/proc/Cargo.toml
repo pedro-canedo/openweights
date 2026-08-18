@@ -1,0 +1,21 @@
+[package]
+name = "lr_proc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Supervisão de processos filhos de longa duração: árvore, Job Object e porta livre"
+
+[dependencies]
+log.workspace = true
+tokio.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+win32job = "2"
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -1,37 +1,31 @@
 //! Download, verificação e extração dos runtimes llama.cpp.
 //!
+//! A mecânica de baixar/verificar/extrair/instalar vive em `lr_fetch`, que
+//! nasceu deste arquivo quando o Node portátil e o Traefik passaram a precisar
+//! da mesma coisa. O que sobra aqui é o que só o llama.cpp sabe: qual asset
+//! baixar para cada variante, que o cudart tem de ficar ao lado do executável,
+//! e o que conta como instalação sã.
+//!
 //! Fluxo do `ensure`:
 //! 1. Já instalado? Retorna na hora.
-//! 2. Baixa o asset da release pinada em streaming para um `.part` dentro do
-//!    diretório de sessão do job, emitindo `Progress` com throttle de 200 ms.
-//! 3. Verifica o SHA256 contra o campo `digest` da API do GitHub — se a API
-//!    falhar (rate limit etc.), loga e prossegue sem verificação.
-//! 4. Extrai num diretório temporário, localiza o `llama-server(.exe)`
-//!    recursivamente (os zips têm estrutura variável) e "achata" o conteúdo
-//!    do diretório que o contém.
-//! 5. Variantes CUDA: baixa também o pacote cudart e extrai as DLLs ao lado
-//!    do executável.
-//! 6. Instalação atômica: tudo montado no tmp e movido com um único
-//!    `fs::rename` para o destino final; tmp limpo em qualquer desfecho.
+//! 2. Baixa o asset da release pinada para dentro do diretório de sessão.
+//! 3. Verifica o SHA256 contra o `digest` da API do GitHub — API indisponível
+//!    (rate limit) apenas loga e segue: bloquear a instalação por isso seria
+//!    pior que o risco evitado.
+//! 4. Extrai, localiza o `llama-server(.exe)` recursivamente (os pacotes têm
+//!    estrutura variável) e "achata" o diretório que o contém.
+//! 5. Variantes CUDA: baixa o cudart e espalha as DLLs ao lado do executável.
+//! 6. Instalação atômica por `rename`; a sessão temporária se limpa sozinha.
 
 use crate::BackendVariant;
-use futures_util::StreamExt;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
-use std::collections::{HashMap, VecDeque};
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::path::PathBuf;
 
 /// User-Agent exigido pela API do GitHub (e boa educação nos downloads).
 const USER_AGENT: &str = concat!("OpenWeights/", env!("CARGO_PKG_VERSION"));
 
-/// Intervalo mínimo entre eventos de progresso.
-const PROGRESS_THROTTLE: Duration = Duration::from_millis(200);
-
-/// Buffer de escrita do download (os assets têm 40–380 MB; nunca carregar
-/// inteiro em memória).
-const DOWNLOAD_BUFFER: usize = 1024 * 1024;
+/// Repositório de onde vêm os binários prebuilt.
+const REPO: &str = "ggml-org/llama.cpp";
 
 /// Sanidade final: o runtime completo (exe + DLLs) sempre passa disso.
 /// ATENÇÃO: o llama-server.exe em si é um launcher de ~9 KB — o código real
@@ -47,6 +41,18 @@ pub enum RuntimeError {
     Io(#[from] std::io::Error),
     #[error("verificação falhou: {0}")]
     Verification(String),
+}
+
+/// Erros do `lr_fetch` viram erros de runtime preservando a categoria — a UI
+/// distingue "sem rede" de "pacote corrompido".
+impl From<lr_fetch::FetchError> for RuntimeError {
+    fn from(e: lr_fetch::FetchError) -> Self {
+        match e {
+            lr_fetch::FetchError::Network(e) => Self::Network(e),
+            lr_fetch::FetchError::Io(e) => Self::Io(e),
+            lr_fetch::FetchError::Verification(m) => Self::Verification(m),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -86,8 +92,8 @@ pub struct RuntimeState {
 /// Gerencia a instalação dos runtimes em `<data_dir>/runtimes/`.
 pub struct RuntimeManager {
     data_dir: PathBuf,
-    /// Serializa instalações: uma segunda chamada concorrente de `ensure`
-    /// espera a primeira (e então vê o runtime já instalado).
+    /// Serializa instalações concorrentes (reentrada do comando, remount do
+    /// webview): duas extrações no mesmo destino se atropelariam.
     install_lock: tokio::sync::Mutex<()>,
 }
 
@@ -99,13 +105,15 @@ impl RuntimeManager {
         }
     }
 
-    /// Estado atual do runtime pinado para a variante dada.
     pub fn state(&self, variant: BackendVariant) -> RuntimeState {
-        let dir = crate::runtime_dir(&self.data_dir, crate::PINNED_TAG, variant);
+        let tag = crate::PINNED_TAG;
+        let dir = crate::runtime_dir(&self.data_dir, tag, variant);
         let exe = dir.join(crate::server_exe_name());
-        let installed = exe.exists();
+        // "Instalado" é a presença do executável: não há manifesto separado
+        // que pudesse divergir do que está no disco.
+        let installed = exe.is_file();
         RuntimeState {
-            tag: crate::PINNED_TAG.to_string(),
+            tag: tag.to_string(),
             variant,
             installed,
             server_exe: installed.then_some(exe),
@@ -119,8 +127,7 @@ impl RuntimeManager {
         variant: BackendVariant,
         on_event: impl Fn(RuntimeEvent) + Send + Sync,
     ) -> Result<RuntimeState, RuntimeError> {
-        // Serializa instalações concorrentes (reentrada do comando, remount
-        // do webview etc.); quem esperar re-checa e sai cedo se já instalou.
+        // Quem esperar na fila re-checa e sai cedo se o outro já instalou.
         let _install_guard = self.install_lock.lock().await;
 
         let state = self.state(variant);
@@ -128,15 +135,11 @@ impl RuntimeManager {
             return Ok(state);
         }
 
-        let tmp_root = self.data_dir.join("runtimes").join(".tmp");
-        // Diretório de sessão único: TODO o trabalho temporário (inclusive os
-        // .part) vive aqui, então jobs não colidem e a limpeza é um rmdir só.
-        let session = tmp_root.join(format!("job-{}", unique_suffix()));
-
-        let result = self.install(variant, &session, &on_event).await;
-
-        // Limpeza best-effort do tmp em qualquer desfecho (sucesso ou falha).
-        let _ = std::fs::remove_dir_all(&session);
+        // Todo o trabalho temporário vive na sessão, que se limpa no Drop —
+        // inclusive quando `install` sai por `?` no meio.
+        let session = lr_fetch::Session::new(&self.data_dir.join("runtimes"))?;
+        let result = self.install(variant, session.path(), &on_event).await;
+        drop(session);
 
         match result {
             Ok(()) => {
@@ -158,74 +161,59 @@ impl RuntimeManager {
     async fn install<F>(
         &self,
         variant: BackendVariant,
-        session: &Path,
+        session: &std::path::Path,
         on_event: &F,
     ) -> Result<(), RuntimeError>
     where
         F: Fn(RuntimeEvent) + Send + Sync,
     {
-        std::fs::create_dir_all(session)?;
         let tag = crate::PINNED_TAG;
-        let client = build_client()?;
+        let client = lr_fetch::client(USER_AGENT)?;
 
-        // Digests de todos os assets da release, de uma vez só. `None` se a
-        // API falhar — nesse caso prosseguimos sem verificação (com warning).
-        let digests = fetch_release_digests(&client, tag).await;
+        // Digests de todos os assets de uma vez. `None` se a API falhar.
+        let digests = lr_fetch::github_release_digests(&client, REPO, tag).await;
 
         // ---- Asset principal -------------------------------------------
         let asset = crate::asset_name(tag, variant);
-        let part = session.join(format!("{asset}.part"));
-        download_to(
-            &client,
-            &crate::asset_url(tag, &asset),
-            &part,
-            &asset,
-            on_event,
-        )
-        .await?;
-        verify_sha256(&part, &asset, digests.as_ref()).await?;
+        let part = self
+            .baixar_asset(&client, session, tag, &asset, digests.as_ref(), on_event)
+            .await?;
 
         on_event(RuntimeEvent::Extracting {
             asset: asset.clone(),
         });
         let extract_dir = session.join("extract-main");
-        extract_archive_async(part.clone(), asset.clone(), extract_dir.clone()).await?;
+        lr_fetch::extract_archive_async(part.clone(), asset.clone(), extract_dir.clone()).await?;
         let _ = std::fs::remove_file(&part);
 
         // Estrutura variável nos pacotes: achamos o diretório que contém o
         // llama-server e usamos ele como raiz real do runtime.
-        let root = find_server_root(&extract_dir).ok_or_else(|| {
-            RuntimeError::Verification(format!(
-                "{} não encontrado dentro de {asset}",
-                crate::server_exe_name()
-            ))
-        })?;
+        let root = lr_fetch::find_dir_containing(&extract_dir, crate::server_exe_name())
+            .ok_or_else(|| {
+                RuntimeError::Verification(format!(
+                    "{} não encontrado dentro de {asset}",
+                    crate::server_exe_name()
+                ))
+            })?;
         let staging = session.join("install");
-        std::fs::create_dir_all(&staging)?;
-        move_dir_contents(&root, &staging)?;
+        lr_fetch::move_dir_contents(&root, &staging)?;
 
         // ---- cudart (obrigatório para CUDA) -----------------------------
         if let Some(cudart) = crate::cudart_asset_name(tag, variant) {
-            let cpart = session.join(format!("{cudart}.part"));
-            download_to(
-                &client,
-                &crate::asset_url(tag, &cudart),
-                &cpart,
-                &cudart,
-                on_event,
-            )
-            .await?;
-            verify_sha256(&cpart, &cudart, digests.as_ref()).await?;
+            let cpart = self
+                .baixar_asset(&client, session, tag, &cudart, digests.as_ref(), on_event)
+                .await?;
 
             on_event(RuntimeEvent::Extracting {
                 asset: cudart.clone(),
             });
             let cudart_dir = session.join("extract-cudart");
-            extract_archive_async(cpart.clone(), cudart.clone(), cudart_dir.clone()).await?;
+            lr_fetch::extract_archive_async(cpart.clone(), cudart.clone(), cudart_dir.clone())
+                .await?;
             let _ = std::fs::remove_file(&cpart);
             // As DLLs precisam ficar AO LADO do llama-server.exe, então
             // achatamos qualquer subestrutura do pacote cudart.
-            move_files_flat(&cudart_dir, &staging)?;
+            lr_fetch::move_files_flat(&cudart_dir, &staging)?;
         }
 
         // ---- Sanidade final ---------------------------------------------
@@ -239,7 +227,7 @@ impl RuntimeManager {
                 crate::server_exe_name()
             )));
         }
-        let install_size = dir_size(&staging);
+        let install_size = lr_fetch::dir_size(&staging);
         if install_size < MIN_INSTALL_SIZE {
             return Err(RuntimeError::Verification(format!(
                 "runtime extraído suspeito de incompleto ({install_size} bytes no total)"
@@ -248,20 +236,45 @@ impl RuntimeManager {
 
         // ---- Instalação atômica -----------------------------------------
         let final_dir = crate::runtime_dir(&self.data_dir, tag, variant);
-        if let Some(parent) = final_dir.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        if final_dir.exists() {
-            // Sobra de uma instalação quebrada (sem o executável): remove
-            // para o rename atômico não falhar.
-            std::fs::remove_dir_all(&final_dir)?;
-        }
-        std::fs::rename(&staging, &final_dir)?;
+        lr_fetch::install_atomically(&staging, &final_dir)?;
         log::info!(
             "runtime {tag}/{variant:?} instalado em {}",
             final_dir.display()
         );
         Ok(())
+    }
+
+    /// Baixa um asset da release para o `.part` da sessão e confere o SHA256.
+    /// Traduz o progresso cru do `lr_fetch` no evento que a UI consome.
+    async fn baixar_asset<F>(
+        &self,
+        client: &reqwest::Client,
+        session: &std::path::Path,
+        tag: &str,
+        asset: &str,
+        digests: Option<&std::collections::HashMap<String, String>>,
+        on_event: &F,
+    ) -> Result<PathBuf, RuntimeError>
+    where
+        F: Fn(RuntimeEvent) + Send + Sync,
+    {
+        let part = session.join(format!("{asset}.part"));
+        let nome = asset.to_string();
+        lr_fetch::download_to(
+            client,
+            &crate::asset_url(tag, asset),
+            &part,
+            &|received_bytes, total_bytes| {
+                on_event(RuntimeEvent::Progress {
+                    asset: nome.clone(),
+                    received_bytes,
+                    total_bytes,
+                });
+            },
+        )
+        .await?;
+        lr_fetch::verify_sha256(&part, asset, digests).await?;
+        Ok(part)
     }
 
     /// Seleciona a melhor variante para o perfil e tenta instalá-la,
@@ -288,320 +301,17 @@ impl RuntimeManager {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP
-// ---------------------------------------------------------------------------
-
-fn build_client() -> Result<reqwest::Client, reqwest::Error> {
-    reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .connect_timeout(Duration::from_secs(30))
-        .build()
-}
-
-/// Baixa `url` em streaming para `dest`, emitindo `Progress` com throttle.
-async fn download_to<F>(
-    client: &reqwest::Client,
-    url: &str,
-    dest: &Path,
-    asset: &str,
-    on_event: &F,
-) -> Result<(), RuntimeError>
-where
-    F: Fn(RuntimeEvent) + Send + Sync,
-{
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let response = client.get(url).send().await?.error_for_status()?;
-    let total_bytes = response.content_length().unwrap_or(0);
-
-    let file = std::fs::File::create(dest)?;
-    let mut writer = std::io::BufWriter::with_capacity(DOWNLOAD_BUFFER, file);
-    let mut stream = response.bytes_stream();
-    let mut received_bytes: u64 = 0;
-    let mut last_emit: Option<Instant> = None;
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
-        writer.write_all(&chunk)?;
-        received_bytes += chunk.len() as u64;
-        if last_emit.is_none_or(|t| t.elapsed() >= PROGRESS_THROTTLE) {
-            on_event(RuntimeEvent::Progress {
-                asset: asset.to_string(),
-                received_bytes,
-                total_bytes,
-            });
-            last_emit = Some(Instant::now());
-        }
-    }
-    writer.flush()?;
-
-    // Evento final sem throttle, para a UI fechar em 100%.
-    on_event(RuntimeEvent::Progress {
-        asset: asset.to_string(),
-        received_bytes,
-        total_bytes,
-    });
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Verificação SHA256
-// ---------------------------------------------------------------------------
-
-#[derive(serde::Deserialize)]
-struct ReleaseAsset {
-    name: String,
-    /// Formato `"sha256:<hex>"`, presente nos assets de release do GitHub.
-    digest: Option<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct Release {
-    assets: Vec<ReleaseAsset>,
-}
-
-/// Busca os digests SHA256 de todos os assets da release `tag`.
-///
-/// Retorna `None` se a API falhar (403 por rate limit, rede etc.) — a
-/// instalação prossegue sem verificação nesse caso, apenas com warning.
-async fn fetch_release_digests(
-    client: &reqwest::Client,
-    tag: &str,
-) -> Option<HashMap<String, String>> {
-    let url = format!("https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/{tag}");
-    let result: Result<Release, reqwest::Error> = async {
-        client
-            .get(&url)
-            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", "2022-11-28")
-            .timeout(Duration::from_secs(30))
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<Release>()
-            .await
-    }
-    .await;
-
-    match result {
-        Ok(release) => {
-            let mut map = HashMap::new();
-            for asset in release.assets {
-                if let Some(hex) = asset.digest.as_deref().and_then(parse_sha256_digest) {
-                    map.insert(asset.name, hex);
-                }
-            }
-            Some(map)
-        }
-        Err(e) => {
-            log::warn!(
-                "não foi possível obter digests da release {tag} ({e}); \
-                 prosseguindo sem verificação SHA256"
-            );
-            None
-        }
-    }
-}
-
-/// Extrai o hex de um digest `"sha256:<hex>"` (64 dígitos), normalizado em
-/// minúsculas. Retorna `None` para qualquer outro formato.
-fn parse_sha256_digest(digest: &str) -> Option<String> {
-    let hex = digest.strip_prefix("sha256:")?.trim();
-    if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    Some(hex.to_ascii_lowercase())
-}
-
-/// SHA256 de um arquivo em streaming (nunca carrega tudo em memória).
-fn sha256_file(path: &Path) -> std::io::Result<String> {
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    std::io::copy(&mut file, &mut hasher)?;
-    let digest = hasher.finalize();
-    Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
-}
-
-/// Verifica o SHA256 de `path` contra o digest esperado para `asset`.
-/// Digest indisponível não é erro (já logado); divergência é.
-async fn verify_sha256(
-    path: &Path,
-    asset: &str,
-    digests: Option<&HashMap<String, String>>,
-) -> Result<(), RuntimeError> {
-    let Some(digests) = digests else {
-        return Ok(());
-    };
-    let Some(expected) = digests.get(asset) else {
-        log::warn!("digest ausente para {asset}; prosseguindo sem verificação");
-        return Ok(());
-    };
-    let file = path.to_path_buf();
-    let actual = tokio::task::spawn_blocking(move || sha256_file(&file))
-        .await
-        .map_err(std::io::Error::other)??;
-    if actual != *expected {
-        return Err(RuntimeError::Verification(format!(
-            "SHA256 divergente para {asset}: esperado {expected}, obtido {actual}"
-        )));
-    }
-    log::info!("SHA256 verificado para {asset}");
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Extração
-// ---------------------------------------------------------------------------
-
-/// Extrai `archive` (formato deduzido pelo nome do `asset`) para `dest`,
-/// em thread de blocking para não travar o runtime async.
-async fn extract_archive_async(
-    archive: PathBuf,
-    asset: String,
-    dest: PathBuf,
-) -> std::io::Result<()> {
-    tokio::task::spawn_blocking(move || extract_archive(&archive, &asset, &dest))
-        .await
-        .map_err(std::io::Error::other)?
-}
-
-fn extract_archive(archive: &Path, asset: &str, dest: &Path) -> std::io::Result<()> {
-    std::fs::create_dir_all(dest)?;
-    if asset.ends_with(".zip") {
-        extract_zip(archive, dest)
-    } else if asset.ends_with(".tar.gz") {
-        extract_tar_gz(archive, dest)
-    } else {
-        Err(std::io::Error::other(format!(
-            "formato de pacote desconhecido: {asset}"
-        )))
-    }
-}
-
-fn extract_zip(archive: &Path, dest: &Path) -> std::io::Result<()> {
-    let file = std::fs::File::open(archive)?;
-    let mut zip = zip::ZipArchive::new(file).map_err(std::io::Error::other)?;
-    for i in 0..zip.len() {
-        let mut entry = zip.by_index(i).map_err(std::io::Error::other)?;
-        // `enclosed_name` rejeita path traversal (`../`, caminho absoluto).
-        let Some(relative) = entry.enclosed_name() else {
-            log::warn!("entrada suspeita ignorada no zip: {:?}", entry.name());
-            continue;
-        };
-        let out_path = dest.join(relative);
-        if entry.is_dir() {
-            std::fs::create_dir_all(&out_path)?;
-            continue;
-        }
-        if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let mut out = std::fs::File::create(&out_path)?;
-        std::io::copy(&mut entry, &mut out)?;
-        // Preserva bits de permissão (ex.: +x do llama-server) em Unix.
-        #[cfg(unix)]
-        if let Some(mode) = entry.unix_mode() {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&out_path, std::fs::Permissions::from_mode(mode));
-        }
-    }
-    Ok(())
-}
-
-fn extract_tar_gz(archive: &Path, dest: &Path) -> std::io::Result<()> {
-    let file = std::fs::File::open(archive)?;
-    let decoder = flate2::read::GzDecoder::new(file);
-    let mut tar = tar::Archive::new(decoder);
-    // `unpack` já protege contra path traversal e preserva permissões.
-    tar.unpack(dest)
-}
-
-// ---------------------------------------------------------------------------
-// Layout: achatamento da raiz que contém o llama-server
-// ---------------------------------------------------------------------------
-
-/// Localiza recursivamente (BFS, o mais raso primeiro) o diretório que
-/// contém o `llama-server(.exe)` dentro da árvore extraída.
-fn find_server_root(dir: &Path) -> Option<PathBuf> {
-    let exe_name = crate::server_exe_name();
-    let mut queue = VecDeque::from([dir.to_path_buf()]);
-    while let Some(current) = queue.pop_front() {
-        let Ok(entries) = std::fs::read_dir(&current) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                queue.push_back(path);
-            } else if entry.file_name().to_string_lossy() == exe_name {
-                return Some(current);
-            }
-        }
-    }
-    None
-}
-
-/// Move o conteúdo (arquivos e subdiretórios) de `src` para dentro de `dst`.
-fn move_dir_contents(src: &Path, dst: &Path) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        std::fs::rename(entry.path(), dst.join(entry.file_name()))?;
-    }
-    Ok(())
-}
-
-/// Move todos os ARQUIVOS da árvore `src` (recursivamente) direto para a
-/// raiz de `dst` — usado para garantir as DLLs do cudart ao lado do exe.
-fn move_files_flat(src: &Path, dst: &Path) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            move_files_flat(&path, dst)?;
-        } else {
-            std::fs::rename(&path, dst.join(entry.file_name()))?;
-        }
-    }
-    Ok(())
-}
-
-/// Sufixo único para o diretório de sessão no tmp.
-/// Soma recursiva dos tamanhos de arquivo sob `dir` (sanidade pós-extração).
-fn dir_size(dir: &Path) -> u64 {
-    let mut total = 0u64;
-    let mut queue = VecDeque::from([dir.to_path_buf()]);
-    while let Some(d) = queue.pop_front() {
-        let Ok(entries) = std::fs::read_dir(&d) else {
-            continue;
-        };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                queue.push_back(p);
-            } else if let Ok(m) = e.metadata() {
-                total += m.len();
-            }
-        }
-    }
-    total
-}
-
-fn unique_suffix() -> String {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("{}-{nanos}", std::process::id())
-}
-
-// ---------------------------------------------------------------------------
 // Testes
+//
+// A mecânica genérica (parsing de digest, traversal no zip, sha256) é testada
+// em `lr_fetch`. Aqui ficam só as garantias específicas do llama.cpp.
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use std::path::Path;
 
     /// Escreve um zip com estrutura aninhada (como os pacotes reais do
     /// llama.cpp) contendo um llama-server fake.
@@ -631,14 +341,14 @@ mod tests {
         write_nested_zip(&zip_path);
 
         let extract = tmp.path().join("extract");
-        extract_archive(&zip_path, "pkg.zip", &extract).unwrap();
+        lr_fetch::extract_archive(&zip_path, "pkg.zip", &extract).unwrap();
 
-        let root = find_server_root(&extract).expect("raiz com llama-server");
+        let root = lr_fetch::find_dir_containing(&extract, crate::server_exe_name())
+            .expect("raiz com llama-server");
         assert!(root.ends_with("llama-b1-bin/build/bin"));
 
         let staging = tmp.path().join("install");
-        std::fs::create_dir_all(&staging).unwrap();
-        move_dir_contents(&root, &staging).unwrap();
+        lr_fetch::move_dir_contents(&root, &staging).unwrap();
 
         let exe = staging.join(crate::server_exe_name());
         assert!(exe.is_file(), "llama-server deve estar na raiz do destino");
@@ -646,29 +356,6 @@ mod tests {
         assert!(staging.join("ggml-base.dll").is_file());
         // O LICENSE ficou acima da raiz do servidor e não é movido.
         assert!(!staging.join("LICENSE").exists());
-    }
-
-    #[test]
-    fn zip_path_traversal_entries_are_skipped() {
-        let tmp = tempfile::tempdir().unwrap();
-        let zip_path = tmp.path().join("evil.zip");
-        let file = std::fs::File::create(&zip_path).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        let opts = zip::write::SimpleFileOptions::default();
-        zip.start_file("../evil.txt", opts).unwrap();
-        zip.write_all(b"pwned").unwrap();
-        zip.start_file("ok.txt", opts).unwrap();
-        zip.write_all(b"ok").unwrap();
-        zip.finish().unwrap();
-
-        let extract = tmp.path().join("extract");
-        extract_archive(&zip_path, "evil.zip", &extract).unwrap();
-
-        assert!(extract.join("ok.txt").is_file());
-        assert!(
-            !tmp.path().join("evil.txt").exists(),
-            "entrada com ../ não pode escapar do destino"
-        );
     }
 
     #[test]
@@ -691,9 +378,9 @@ mod tests {
         builder.into_inner().unwrap().finish().unwrap();
 
         let extract = tmp.path().join("extract");
-        extract_archive(&tar_path, "pkg.tar.gz", &extract).unwrap();
+        lr_fetch::extract_archive(&tar_path, "pkg.tar.gz", &extract).unwrap();
 
-        let root = find_server_root(&extract).expect("raiz com llama-server");
+        let root = lr_fetch::find_dir_containing(&extract, exe).expect("raiz com llama-server");
         assert!(root.ends_with("llama-b1/bin"));
         assert_eq!(std::fs::read(root.join(exe)).unwrap(), data);
     }
@@ -708,43 +395,11 @@ mod tests {
 
         let dst = tmp.path().join("install");
         std::fs::create_dir_all(&dst).unwrap();
-        move_files_flat(&src, &dst).unwrap();
+        lr_fetch::move_files_flat(&src, &dst).unwrap();
 
         assert!(dst.join("cudart64_12.dll").is_file());
         assert!(dst.join("cublas64_12.dll").is_file());
         assert!(!dst.join("nested").exists());
-    }
-
-    #[test]
-    fn digest_parsing_accepts_only_sha256_hex() {
-        let hex = "a".repeat(64);
-        assert_eq!(
-            parse_sha256_digest(&format!("sha256:{hex}")),
-            Some(hex.clone())
-        );
-        // Normaliza para minúsculas.
-        assert_eq!(
-            parse_sha256_digest(&format!("sha256:{}", hex.to_uppercase())),
-            Some(hex)
-        );
-        assert_eq!(parse_sha256_digest("md5:abc"), None);
-        assert_eq!(parse_sha256_digest("sha256:tooshort"), None);
-        assert_eq!(
-            parse_sha256_digest(&format!("sha256:{}", "g".repeat(64))),
-            None
-        );
-        assert_eq!(parse_sha256_digest(&"a".repeat(71)), None);
-    }
-
-    #[test]
-    fn sha256_file_matches_known_vector() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("abc.bin");
-        std::fs::write(&path, b"abc").unwrap();
-        assert_eq!(
-            sha256_file(&path).unwrap(),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
     }
 
     /// Regressão: nos pacotes reais o llama-server.exe é um launcher de ~9 KB
@@ -759,20 +414,20 @@ mod tests {
             vec![2u8; 6 * 1024 * 1024],
         )
         .unwrap();
-        assert!(dir_size(dir.path()) >= MIN_INSTALL_SIZE);
+        assert!(lr_fetch::dir_size(dir.path()) >= MIN_INSTALL_SIZE);
 
         // Extração truncada (só o launcher) precisa continuar reprovando.
         let broken = tempfile::tempdir().unwrap();
         std::fs::write(broken.path().join("llama-server.exe"), vec![1u8; 9 * 1024]).unwrap();
-        assert!(dir_size(broken.path()) < MIN_INSTALL_SIZE);
+        assert!(lr_fetch::dir_size(broken.path()) < MIN_INSTALL_SIZE);
     }
 
     /// Teste live contra a API do GitHub — roda só com `--ignored`.
     #[tokio::test]
     #[ignore = "rede: consulta a API de releases do GitHub"]
     async fn live_release_digests_cover_pinned_assets() {
-        let client = build_client().unwrap();
-        let digests = fetch_release_digests(&client, crate::PINNED_TAG)
+        let client = lr_fetch::client(USER_AGENT).unwrap();
+        let digests = lr_fetch::github_release_digests(&client, REPO, crate::PINNED_TAG)
             .await
             .expect("API do GitHub indisponível ou rate-limited");
         let asset = crate::asset_name(crate::PINNED_TAG, BackendVariant::Cpu);
