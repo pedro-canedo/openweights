@@ -441,10 +441,7 @@ pub fn escolher_chave(json: &str) -> Option<String> {
 /// responder 401 — e a conversa morre com "Missing API key" sem que ela
 /// tenha mudado nada do lado de cá. Pegar a chave ANTES de precisar dela faz
 /// o interruptor deixar de ser um problema nosso.
-pub async fn garantir_api_key(
-    layout: &Layout,
-    porta: u16,
-) -> Result<String, NineRouterError> {
+pub async fn garantir_api_key(layout: &Layout, porta: u16) -> Result<String, NineRouterError> {
     let token = cli_token(layout)
         .ok_or_else(|| NineRouterError::Verification("sem token de CLI do 9router".into()))?;
     let http = reqwest::Client::builder()
@@ -783,7 +780,8 @@ mod tests {
     /// Entrada sem valor de chave não conta.
     #[test]
     fn an_existing_key_is_reused_and_empty_ones_are_ignored() {
-        let json = r#"{"keys":[{"name":"vazia","key":"  "},{"name":"Default Key","key":"sk-outra"}]}"#;
+        let json =
+            r#"{"keys":[{"name":"vazia","key":"  "},{"name":"Default Key","key":"sk-outra"}]}"#;
         assert_eq!(escolher_chave(json).as_deref(), Some("sk-outra"));
         assert_eq!(escolher_chave(r#"{"keys":[]}"#), None);
         assert_eq!(escolher_chave("não é json"), None);

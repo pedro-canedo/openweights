@@ -402,7 +402,9 @@ pub async fn ninerouter_start(
 /// seletor do chat chama isto a cada abertura e um erro ali viraria ruído
 /// para quem nem usa provedor externo.
 #[tauri::command]
-pub async fn ninerouter_models(state: State<'_, AppState>) -> CmdResult<Vec<lr_ninerouter::ModeloNine>> {
+pub async fn ninerouter_models(
+    state: State<'_, AppState>,
+) -> CmdResult<Vec<lr_ninerouter::ModeloNine>> {
     if state.ninerouter.lock().await.is_none() {
         return Ok(Vec::new());
     }
