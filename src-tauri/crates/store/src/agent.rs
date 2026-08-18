@@ -375,7 +375,7 @@ impl Store {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO steps (id, run_id, idx, started_at) VALUES (?1, ?2, ?3, ?4)",
-            params![id, run_id, idx, Self::now()],
+            params![id, run_id, idx, Self::now_ms()],
         )?;
         Ok(())
     }
@@ -398,7 +398,7 @@ impl Store {
                 reasoning,
                 prompt_tokens,
                 completion_tokens,
-                Self::now()
+                Self::now_ms()
             ],
         )?;
         Ok(())
@@ -427,7 +427,7 @@ impl Store {
     pub fn set_tool_call_state(&self, id: &str, state: &str) -> Result<(), StoreError> {
         let conn = self.conn.lock().unwrap();
         let started = if state == "running" {
-            Some(Self::now())
+            Some(Self::now_ms())
         } else {
             None
         };
@@ -456,7 +456,7 @@ impl Store {
                 result_json,
                 result_bytes as i64,
                 error,
-                Self::now()
+                Self::now_ms()
             ],
         )?;
         Ok(())
@@ -481,8 +481,8 @@ impl Store {
                     state: r.get(6)?,
                     result_json: r.get(7)?,
                     error: r.get(8)?,
-                    started_at: r.get(9)?,
-                    finished_at: r.get(10)?,
+                    started_at: crate::ms_or_secs(r.get(9)?),
+                    finished_at: crate::ms_or_secs(r.get(10)?),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

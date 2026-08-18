@@ -25,6 +25,7 @@ import CheckpointList from "../agent/CheckpointList";
 import RagPanel from "../agent/RagPanel";
 import MemoryPanel from "../agent/MemoryPanel";
 import PreviewPane, { canShowCode, previewKind } from "./PreviewPane";
+import FileIcon, { FolderIcon } from "./FileIcon";
 
 function folderName(dir: string): string {
   const parts = dir.replace(/[\\/]+$/, "").split(/[\\/]/);
@@ -159,6 +160,8 @@ type WorkspaceCtx = {
   setExplorerOpen: (open: boolean) => void;
   /** Muda quando o agente cria um checkpoint — recarrega a lista. */
   checkpointsKey: number;
+  /** Sobe a cada mudança real de conteúdo na pasta (releitura periódica). */
+  filesTick: number;
   addFolder: () => Promise<void>;
   removeFolder: () => void;
   query: string;
@@ -225,18 +228,39 @@ export function WorkspaceHost({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  // Assinatura da varredura (caminho + tamanho de cada arquivo). Existe para
+  // a releitura periódica abaixo não trocar o estado — e não repintar a
+  // árvore inteira, perdendo hover e rolagem — quando nada mudou.
+  const assinaturaRef = useRef("");
+  const assinaturaDe = (lista: WorkspaceFile[]) =>
+    lista.map((f) => `${f.path}:${f.bytes}`).join("|");
+  // Sobe a cada mudança real de conteúdo: é o que faz a prévia aberta se
+  // renovar sozinha quando o agente reescreve o arquivo.
+  const [filesTick, setFilesTick] = useState(0);
+
   const reloadFiles = () => {
     if (!dir) {
+      assinaturaRef.current = "";
       onFiles([]);
       return;
     }
     void listWorkspace(dir)
-      .then(onFiles)
-      .catch(() => onFiles([]));
+      .then((lista) => {
+        const assinatura = assinaturaDe(lista);
+        if (assinatura === assinaturaRef.current) return;
+        assinaturaRef.current = assinatura;
+        onFiles(lista);
+        setFilesTick((n) => n + 1);
+      })
+      .catch(() => {
+        assinaturaRef.current = "";
+        onFiles([]);
+      });
   };
 
   useEffect(() => {
     if (!dir) {
+      assinaturaRef.current = "";
       onFiles([]);
       setOpenPath(null);
       setEditorOpen(false);
@@ -247,6 +271,25 @@ export function WorkspaceHost({
     // explorador abre — senão index.html / MEMORY.md nascem e a lista fica vazia.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dir, checkpointsKey, explorerOpen]);
+
+  // Releitura periódica enquanto a pessoa está OLHANDO para os arquivos.
+  //
+  // O checkpoint do agente não cobre o caso comum: ele grava vários arquivos
+  // dentro de um passo só, e um comando que a pessoa roda no terminal não
+  // gera checkpoint nenhum. Sem isto era preciso fechar e reabrir o
+  // explorador para a lista mudar — foi assim que o problema apareceu.
+  //
+  // A varredura é limitada (400 arquivos, 5 níveis) e só corre com o painel
+  // aberto e a janela visível; a assinatura acima garante que um ciclo sem
+  // novidade não custa nem um render.
+  useEffect(() => {
+    if (!dir || (!explorerOpen && !editorOpen)) return;
+    const id = window.setInterval(() => {
+      if (!document.hidden) reloadFiles();
+    }, 1500);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dir, explorerOpen, editorOpen]);
 
   const addFolder = async () => {
     setError(null);
@@ -362,6 +405,7 @@ export function WorkspaceHost({
         explorerOpen,
         setExplorerOpen,
         checkpointsKey,
+        filesTick,
         addFolder,
         removeFolder,
         query,
@@ -480,6 +524,7 @@ function FileTree({
                 <span className="w-3 shrink-0 text-[10px]">
                   {closed ? "▸" : "▾"}
                 </span>
+                <FolderIcon open={!closed} />
                 <span className="truncate">{node.name}</span>
               </button>
               {!closed && (
@@ -503,11 +548,12 @@ function FileTree({
             <button
               type="button"
               onClick={() => node.file && void openFile(node.file)}
-              style={{ paddingLeft: 20 + depth * 12 }}
-              className={`flex min-w-0 flex-1 items-center py-1 pr-2 text-left text-[12px] ${
+              style={{ paddingLeft: 15 + depth * 12 }}
+              className={`flex min-w-0 flex-1 items-center gap-1.5 py-1 pr-2 text-left text-[12px] ${
                 active ? "text-ink" : "text-dim"
               }`}
             >
+              <FileIcon name={node.name} />
               <span className="truncate">{node.name}</span>
             </button>
             {previewable && node.file && (
@@ -660,6 +706,7 @@ function WorkspaceEditor() {
   const {
     dir,
     checkpointsKey,
+    filesTick,
     editorOpen,
     openPath,
     draft,
@@ -721,10 +768,10 @@ function WorkspaceEditor() {
           <PreviewPane
             path={absPath}
             name={fileName}
-            // O agente pode estar mexendo no arquivo: quando ele grava um
-            // checkpoint a lista de arquivos recarrega — reaproveitamos o
-            // mesmo sinal para renovar a prévia, sem inventar watcher novo.
-            refreshKey={checkpointsKey}
+            // O agente pode estar mexendo no arquivo: tanto o checkpoint
+            // quanto a releitura periódica da pasta renovam a prévia, então
+            // ela acompanha o que foi gravado sem ninguém clicar em nada.
+            refreshKey={checkpointsKey + filesTick}
             onClose={closeEditor}
             onShowCode={
               canShowCode(fileName) ? () => setPreviewMode(false) : undefined
@@ -772,6 +819,7 @@ function WorkspaceEditor() {
     >
       <div className="flex h-[min(86vh,820px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-edge bg-[#1e1e1e] shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
         <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+          <FileIcon name={fileName} className="h-4 w-4" />
           <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-white/90">
             {openPath}
             {dirty ? " •" : ""}

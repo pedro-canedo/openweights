@@ -47,6 +47,10 @@ pub struct MessageRow {
     pub gen_tokens: Option<i64>,
     /// Duração da geração em ms.
     pub gen_ms: Option<i64>,
+    /// Execução do agente que produziu esta resposta, quando houve uma.
+    /// É o que devolve a trilha de ações à conversa depois de reabri-la:
+    /// sem ele a resposta volta sozinha, como se nada tivesse sido feito.
+    pub run_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +84,16 @@ fn ensure_column(
         conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {decl}"))?;
     }
     Ok(())
+}
+
+/// Carimbo que pode ter sido gravado em segundos (bancos anteriores à
+/// migração para milissegundos) devolvido sempre em milissegundos.
+///
+/// O corte é 2001 em milissegundos: qualquer instante real posterior a ele
+/// passa do limite quando lido como segundos, e nenhum instante gravado em
+/// segundos o alcança antes do ano 5138.
+pub(crate) fn ms_or_secs(v: Option<i64>) -> Option<i64> {
+    v.map(|n| if n > 0 && n < 1_000_000_000_000 { n * 1000 } else { n })
 }
 
 const SCHEMA: &str = r#"
@@ -156,6 +170,20 @@ impl Store {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
+            .unwrap_or(0)
+    }
+
+    /// Instante em MILISSEGUNDOS.
+    ///
+    /// Duas unidades convivem no banco de propósito: uma execução é datada em
+    /// segundos (o que a lista de histórico precisa), mas uma ação dura menos
+    /// de um segundo — em segundos toda ferramenta virava "0 ms" e a trilha
+    /// mentia sobre o próprio tempo. Quem lê normaliza com [`ms_or_secs`],
+    /// porque bancos antigos guardaram segundos nestas colunas.
+    pub(crate) fn now_ms() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
             .unwrap_or(0)
     }
 
@@ -236,11 +264,13 @@ impl Store {
         gen_ms: Option<i64>,
         model_id: Option<&str>,
         profile_key: Option<&str>,
+        // Execução do agente que gerou a resposta (`None` no chat comum).
+        run_id: Option<&str>,
     ) -> Result<i64, StoreError> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO messages (chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, model_id, profile_key)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO messages (chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, model_id, profile_key, run_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             rusqlite::params![
                 chat_id,
                 role,
@@ -250,7 +280,8 @@ impl Store {
                 gen_tokens,
                 gen_ms,
                 model_id,
-                profile_key
+                profile_key,
+                run_id
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -259,7 +290,7 @@ impl Store {
     pub fn list_messages(&self, chat_id: i64) -> Result<Vec<MessageRow>, StoreError> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms
+            "SELECT id, chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, run_id
              FROM messages WHERE chat_id = ?1 ORDER BY id",
         )?;
         let rows = stmt
@@ -273,6 +304,7 @@ impl Store {
                     tokens_per_sec: r.get(5)?,
                     gen_tokens: r.get(6)?,
                     gen_ms: r.get(7)?,
+                    run_id: r.get(8)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -366,7 +398,7 @@ mod tests {
         let chat = s
             .create_chat("Primeira conversa", Some("qwen3-8b"))
             .unwrap();
-        s.add_message(chat, "user", "Olá!", None, None, None, None, None)
+        s.add_message(chat, "user", "Olá!", None, None, None, None, None, None)
             .unwrap();
         s.add_message(
             chat,
@@ -377,6 +409,7 @@ mod tests {
             Some(3012),
             Some("Qwen3-8B-Q4_K_M.gguf"),
             Some("abc123"),
+            None,
         )
         .unwrap();
 
@@ -418,10 +451,10 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         let chat = s.create_chat("Conversa", None).unwrap();
         let m1 = s
-            .add_message(chat, "user", "rascunho", None, None, None, None, None)
+            .add_message(chat, "user", "rascunho", None, None, None, None, None, None)
             .unwrap();
         let m2 = s
-            .add_message(chat, "assistant", "resposta", None, None, None, None, None)
+            .add_message(chat, "assistant", "resposta", None, None, None, None, None, None)
             .unwrap();
 
         s.update_message_content(m1, "versão final").unwrap();
@@ -526,6 +559,7 @@ mod tests {
             Some(10.0),
             Some(7),
             Some(700),
+            None,
             None,
             None,
         )

@@ -915,6 +915,8 @@ pub fn message_add(
             gen_ms,
             modelo,
             chave.as_deref(),
+            // Chat comum: não há execução do agente por trás desta resposta.
+            None,
         )
         .map_err(err_str)
 }
@@ -978,7 +980,23 @@ pub async fn workspace_pick(window: tauri::WebviewWindow) -> CmdResult<Option<St
 }
 
 #[tauri::command]
-pub fn workspace_list(root: String) -> CmdResult<Vec<crate::workspace::WorkspaceFile>> {
+pub fn workspace_list(
+    app: AppHandle,
+    root: String,
+) -> CmdResult<Vec<crate::workspace::WorkspaceFile>> {
+    // Libera a pasta para o protocolo `asset:` antes de devolver a lista.
+    //
+    // É o que faz a prévia (iframe/img) conseguir abrir o arquivo: sem isto o
+    // `convertFileSrc` monta uma URL que o WebView recusa, e a prévia aparece
+    // como a página de erro do navegador — nada indica que o problema é
+    // permissão. Aqui é o ponto certo porque toda abertura da pasta passa por
+    // este comando, inclusive quando ela é restaurada de uma conversa antiga.
+    //
+    // O escopo é a pasta que a PESSOA escolheu, não o disco: o protocolo
+    // asset não serve nada fora do que for permitido aqui.
+    if let Err(e) = tauri::Manager::asset_protocol_scope(&app).allow_directory(&root, true) {
+        log::warn!("prévia sem acesso a {root}: {e}");
+    }
     crate::workspace::list_files(&root).map_err(err_str)
 }
 

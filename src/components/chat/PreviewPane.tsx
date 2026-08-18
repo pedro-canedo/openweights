@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+import FileIcon from "./FileIcon";
 
 const HTML_EXTS = ["html", "htm"];
 const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"];
@@ -114,6 +115,7 @@ export default function PreviewPane({
   return (
     <div className="flex h-full w-full flex-col overflow-hidden rounded-xl border border-edge bg-panel">
       <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
+        <FileIcon name={name} className="h-4 w-4" />
         <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink">
           {name}
         </span>

@@ -77,8 +77,10 @@ fn call_from(r: &Row<'_>) -> rusqlite::Result<ActivityCall> {
         origin: r.get(3)?,
         state: r.get(4)?,
         error: r.get(5)?,
-        started_at: r.get(6)?,
-        finished_at: r.get(7)?,
+        // Gravado em milissegundos; bancos anteriores à migração guardaram
+        // segundos aqui, e sem isto a tela datava a ação em 1970.
+        started_at: crate::ms_or_secs(r.get(6)?),
+        finished_at: crate::ms_or_secs(r.get(7)?),
         decision: r.get(8)?,
         source: r.get(9)?,
     })

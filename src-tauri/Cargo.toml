@@ -41,7 +41,7 @@ description = "OpenWeights — rode LLMs localmente, sem conhecimento técnico"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 # O agente precisa alcançar o computador em volta do projeto: avisar a pessoa
 # e usar a área de transferência. Quem faz isso direito em cada sistema são

@@ -2592,6 +2592,10 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
                 // A configuração é resolvida por quem conhece o catálogo de
                 // modelos; o laço só sabe o nome.
                 None,
+                // O laço de ações fica pendurado nesta mensagem: é por este
+                // ponteiro que a conversa reaberta reencontra o que foi
+                // feito (ler, escrever, rodar) em vez de só o texto final.
+                Some(run_id.as_str()),
             );
         }
     };
