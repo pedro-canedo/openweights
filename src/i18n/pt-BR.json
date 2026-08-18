@@ -963,14 +963,15 @@
       "version": "versão {{version}}",
       "port": "porta {{port}}",
       "passwordLabel": "Senha do painel:",
-      "passwordHint": "Use esta senha no primeiro acesso ao painel ao lado. Ela só vale no primeiro boot — depois disso, quem manda é a senha que você definir lá dentro.",
+      "passwordHint": "Use esta senha no primeiro acesso ao painel. Ela só vale no primeiro boot — depois disso, quem manda é a senha que você definir lá dentro.",
       "openExternal": "Abrir no navegador",
-      "frameBlocked": "O painel não carregou aqui dentro. Abra no navegador pelo link acima.",
       "phase": {
         "resolving": "resolvendo dependências",
         "extracting": "extraindo",
         "finishing": "finalizando"
-      }
+      },
+      "openPanel": "Abrir painel",
+      "panelHint": "O painel abre em janela própria: é o que faz a sessão dele gravar. Aqui dentro da tela, embutido, o login nunca conclui."
     },
     "gateway": {
       "tab": "Gateway",

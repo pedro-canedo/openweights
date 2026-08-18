@@ -185,6 +185,7 @@ fn main() {
             commands_providers::ninerouter_install,
             commands_providers::ninerouter_start,
             commands_providers::ninerouter_stop,
+            commands_providers::ninerouter_open_panel,
             commands_providers::ninerouter_uninstall,
             commands_providers::gateway_status,
             commands_providers::gateway_config_set,

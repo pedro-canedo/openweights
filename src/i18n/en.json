@@ -965,12 +965,13 @@
       "passwordLabel": "Dashboard password:",
       "passwordHint": "Use this password the first time you open the dashboard. It only applies on the first boot — after that, the password you set inside it wins.",
       "openExternal": "Open in browser",
-      "frameBlocked": "The dashboard did not load in here. Open it in your browser using the link above.",
       "phase": {
         "resolving": "resolving dependencies",
         "extracting": "extracting",
         "finishing": "finishing"
-      }
+      },
+      "openPanel": "Open dashboard",
+      "panelHint": "The dashboard opens in its own window: that is what lets its session stick. Embedded in this screen the login never completes."
     },
     "gateway": {
       "tab": "Gateway",

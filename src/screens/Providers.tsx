@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import NineRouterCard from "../components/providers/NineRouterCard";
 import GatewayCard from "../components/providers/GatewayCard";
-import NineRouterFrame from "../components/providers/NineRouterFrame";
+import NineRouterPanel from "../components/providers/NineRouterPanel";
 import OpenRouterCard from "../components/providers/OpenRouterCard";
 import {
   providersList,
@@ -93,7 +93,7 @@ export default function Providers() {
           <>
             <NineRouterCard onChanged={aoMudarNove} />
             {nove?.running && nove.dashboardUrl && (
-              <NineRouterFrame url={nove.dashboardUrl} />
+              <NineRouterPanel url={nove.dashboardUrl} />
             )}
           </>
         )}

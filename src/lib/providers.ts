@@ -177,6 +177,12 @@ export const nineRouterStart = (): Promise<NineRouterStatus> =>
 export const nineRouterStop = (): Promise<NineRouterStatus> =>
   invoke<NineRouterStatus>("ninerouter_stop");
 
+/// O painel abre em janela própria porque o cookie de sessão do 9router é
+/// `SameSite=Lax`: dentro de um iframe cross-site o navegador o descarta e o
+/// login nunca "pega". Ver `ninerouter_open_panel` no lado Rust.
+export const nineRouterOpenPanel = (): Promise<void> =>
+  invoke<void>("ninerouter_open_panel");
+
 export const nineRouterUninstall = (removeData: boolean): Promise<NineRouterStatus> =>
   invoke<NineRouterStatus>("ninerouter_uninstall", { removeData });
 

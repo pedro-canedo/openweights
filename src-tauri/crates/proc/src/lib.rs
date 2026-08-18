@@ -91,7 +91,6 @@ pub fn spawn_supervised(cmd: &mut Command) -> std::io::Result<Child> {
     }
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt as _;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
         let breakaway = windows_job::parent_allows_breakaway();

@@ -168,10 +168,16 @@ pub async fn openrouter_key_info(state: State<'_, AppState>) -> CmdResult<KeyInf
 // -------------------------------------------------------------- 9router ---
 
 use lr_ninerouter::{Layout, NineRouterEvent, RunConfig};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 /// Nome do evento por onde saem progresso e log dos provedores gerenciados.
 const EVENTO: &str = "provider";
+
+/// Rótulo da janela do painel do 9router.
+///
+/// Ela NÃO está na capability `default` (presa à `main`), e isso é
+/// intencional: carrega conteúdo remoto e não tem por que enxergar IPC.
+const JANELA_PAINEL: &str = "ninerouter-panel";
 
 /// Situação do 9router para a tela desenhar.
 #[derive(Debug, Clone, Serialize)]
@@ -345,6 +351,50 @@ pub async fn ninerouter_start(
     ninerouter_status(state).await
 }
 
+/// Abre o painel do 9router numa janela própria do app.
+///
+/// Não é escolha de layout: o 9router grava a sessão num cookie
+/// `auth_token` com `SameSite=Lax` e sem `Secure`. Num `<iframe>` o painel
+/// (`http://127.0.0.1:<porta>`) é cross-site em relação à origem do webview
+/// do app, e o Chromium recusa o cookie — o login responde sucesso e a tela
+/// volta ao formulário, como se a senha estivesse errada. Em janela de
+/// primeiro nível o cookie é first-party e o painel se comporta como no
+/// navegador, sem sair do app.
+#[tauri::command]
+pub async fn ninerouter_open_panel(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    if state.ninerouter.lock().await.is_none() {
+        return Err("9router não está no ar".to_string());
+    }
+
+    // Já aberta: trazer à frente. Recriar custaria a sessão de quem já logou.
+    if let Some(janela) = app.get_webview_window(JANELA_PAINEL) {
+        let _ = janela.unminimize();
+        let _ = janela.show();
+        let _ = janela.set_focus();
+        return Ok(());
+    }
+
+    let porta = load_config(&state).nine_router.port;
+    let url = format!("http://127.0.0.1:{porta}/dashboard")
+        .parse::<tauri::Url>()
+        .map_err(err_str)?;
+    tauri::WebviewWindowBuilder::new(&app, JANELA_PAINEL, tauri::WebviewUrl::External(url))
+        .title("9Router")
+        .inner_size(1180.0, 820.0)
+        .min_inner_size(900.0, 600.0)
+        .build()
+        .map_err(err_str)?;
+    Ok(())
+}
+
+/// Fecha o painel quando o processo por trás dele deixa de existir — senão
+/// sobra uma janela mostrando erro de conexão.
+fn fechar_painel(app: &AppHandle) {
+    if let Some(janela) = app.get_webview_window(JANELA_PAINEL) {
+        let _ = janela.close();
+    }
+}
+
 async fn ninerouter_stop_inner(state: &AppState) -> CmdResult<()> {
     let mut guard = state.ninerouter.lock().await;
     if let Some(nr) = guard.as_mut() {
@@ -358,8 +408,12 @@ async fn ninerouter_stop_inner(state: &AppState) -> CmdResult<()> {
 }
 
 #[tauri::command]
-pub async fn ninerouter_stop(state: State<'_, AppState>) -> CmdResult<NineRouterStatus> {
+pub async fn ninerouter_stop(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<NineRouterStatus> {
     ninerouter_stop_inner(&state).await?;
+    fechar_painel(&app);
     sincronizar_rotas(&state).await;
     ninerouter_status(state).await
 }
@@ -370,10 +424,12 @@ pub async fn ninerouter_stop(state: State<'_, AppState>) -> CmdResult<NineRouter
 /// provedores configurados lá dentro. A tela avisa antes.
 #[tauri::command]
 pub async fn ninerouter_uninstall(
+    app: AppHandle,
     state: State<'_, AppState>,
     remove_data: bool,
 ) -> CmdResult<NineRouterStatus> {
     ninerouter_stop_inner(&state).await?;
+    fechar_painel(&app);
     let l = layout(&state);
     lr_ninerouter::desinstalar(&l, remove_data).map_err(err_str)?;
 
