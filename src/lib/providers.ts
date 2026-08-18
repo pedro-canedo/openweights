@@ -60,6 +60,8 @@ export interface NineRouterConfig {
   port: number;
   password: string;
   jwtSecret: string;
+  /** Chave que o app usa no `/v1` do 9router; vem dele, no `start`. */
+  apiKey: string;
 }
 
 export interface ProvidersConfig {
@@ -75,6 +77,7 @@ export const defaultProvidersConfig = (): ProvidersConfig => ({
     port: 20128,
     password: "",
     jwtSecret: "",
+    apiKey: "",
   },
 });
 

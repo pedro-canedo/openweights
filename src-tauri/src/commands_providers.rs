@@ -116,7 +116,27 @@ pub async fn provider_endpoint(
     model_ref: String,
 ) -> CmdResult<ResolvedEndpoint> {
     let referencia = ModelRef::parse(&model_ref);
-    let cfg = load_config(&state);
+    let mut cfg = load_config(&state);
+
+    // Rede de segurança para o 9router: a chave normalmente vem do
+    // `ninerouter_start`, mas uma configuração gravada antes desta
+    // funcionalidade existir não tem nenhuma — e a conversa morreria com 401
+    // se a pessoa tivesse ligado "Require API key". Só corre quando falta.
+    if referencia.provider == ProviderId::NineRouter
+        && cfg.nine_router.api_key.trim().is_empty()
+        && state.ninerouter.lock().await.is_some()
+    {
+        let l = layout(&state);
+        let porta = cfg.nine_router.port;
+        match lr_ninerouter::garantir_api_key(&l, porta).await {
+            Ok(chave) => {
+                cfg.nine_router.api_key = chave;
+                let _ = state.store.set_setting(SETTING, &cfg.to_json());
+            }
+            Err(e) => log::warn!("9router sem chave de API utilizável: {e}"),
+        }
+    }
+
     let local_base = {
         let guard = state.server.lock().await;
         guard
@@ -347,6 +367,26 @@ pub async fn ninerouter_start(
         return Err(err_str(e));
     }
 
+    // Chave de API: pegar agora, não na primeira conversa. O interruptor
+    // "Require API key" do painel pode ser ligado a qualquer momento, e sem
+    // isto o chat só descobriria o problema como um 401 seco no meio da
+    // resposta ("Missing API key"). Falhar aqui não impede o 9router de
+    // servir — significa seguir sem chave, que é o que sempre foi.
+    {
+        let mut cfg = load_config(&state);
+        match lr_ninerouter::garantir_api_key(&l, porta).await {
+            Ok(chave) if chave != cfg.nine_router.api_key => {
+                cfg.nine_router.api_key = chave;
+                state
+                    .store
+                    .set_setting(SETTING, &cfg.to_json())
+                    .map_err(err_str)?;
+            }
+            Ok(_) => {}
+            Err(e) => log::warn!("9router sem chave de API utilizável: {e}"),
+        }
+    }
+
     let _ = app.emit(EVENTO, &NineRouterEvent::Ready);
     ninerouter_status(state).await
 }
@@ -469,6 +509,8 @@ pub async fn ninerouter_uninstall(
         // a impressão de que ainda vale.
         cfg.nine_router.password = String::new();
         cfg.nine_router.jwt_secret = String::new();
+        // A chave vivia no banco que acabou de ser apagado.
+        cfg.nine_router.api_key = String::new();
     }
     state
         .store
