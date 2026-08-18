@@ -370,6 +370,91 @@ pub async fn aguardar_pronto(porta: u16, prazo: Duration) -> Result<(), NineRout
     }
 }
 
+/// Um modelo publicado pelo 9router em `GET /v1/models`.
+///
+/// O que interessa aqui não é o catálogo inteiro do upstream: é o que a
+/// pessoa já conectou no painel dele. Um combo (`owned_by: "combo"`) aparece
+/// como qualquer outro modelo — do lado de cá é só um id que o 9router sabe
+/// atender, e é exatamente assim que ele deve entrar no seletor do chat.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModeloNine {
+    pub id: String,
+    /// Quem serve: o provedor conectado (`cx`, `gcli`) ou `combo`.
+    pub owned_by: String,
+    pub context_length: Option<u32>,
+    /// `None` quando o 9router não declarou capacidades — é o caso dos
+    /// combos, cujo suporte depende do modelo que atender a vez.
+    pub supports_tools: Option<bool>,
+    pub vision: Option<bool>,
+}
+
+/// Lê a resposta de `GET /v1/models`.
+///
+/// Função pura para poder travar em teste o formato real do upstream, que
+/// mistura entradas ricas (com `capabilities`) e entradas mínimas.
+pub fn parse_modelos(json: &str) -> Vec<ModeloNine> {
+    #[derive(serde::Deserialize)]
+    struct Caps {
+        tools: Option<bool>,
+        vision: Option<bool>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Item {
+        id: String,
+        owned_by: Option<String>,
+        context_length: Option<u32>,
+        capabilities: Option<Caps>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Lista {
+        data: Vec<Item>,
+    }
+
+    serde_json::from_str::<Lista>(json)
+        .map(|l| {
+            l.data
+                .into_iter()
+                .filter(|i| !i.id.trim().is_empty())
+                .map(|i| ModeloNine {
+                    id: i.id,
+                    owned_by: i.owned_by.unwrap_or_default(),
+                    context_length: i.context_length,
+                    supports_tools: i.capabilities.as_ref().and_then(|c| c.tools),
+                    vision: i.capabilities.as_ref().and_then(|c| c.vision),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Pergunta ao 9router no ar quais modelos ele atende.
+///
+/// Não exige chave: o endpoint é loopback e o 9router aceita o `/v1` local
+/// sem autenticação — a chave do painel é para quem chama de fora.
+pub async fn listar_modelos(porta: u16) -> Result<Vec<ModeloNine>, NineRouterError> {
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
+    let resposta = http
+        .get(format!("http://127.0.0.1:{porta}/v1/models"))
+        .send()
+        .await
+        .map_err(|e| NineRouterError::Verification(e.to_string()))?;
+    if !resposta.status().is_success() {
+        return Err(NineRouterError::Verification(format!(
+            "GET /v1/models devolveu {}",
+            resposta.status()
+        )));
+    }
+    let corpo = resposta
+        .text()
+        .await
+        .map_err(|e| NineRouterError::Verification(e.to_string()))?;
+    Ok(parse_modelos(&corpo))
+}
+
 /// Processo do 9router em execução.
 pub struct NineRouter {
     filho: Option<tokio::process::Child>,
@@ -464,7 +549,14 @@ impl NineRouter {
         let pid = self.pid();
         if let Some(job) = self.job.take() {
             lr_proc::terminate_job(&job);
-        } else if let Some(pid) = pid {
+        }
+        // O `taskkill /T` roda MESMO com o job encerrado, e não é redundância
+        // barata: o `cli.js` sobe o servidor Next com `detached: true` e, se
+        // um neto tiver escapado do job (elevação, breakaway de terceiro), o
+        // job fecha sem levá-lo junto. O sintoma é o pior possível — a porta
+        // do 9router continua ocupada com o app já fechado, e a próxima
+        // abertura acha "outra instância" e cai numa porta efêmera.
+        if let Some(pid) = pid {
             lr_proc::kill_process_tree(pid);
         }
         if let Some(mut filho) = self.filho.take() {
@@ -527,6 +619,40 @@ mod tests {
         assert!(layout.data().starts_with(dir.path()));
         assert_eq!(env.get("HOSTNAME").unwrap(), "127.0.0.1");
         assert_eq!(env.get("NODE_ENV").unwrap(), "production");
+    }
+
+    /// Payload real do 9router 0.5.55 com um combo e um modelo conectado.
+    /// O combo vem sem `capabilities` — e é justamente ele que quebrava um
+    /// parse ingênuo que assumisse o campo presente.
+    #[test]
+    fn the_model_list_keeps_combos_and_reads_capabilities() {
+        let json = r#"{"object":"list","data":[
+            {"id":"Compo-Premium","object":"model","owned_by":"combo"},
+            {"id":"gcli/grok-4.6","object":"model","owned_by":"gcli",
+             "capabilities":{"vision":true,"tools":true,"reasoning":true},
+             "context_length":256000,"max_completion_tokens":64000},
+            {"id":"   ","object":"model","owned_by":"lixo"}
+        ]}"#;
+        let modelos = parse_modelos(json);
+        assert_eq!(modelos.len(), 2, "a entrada sem id é descartada");
+
+        assert_eq!(modelos[0].id, "Compo-Premium");
+        assert_eq!(modelos[0].owned_by, "combo");
+        assert_eq!(modelos[0].supports_tools, None);
+        assert_eq!(modelos[0].context_length, None);
+
+        assert_eq!(modelos[1].id, "gcli/grok-4.6");
+        assert_eq!(modelos[1].supports_tools, Some(true));
+        assert_eq!(modelos[1].vision, Some(true));
+        assert_eq!(modelos[1].context_length, Some(256_000));
+    }
+
+    /// Resposta ilegível não pode derrubar o seletor do chat: sem modelos do
+    /// 9router a lista ainda tem os locais.
+    #[test]
+    fn a_broken_model_list_is_empty_not_an_error() {
+        assert!(parse_modelos("não é json").is_empty());
+        assert!(parse_modelos(r#"{"data":"nem lista"}"#).is_empty());
     }
 
     /// A senha só é aceita no primeiro boot; precisa ir desde o spawn.
@@ -659,6 +785,22 @@ mod tests {
         let subiu = nr.wait_ready(READY_TIMEOUT).await;
         nr.stop_blocking();
         subiu.expect("9router deveria atender");
+
+        // Parar tem de LIBERAR A PORTA, não só matar o `cli.js`: quem escuta
+        // é o servidor Next, que é neto e nasce `detached`. Se ele sobreviver,
+        // fica um processo órfão segurando a porta com o app fechado — e é
+        // exatamente isso que este assert impede de voltar.
+        let livre = tokio::time::timeout(Duration::from_secs(15), async {
+            while lr_proc::port_in_use(cfg.port) {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        })
+        .await;
+        assert!(
+            livre.is_ok(),
+            "a porta {} continuou ocupada depois do stop",
+            cfg.port
+        );
 
         // A promessa do isolamento, verificada pelo lado positivo: o banco
         // nasceu DENTRO do nosso DATA_DIR.

@@ -14,6 +14,14 @@ use serde::{Deserialize, Serialize};
 /// outro host seria outro provedor, não uma opção deste.
 pub const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 
+/// Raiz da API do OpenRouter, sem o `/v1`.
+///
+/// É esta que vai no `ResolvedEndpoint`: quem fala com o modelo (o
+/// `streamChat` da UI e o `lr_engine`) monta `{base}/v1/chat/completions`
+/// sozinho, como já fazia com o llama-server. Devolver a URL com `/v1` aqui
+/// produzia `/v1/v1/chat/completions` — 404 em todo provedor remoto.
+pub const OPENROUTER_API_ROOT: &str = "https://openrouter.ai/api";
+
 /// Porta padrão do 9router. Cai numa efêmera se estiver ocupada.
 pub const NINEROUTER_DEFAULT_PORT: u16 = 20128;
 
@@ -61,6 +69,10 @@ impl Default for NineRouterConfig {
 }
 
 /// Endereço pronto para uso: para onde mandar e o que anexar no cabeçalho.
+///
+/// `base_url` é a RAIZ do serviço, sem `/v1` e sem barra no fim — mesmo
+/// contrato do endereço do llama-server local. Quem chama acrescenta o
+/// caminho (`/v1/chat/completions`, `/v1/models`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolvedEndpoint {
@@ -124,7 +136,7 @@ impl ProvidersConfig {
                 }
                 Ok(ResolvedEndpoint {
                     provider,
-                    base_url: OPENROUTER_BASE_URL.to_string(),
+                    base_url: OPENROUTER_API_ROOT.to_string(),
                     api_key: Some(chave.to_string()),
                     // O OpenRouter usa estes dois para atribuir o tráfego ao
                     // app nos rankings públicos. São opcionais para ele e
@@ -148,7 +160,7 @@ impl ProvidersConfig {
                     provider,
                     // Sempre loopback: o 9router guarda credenciais OAuth de
                     // contas de terceiros e não pode escutar na rede.
-                    base_url: format!("http://127.0.0.1:{}/v1", cfg.port),
+                    base_url: format!("http://127.0.0.1:{}", cfg.port),
                     api_key: None,
                     headers: Vec::new(),
                 })
@@ -202,7 +214,7 @@ mod tests {
         cfg.open_router.api_key = "sk-or-v1-abc".to_string();
 
         let ep = cfg.resolve(ProviderId::OpenRouter, None).unwrap();
-        assert_eq!(ep.base_url, OPENROUTER_BASE_URL);
+        assert_eq!(ep.base_url, OPENROUTER_API_ROOT);
         assert_eq!(ep.api_key.as_deref(), Some("sk-or-v1-abc"));
         assert!(ep.headers.iter().any(|(k, _)| k == "HTTP-Referer"));
         assert!(
@@ -247,7 +259,26 @@ mod tests {
         cfg.nine_router.installed = true;
         cfg.nine_router.port = 20500;
         let ep = cfg.resolve(ProviderId::NineRouter, None).unwrap();
-        assert_eq!(ep.base_url, "http://127.0.0.1:20500/v1");
+        assert_eq!(ep.base_url, "http://127.0.0.1:20500");
+    }
+
+    /// O `/v1` é de quem chama, não do endereço. Já custou um 404 em todo
+    /// provedor remoto: o `streamChat` monta `{base}/v1/chat/completions`.
+    #[test]
+    fn no_resolved_endpoint_carries_the_version_segment() {
+        let mut cfg = ProvidersConfig::default();
+        cfg.open_router.enabled = true;
+        cfg.open_router.api_key = "sk-or-v1-abc".to_string();
+        cfg.nine_router.installed = true;
+        for id in [ProviderId::OpenRouter, ProviderId::NineRouter] {
+            let ep = cfg.resolve(id, None).unwrap();
+            assert!(
+                !ep.base_url.ends_with("/v1") && !ep.base_url.ends_with('/'),
+                "{id:?} devolveu {}",
+                ep.base_url
+            );
+        }
+        assert_eq!(OPENROUTER_BASE_URL, format!("{OPENROUTER_API_ROOT}/v1"));
     }
 
     #[test]

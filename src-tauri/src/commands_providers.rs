@@ -351,6 +351,30 @@ pub async fn ninerouter_start(
     ninerouter_status(state).await
 }
 
+/// Modelos que o 9router atende agora.
+///
+/// A lista vem dele em tempo real, não de configuração nossa: quem decide o
+/// que existe ali é a pessoa, no painel — contas conectadas, combos criados,
+/// tudo publicado no `/v1/models` dele. Espelhar isso num setting daqui só
+/// criaria uma segunda verdade para ficar desatualizada.
+///
+/// Devolve lista vazia (nunca erro) quando o 9router não está no ar: o
+/// seletor do chat chama isto a cada abertura e um erro ali viraria ruído
+/// para quem nem usa provedor externo.
+#[tauri::command]
+pub async fn ninerouter_models(state: State<'_, AppState>) -> CmdResult<Vec<lr_ninerouter::ModeloNine>> {
+    if state.ninerouter.lock().await.is_none() {
+        return Ok(Vec::new());
+    }
+    let porta = load_config(&state).nine_router.port;
+    Ok(lr_ninerouter::listar_modelos(porta)
+        .await
+        .unwrap_or_else(|e| {
+            log::warn!("9router no ar mas sem catálogo: {e}");
+            Vec::new()
+        }))
+}
+
 /// Abre o painel do 9router numa janela própria do app.
 ///
 /// Não é escolha de layout: o 9router grava a sessão num cookie
@@ -389,7 +413,11 @@ pub async fn ninerouter_open_panel(app: AppHandle, state: State<'_, AppState>) -
 
 /// Fecha o painel quando o processo por trás dele deixa de existir — senão
 /// sobra uma janela mostrando erro de conexão.
-fn fechar_painel(app: &AppHandle) {
+///
+/// Também é chamado quando a janela principal morre: uma janela de conteúdo
+/// remoto não pode ser o que mantém o app vivo, ou o processo (e o 9router
+/// com ele) sobrevive ao fechamento aos olhos de quem já saiu.
+pub fn fechar_painel(app: &AppHandle) {
     if let Some(janela) = app.get_webview_window(JANELA_PAINEL) {
         let _ = janela.close();
     }

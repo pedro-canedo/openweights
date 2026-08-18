@@ -35,7 +35,11 @@ import {
   matchServerModel,
   VISION_SUFFIX,
 } from "../lib/serverSession";
-import { joinModelRef, providersConfigGet } from "../lib/providers";
+import {
+  joinModelRef,
+  nineRouterModels,
+  providersConfigGet,
+} from "../lib/providers";
 import { navigate, takePendingChatModel } from "../lib/nav";
 import {
   DEFAULT_CHAT_PARAMS,
@@ -120,6 +124,14 @@ async function loadModelOptions(): Promise<string[]> {
     }
   } catch {
     // sem configuração de provedores — fica só o que é local
+  }
+
+  // O 9router entra inteiro, sem lista de favoritos: o que ele publica JÁ é a
+  // escolha da pessoa (contas conectadas e combos criados no painel dele), ao
+  // contrário do catálogo do OpenRouter, que tem centenas de entradas que
+  // ninguém escolheu. Vazio quando ele não está no ar.
+  for (const m of await nineRouterModels()) {
+    out.push(joinModelRef("9router", m.id));
   }
   return out;
 }

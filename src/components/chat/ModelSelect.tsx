@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { getServerProps } from "../../lib/api";
+import { remoteModelInfo, splitModelRef } from "../../lib/providers";
 import { describesModel } from "../../lib/agent/types";
 import {
   EFFORT_MAX_TOKENS,
@@ -15,10 +16,24 @@ const EFFORTS: EffortLevel[] = ["low", "medium", "high", "extra", "max"];
 const PRIMARY_LIMIT = 4;
 
 function shortModel(name: string): string {
-  return name
+  // O prefixo de provedor é ruído no rótulo: quem escolhe já vê a etiqueta
+  // ao lado, e a linha de baixo mostra a referência inteira.
+  const { model } = splitModelRef(name);
+  return model
     .replace(/\.gguf$/i, "")
     .replace(/-UD-.*$/i, "")
     .replace(/-Q\d.*$/i, "");
+}
+
+/** Etiqueta do provedor, ausente no local (que é o caso comum). */
+function Origem({ modelRef }: { modelRef: string }) {
+  const { provider } = splitModelRef(modelRef);
+  if (provider === "local") return null;
+  return (
+    <span className="shrink-0 rounded-md bg-panel2 px-1.5 py-0.5 text-[10px] text-dim">
+      {provider}
+    </span>
+  );
 }
 
 function Check() {
@@ -122,17 +137,23 @@ export default function ModelSelect({
   });
 
   // Capacidade de ferramentas vem do chat template do modelo carregado
-  // (GET /props), nunca do nome do modelo.
+  // (GET /props), nunca do nome do modelo. Modelo remoto não passa pelo
+  // llama-server: perguntar ali devolvia "desconhecido" na melhor hipótese e
+  // um aviso falso de "não suporta ferramentas" na pior — quem sabe é o
+  // catálogo do próprio provedor.
   useEffect(() => {
     let cancelled = false;
     setSupportsTools(null);
     if (!value) return;
-    void getServerProps(value)
-      .then((props) => {
-        if (cancelled) return;
-        setSupportsTools(
+    const remoto = splitModelRef(value).provider !== "local";
+    const consulta = remoto
+      ? remoteModelInfo(value).then((info) => info?.supportsTools ?? null)
+      : getServerProps(value).then((props) =>
           describesModel(props) ? props.chatTemplateCaps.supportsTools : null,
         );
+    void consulta
+      .then((suporta) => {
+        if (!cancelled) setSupportsTools(suporta);
       })
       .catch(() => {
         if (!cancelled) setSupportsTools(null);
@@ -225,8 +246,11 @@ export default function ModelSelect({
               className="flex w-full items-start gap-2 px-3 py-2.5 text-left hover:bg-panel2"
             >
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] text-ink">
-                  {shortModel(m)}
+                <span className="flex items-center gap-1.5">
+                  <span className="min-w-0 truncate text-[13px] text-ink">
+                    {shortModel(m)}
+                  </span>
+                  <Origem modelRef={m} />
                 </span>
                 <span className="mt-0.5 block truncate text-[11px] text-dim">
                   {m}
@@ -312,6 +336,7 @@ export default function ModelSelect({
                         <span className="min-w-0 flex-1 truncate">
                           {shortModel(m)}
                         </span>
+                        <Origem modelRef={m} />
                         {value === m && <Check />}
                       </button>
                     ))}

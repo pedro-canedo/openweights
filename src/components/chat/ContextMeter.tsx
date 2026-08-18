@@ -13,6 +13,7 @@ import {
   setModelCtx,
 } from "../../lib/api";
 import { describesModel } from "../../lib/agent/types";
+import { remoteModelInfo, splitModelRef } from "../../lib/providers";
 import {
   collectContextBuckets,
   type AgentUsageSlice,
@@ -82,8 +83,17 @@ export default function ContextMeter({
   /// Quem estava usando o motor quando o reinício foi recusado.
   const [busyWith, setBusyWith] = useState<string[]>([]);
   const ref = useDismiss(open, () => setOpen(false));
+  const remoto = model !== "" && splitModelRef(model).provider !== "local";
 
   const refreshLimit = async () => {
+    // Modelo remoto não tem janela para configurar aqui: o teto é o que o
+    // provedor declara, e recarregar o motor local não muda nada nele.
+    if (remoto) {
+      const info = await remoteModelInfo(model).catch(() => null);
+      setSaved(null);
+      setLimit(info?.contextLength ?? null);
+      return;
+    }
     const [props, profile] = await Promise.all([
       getServerProps(model).catch(() => null),
       getModelProfile(model).catch(() => null),
@@ -280,6 +290,9 @@ export default function ContextMeter({
             )}
           </div>
 
+          {/* Ajustar a janela recarrega o llama-server. Num modelo remoto isso
+              não muda nada do outro lado — o bloco simplesmente não aparece. */}
+          {!remoto && (
           <div className="mt-3 border-t border-edge pt-2.5">
             <div className="mb-1.5 text-[11px] text-dim">
               {t("chat.ctx.label")}
@@ -331,6 +344,7 @@ export default function ContextMeter({
               </p>
             )}
           </div>
+          )}
         </div>
       )}
     </div>

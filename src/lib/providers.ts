@@ -177,6 +177,66 @@ export const nineRouterStart = (): Promise<NineRouterStatus> =>
 export const nineRouterStop = (): Promise<NineRouterStatus> =>
   invoke<NineRouterStatus>("ninerouter_stop");
 
+export interface NineRouterModel {
+  id: string;
+  /** Quem serve: o provedor conectado (`cx`, `gcli`) ou `combo`. */
+  ownedBy: string;
+  contextLength: number | null;
+  /** `null` nos combos: depende do modelo que atender a vez. */
+  supportsTools: boolean | null;
+  vision: boolean | null;
+}
+
+/**
+ * Modelos que o 9router atende agora — contas conectadas e combos criados no
+ * painel dele. Lista vazia quando não está no ar; nunca lança.
+ */
+export const nineRouterModels = (): Promise<NineRouterModel[]> =>
+  isTauri
+    ? invoke<NineRouterModel[]>("ninerouter_models").catch(() => [])
+    : Promise.resolve([]);
+
+/**
+ * Capacidades do modelo remoto escolhido, como o próprio provedor as declara.
+ *
+ * Existe porque a UI perguntava tudo ao llama-server local (`GET /props`):
+ * janela de contexto, suporte a ferramentas. Com uma referência remota
+ * aquilo não responde nada, e o chat mostrava "—" de contexto e o aviso de
+ * "não suporta ferramentas" para modelos que suportam.
+ *
+ * O catálogo do 9router é curto e local; um cache de 60 s evita repetir a
+ * chamada a cada tecla no compositor sem correr o risco de mostrar por muito
+ * tempo um combo que a pessoa acabou de apagar no painel.
+ */
+export interface RemoteModelInfo {
+  contextLength: number | null;
+  supportsTools: boolean | null;
+}
+
+const CACHE_MS = 60_000;
+let cacheNine: { em: number; itens: NineRouterModel[] } | null = null;
+
+export function resetRemoteModelCache(): void {
+  cacheNine = null;
+}
+
+export async function remoteModelInfo(
+  modelRef: string,
+): Promise<RemoteModelInfo | null> {
+  const { provider, model } = splitModelRef(modelRef);
+  if (provider !== "9router") return null;
+  const agora = Date.now();
+  if (!cacheNine || agora - cacheNine.em > CACHE_MS) {
+    cacheNine = { em: agora, itens: await nineRouterModels() };
+  }
+  const achado = cacheNine.itens.find((m) => m.id === model);
+  if (!achado) return null;
+  return {
+    contextLength: achado.contextLength,
+    supportsTools: achado.supportsTools,
+  };
+}
+
 /// O painel abre em janela própria porque o cookie de sessão do 9router é
 /// `SameSite=Lax`: dentro de um iframe cross-site o navegador o descarta e o
 /// login nunca "pega". Ver `ninerouter_open_panel` no lado Rust.

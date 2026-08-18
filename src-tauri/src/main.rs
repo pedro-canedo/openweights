@@ -186,6 +186,7 @@ fn main() {
             commands_providers::ninerouter_start,
             commands_providers::ninerouter_stop,
             commands_providers::ninerouter_open_panel,
+            commands_providers::ninerouter_models,
             commands_providers::ninerouter_uninstall,
             commands_providers::gateway_status,
             commands_providers::gateway_config_set,
@@ -204,6 +205,17 @@ fn main() {
                 tauri::RunEvent::Ready => {
                     #[cfg(windows)]
                     webview_perm::allow_microphone(app);
+                }
+                // A janela principal fechou: o painel do 9router não pode
+                // segurar o app de pé sozinho. Sem isto o processo continua
+                // vivo — e o 9router junto, que é o que o `shutdown_blocking`
+                // abaixo existe para evitar.
+                tauri::RunEvent::WindowEvent {
+                    label,
+                    event: tauri::WindowEvent::Destroyed,
+                    ..
+                } if label == "main" => {
+                    commands_providers::fechar_painel(app);
                 }
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     if let Some(state) = app.try_state::<state::AppState>() {
