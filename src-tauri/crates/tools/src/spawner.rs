@@ -68,6 +68,14 @@ pub struct SpawnRequest {
     pub cwd: PathBuf,
     pub timeout_secs: u64,
     pub max_output_bytes: usize,
+    /// Variáveis extras no ambiente do processo.
+    ///
+    /// O ambiente do app é herdado; isto acrescenta por cima. Existe porque
+    /// segredo de curta duração (o token da ponte do Code Mode) não pode ir
+    /// por argumento: argumento aparece na lista de processos da máquina
+    /// inteira, ambiente de processo não.
+    pub env: Vec<(String, String)>,
+
     /// Linha original quando a execução é via shell.
     ///
     /// Só tem efeito no Windows: as regras de aspas do `std` estragariam um
@@ -85,6 +93,7 @@ impl SpawnRequest {
             cwd,
             timeout_secs: DEFAULT_TIMEOUT_SECS,
             max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
+            env: Vec::new(),
             shell_line: None,
         }
     }
@@ -104,6 +113,7 @@ impl SpawnRequest {
                 cwd,
                 timeout_secs: DEFAULT_TIMEOUT_SECS,
                 max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
+                env: Vec::new(),
                 shell_line: Some(line),
             }
         }
@@ -115,6 +125,7 @@ impl SpawnRequest {
                 cwd,
                 timeout_secs: DEFAULT_TIMEOUT_SECS,
                 max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
+                env: Vec::new(),
                 shell_line: None,
             }
         }
@@ -127,6 +138,11 @@ impl SpawnRequest {
 
     pub fn with_max_output(mut self, bytes: usize) -> Self {
         self.max_output_bytes = bytes;
+        self
+    }
+
+    pub fn with_env(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env.push((name.into(), value.into()));
         self
     }
 }
@@ -171,6 +187,9 @@ pub async fn run(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    for (nome, valor) in &req.env {
+        cmd.env(nome, valor);
+    }
 
     #[cfg(windows)]
     {
