@@ -314,6 +314,26 @@ impl ToolCallReq {
     }
 }
 
+/// Contagem de tokens no dialeto OpenAI (`usage`), traduzida para `Timings`.
+///
+/// O llama-server manda `timings`; um provedor remoto manda `usage`. Sem
+/// esta tradução tudo que passava por fora do servidor local chegava à tela
+/// como "0 tokens · 0.0 tok/s" — e a conta de contexto do agente ficava
+/// cega, que é pior do que feio.
+fn timings_from_usage(v: &Value) -> Option<Timings> {
+    let usage = &v["usage"];
+    if !usage.is_object() {
+        return None;
+    }
+    let prompt_n = usage["prompt_tokens"].as_u64().map(|n| n as u32);
+    let predicted_n = usage["completion_tokens"].as_u64().map(|n| n as u32);
+    (prompt_n.is_some() || predicted_n.is_some()).then_some(Timings {
+        prompt_n,
+        predicted_n,
+        ..Default::default()
+    })
+}
+
 /// `timings` do llama-server (o chat usa para tokens/s; o agente, para o
 /// orçamento de contexto e as estatísticas do run).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -519,6 +539,12 @@ impl LlamaClient {
         if self.dialect == Dialect::OpenAi {
             for chave in EXTENSOES_LLAMACPP {
                 body.extra.remove(*chave);
+            }
+            // Sem pedir, um provedor OpenAI não manda contagem nenhuma no
+            // stream — e a execução inteira aparecia com "0 tokens".
+            if stream && !body.extra.contains_key("stream_options") {
+                body.extra
+                    .insert("stream_options".into(), json!({ "include_usage": true }));
             }
         }
         body
@@ -904,6 +930,13 @@ impl StreamAcc {
     fn absorb_timings(&mut self, chunk: &Value) {
         let t = &chunk["timings"];
         if !t.is_object() {
+            // Provedor OpenAI: a contagem vem no chunk final, em `usage`.
+            // Nunca sobrescreve um `timings` real, que traz também o tempo.
+            if self.timings.is_none()
+                && let Some(u) = timings_from_usage(chunk)
+            {
+                self.timings = Some(u);
+            }
             return;
         }
         self.timings = Some(Timings {
@@ -1035,13 +1068,16 @@ fn parse_completion(v: &Value) -> ChatOutcome {
         })
         .unwrap_or_default();
 
-    let timings = v["timings"].is_object().then(|| Timings {
-        prompt_n: v["timings"]["prompt_n"].as_u64().map(|n| n as u32),
-        prompt_ms: v["timings"]["prompt_ms"].as_f64(),
-        predicted_n: v["timings"]["predicted_n"].as_u64().map(|n| n as u32),
-        predicted_ms: v["timings"]["predicted_ms"].as_f64(),
-        predicted_per_second: v["timings"]["predicted_per_second"].as_f64(),
-    });
+    let timings = v["timings"]
+        .is_object()
+        .then(|| Timings {
+            prompt_n: v["timings"]["prompt_n"].as_u64().map(|n| n as u32),
+            prompt_ms: v["timings"]["prompt_ms"].as_f64(),
+            predicted_n: v["timings"]["predicted_n"].as_u64().map(|n| n as u32),
+            predicted_ms: v["timings"]["predicted_ms"].as_f64(),
+            predicted_per_second: v["timings"]["predicted_per_second"].as_f64(),
+        })
+        .or_else(|| timings_from_usage(v));
 
     ChatOutcome {
         content,
@@ -1398,6 +1434,47 @@ mod testes_dialeto {
         assert_eq!(body.model, "m");
         // `reasoning_effort` é da própria API da OpenAI: fica.
         assert!(body.extra.contains_key("reasoning_effort"));
+    }
+
+    /// Sem `stream_options.include_usage` um provedor OpenAI não manda
+    /// contagem nenhuma no stream — e a execução aparecia com "0 tokens".
+    #[test]
+    fn the_openai_dialect_asks_for_the_token_count_when_streaming() {
+        let c = LlamaClient::new("https://exemplo/v1").with_dialect(Dialect::OpenAi);
+        let body = c.adequar(&requisicao_com_cache(), true);
+        assert_eq!(body.extra["stream_options"]["include_usage"], true);
+        // Fora do stream a contagem já vem no corpo da resposta.
+        let sem_stream = c.adequar(&requisicao_com_cache(), false);
+        assert!(!sem_stream.extra.contains_key("stream_options"));
+        // O llama-server tem `timings`: não precisa do pedido.
+        let local = LlamaClient::new("http://127.0.0.1:11711");
+        assert!(
+            !local
+                .adequar(&requisicao_com_cache(), true)
+                .extra
+                .contains_key("stream_options")
+        );
+    }
+
+    /// Provedor OpenAI: a contagem chega em `usage`, não em `timings`.
+    #[test]
+    fn the_openai_token_count_becomes_timings() {
+        let mut acc = StreamAcc::default();
+        let mut sem_delta = |_: ChatDelta| {};
+        acc.handle_line(
+            &format!(
+                "data: {}",
+                serde_json::json!({
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    "usage": {"prompt_tokens": 120, "completion_tokens": 34}
+                })
+            ),
+            &mut sem_delta,
+        )
+        .unwrap();
+        let t = acc.timings.unwrap();
+        assert_eq!(t.prompt_n, Some(120));
+        assert_eq!(t.predicted_n, Some(34));
     }
 
     #[test]

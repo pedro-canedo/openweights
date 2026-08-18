@@ -13,6 +13,8 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { speechStore } from "../../lib/speech";
+import type { RunSummary } from "../../lib/agent/types";
+import { PastRunTrail } from "../agent/RunTimeline";
 import Markdown from "./Markdown";
 import ThinkingBlock from "./ThinkingBlock";
 
@@ -35,6 +37,12 @@ export interface UiMessage {
   error?: boolean;
   /** A resposta não foi gravada: ao reabrir a conversa ela não volta. */
   unsaved?: boolean;
+  /**
+   * Execução do agente que produziu esta resposta. Com ela a conversa
+   * reabre mostrando o que foi FEITO (arquivos, comandos), não só o que foi
+   * dito no fim.
+   */
+  runId?: string | null;
 }
 
 function ActionButton({
@@ -112,10 +120,16 @@ export default function MessageList({
   onEditResend,
   onDeleteMsg,
   trail,
+  runSummaries,
+  onOpenTrace,
 }: {
   messages: UiMessage[];
   generating: boolean;
   loadingModel: boolean;
+  /** Resumos das execuções desta conversa, por runId (contagem sem abrir). */
+  runSummaries?: Record<string, RunSummary>;
+  /** Abre o painel lateral com a execução inteira. */
+  onOpenTrace?: (runId: string) => void;
   onRegenerate?: () => void;
   onEditResend?: (index: number) => void;
   onDeleteMsg?: (index: number) => void;
@@ -376,6 +390,16 @@ export default function MessageList({
                       </div>
                     ) : null;
                   })()}
+                  {/* O que o agente FEZ para chegar a esta resposta. Só
+                      aparece em resposta de execução — e a trilha do run
+                      ainda vivo é a do fluxo (`trail`), não esta. */}
+                  {m.runId && (
+                    <PastRunTrail
+                      runId={m.runId}
+                      summary={runSummaries?.[m.runId] ?? null}
+                      onOpenTrace={onOpenTrace}
+                    />
+                  )}
                 </>
               )}
               {actionBar(m, i)}

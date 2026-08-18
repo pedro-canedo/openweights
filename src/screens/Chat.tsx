@@ -29,7 +29,8 @@ import { chatStore } from "../lib/chatStore";
 import { generationStore } from "../lib/generationStore";
 import { isRunActive, runStore, type RunView } from "../lib/agent/runStore";
 import { plansFirst, type WorkMode } from "../lib/agent/scout";
-import type { RunMode } from "../lib/agent/types";
+import { runsList } from "../lib/agent/agentApi";
+import type { RunMode, RunSummary } from "../lib/agent/types";
 import {
   listLoadedModels,
   matchServerModel,
@@ -178,6 +179,7 @@ function rowToUi(r: MessageRow): UiMessage {
     reasoning: reasoning || undefined,
     genTokens: r.genTokens,
     genMs: r.genMs,
+    runId: r.runId,
   };
 }
 
@@ -367,6 +369,11 @@ export default function Chat() {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
   const [traceOpen, setTraceOpen] = useState(false);
+  // Execuções desta conversa por runId: dão a contagem de ações de cada
+  // resposta sem precisar reconstruir a trilha inteira de todas elas.
+  const [runSummaries, setRunSummaries] = useState<Record<string, RunSummary>>(
+    {},
+  );
   // Último run encerrado desta conversa: a trilha sai do fluxo quando a
   // resposta é persistida, mas continua acessível pelo painel.
   const [lastTrace, setLastTrace] = useState<{
@@ -473,6 +480,15 @@ export default function Chat() {
     pendingModelRef.current = null;
     const restoredModel = pending ?? loaded.model ?? chat.modelId;
     if (restoredModel) setSelectedModel(restoredModel);
+
+    // As execuções da conversa: cada resposta do agente carrega o id da sua,
+    // e é o resumo que diz quantas ações ela teve sem abrir a trilha.
+    void runsList(chat.id)
+      .then((list) => {
+        if (convEpochRef.current !== epoch) return;
+        setRunSummaries(Object.fromEntries(list.map((r) => [r.id, r])));
+      })
+      .catch(() => setRunSummaries({}));
 
     try {
       const rows = await listMessages(chat.id);
@@ -748,6 +764,15 @@ export default function Chat() {
         ui = null; // segue com o texto que já está na trilha
       }
       if (convEpochRef.current !== epoch) return;
+      // O run que acabou de terminar não estava na lista carregada na
+      // abertura: sem esta releitura a resposta dele ficaria sem a contagem
+      // de ações até a próxima visita à conversa.
+      void runsList(chatId)
+        .then((list) => {
+          if (convEpochRef.current !== epoch) return;
+          setRunSummaries(Object.fromEntries(list.map((r) => [r.id, r])));
+        })
+        .catch(() => {});
       // A trilha só sai do fluxo quando existe resposta gravada para ficar no
       // lugar dela. Sem isso, um run que morreu sem falar nada não deixaria
       // rastro nenhum na tela.
@@ -1127,6 +1152,11 @@ export default function Chat() {
                 onRegenerate={() => void regenerate()}
                 onEditResend={startEdit}
                 onDeleteMsg={(i) => void removeMessage(i)}
+                runSummaries={runSummaries}
+                onOpenTrace={(id) => {
+                  setLastTrace({ chatId: activeChatId ?? -1, runId: id });
+                  openTrace();
+                }}
                 trail={
                   run ? (
                     <>

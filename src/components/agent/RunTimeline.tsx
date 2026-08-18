@@ -23,6 +23,7 @@ import {
   type TimelineItem,
   type ToolsItem,
 } from "../../lib/agent/runStore";
+import type { RunSummary } from "../../lib/agent/types";
 import { plansFirst } from "../../lib/agent/scout";
 import { errorMessage } from "../../lib/serverSession";
 import Markdown from "../chat/Markdown";
@@ -451,6 +452,112 @@ export function RunTrail({
             >
               {t("agent.run.showTrace")}
             </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Trilha de uma execução JÁ GRAVADA, pendurada na resposta dela dentro da
+ * conversa.
+ *
+ * Sem isto a conversa reaberta mostrava só o texto final: a resposta dizia
+ * "criei três arquivos" e nada na tela dizia quais, nem que um comando
+ * rodou, nem o que ele devolveu. O trabalho continuava no banco, mas só a
+ * tela Atividade sabia dele — e ninguém volta a uma conversa passando por
+ * outra tela para descobrir o que aconteceu nela.
+ *
+ * Fechado por padrão (a conversa é do texto, não do processo) e carregado
+ * só quando alguém abre: reconstruir a trilha custa duas consultas por
+ * execução, e uma conversa longa tem muitas.
+ */
+export function PastRunTrail({
+  runId,
+  summary = null,
+  onOpenTrace,
+}: {
+  runId: string;
+  /** Resumo já carregado (`runs_list` da conversa): evita abrir para contar. */
+  summary?: RunSummary | null;
+  onOpenTrace?: (runId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<RunView | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open || view || loading) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    void loadRunView(runId)
+      .then((v) => {
+        if (!cancelled) setView(v);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, runId, view, loading]);
+
+  // Quantas ações: do resumo quando ele veio, da trilha depois de aberta.
+  const tools =
+    summary?.usage?.toolCalls ??
+    (view ? Object.keys(view.tools).length : null);
+  const seconds = summary?.usage?.durationMs
+    ? summary.usage.durationMs / 1000
+    : view?.usage
+      ? view.usage.durationMs / 1000
+      : null;
+
+  return (
+    <div className="mt-1.5 flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-dim">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-1.5 rounded border border-edge px-2 py-1 transition-colors hover:bg-panel2 hover:text-ink"
+          aria-expanded={open}
+        >
+          <span aria-hidden className="text-[10px]">
+            {open ? "▾" : "▸"}
+          </span>
+          {tools != null
+            ? t("agent.run.actionsCount", { count: tools })
+            : t("agent.run.actionsOpen")}
+        </button>
+        {seconds != null && (
+          <span className="tabular-nums">{seconds.toFixed(1)}s</span>
+        )}
+        {onOpenTrace && (
+          <button
+            type="button"
+            onClick={() => onOpenTrace(runId)}
+            className="underline underline-offset-2 transition-colors hover:text-ink"
+          >
+            {t("agent.run.showTrace")}
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="flex flex-col gap-2.5 border-l border-edge pl-3">
+          {loading && (
+            <p className="text-[11px] text-dim">{t("common.loading")}</p>
+          )}
+          {error && <p className="text-[11px] text-bad">{error}</p>}
+          {view && view.items.length > 0 && <RunItems run={view} compact />}
+          {view && view.items.length === 0 && !loading && (
+            <p className="text-[11px] text-dim">{t("agent.run.empty")}</p>
           )}
         </div>
       )}

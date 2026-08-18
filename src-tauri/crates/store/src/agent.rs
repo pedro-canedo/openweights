@@ -750,6 +750,47 @@ mod tests {
         assert!(calls[0].finished_at.is_some());
     }
 
+    /// O tempo de uma ação é medido em milissegundos: em segundos toda
+    /// ferramenta durava "0 ms" e a data caía em 1970 na tela de atividade.
+    #[test]
+    fn tool_call_timestamps_are_milliseconds() {
+        let s = Store::open_in_memory().unwrap();
+        s.create_run("r", None, "m", RunMode::Yolo, true, None, "p")
+            .unwrap();
+        s.create_tool_call("c1", "r", None, "fs_read", "builtin", "{}")
+            .unwrap();
+        s.set_tool_call_state("c1", "running").unwrap();
+        s.finish_tool_call("c1", true, "{}", 0, None).unwrap();
+
+        let call = &s.list_tool_calls("r").unwrap()[0];
+        // Setembro de 2001 em milissegundos: um carimbo em segundos não chega
+        // lá antes do ano 5138.
+        assert!(call.started_at.unwrap() > 1_000_000_000_000);
+        assert!(call.finished_at.unwrap() > 1_000_000_000_000);
+    }
+
+    /// Banco de antes da migração: os segundos gravados voltam em ms.
+    #[test]
+    fn seconds_from_older_databases_are_read_as_milliseconds() {
+        let s = Store::open_in_memory().unwrap();
+        s.create_run("r", None, "m", RunMode::Yolo, true, None, "p")
+            .unwrap();
+        s.create_tool_call("c1", "r", None, "fs_read", "builtin", "{}")
+            .unwrap();
+        {
+            let conn = s.conn.lock().unwrap();
+            conn.execute(
+                "UPDATE tool_calls SET started_at = 1_700_000_000,
+                        finished_at = 1_700_000_002 WHERE id = 'c1'",
+                [],
+            )
+            .unwrap();
+        }
+        let call = &s.list_tool_calls("r").unwrap()[0];
+        assert_eq!(call.started_at, Some(1_700_000_000_000));
+        assert_eq!(call.finished_at, Some(1_700_000_002_000));
+    }
+
     #[test]
     fn permissions_scope_and_upsert() {
         let s = Store::open_in_memory().unwrap();

@@ -186,6 +186,11 @@ export interface MessageRow {
   genTokens: number | null;
   /** Duração da geração em ms. */
   genMs: number | null;
+  /**
+   * Execução do agente que produziu esta resposta (null no chat comum).
+   * É por ele que a conversa reabre com a trilha de ações que a gerou.
+   */
+  runId: string | null;
 }
 
 export interface PresetRow {

@@ -4,7 +4,7 @@
 //! Este arquivo é a fachada: os DAOs do harness moram nos submódulos
 //! [`agent`], [`mcp`] e [`memory`], que compartilham a mesma conexão.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
@@ -86,6 +86,44 @@ fn ensure_column(
     Ok(())
 }
 
+/// Reata as respostas antigas do agente à execução que as produziu.
+///
+/// A coluna `messages.run_id` existia desde o começo e nunca foi escrita: as
+/// conversas já feitas guardam o texto final e nada do trabalho por trás
+/// dele. A janela de uma execução é apertada — a resposta é gravada momentos
+/// antes de o run fechar, e a interface não deixa mandar outra coisa
+/// enquanto o agente trabalha — então a última resposta dentro dela é a
+/// dela. Roda uma vez só; conversas novas já nascem com o ponteiro.
+fn backfill_message_runs(conn: &Connection) -> Result<(), StoreError> {
+    let feito: Option<String> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'messages.run_id.backfill'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if feito.is_some() {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE messages SET run_id = (
+             SELECT r.id FROM runs r
+              WHERE r.chat_id = messages.chat_id
+                AND r.finished_at IS NOT NULL
+                AND messages.created_at >= r.created_at
+                AND messages.created_at <= r.finished_at + 2
+              ORDER BY r.created_at DESC LIMIT 1
+         )
+         WHERE role = 'assistant' AND run_id IS NULL",
+        [],
+    )?;
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('messages.run_id.backfill', '1')",
+        [],
+    )?;
+    Ok(())
+}
+
 /// Carimbo que pode ter sido gravado em segundos (bancos anteriores à
 /// migração para milissegundos) devolvido sempre em milissegundos.
 ///
@@ -93,7 +131,13 @@ fn ensure_column(
 /// passa do limite quando lido como segundos, e nenhum instante gravado em
 /// segundos o alcança antes do ano 5138.
 pub(crate) fn ms_or_secs(v: Option<i64>) -> Option<i64> {
-    v.map(|n| if n > 0 && n < 1_000_000_000_000 { n * 1000 } else { n })
+    v.map(|n| {
+        if n > 0 && n < 1_000_000_000_000 {
+            n * 1000
+        } else {
+            n
+        }
+    })
 }
 
 const SCHEMA: &str = r#"
@@ -161,6 +205,9 @@ impl Store {
         // Depois das outras: a migração da janela por modelo lê `settings`.
         tuning::init(&conn)?;
         perf::init(&conn)?;
+        // Respostas gravadas antes de a coluna passar a ser preenchida:
+        // reata cada uma à execução que estava rodando quando ela nasceu.
+        backfill_message_runs(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -446,6 +493,83 @@ mod tests {
         );
     }
 
+    /// A resposta de uma execução guarda QUAL execução a produziu: é o
+    /// ponteiro que devolve a trilha de ações à conversa depois de reabri-la.
+    #[test]
+    fn an_agent_answer_keeps_the_run_it_came_from() {
+        let s = Store::open_in_memory().unwrap();
+        let chat = s.create_chat("Conversa", None).unwrap();
+        s.add_message(
+            chat,
+            "user",
+            "faça algo",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        s.add_message(
+            chat,
+            "assistant",
+            "pronto",
+            None,
+            Some(12),
+            Some(3000),
+            Some("modelo"),
+            None,
+            Some("run-42"),
+        )
+        .unwrap();
+
+        let msgs = s.list_messages(chat).unwrap();
+        assert_eq!(msgs[0].run_id, None);
+        assert_eq!(msgs[1].run_id.as_deref(), Some("run-42"));
+    }
+
+    /// Conversa feita antes desta coluna existir volta com a trilha no lugar.
+    #[test]
+    fn old_answers_are_tied_back_to_their_run() {
+        use lr_types::agent::{RunMode, RunStatus};
+
+        let s = Store::open_in_memory().unwrap();
+        let chat = s.create_chat("Conversa", None).unwrap();
+        s.create_run("r1", Some(chat), "m", RunMode::Yolo, true, None, "faça")
+            .unwrap();
+        let msg = s
+            .add_message(
+                chat,
+                "assistant",
+                "pronto",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        s.finish_run("r1", RunStatus::Done, "ok", "{}").unwrap();
+
+        {
+            let conn = s.conn.lock().unwrap();
+            // O `init` já rodou o backfill neste banco novo: desfaz a marca
+            // para exercitar a migração como ela roda no banco de alguém.
+            conn.execute(
+                "DELETE FROM settings WHERE key = 'messages.run_id.backfill'",
+                [],
+            )
+            .unwrap();
+            backfill_message_runs(&conn).unwrap();
+        }
+
+        let msgs = s.list_messages(chat).unwrap();
+        assert_eq!(msgs[0].id, msg);
+        assert_eq!(msgs[0].run_id.as_deref(), Some("r1"));
+    }
+
     #[test]
     fn update_and_delete_message() {
         let s = Store::open_in_memory().unwrap();
@@ -454,7 +578,17 @@ mod tests {
             .add_message(chat, "user", "rascunho", None, None, None, None, None, None)
             .unwrap();
         let m2 = s
-            .add_message(chat, "assistant", "resposta", None, None, None, None, None, None)
+            .add_message(
+                chat,
+                "assistant",
+                "resposta",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
             .unwrap();
 
         s.update_message_content(m1, "versão final").unwrap();

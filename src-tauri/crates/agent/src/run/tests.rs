@@ -16,6 +16,7 @@ fn msg(id: i64, role: &str, content: &str) -> lr_store::MessageRow {
         tokens_per_sec: None,
         gen_tokens: None,
         gen_ms: None,
+        run_id: None,
     }
 }
 
