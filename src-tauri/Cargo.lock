@@ -2773,6 +2773,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lr_gateway"
+version = "0.1.1"
+dependencies = [
+ "log",
+ "lr_fetch",
+ "lr_proc",
+ "reqwest 0.12.28",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "lr_gittools"
 version = "0.1.1"
 dependencies = [
@@ -2849,6 +2863,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "lr_ninerouter"
+version = "0.1.1"
+dependencies = [
+ "getrandom 0.3.4",
+ "log",
+ "lr_fetch",
+ "lr_nodejs",
+ "lr_proc",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
+name = "lr_nodejs"
+version = "0.1.1"
+dependencies = [
+ "log",
+ "lr_fetch",
+ "reqwest 0.12.28",
+ "serde",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "lr_policy"
 version = "0.1.1"
 dependencies = [
@@ -2867,6 +2911,18 @@ dependencies = [
  "tokio",
  "win32job",
  "windows 0.61.3",
+]
+
+[[package]]
+name = "lr_providers"
+version = "0.1.1"
+dependencies = [
+ "log",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -3477,12 +3533,17 @@ dependencies = [
  "lr_datatools",
  "lr_desktop",
  "lr_engine",
+ "lr_gateway",
  "lr_gittools",
  "lr_hw",
  "lr_mcp",
  "lr_memory",
  "lr_models",
+ "lr_ninerouter",
+ "lr_nodejs",
  "lr_policy",
+ "lr_proc",
+ "lr_providers",
  "lr_rag",
  "lr_runtime",
  "lr_store",

@@ -1,0 +1,17 @@
+[package]
+name = "lr_nodejs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Runtime Node.js portátil, isolado do Node do sistema"
+
+[dependencies]
+lr_fetch = { path = "../fetch" }
+serde.workspace = true
+thiserror.workspace = true
+log.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

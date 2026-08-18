@@ -5,7 +5,8 @@
     "chat": "Chat",
     "activity": "Atividade",
     "server": "Servidor Local",
-    "settings": "Configurações"
+    "settings": "Configurações",
+    "providers": "Fontes"
   },
   "status": {
     "cpu": "CPU",
@@ -462,7 +463,9 @@
     "save": "Salvar",
     "close": "Fechar",
     "error": "Algo deu errado",
-    "retry": "Tentar de novo"
+    "retry": "Tentar de novo",
+    "saved": "Salvo",
+    "copy": "Copiar"
   },
   "agent": {
     "toggle": "Agente",
@@ -918,5 +921,72 @@
     "downloadingPct": "Baixando… {{pct}}%",
     "failed": "Não deu para atualizar:",
     "availableManual": "Versão {{version}} disponível"
+  },
+  "providers": {
+    "title": "Fontes de modelo",
+    "subtitle": "De onde vêm os modelos das suas conversas: a sua máquina ou um provedor externo.",
+    "statusTitle": "Situação",
+    "name": {
+      "local": "Máquina local (llama.cpp)",
+      "9router": "9router",
+      "openrouter": "OpenRouter"
+    },
+    "openRouter": {
+      "title": "OpenRouter",
+      "subtitle": "Centenas de modelos por uma chave só. O catálogo abaixo é público; a chave só é necessária para conversar.",
+      "apiKey": "Chave de API do OpenRouter",
+      "apiKeyPlaceholder": "sk-or-v1-…",
+      "usage": "Gasto: ${{usage}} · Limite: {{limit}}",
+      "noLimit": "sem teto",
+      "search": "Buscar modelo",
+      "searchPlaceholder": "Buscar por nome ou id…",
+      "onlyFree": "Só gratuitos",
+      "free": "grátis",
+      "perMillion": "por milhão",
+      "tools": "ferramentas",
+      "pin": "Fixar",
+      "pinned": "Fixado",
+      "noneFound": "Nenhum modelo com esses filtros."
+    },
+    "nineRouter": {
+      "title": "9router",
+      "subtitle": "Roteador local com painel próprio: junta contas de vários provedores num endereço só. Instalado numa pasta isolada, sem tocar no resto do sistema.",
+      "install": "Instalar",
+      "start": "Iniciar",
+      "stop": "Parar",
+      "uninstall": "Desinstalar",
+      "uninstallWarning": "Apagar os dados remove as contas e provedores configurados dentro do 9router. Não há como desfazer.",
+      "uninstallAll": "Apagar tudo",
+      "uninstallKeepData": "Manter os dados",
+      "sizeWarning": "A instalação baixa o Node.js portátil e o pacote do 9router (algumas centenas de MB no disco). Com antivírus ativo no Windows pode levar de 2 a 10 minutos.",
+      "working": "trabalhando",
+      "version": "versão {{version}}",
+      "port": "porta {{port}}",
+      "passwordLabel": "Senha do painel:",
+      "passwordHint": "Use esta senha no primeiro acesso ao painel ao lado. Ela só vale no primeiro boot — depois disso, quem manda é a senha que você definir lá dentro.",
+      "openExternal": "Abrir no navegador",
+      "frameBlocked": "O painel não carregou aqui dentro. Abra no navegador pelo link acima.",
+      "phase": {
+        "resolving": "resolvendo dependências",
+        "extracting": "extraindo",
+        "finishing": "finalizando"
+      }
+    },
+    "gateway": {
+      "tab": "Gateway",
+      "title": "Ponto de entrada único",
+      "subtitle": "Um endereço só que encaminha para o motor local e para o 9router, por prefixo. Útil para apontar outra ferramenta ao OpenWeights sem decorar portas.",
+      "notTunnel": "Não é túnel: nada fica acessível pela internet. Recurso opcional — o chat funciona sem ele.",
+      "install": "Instalar",
+      "start": "Iniciar",
+      "stop": "Parar",
+      "uninstall": "Desinstalar",
+      "port": "Porta",
+      "badPort": "Informe uma porta entre 1024 e 65535.",
+      "exposeLan": "Aceitar conexões da rede local",
+      "lanWarning": "Com isto ligado, qualquer aparelho da sua rede alcança seus modelos sem senha. Ligue só em rede de confiança.",
+      "routesTitle": "Endereços ativos",
+      "noRoutes": "Nenhum provedor no ar. Inicie o servidor local ou o 9router."
+    }
   }
 }

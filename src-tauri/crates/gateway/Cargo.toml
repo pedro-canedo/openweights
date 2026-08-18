@@ -1,0 +1,18 @@
+[package]
+name = "lr_gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ponto de entrada único (Traefik local) para os provedores de LLM"
+
+[dependencies]
+lr_fetch = { path = "../fetch" }
+lr_proc = { path = "../proc" }
+serde.workspace = true
+thiserror.workspace = true
+log.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

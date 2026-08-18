@@ -5,7 +5,8 @@
     "chat": "Chat",
     "activity": "Activity",
     "server": "Local Server",
-    "settings": "Settings"
+    "settings": "Settings",
+    "providers": "Sources"
   },
   "status": {
     "cpu": "CPU",
@@ -462,7 +463,9 @@
     "save": "Save",
     "close": "Close",
     "error": "Something went wrong",
-    "retry": "Retry"
+    "retry": "Retry",
+    "saved": "Saved",
+    "copy": "Copy"
   },
   "agent": {
     "toggle": "Agent",
@@ -918,5 +921,72 @@
     "downloadingPct": "Downloading… {{pct}}%",
     "failed": "Update failed:",
     "availableManual": "Version {{version}} available"
+  },
+  "providers": {
+    "title": "Model sources",
+    "subtitle": "Where your conversations are answered: your own machine or an external provider.",
+    "statusTitle": "Status",
+    "name": {
+      "local": "This machine (llama.cpp)",
+      "9router": "9router",
+      "openrouter": "OpenRouter"
+    },
+    "openRouter": {
+      "title": "OpenRouter",
+      "subtitle": "Hundreds of models behind one key. The catalogue below is public; the key is only needed to chat.",
+      "apiKey": "OpenRouter API key",
+      "apiKeyPlaceholder": "sk-or-v1-…",
+      "usage": "Spent: ${{usage}} · Limit: {{limit}}",
+      "noLimit": "no cap",
+      "search": "Search model",
+      "searchPlaceholder": "Search by name or id…",
+      "onlyFree": "Free only",
+      "free": "free",
+      "perMillion": "per million",
+      "tools": "tools",
+      "pin": "Pin",
+      "pinned": "Pinned",
+      "noneFound": "No model matches these filters."
+    },
+    "nineRouter": {
+      "title": "9router",
+      "subtitle": "A local router with its own dashboard: it puts accounts from several providers behind one address. Installed in an isolated folder, without touching the rest of the system.",
+      "install": "Install",
+      "start": "Start",
+      "stop": "Stop",
+      "uninstall": "Uninstall",
+      "uninstallWarning": "Deleting the data removes the accounts and providers configured inside 9router. This cannot be undone.",
+      "uninstallAll": "Delete everything",
+      "uninstallKeepData": "Keep the data",
+      "sizeWarning": "Installing downloads portable Node.js and the 9router package (a few hundred MB on disk). With antivirus active on Windows it can take 2 to 10 minutes.",
+      "working": "working",
+      "version": "version {{version}}",
+      "port": "port {{port}}",
+      "passwordLabel": "Dashboard password:",
+      "passwordHint": "Use this password the first time you open the dashboard. It only applies on the first boot — after that, the password you set inside it wins.",
+      "openExternal": "Open in browser",
+      "frameBlocked": "The dashboard did not load in here. Open it in your browser using the link above.",
+      "phase": {
+        "resolving": "resolving dependencies",
+        "extracting": "extracting",
+        "finishing": "finishing"
+      }
+    },
+    "gateway": {
+      "tab": "Gateway",
+      "title": "Single entry point",
+      "subtitle": "One address that forwards to the local engine and to 9router by prefix. Useful to point another tool at OpenWeights without memorising ports.",
+      "notTunnel": "This is not a tunnel: nothing becomes reachable from the internet. Optional — chat works without it.",
+      "install": "Install",
+      "start": "Start",
+      "stop": "Stop",
+      "uninstall": "Uninstall",
+      "port": "Port",
+      "badPort": "Enter a port between 1024 and 65535.",
+      "exposeLan": "Accept connections from the local network",
+      "lanWarning": "With this on, any device on your network reaches your models without a password. Only enable on a trusted network.",
+      "routesTitle": "Active addresses",
+      "noRoutes": "No provider running. Start the local server or 9router."
+    }
   }
 }

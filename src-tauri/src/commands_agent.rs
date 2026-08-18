@@ -54,8 +54,15 @@ pub async fn run_start(
     opts: StartOptions,
     on_event: Channel<RunEvent>,
 ) -> CmdResult<String> {
-    let StartOptions { options, work_mode } = opts;
-    let endpoint = state.agent_endpoint().await?;
+    let StartOptions {
+        mut options,
+        work_mode,
+    } = opts;
+    // A referência traz o provedor (`openrouter:x/y`); o endpoint sai dela e
+    // o nome que viaja na requisição é o do modelo, sem o prefixo — quem o
+    // recebesse não saberia o que fazer com ele.
+    let endpoint = state.endpoint_for(&options.model).await?;
+    options.model = lr_providers::ModelRef::parse(&options.model).model;
 
     // Histórico da conversa (o laço trabalha por cima dele).
     let mut history = Vec::new();
@@ -234,7 +241,8 @@ pub async fn run_plan_approve(
         let _ = state.store.set_run_plan(&run_id, &json);
     }
 
-    let endpoint = state.agent_endpoint().await?;
+    let endpoint = state.endpoint_for(&run.model).await?;
+    let modelo = lr_providers::ModelRef::parse(&run.model).model;
     let chat_id = run.chat_id.unwrap_or(0);
     let history = if chat_id > 0 {
         let rows = state.store.list_messages(chat_id).map_err(err_str)?;
@@ -257,7 +265,7 @@ pub async fn run_plan_approve(
                 memory,
                 options: RunOptions {
                     chat_id,
-                    model: run.model.clone(),
+                    model: modelo.clone(),
                     mode: run.mode,
                     workspace_dir: run.workspace_dir.clone(),
                     // O teto do laço é recalculado no crate do agente a
@@ -324,7 +332,8 @@ pub async fn run_answer(
         .filter(|raw| !raw.trim().is_empty())
         .and_then(|raw| serde_json::from_str::<TaskPlan>(&raw).ok());
 
-    let endpoint = state.agent_endpoint().await?;
+    let endpoint = state.endpoint_for(&run.model).await?;
+    let modelo = lr_providers::ModelRef::parse(&run.model).model;
     let chat_id = run.chat_id.unwrap_or(0);
     let history = if chat_id > 0 {
         let rows = state.store.list_messages(chat_id).map_err(err_str)?;
@@ -380,7 +389,7 @@ Resposta da pessoa: {answer}",
                 memory,
                 options: RunOptions {
                     chat_id,
-                    model: run.model.clone(),
+                    model: modelo.clone(),
                     mode: run.mode,
                     workspace_dir: run.workspace_dir.clone(),
                     max_steps: 24,

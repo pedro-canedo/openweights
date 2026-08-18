@@ -23,9 +23,9 @@ pub mod client;
 pub mod props;
 
 pub use client::{
-    ChatDelta, ChatMessage, ChatOutcome, ChatRequest, ContentPart, FunctionCallMsg, ImageUrl,
-    LlamaClient, MessageContent, NamedFunction, NamedToolChoice, Timings, ToolCallMsg, ToolCallReq,
-    ToolChoice, tool_specs_to_api,
+    ChatDelta, ChatMessage, ChatOutcome, ChatRequest, ContentPart, Dialect, FunctionCallMsg,
+    ImageUrl, LlamaClient, MessageContent, NamedFunction, NamedToolChoice, Timings, ToolCallMsg,
+    ToolCallReq, ToolChoice, tool_specs_to_api,
 };
 pub use props::{ChatTemplateCaps, ServerProps, parse_props};
 

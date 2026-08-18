@@ -33,6 +33,23 @@ pub struct AppState {
     pub server: tokio::sync::Mutex<Option<lr_engine::LlamaServer>>,
     /// PID do llama-server (0 = nenhum). Sobrevive a um mutex ocupado no exit.
     pub server_pid: AtomicU32,
+    /// Catálogo do OpenRouter já buscado, com o instante da busca.
+    ///
+    /// São 400+ modelos e a tela consulta a cada abertura; sem isto cada
+    /// visita à aba viraria uma requisição de rede.
+    pub openrouter_cache:
+        tokio::sync::Mutex<Option<(std::time::Instant, Vec<lr_providers::OpenRouterModel>)>>,
+    /// Node portátil, isolado do Node do sistema. Serve o 9router.
+    pub node: lr_nodejs::NodeManager,
+    /// 9router em execução, quando ligado.
+    pub ninerouter: tokio::sync::Mutex<Option<lr_ninerouter::NineRouter>>,
+    /// PID do 9router (0 = nenhum), pelo mesmo motivo do `server_pid`: no
+    /// exit o mutex pode estar ocupado e o processo não pode sobreviver.
+    pub ninerouter_pid: AtomicU32,
+    /// Ponto de entrada único (Traefik), quando ligado. Opcional: nada no
+    /// chat depende dele.
+    pub gateway: tokio::sync::Mutex<Option<lr_gateway::Gateway>>,
+    pub gateway_pid: AtomicU32,
     shutdown_done: AtomicBool,
 }
 
@@ -139,6 +156,12 @@ impl AppState {
             downloads: lr_models::DownloadManager::new(models_dir.clone()),
             server: tokio::sync::Mutex::new(None),
             server_pid: AtomicU32::new(0),
+            openrouter_cache: tokio::sync::Mutex::new(None),
+            node: lr_nodejs::NodeManager::new(data_dir.join("providers"), os, arch),
+            ninerouter: tokio::sync::Mutex::new(None),
+            ninerouter_pid: AtomicU32::new(0),
+            gateway: tokio::sync::Mutex::new(None),
+            gateway_pid: AtomicU32::new(0),
             tools: std::sync::RwLock::new(tools),
             mcp,
             desktop,
@@ -179,6 +202,34 @@ impl AppState {
         Ok(lr_agent::Endpoint {
             base_url: srv.config().connect_url(),
             api_key: srv.config().api_key.clone(),
+            headers: Vec::new(),
+            dialect: lr_engine::Dialect::LlamaCpp,
+        })
+    }
+
+    /// Endereço do modelo DESTA conversa, que pode não ser o servidor local.
+    ///
+    /// Existe ao lado de `agent_endpoint` em vez de substituí-lo: embeddings
+    /// (RAG), medição de desempenho, consolidação de memória e o relógio das
+    /// automações precisam continuar falando com o llama.cpp local, e trocar
+    /// o endpoint deles por um provedor remoto inutilizaria o índice do
+    /// projeto (outro modelo de embedding) e mediria a máquina errada.
+    pub async fn endpoint_for(&self, model_ref: &str) -> Result<lr_agent::Endpoint, String> {
+        let referencia = lr_providers::ModelRef::parse(model_ref);
+        if referencia.is_local() {
+            return self.agent_endpoint().await;
+        }
+
+        let cfg = crate::commands_providers::load_config(self);
+        let resolvido = cfg
+            .resolve(referencia.provider, None)
+            .map_err(|e| e.to_string())?;
+        Ok(lr_agent::Endpoint {
+            base_url: resolvido.base_url,
+            api_key: resolvido.api_key,
+            headers: resolvido.headers,
+            // Provedor de terceiros não conhece as extensões do llama.cpp.
+            dialect: lr_engine::Dialect::OpenAi,
         })
     }
 
@@ -190,7 +241,7 @@ impl AppState {
     /// (VRAM cheia com o app fechado).
     pub fn shutdown_blocking(&self) {
         if self.shutdown_done.swap(true, Ordering::SeqCst) {
-            self.kill_orphan_pid();
+            self.kill_orphan_pids();
             return;
         }
         if let Ok(mut guard) = self.server.try_lock() {
@@ -199,13 +250,31 @@ impl AppState {
             }
             *guard = None;
         }
-        self.kill_orphan_pid();
+        if let Ok(mut guard) = self.ninerouter.try_lock() {
+            if let Some(nr) = guard.as_mut() {
+                nr.stop_blocking();
+            }
+            *guard = None;
+        }
+        if let Ok(mut guard) = self.gateway.try_lock() {
+            if let Some(gw) = guard.as_mut() {
+                gw.stop_blocking();
+            }
+            *guard = None;
+        }
+        self.kill_orphan_pids();
     }
 
-    fn kill_orphan_pid(&self) {
-        let pid = self.server_pid.swap(0, Ordering::SeqCst);
-        if pid != 0 {
-            lr_engine::kill_process_tree(pid);
+    /// Mata o que sobrou de cada sidecar pelo PID guardado.
+    ///
+    /// É a rede de segurança para quando o mutex estava ocupado: sem ela um
+    /// `node` do 9router fica segurando a porta com o app já fechado.
+    fn kill_orphan_pids(&self) {
+        for slot in [&self.server_pid, &self.ninerouter_pid, &self.gateway_pid] {
+            let pid = slot.swap(0, Ordering::SeqCst);
+            if pid != 0 {
+                lr_engine::kill_process_tree(pid);
+            }
         }
     }
 }

@@ -1,0 +1,22 @@
+[package]
+name = "lr_ninerouter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Instala, supervisiona e remove o 9router de forma isolada"
+
+[dependencies]
+lr_fetch = { path = "../fetch" }
+lr_nodejs = { path = "../nodejs" }
+lr_proc = { path = "../proc" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+getrandom = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

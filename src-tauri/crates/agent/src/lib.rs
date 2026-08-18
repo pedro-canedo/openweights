@@ -44,7 +44,7 @@ pub fn new_id(prefix: &str) -> String {
 }
 
 /// Ajustes do host (do processo, não da conversa).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AgentConfig {
     /// Pasta de dados do app — checkpoints de cópia moram aqui.
     pub store_dir: PathBuf,
@@ -99,11 +99,19 @@ impl AgentConfig {
     }
 }
 
-/// Onde o llama-server está escutando.
-#[derive(Debug, Clone)]
+/// Onde o modelo desta execução atende.
+///
+/// Nem sempre é o llama-server local: uma conversa apontada para o OpenRouter
+/// ou para o 9router resolve para o endereço deles. Por isso os dois campos
+/// extras — `headers` carrega a atribuição que o provedor pede, e `dialect`
+/// diz se as extensões do llama.cpp podem viajar no corpo da requisição.
+#[derive(Debug, Clone, Default)]
 pub struct Endpoint {
     pub base_url: String,
     pub api_key: Option<String>,
+    /// Cabeçalhos extras exigidos pelo provedor. Vazio no servidor local.
+    pub headers: Vec<(String, String)>,
+    pub dialect: lr_engine::Dialect,
 }
 
 /// Pedido para começar uma execução.

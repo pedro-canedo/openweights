@@ -344,6 +344,8 @@ fn delegate(h: &Harness, server: &FakeServer, registry: Arc<ToolRegistry>) -> Ag
     AgentDelegate::new(SubagentDeps {
         base_url: server.base_url(),
         api_key: None,
+        headers: Vec::new(),
+        dialect: lr_engine::Dialect::LlamaCpp,
         registry,
         store: h.store.clone(),
         config: h.config.clone(),
@@ -750,6 +752,8 @@ fn the_schema_stays_flat_for_a_small_model() {
     let tool = AgentDelegate::new(SubagentDeps {
         base_url: "http://127.0.0.1:1".into(),
         api_key: None,
+        headers: Vec::new(),
+        dialect: lr_engine::Dialect::LlamaCpp,
         registry: Arc::new(ToolRegistry::new()),
         store: Arc::new(Store::open_in_memory().unwrap()),
         config: Arc::new(AgentConfig::new(std::env::temp_dir())),

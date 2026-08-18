@@ -8,10 +8,19 @@
 // perde a paridade entre os dois caminhos.
 
 import { getServerStatus, getSetting, startServer } from "./api";
+import { providerEndpoint, splitModelRef, type ProviderId } from "./providers";
 
 export interface ServerSession {
   /** URL conectável pela UI (nunca 0.0.0.0, mesmo em modo LAN). */
   baseUrl: string;
+}
+
+/** Para onde mandar a conversa, já com o que anexar no cabeçalho. */
+export interface EndpointSession {
+  provider: ProviderId;
+  baseUrl: string;
+  /** Cabeçalhos prontos (auth + atribuição), vazio no provedor local. */
+  headers: Record<string, string>;
 }
 
 /** Texto de erro exibível: o `invoke` do Tauri rejeita com string crua. */
@@ -40,6 +49,30 @@ export async function ensureServer(): Promise<ServerSession> {
     throw new Error("Servidor local indisponível.");
   }
   return { baseUrl: status.baseUrl };
+}
+
+/**
+ * Garante o endpoint da conversa e devolve para onde mandar.
+ *
+ * Generaliza o `ensureServer` sem substituí-lo: um modelo sem prefixo é
+ * local, e nesse caso o caminho é exatamente o de sempre — subir o
+ * llama-server se preciso. Provedor remoto não tem nada a subir; o que ele
+ * precisa é da chave, que vem do backend junto da URL.
+ */
+export async function ensureEndpoint(modelRef: string): Promise<EndpointSession> {
+  const { provider } = splitModelRef(modelRef);
+  if (provider === "local") {
+    const { baseUrl } = await ensureServer();
+    return { provider, baseUrl, headers: {} };
+  }
+
+  const ep = await providerEndpoint(modelRef).catch((e) => {
+    throw new Error(errorMessage(e) || "Provedor indisponível.");
+  });
+  const headers: Record<string, string> = {};
+  for (const [nome, valor] of ep.headers) headers[nome] = valor;
+  if (ep.apiKey) headers.Authorization = `Bearer ${ep.apiKey}`;
+  return { provider: ep.provider, baseUrl: ep.baseUrl, headers };
 }
 
 /** Ids atualmente servidos pelo Router (`GET /v1/models`). Nunca lança. */

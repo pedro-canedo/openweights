@@ -4,6 +4,7 @@
 import { addMessage, listChats, renameChat } from "./api";
 import { chatStore } from "./chatStore";
 import {
+  ensureEndpoint,
   ensureServer,
   errorMessage,
   listLoadedModels,
@@ -11,6 +12,7 @@ import {
   modelsMax,
   visionModelFor,
 } from "./serverSession";
+import { splitModelRef } from "./providers";
 import {
   completeOnce,
   streamChat,
@@ -145,10 +147,12 @@ async function autoTitle(
   model: string,
   history: ChatMessage[],
   assistantText: string,
+  headers?: Record<string, string>,
 ): Promise<void> {
   try {
     const raw = await completeOnce({
       baseUrl,
+      headers,
       model,
       messages: [
         ...history,
@@ -264,39 +268,52 @@ async function runJob(chatId: number): Promise<void> {
   let requeued = false;
 
   try {
-    const { baseUrl } = await ensureServer();
+    const { provider, baseUrl, headers } = await ensureEndpoint(row.opts.model);
     if (finishIfAborted(chatId)) return;
 
-    const loaded = await listLoadedModels(baseUrl);
-    const max = await modelsMax();
-    if (finishIfAborted(chatId)) return;
+    // Fila, projetor de visão e casamento de nome pertencem ao Router local:
+    // só ele carrega e descarrega modelo na placa, e só ele publica a entrada
+    // "(visão)". Um provedor remoto serve qualquer id a qualquer momento —
+    // aplicar essas regras nele inventaria uma restrição que não existe.
+    let resolved: string;
+    if (provider === "local") {
+      const loaded = await listLoadedModels(baseUrl);
+      const max = await modelsMax();
+      if (finishIfAborted(chatId)) return;
 
-    // Mensagem com imagem vai para a entrada que carrega o projetor de
-    // visão, quando ela existe. É o próprio roteador que troca entre as
-    // duas, então o projetor só ocupa a placa quando há imagem.
-    const temImagem = row.opts.messages.some(
-      (m) =>
-        Array.isArray(m.content) &&
-        m.content.some((parte) => parte.type === "image_url"),
-    );
-    const pedido = temImagem
-      ? visionModelFor(row.opts.model, loaded)
-      : row.opts.model;
-    const resolved = matchServerModel(pedido, loaded);
-    if (runningJobs(chatId) && mustQueue(resolved, loaded, max)) {
-      requeued = true;
-      patch(chatId, {
-        state: "queued",
-        model: resolved,
-        loadingModel: false,
-        startedAt: null,
-      });
-      // Corrida: o job concorrente pode ter terminado (e chamado `pump()`)
-      // entre o teste acima e este patch — sem re-agendar, este job ficaria
-      // órfão na fila para sempre.
-      if (!runningJobs()) schedulePump();
-      return;
+      // Mensagem com imagem vai para a entrada que carrega o projetor de
+      // visão, quando ela existe. É o próprio roteador que troca entre as
+      // duas, então o projetor só ocupa a placa quando há imagem.
+      const temImagem = row.opts.messages.some(
+        (m) =>
+          Array.isArray(m.content) &&
+          m.content.some((parte) => parte.type === "image_url"),
+      );
+      const pedido = temImagem
+        ? visionModelFor(row.opts.model, loaded)
+        : row.opts.model;
+      resolved = matchServerModel(pedido, loaded);
+      if (runningJobs(chatId) && mustQueue(resolved, loaded, max)) {
+        requeued = true;
+        patch(chatId, {
+          state: "queued",
+          model: resolved,
+          loadingModel: false,
+          startedAt: null,
+        });
+        // Corrida: o job concorrente pode ter terminado (e chamado `pump()`)
+        // entre o teste acima e este patch — sem re-agendar, este job ficaria
+        // órfão na fila para sempre.
+        if (!runningJobs()) schedulePump();
+        return;
+      }
+    } else {
+      resolved = splitModelRef(row.opts.model).model;
     }
+
+    // O histórico guarda a referência COM o prefixo: reabrir a conversa
+    // precisa saber de que provedor veio a resposta, não só o nome do modelo.
+    const referencia = provider === "local" ? resolved : row.opts.model;
 
     patch(chatId, { model: resolved });
 
@@ -307,6 +324,7 @@ async function runJob(chatId: number): Promise<void> {
 
     const result = await streamChat({
       baseUrl,
+      headers,
       model: resolved,
       messages: row.opts.messages,
       params: row.opts.params,
@@ -360,7 +378,7 @@ async function runJob(chatId: number): Promise<void> {
       result.tokensPerSec,
       result.genTokens,
       result.genMs,
-      resolved,
+      referencia,
     );
     patch(chatId, {
       state: "done",
@@ -374,7 +392,14 @@ async function runJob(chatId: number): Promise<void> {
       rowId,
     });
     if (row.opts.autoTitle && canPersist(chatId)) {
-      void autoTitle(chatId, baseUrl, resolved, row.opts.messages, result.content);
+      void autoTitle(
+        chatId,
+        baseUrl,
+        resolved,
+        row.opts.messages,
+        result.content,
+        headers,
+      );
     }
   } catch (err) {
     window.clearTimeout(slowTimer);

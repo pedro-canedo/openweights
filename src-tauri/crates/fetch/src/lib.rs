@@ -477,7 +477,10 @@ mod tests {
     #[test]
     fn parse_sha256_digest_normalises_to_lowercase() {
         let hex = "A".repeat(64);
-        assert_eq!(parse_sha256_digest(&format!("sha256:{hex}")), Some("a".repeat(64)));
+        assert_eq!(
+            parse_sha256_digest(&format!("sha256:{hex}")),
+            Some("a".repeat(64))
+        );
     }
 
     #[test]
@@ -487,7 +490,10 @@ mod tests {
 
     #[test]
     fn parse_sha256_digest_rejects_another_algorithm() {
-        assert_eq!(parse_sha256_digest(&format!("sha512:{}", "a".repeat(64))), None);
+        assert_eq!(
+            parse_sha256_digest(&format!("sha512:{}", "a".repeat(64))),
+            None
+        );
     }
 
     #[test]

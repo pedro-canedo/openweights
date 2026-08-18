@@ -19,6 +19,11 @@ export interface ChatMessage {
 
 export interface StreamChatOptions {
   baseUrl: string;
+  /**
+   * Cabeçalhos extras da requisição (autorização e atribuição dos provedores
+   * remotos). Vazio no llama-server local, que não pede autenticação.
+   */
+  headers?: Record<string, string>;
   model: string;
   messages: ChatMessage[];
   signal: AbortSignal;
@@ -197,6 +202,7 @@ export async function streamChat(
 
 async function streamReal({
   baseUrl,
+  headers,
   model,
   messages,
   signal,
@@ -220,15 +226,13 @@ async function streamReal({
 
   const res = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
     signal,
   });
   if (!res.ok) {
     const errBody = await res.text().catch(() => "");
-    throw new Error(
-      `llama-server HTTP ${res.status}: ${errBody.slice(0, 300)}`,
-    );
+    throw new Error(`HTTP ${res.status}: ${errBody.slice(0, 300)}`);
   }
   if (!res.body) throw new Error("resposta sem corpo (stream indisponível)");
 
@@ -376,6 +380,7 @@ function stripThink(raw: string): string {
  */
 export async function completeOnce({
   baseUrl,
+  headers,
   model,
   messages,
   maxTokens,
@@ -383,6 +388,7 @@ export async function completeOnce({
   signal,
 }: {
   baseUrl: string;
+  headers?: Record<string, string>;
   model: string;
   messages: ChatMessage[];
   maxTokens: number;
@@ -395,7 +401,7 @@ export async function completeOnce({
   }
   const res = await fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify({
       model,
       messages,

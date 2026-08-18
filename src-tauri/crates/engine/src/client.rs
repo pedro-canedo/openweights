@@ -433,10 +433,32 @@ impl ThinkSplitter {
 
 /// Cliente do llama-server local. Barato de clonar? Não: crie um por uso —
 /// o `reqwest::Client` interno já tem pool de conexões próprio.
+/// Com que servidor estamos falando.
+///
+/// O llama-server aceita extensões próprias no corpo do `/v1/chat/completions`
+/// (`cache_prompt` é a que importa aqui). Um provedor OpenAI genérico não as
+/// conhece: alguns ignoram campo desconhecido, outros respondem 400. Como o
+/// laço do agente monta uma requisição só para os dois, é o cliente — que é
+/// quem sabe com quem fala — que poda o que não cabe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Dialect {
+    /// llama-server local: aceita tudo.
+    #[default]
+    LlamaCpp,
+    /// Endpoint OpenAI-compatible de terceiros (OpenRouter, 9router).
+    OpenAi,
+}
+
+/// Extensões do llama-server que não sobrevivem fora dele.
+const EXTENSOES_LLAMACPP: &[&str] = &["cache_prompt"];
+
 pub struct LlamaClient {
     base_url: String,
     http: reqwest::Client,
     api_key: Option<String>,
+    dialect: Dialect,
+    /// Cabeçalhos fixos exigidos pelo provedor (atribuição do OpenRouter).
+    headers: Vec<(String, String)>,
     /// Prazo até o PRIMEIRO pedaço do stream. Generoso de propósito: processar
     /// um prompt de 8k tokens em CPU leva minutos, e isso não é travamento.
     first_token_timeout: Option<Duration>,
@@ -465,9 +487,41 @@ impl LlamaClient {
                 .build()
                 .unwrap_or_default(),
             api_key: None,
+            dialect: Dialect::LlamaCpp,
+            headers: Vec::new(),
             first_token_timeout: None,
             idle_timeout: None,
         }
+    }
+
+    /// Declara o dialeto do destino. O padrão é `LlamaCpp` — quem aponta para
+    /// um provedor de terceiros precisa dizer, senão as extensões vão junto.
+    pub fn with_dialect(mut self, dialect: Dialect) -> Self {
+        self.dialect = dialect;
+        self
+    }
+
+    pub fn dialect(&self) -> Dialect {
+        self.dialect
+    }
+
+    /// Cabeçalhos fixos anexados a toda requisição — o OpenRouter usa dois
+    /// para atribuir o tráfego ao app.
+    pub fn with_headers(mut self, headers: Vec<(String, String)>) -> Self {
+        self.headers = headers;
+        self
+    }
+
+    /// Requisição pronta para o destino: no dialeto OpenAI, sem as extensões
+    /// do llama.cpp.
+    fn adequar(&self, req: &ChatRequest, stream: bool) -> ChatRequest {
+        let mut body = req.with_stream(stream);
+        if self.dialect == Dialect::OpenAi {
+            for chave in EXTENSOES_LLAMACPP {
+                body.extra.remove(*chave);
+            }
+        }
+        body
     }
 
     /// Liga os dois relógios do stream (ver os campos). `None` mantém o
@@ -503,6 +557,10 @@ impl LlamaClient {
     }
 
     fn auth(&self, rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        let rb = self
+            .headers
+            .iter()
+            .fold(rb, |acc, (nome, valor)| acc.header(nome, valor));
         match &self.api_key {
             Some(key) => rb.bearer_auth(key),
             None => rb,
@@ -591,7 +649,7 @@ impl LlamaClient {
     where
         F: FnMut(ChatDelta),
     {
-        let body = req.with_stream(true);
+        let body = self.adequar(req, true);
         let mut res = self
             .auth(self.http.post(self.url("/v1/chat/completions")))
             .json(&body)
@@ -658,7 +716,7 @@ impl LlamaClient {
     /// auxiliares (título, sumarização, verificação) em que streaming só
     /// atrapalha.
     pub async fn complete_once(&self, req: &ChatRequest) -> Result<ChatOutcome, EngineError> {
-        let body = req.with_stream(false);
+        let body = self.adequar(req, false);
         // Sem stream não há "pedaços" para vigiar: o teto aqui é total, e só
         // existe quando os prazos foram ligados (o laço do agente). Largo o
         // bastante para uma sumarização longa em CPU.
@@ -713,7 +771,7 @@ impl LlamaClient {
     /// 3. heurística `caracteres / 4 + 4 por mensagem` — grosseira, mas só
     ///    entra quando o servidor não oferece nenhum dos dois endpoints.
     pub async fn input_tokens(&self, req: &ChatRequest) -> Result<u32, EngineError> {
-        let body = req.with_stream(false);
+        let body = self.adequar(req, false);
         if let Ok(res) = self
             .auth(
                 self.http
@@ -1299,3 +1357,51 @@ pub fn tool_specs_to_api(specs: &[ToolSpec]) -> Vec<Value> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod testes_dialeto {
+    use super::*;
+
+    fn requisicao_com_cache() -> ChatRequest {
+        ChatRequest::new("m", vec![ChatMessage::user("oi")])
+            .with_extra("cache_prompt", serde_json::json!(true))
+    }
+
+    /// O llama-server precisa do `cache_prompt`: é o que torna um laço de
+    /// vários passos viável numa máquina doméstica.
+    #[test]
+    fn the_llamacpp_dialect_keeps_the_cache_prompt_extension() {
+        let c = LlamaClient::new("http://127.0.0.1:11711");
+        let body = c.adequar(&requisicao_com_cache(), true);
+        assert!(body.extra.contains_key("cache_prompt"));
+        assert!(body.stream);
+    }
+
+    /// Provedores de terceiros não conhecem a extensão — alguns respondem 400.
+    #[test]
+    fn the_openai_dialect_drops_the_cache_prompt_extension() {
+        let c = LlamaClient::new("https://openrouter.ai/api/v1").with_dialect(Dialect::OpenAi);
+        let body = c.adequar(&requisicao_com_cache(), false);
+        assert!(!body.extra.contains_key("cache_prompt"));
+        assert!(!body.stream);
+    }
+
+    /// Podar as extensões não pode levar junto os parâmetros padrão.
+    #[test]
+    fn the_openai_dialect_keeps_standard_parameters() {
+        let mut req =
+            requisicao_com_cache().with_extra("reasoning_effort", serde_json::json!("low"));
+        req.temperature = Some(0.4);
+        let c = LlamaClient::new("https://exemplo/v1").with_dialect(Dialect::OpenAi);
+        let body = c.adequar(&req, true);
+        assert_eq!(body.temperature, Some(0.4));
+        assert_eq!(body.model, "m");
+        // `reasoning_effort` é da própria API da OpenAI: fica.
+        assert!(body.extra.contains_key("reasoning_effort"));
+    }
+
+    #[test]
+    fn the_default_dialect_is_llamacpp() {
+        assert_eq!(LlamaClient::new("http://x").dialect(), Dialect::LlamaCpp);
+    }
+}

@@ -7,6 +7,7 @@ mod commands_agent;
 mod commands_automation;
 mod commands_mcp;
 mod commands_memory;
+mod commands_providers;
 mod commands_rag;
 mod commands_tuning;
 mod desktop_host;
@@ -173,6 +174,25 @@ fn main() {
             commands_rag::rag_index_cancel,
             commands_rag::rag_search,
             commands_rag::rag_clear,
+            // Outras fontes de LLM (OpenRouter, 9router).
+            commands_providers::providers_config_get,
+            commands_providers::providers_config_set,
+            commands_providers::providers_list,
+            commands_providers::provider_endpoint,
+            commands_providers::openrouter_models,
+            commands_providers::openrouter_key_info,
+            commands_providers::ninerouter_status,
+            commands_providers::ninerouter_install,
+            commands_providers::ninerouter_start,
+            commands_providers::ninerouter_stop,
+            commands_providers::ninerouter_uninstall,
+            commands_providers::gateway_status,
+            commands_providers::gateway_config_set,
+            commands_providers::gateway_install,
+            commands_providers::gateway_start,
+            commands_providers::gateway_stop,
+            commands_providers::gateway_refresh_routes,
+            commands_providers::gateway_uninstall,
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o OpenWeights")

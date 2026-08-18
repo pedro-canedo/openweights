@@ -13,10 +13,12 @@ serde_json.workspace = true
 thiserror.workspace = true
 log.workspace = true
 tokio.workspace = true
-# Sem TLS de propósito: o engine só fala HTTP com 127.0.0.1.
+# Com TLS: além do llama-server local em 127.0.0.1, o cliente precisa alcançar
+# provedores remotos por HTTPS (OpenRouter). Ficava sem TLS de propósito, e o
+# resultado era que o agente não conseguia falar com nenhum deles.
 # O streaming SSE usa `Response::chunk()`, que não exige a feature "stream" —
 # por isso nada de futures-util aqui.
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest.workspace = true
 async-trait = "0.1"
 
 # Os testes sobem um servidor HTTP falso com `std::net` (sem dependência

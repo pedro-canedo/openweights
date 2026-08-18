@@ -237,7 +237,10 @@ fn code_mode_asks_for_a_code_block_not_for_a_tool_call() {
         Some(super::CUTUCADA_PROGRAMA)
     );
     // As outras duas continuam iguais: elas não falam de formato.
-    assert_eq!(super::cutucada_para("   ", true), Some(super::CUTUCADA_VAZIA));
+    assert_eq!(
+        super::cutucada_para("   ", true),
+        Some(super::CUTUCADA_VAZIA)
+    );
 }
 
 /// O fallback de arquivo em texto: o formato que o modelo usa quando o JSON

@@ -35,6 +35,7 @@ import {
   matchServerModel,
   VISION_SUFFIX,
 } from "../lib/serverSession";
+import { joinModelRef, providersConfigGet } from "../lib/providers";
 import { navigate, takePendingChatModel } from "../lib/nav";
 import {
   DEFAULT_CHAT_PARAMS,
@@ -104,6 +105,21 @@ async function loadModelOptions(): Promise<string[]> {
   for (const name of local) {
     // O id do Router pode ser o nome sem `.gguf` — não duplicar o modelo.
     if (!visiveis.includes(matchServerModel(name, visiveis))) out.push(name);
+  }
+
+  // Modelos remotos entram como referência com prefixo (`openrouter:x/y`),
+  // que é o que o resto do app usa para saber para onde mandar a conversa.
+  // Só os favoritos: o catálogo tem centenas de entradas e despejá-las aqui
+  // tornaria o seletor inútil. Quem escolhe favoritos é a tela de Fontes.
+  try {
+    const cfg = await providersConfigGet();
+    if (cfg.openRouter.enabled) {
+      for (const id of cfg.openRouter.favorites) {
+        out.push(joinModelRef("openrouter", id));
+      }
+    }
+  } catch {
+    // sem configuração de provedores — fica só o que é local
   }
   return out;
 }

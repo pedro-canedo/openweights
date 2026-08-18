@@ -7,6 +7,7 @@ export type Screen =
   | "chat"
   | "activity"
   | "server"
+  | "providers"
   | "settings";
 
 export interface NavPayload {
