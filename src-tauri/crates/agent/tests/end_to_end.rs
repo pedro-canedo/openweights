@@ -49,6 +49,19 @@ impl FakeLlama {
     }
 
     fn spawn_with_props(chat_replies: Vec<Vec<String>>, props: &str) -> Self {
+        Self::spawn_full(chat_replies, props, "")
+    }
+
+    /// Servidor que devolve um plano na decomposição.
+    ///
+    /// A divisão do pedido é um chat SEM stream; o padrão responde vazio (e
+    /// o agente cai no plano de uma entrega só). Quem precisa de entregas com
+    /// arquivos declarados — a conferência de entrega — passa o JSON aqui.
+    fn spawn_with_plan(chat_replies: Vec<Vec<String>>, plano_json: &str) -> Self {
+        Self::spawn_full(chat_replies, PROPS_MODELO, plano_json)
+    }
+
+    fn spawn_full(chat_replies: Vec<Vec<String>>, props: &str, sem_stream: &str) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = listener.local_addr().expect("addr");
         listener.set_nonblocking(true).expect("nonblocking");
@@ -62,6 +75,10 @@ impl FakeLlama {
         let tokens = Arc::new(AtomicUsize::new(10));
         let contagem = tokens.clone();
         let props_json = props.to_string();
+        let sem_stream_json = serde_json::json!({
+            "choices": [{ "message": { "content": sem_stream } }]
+        })
+        .to_string();
 
         std::thread::spawn(move || {
             while !flag.load(Ordering::SeqCst) {
@@ -76,10 +93,7 @@ impl FakeLlama {
                             // responde JSON vazio sem consumir o roteiro — o
                             // roteiro é dos passos do agente.
                             if body.contains("\"stream\":false") {
-                                write_json(
-                                    &mut stream,
-                                    r#"{"choices":[{"message":{"content":""}}]}"#,
-                                );
+                                write_json(&mut stream, &sem_stream_json);
                                 continue;
                             }
                             vistos.lock().unwrap().push(body);
@@ -2364,4 +2378,67 @@ async fn o_segundo_programa_pode_repetir_a_chamada_do_primeiro() {
             "chamada de dentro do programa foi barrada como repetição: {saida}"
         );
     }
+}
+
+// ------------------------------------------------- conferência de entrega ---
+
+/// O caso que motivou a conferência: um pedido grande, um modelo que pensa e
+/// responde texto, e um run que fechava como **Concluído** sem ter criado um
+/// arquivo sequer. A frase não decide mais — o disco decide.
+#[tokio::test]
+async fn a_run_that_delivers_nothing_does_not_end_as_done() {
+    let plano = r#"{"tasks":[{"title":"o jogo","instruction":"crie jogo.js",
+        "done_when":"o arquivo existe","files":["jogo.js"]}]}"#;
+    // Duas respostas de texto puro, sem chamada de ferramenta nenhuma: a
+    // primeira encerraria o run hoje; a segunda é a resposta à cobrança.
+    let server = FakeLlama::spawn_with_plan(
+        vec![
+            vec![text_chunk("Pronto, criei tudo o que você pediu."), done()],
+            vec![text_chunk("Já está tudo pronto, como eu disse."), done()],
+        ],
+        plano,
+    );
+    let h = Harness::new();
+
+    let status = h
+        .run("crie um jogo completo", RunMode::Yolo, server.endpoint())
+        .await;
+
+    assert_ne!(
+        status,
+        RunStatus::Done,
+        "o run não criou jogo.js: dizer Concluído seria mentir para a pessoa"
+    );
+    assert!(
+        !h.workspace.join("jogo.js").exists(),
+        "nada foi criado mesmo"
+    );
+}
+
+/// A contrapartida: entregou, então acabou. Sem isto, a conferência viraria
+/// um moedor que nunca deixa um run terminar.
+#[tokio::test]
+async fn a_run_that_creates_the_promised_file_ends_as_done() {
+    let plano = r#"{"tasks":[{"title":"o jogo","instruction":"crie jogo.js",
+        "done_when":"o arquivo existe","files":["jogo.js"]}]}"#;
+    let server = FakeLlama::spawn_with_plan(
+        vec![
+            tool_call_chunks(
+                "c1",
+                "fs_write",
+                r#"{"path":"jogo.js","#,
+                r#""content":"console.log(1)"}"#,
+            ),
+            vec![text_chunk("Criei o jogo.js."), done()],
+        ],
+        plano,
+    );
+    let h = Harness::new();
+
+    let status = h
+        .run("crie um jogo", RunMode::Yolo, server.endpoint())
+        .await;
+
+    assert_eq!(status, RunStatus::Done, "a entrega existe em disco");
+    assert!(h.workspace.join("jogo.js").exists());
 }

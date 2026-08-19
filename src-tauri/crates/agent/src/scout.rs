@@ -91,9 +91,13 @@ fn plan_schema() -> Value {
                         "title": { "type": "string" },
                         "instruction": { "type": "string" },
                         "done_when": { "type": "string" },
+                        // Os caminhos que a entrega vai criar ou alterar. É o
+                        // que a conferência final procura em disco: sem isto,
+                        // "pronto" continuaria sendo palavra do modelo.
+                        "files": { "type": "array", "items": { "type": "string" } },
                         "depends_on": { "type": "array", "items": { "type": "integer" } }
                     },
-                    "required": ["title", "instruction", "done_when"]
+                    "required": ["title", "instruction", "done_when", "files"]
                 }
             }
         },
@@ -116,6 +120,8 @@ fn decompose_request(
          - cada entrega tem que caber sozinha em {per_task} tokens de contexto;\n\
          - `instruction` é concreta: diz o que fazer, em quais arquivos, com que resultado;\n\
          - `done_when` é conferível (um arquivo existe, um comando passa, um texto aparece);\n\
+         - `files` lista os caminhos que ESTA entrega cria ou altera, relativos à pasta do \
+         projeto; deixe vazio só quando a entrega não mexe em arquivo nenhum;\n\
          - `depends_on` só aponta para entregas ANTERIORES, pelo índice começando em 0;\n\
          - não invente etapas de \"revisar\" ou \"planejar\": só trabalho de verdade.\n"
     );
@@ -278,6 +284,7 @@ pub fn plan_from_value(goal: &str, value: &Value, per_task: u32) -> Option<TaskP
         tasks.push(Task {
             instruction,
             done_when,
+            files: arquivos(item),
             depends_on: dependencies(item, index),
             est_tokens: per_task,
             ..Task::new(format!("t{}", index + 1), title)
@@ -323,6 +330,35 @@ fn field(item: &Value, keys: &[&str]) -> String {
 /// para si mesma) trava o plano inteiro, porque nunca fica pronta. Índice
 /// inválido é descartado — perder uma dependência é melhor que recusar o
 /// plano e cair no plano de uma entrega só.
+/// Caminhos que a entrega declara que vai criar ou alterar.
+///
+/// São a evidência da conferência final: sem eles, "a tarefa acabou" volta a
+/// ser a palavra do modelo. Caminho absoluto é descartado — a conferência
+/// resolve contra a pasta do projeto, e um `/etc/...` aqui só produziria
+/// pendência eterna.
+fn arquivos(item: &Value) -> Vec<String> {
+    item.get("files")
+        .or_else(|| item.get("arquivos"))
+        .or_else(|| item.get("paths"))
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|s| {
+                    !s.is_empty()
+                        && !s.starts_with('/')
+                        && !s.starts_with('\\')
+                        && !s.contains("..")
+                        && !s.contains(':')
+                })
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn dependencies(item: &Value, index: usize) -> Vec<usize> {
     let mut out: Vec<usize> = item
         .get("depends_on")

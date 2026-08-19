@@ -405,6 +405,43 @@ fn a_plain_list_of_strings_still_becomes_a_plan() {
 }
 
 #[test]
+fn a_task_carries_the_files_it_promises_to_touch() {
+    // Sem este campo a conferência de entrega não tem o que procurar em
+    // disco, e "acabou" volta a ser a palavra do modelo.
+    let plan = plan_from_value(
+        "objetivo",
+        &json!({"tasks": [{
+            "title": "HUD",
+            "instruction": "criar a HUD",
+            "done_when": "existe",
+            "files": ["src/ui/hud.js", "src/ui/hud.css"]
+        }]}),
+        0,
+    )
+    .unwrap();
+    assert_eq!(plan.tasks[0].files, vec!["src/ui/hud.js", "src/ui/hud.css"]);
+}
+
+#[test]
+fn a_path_that_escapes_the_project_is_not_a_deliverable() {
+    // Caminho absoluto ou com `..` nunca seria encontrado sob a pasta do
+    // projeto: viraria pendência eterna, e o run cobraria para sempre uma
+    // entrega impossível.
+    let plan = plan_from_value(
+        "objetivo",
+        &json!({"tasks": [{
+            "title": "t",
+            "instruction": "i",
+            "done_when": "d",
+            "files": ["/etc/passwd", "../fora.js", "C:\\x.js", "  ", "dentro.js"]
+        }]}),
+        0,
+    )
+    .unwrap();
+    assert_eq!(plan.tasks[0].files, vec!["dentro.js"]);
+}
+
+#[test]
 fn tasks_without_title_and_without_instruction_are_dropped() {
     let plan = plan_from_value(
         "objetivo",
