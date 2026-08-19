@@ -131,6 +131,11 @@ impl Tool for PlanCreate {
                             "title": { "type": "string", "description": "Título curto da etapa." },
                             "instruction": { "type": "string", "description": "O que fazer nesta etapa, de forma concreta." },
                             "done_when": { "type": "string", "description": "Como conferir que a etapa terminou." },
+                            "files": {
+                                "type": "array",
+                                "description": "Caminhos que esta etapa cria ou altera, relativos à pasta do projeto. É o que a conferência de entrega procura em disco.",
+                                "items": { "type": "string" }
+                            },
                             "depends_on": {
                                 "type": "array",
                                 "description": "Índices (a partir de 0) das etapas anteriores que precisam terminar antes desta.",
@@ -160,8 +165,8 @@ impl Tool for PlanCreate {
         let mut built =
             scout::plan_from_value(&goal, &json!({ "tasks": tasks }), 0).ok_or_else(|| {
                 ToolError::InvalidArgs(
-                    "mande `tasks` como uma lista de etapas com `title`, `instruction` e \
-                     `done_when`"
+                    "mande `tasks` como uma lista de etapas com `title`, `instruction`, \
+                     `done_when` e `files`"
                         .into(),
                 )
             })?;

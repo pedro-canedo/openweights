@@ -391,6 +391,21 @@ impl Harness {
         options: RunOptions,
         endpoint: Endpoint,
     ) -> RunStatus {
+        self.run_full(prompt, options, endpoint, WorkMode::Agent)
+            .await
+    }
+
+    /// Variante que escolhe o modo de trabalho. O planejamento precisa dela:
+    /// é o único modo em que o run termina SEM ter executado nada, e por isso
+    /// o único que prova que a conferência de entrega não invade o que ele
+    /// promete.
+    async fn run_full(
+        &self,
+        prompt: &str,
+        options: RunOptions,
+        endpoint: Endpoint,
+        work_mode: WorkMode,
+    ) -> RunStatus {
         let sink = self.events.clone();
         let handle = self
             .host
@@ -401,7 +416,7 @@ impl Harness {
                     memory: Vec::new(),
                     options,
                     endpoint,
-                    work_mode: WorkMode::Agent,
+                    work_mode,
                     plan: None,
                 },
                 Some(Arc::new(move |ev: RunEvent| {
@@ -2441,4 +2456,37 @@ async fn a_run_that_creates_the_promised_file_ends_as_done() {
 
     assert_eq!(status, RunStatus::Done, "a entrega existe em disco");
     assert!(h.workspace.join("jogo.js").exists());
+}
+
+/// O modo planejamento promete não mexer em nada até a pessoa aprovar. A
+/// conferência de entrega não pode atropelar isso: ali o run termina com o
+/// plano escrito e NENHUMA entrega feita — exatamente o estado que, no modo
+/// agente, dispara a cobrança e manda executar.
+#[tokio::test]
+async fn planning_mode_is_not_charged_for_deliveries_it_never_promised_to_make() {
+    // O modelo registra o plano pela ferramenta, declarando o arquivo — é o
+    // que dá à conferência algo para procurar, e sem isso o teste não
+    // encostaria no risco que ele existe para cobrir.
+    let server = FakeLlama::spawn(vec![tool_call_chunks(
+        "c1",
+        "plan_create",
+        r#"{"goal":"um jogo","tasks":[{"title":"o jogo","instruction":"crie jogo.js","#,
+        r#""done_when":"existe","files":["jogo.js"]}]}"#,
+    )]);
+    let h = Harness::new();
+    let options = h.options(RunMode::Yolo);
+
+    let status = h
+        .run_full("crie um jogo", options, server.endpoint(), WorkMode::Plan)
+        .await;
+
+    assert_eq!(
+        status,
+        RunStatus::Done,
+        "planejar é entregar o plano; cobrar o arquivo aqui mandaria executar antes da aprovação"
+    );
+    assert!(
+        !h.workspace.join("jogo.js").exists(),
+        "nada pode ser criado no planejamento"
+    );
 }

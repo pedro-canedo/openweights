@@ -15,6 +15,7 @@ use crate::codemode;
 use crate::delivery;
 use crate::events::EventSink;
 use crate::menu;
+use crate::output_stream::ChunkCoalescer;
 use crate::plan_tools::{PlanTools, SharedPlan, shared_plan, snapshot};
 use crate::prompt::{PromptContext, build_system_prompt};
 use crate::reliability::{
@@ -497,6 +498,13 @@ pub(crate) struct ToolRunner {
     /// o run no passo seguinte — que é o que `CallFlow::Escalate` faria se
     /// coubesse no tipo de retorno de uma ferramenta.
     pub escalonar_apos_programa: Option<String>,
+    /// Agrupador da saída ao vivo da chamada em curso (o terminal da sessão).
+    ///
+    /// Fica no runner, e não só no `ToolContext`, porque o Code Mode emite
+    /// por fora das ferramentas: os dois precisam do MESMO agrupador, senão
+    /// um não sabe que o outro já transmitiu e o corpo final sai dobrado.
+    /// `None` fora de uma chamada.
+    pub saida_ao_vivo: Option<Arc<ChunkCoalescer>>,
     /// Esta chamada veio de DENTRO de um programa do Code Mode.
     ///
     /// Dois guard-rails são do modelo, não do programa, e precisam ficar de
@@ -586,6 +594,17 @@ impl ToolRunner {
         let mut ctx = ToolContext::new(self.workspace.clone(), call_id);
         ctx.max_output_bytes = self.config.max_output_bytes;
         ctx
+    }
+
+    /// O contexto da execução de verdade: com a saída indo para a interface
+    /// enquanto o comando roda.
+    ///
+    /// A prévia usa o [`Self::tool_context`] seco de propósito — ela roda
+    /// ANTES da aprovação, e o que ainda não foi autorizado não tem por que
+    /// aparecer no terminal da sessão.
+    fn tool_context_streaming(&self, call_id: &str, fluxo: &Arc<ChunkCoalescer>) -> ToolContext {
+        self.tool_context(call_id)
+            .with_output_sink(fluxo.as_output_sink())
     }
 
     /// Uma chamada, do pedido do modelo ao resultado de volta.
@@ -937,14 +956,20 @@ impl ToolRunner {
 
         // A saída aparece na UI enquanto o programa roda, como a de qualquer
         // comando: um programa que demora não pode parecer travado.
+        let fluxo = self.saida_ao_vivo.clone();
         let sink = self.sink.clone();
         let cid = call_id.to_string();
-        let script = lr_codemode::run_script(pedido, move |pedaco| {
-            sink.emit(RunEventKind::ToolOutput {
-                call_id: cid.clone(),
-                chunk: pedaco.to_string(),
-                truncated: false,
-            });
+        let script = lr_codemode::run_script(pedido, move |pedaco| match &fluxo {
+            // O mesmo agrupador da chamada: é ele que sabe dizer, no fim,
+            // que já houve streaming e o corpo não deve ser repetido.
+            Some(f) => f.push(pedaco),
+            None => {
+                sink.emit(RunEventKind::ToolOutput {
+                    call_id: cid.clone(),
+                    chunk: pedaco.to_string(),
+                    truncated: false,
+                });
+            }
         });
 
         let mut despacho = DespachoDoScript {
@@ -1030,7 +1055,9 @@ impl ToolRunner {
             call_id: call_id.to_string(),
         });
 
-        let ctx = self.tool_context(call_id);
+        let fluxo = Arc::new(ChunkCoalescer::new(self.sink.clone(), call_id));
+        let ctx = self.tool_context_streaming(call_id, &fluxo);
+        self.saida_ao_vivo = Some(fluxo.clone());
         let started = Instant::now();
         // O handle é clonado porque o outro braço do `select!` precisa do
         // `&mut self` (o programa do Code Mode reentra no runner a cada
@@ -1039,11 +1066,19 @@ impl ToolRunner {
         let outcome = tokio::select! {
             biased;
             _ = handle.cancelled() => {
+                // A cauda do que já saiu vale mais aqui do que em qualquer
+                // outro caminho: é onde a pessoa vai procurar o motivo.
+                fluxo.flush();
+                self.saida_ao_vivo = None;
                 let _ = self.store.finish_tool_call(call_id, false, "", 0, Some("cancelado"));
                 return CallFlow::Cancelled;
             }
             r = self.despachar(name, call_id, args.clone(), step_id, step_index, &ctx) => r,
         };
+        // O agrupador segura até 4 KB ou 100 ms; sem este flush o último
+        // trecho de um comando rápido nunca chegaria à interface.
+        fluxo.flush();
+        self.saida_ao_vivo = None;
         let duration_ms = started.elapsed().as_millis() as u64;
 
         // Um teto estourado DENTRO do programa não cabe no retorno de uma
@@ -1066,11 +1101,23 @@ impl ToolRunner {
         match outcome {
             Ok(out) => {
                 let truncated = out.bytes_total > out.content.len() as u64;
-                self.sink.emit(RunEventKind::ToolOutput {
-                    call_id: call_id.to_string(),
-                    chunk: out.content.clone(),
-                    truncated,
-                });
+                // Quem transmitiu ao vivo não repete o corpo: a interface
+                // CONCATENA os pedaços, então mandar o resultado inteiro
+                // agora colaria uma segunda cópia no fim. O aviso de corte
+                // ainda precisa chegar — vai num pedaço vazio.
+                if !fluxo.streamed() {
+                    self.sink.emit(RunEventKind::ToolOutput {
+                        call_id: call_id.to_string(),
+                        chunk: out.content.clone(),
+                        truncated,
+                    });
+                } else if truncated {
+                    self.sink.emit(RunEventKind::ToolOutput {
+                        call_id: call_id.to_string(),
+                        chunk: String::new(),
+                        truncated,
+                    });
+                }
                 self.sink.emit(RunEventKind::ToolResult {
                     call_id: call_id.to_string(),
                     ok: true,
@@ -2399,6 +2446,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         counters: RunCounters::default(),
         dentro_de_programa: false,
         escalonar_apos_programa: None,
+        saida_ao_vivo: None,
         code_menu: code_mode.then(|| menu.clone()),
     };
 
@@ -2512,7 +2560,13 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         // trabalho continua de onde parou. É o que separa "o modelo parou de
         // agir" de "a tarefa terminou", que era a confusão que fechava um
         // pedido de dezenas de requisitos como Concluído em quatro passos.
-        if tools_on && outcome.status == RunStatus::Done {
+        // Só no modo agente. No planejamento o run entrega o PLANO, não o
+        // trabalho — cobrar as entregas ali mandaria o modelo executar antes
+        // de a pessoa aprovar, que é exatamente o que aquele modo promete não
+        // fazer. E no modo laço a cobrança é do `run_plan`, que reenfileira a
+        // etapa reprovada; empilhar as duas cobraria a mesma entrega em
+        // dobro.
+        if tools_on && work_mode == WorkMode::Agent && outcome.status == RunStatus::Done {
             let mut anterior: Option<Vec<delivery::Pendencia>> = None;
             loop {
                 let pendentes = delivery::pendencias(&snapshot(&plan), workspace.as_deref());
