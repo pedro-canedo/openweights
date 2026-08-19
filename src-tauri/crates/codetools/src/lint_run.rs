@@ -99,7 +99,14 @@ impl Tool for LintRun {
         let (cmd, fixing) = choose(&target, wants_fix);
 
         let timeout = timeout_of(&args, DEFAULT_TIMEOUT_SECS);
-        let run = exec::run(&cmd, &target.cwd, timeout, exec::CAPTURE_BYTES).await?;
+        let run = exec::run(
+            &cmd,
+            &target.cwd,
+            timeout,
+            exec::CAPTURE_BYTES,
+            ctx.output_fn(),
+        )
+        .await?;
 
         let output = combined(&run.outcome.stdout, &run.outcome.stderr);
         let diags = diagnostics::extract(&output);

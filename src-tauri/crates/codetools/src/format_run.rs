@@ -76,9 +76,15 @@ impl FormatRun {
     }
 
     /// Roda o modo conferência e devolve os arquivos fora do padrão.
-    async fn check(&self, target: &Target, root: &Path, timeout: u64) -> Option<CheckResult> {
+    async fn check(
+        &self,
+        target: &Target,
+        root: &Path,
+        timeout: u64,
+        on_output: impl FnMut(&str) + Send,
+    ) -> Option<CheckResult> {
         let cmd = target.stack.format_check.clone()?;
-        let run = exec::run(&cmd, &target.cwd, timeout, exec::CAPTURE_BYTES)
+        let run = exec::run(&cmd, &target.cwd, timeout, exec::CAPTURE_BYTES, on_output)
             .await
             .ok()?;
         let output = combined(&run.outcome.stdout, &run.outcome.stderr);
@@ -164,7 +170,10 @@ impl Tool for FormatRun {
         }
 
         let apply = target.stack.format.clone()?;
-        let Some(check) = self.check(&target, &root, PREVIEW_TIMEOUT_SECS).await else {
+        let Some(check) = self
+            .check(&target, &root, PREVIEW_TIMEOUT_SECS, |_| {})
+            .await
+        else {
             return Some(command_preview(&apply, &target.cwd));
         };
         self.remember(&ctx.call_id, check.files.clone());
@@ -197,7 +206,7 @@ impl Tool for FormatRun {
 
         // Conferir primeiro serve para os dois modos: sem `fix` é a resposta
         // inteira; com `fix` é o que permite dizer o que mudou de verdade.
-        let check = self.check(&target, &root, timeout).await;
+        let check = self.check(&target, &root, timeout, ctx.output_fn()).await;
 
         if !fix {
             return Ok(no_fix_answer(&target, check, ctx).truncated_to(ctx.max_output_bytes));
@@ -208,7 +217,14 @@ impl Tool for FormatRun {
             .format
             .clone()
             .expect("target garante que o comando existe");
-        let run = exec::run(&apply, &target.cwd, timeout, exec::CAPTURE_BYTES).await?;
+        let run = exec::run(
+            &apply,
+            &target.cwd,
+            timeout,
+            exec::CAPTURE_BYTES,
+            ctx.output_fn(),
+        )
+        .await?;
 
         let mut body = format!("{}\nstack: {}", run.header(), target.where_line());
         let changed = check.as_ref().map(|c| c.files.clone()).unwrap_or_default();

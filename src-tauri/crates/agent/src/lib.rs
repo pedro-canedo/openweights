@@ -8,6 +8,7 @@ mod codemode;
 mod delivery;
 mod events;
 mod menu;
+mod output_stream;
 mod plan_tools;
 mod prompt;
 mod reliability;

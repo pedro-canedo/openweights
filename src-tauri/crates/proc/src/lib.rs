@@ -17,6 +17,38 @@
 use std::time::{Duration, Instant};
 use tokio::process::{Child, Command};
 
+/// A flag que impede o Windows de alocar um console para o filho.
+///
+/// Um app com `windows_subsystem = "windows"` não tem console; sem esta flag,
+/// todo filho console-subsystem (`git`, `npm`, `taskkill`) ganha um console
+/// novo — a janela preta que pisca na cara de quem só pediu uma tarefa ao
+/// agente. Em debug o bug se esconde: aí o app tem console e o filho herda.
+#[cfg(windows)]
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Aplica `CREATE_NO_WINDOW` a um comando síncrono. Fora do Windows é no-op.
+///
+/// Existe para que nenhum `Command::new` precise saber o número mágico nem
+/// lembrar do `#[cfg]`. Chamar sempre é seguro e é o padrão do projeto —
+/// há um teste (`no_process_spawn_escapes_the_no_window_rule`) que cobra isso.
+pub fn no_window_std(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
+/// A irmã assíncrona de [`no_window_std`], para `tokio::process::Command`.
+pub fn no_window(cmd: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 /// Mata o PID e toda a árvore (Windows: `taskkill /T /F`; Unix: grupo).
 pub fn kill_process_tree(pid: u32) {
     if pid == 0 {
@@ -24,12 +56,10 @@ pub fn kill_process_tree(pid: u32) {
     }
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt as _;
         use std::process::Stdio;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let _ = std::process::Command::new("taskkill")
+        let mut cmd = std::process::Command::new("taskkill");
+        let _ = no_window_std(&mut cmd)
             .args(["/T", "/F", "/PID", &pid.to_string()])
-            .creation_flags(CREATE_NO_WINDOW)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
@@ -91,7 +121,6 @@ pub fn spawn_supervised(cmd: &mut Command) -> std::io::Result<Child> {
     }
     #[cfg(windows)]
     {
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
         let breakaway = windows_job::parent_allows_breakaway();
         cmd.creation_flags(if breakaway {
@@ -257,7 +286,84 @@ mod windows_job {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::{Path, PathBuf};
     use std::process::Stdio;
+
+    /// Nenhum arquivo do app pode criar processo sem passar pela flag.
+    ///
+    /// A regra é por ARQUIVO, não por chamada: analisar Rust com busca de
+    /// texto é ilusão, e a granularidade grossa é justamente o que a mantém
+    /// sem falso-positivo. Hoje o repo inteiro passa; se um `Command::new`
+    /// novo aparecer num arquivo que não conhece nenhuma das âncoras, este
+    /// teste falha antes de virar janela preta na máquina de alguém.
+    #[test]
+    fn no_process_spawn_escapes_the_no_window_rule() {
+        const ANCORAS: [&str; 3] = ["no_window", "creation_flags", "spawn_supervised"];
+
+        let Some(raiz) = raiz_do_src_tauri() else {
+            return; // crate vendorizado, fora da árvore: nada a varrer.
+        };
+
+        let mut fontes = Vec::new();
+        colher_rs(&raiz.join("src"), &mut fontes);
+        if let Ok(crates) = std::fs::read_dir(raiz.join("crates")) {
+            for entrada in crates.flatten() {
+                colher_rs(&entrada.path().join("src"), &mut fontes);
+            }
+        }
+        assert!(
+            fontes.len() > 20,
+            "a varredura não achou as fontes ({} arquivos) — o caminho da raiz mudou?",
+            fontes.len()
+        );
+
+        let mut faltando = Vec::new();
+        for arquivo in fontes {
+            let Ok(conteudo) = std::fs::read_to_string(&arquivo) else {
+                continue;
+            };
+            if !conteudo.contains("Command::new(") {
+                continue;
+            }
+            if ANCORAS.iter().any(|a| conteudo.contains(a)) {
+                continue;
+            }
+            let linha = conteudo
+                .lines()
+                .position(|l| l.contains("Command::new("))
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            faltando.push(format!("{}:{linha}", arquivo.display()));
+        }
+
+        assert!(
+            faltando.is_empty(),
+            "estes arquivos criam processo sem suprimir o console do Windows:\n  {}\n\
+             Passe o comando por `lr_proc::no_window` (tokio) ou `lr_proc::no_window_std` \
+             (std) antes do spawn — fora do Windows é no-op, então aplicar nunca é errado.",
+            faltando.join("\n  ")
+        );
+    }
+
+    /// `crates/proc` → `src-tauri`. `None` se a árvore não estiver por perto.
+    fn raiz_do_src_tauri() -> Option<PathBuf> {
+        let raiz = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("..");
+        raiz.join("crates").is_dir().then_some(raiz)
+    }
+
+    fn colher_rs(dir: &Path, saida: &mut Vec<PathBuf>) {
+        let Ok(entradas) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entrada in entradas.flatten() {
+            let caminho = entrada.path();
+            if caminho.is_dir() {
+                colher_rs(&caminho, saida);
+            } else if caminho.extension().is_some_and(|e| e == "rs") {
+                saida.push(caminho);
+            }
+        }
+    }
 
     #[test]
     fn killing_pid_zero_is_a_no_op() {

@@ -69,8 +69,15 @@ impl ToolError {
 
 pub type ToolResult<T> = Result<T, ToolError>;
 
+/// Entrega de saída ao vivo, pedaço a pedaço, enquanto o comando roda.
+///
+/// Deliberadamente é texto solto, e não um evento: `lr_tools` não conhece
+/// `RunEvent` (a dependência é ao contrário). Quem sabe transformar pedaço em
+/// evento é o `lr_agent`; aqui a fronteira é a mais estreita possível.
+pub type OutputSink = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// Contexto de execução de uma chamada.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ToolContext {
     /// Pasta do projeto. `None` = agente sem workspace (só ferramentas meta).
     pub workspace: Option<PathBuf>,
@@ -78,6 +85,23 @@ pub struct ToolContext {
     pub call_id: String,
     /// Teto de bytes que o resultado pode devolver ao modelo.
     pub max_output_bytes: usize,
+    /// Para onde mandar a saída enquanto o comando roda. `None` = ninguém
+    /// está olhando (testes, subagente sem trilha) e a ferramenta só devolve
+    /// o resultado no fim, como sempre fez.
+    pub on_output: Option<OutputSink>,
+}
+
+// `dyn Fn` não é `Debug`; o que interessa num diagnóstico é se há alguém
+// ouvindo, não qual closure é.
+impl std::fmt::Debug for ToolContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolContext")
+            .field("workspace", &self.workspace)
+            .field("call_id", &self.call_id)
+            .field("max_output_bytes", &self.max_output_bytes)
+            .field("on_output", &self.on_output.as_ref().map(|_| "<sink>"))
+            .finish()
+    }
 }
 
 impl ToolContext {
@@ -86,6 +110,30 @@ impl ToolContext {
             workspace,
             call_id: call_id.into(),
             max_output_bytes: 30_000,
+            on_output: None,
+        }
+    }
+
+    /// Liga o streaming da saída. Sem isto o contexto é o de sempre.
+    pub fn with_output_sink(mut self, sink: OutputSink) -> Self {
+        self.on_output = Some(sink);
+        self
+    }
+
+    /// Manda um pedaço de saída para quem estiver ouvindo. No-op sem sink.
+    pub fn emit_output(&self, chunk: &str) {
+        if let Some(sink) = &self.on_output {
+            sink(chunk);
+        }
+    }
+
+    /// O callback pronto para entregar ao `spawner::run`.
+    pub fn output_fn(&self) -> impl FnMut(&str) + Send + use<> {
+        let sink = self.on_output.clone();
+        move |chunk: &str| {
+            if let Some(s) = &sink {
+                s(chunk);
+            }
         }
     }
 

@@ -2574,6 +2574,9 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
                     break;
                 }
                 if budget.used() >= budget.max() {
+                    // O orçamento acabou com entrega faltando. "Parei no
+                    // limite de N passos" não ajuda ninguém a decidir o que
+                    // fazer; o que ficou de fora, com nome de arquivo, ajuda.
                     outcome.status = RunStatus::MaxSteps;
                     break;
                 }

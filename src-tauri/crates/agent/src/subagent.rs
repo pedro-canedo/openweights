@@ -228,6 +228,7 @@ impl AgentDelegate {
             counters: Default::default(),
             dentro_de_programa: false,
             escalonar_apos_programa: None,
+            saida_ao_vivo: None,
             // O ajudante trabalha no modo nativo: ele existe para poupar a
             // janela do agente principal com uma investigação curta, e um
             // programa dentro de um subagente esconderia duas camadas de

@@ -319,7 +319,8 @@ mod tests {
     use tempfile::TempDir;
 
     fn tem_node() -> bool {
-        std::process::Command::new("node")
+        let mut cmd = std::process::Command::new("node");
+        lr_proc::no_window_std(&mut cmd)
             .arg("--version")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())

@@ -23,13 +23,40 @@ The model is asked for the plan with a **forced JSON schema**. llama-server
 turns the schema into a grammar, and that is what makes an 8B model return
 something parseable at all.
 
+The schema asks for the **files** each delivery will produce, and the prompt
+explains what to put there. So does `plan_create`, the tool Planning mode uses
+to register its plan — which means a plan you approve there reaches Loop mode
+already saying what each step will create. That field is not decoration: it is
+what makes the end of a run verifiable, and without it the delivery check has
+nothing to look at.
+
 Even so the result is validated with suspicion: a plan that does not survive
 validation becomes a single-delivery plan. Decomposition never takes the run
-down.
+down. Paths that could never be found under the project folder are dropped as
+the plan is parsed — absolute paths, `..`, a Windows drive letter. Keeping one
+would create a pending item that can never be satisfied, and it would be chased
+forever.
 
 Ceilings: **12 deliveries** per plan, **8 steps** per delivery, **2 attempts**
 before a delivery is considered stuck. The run's global step budget still
 applies on top.
+
+## Deliveries in Agent mode
+
+Cutting the request into deliveries is no longer exclusive to Loop mode. In
+**Agent** mode the request is cut too, and the board shows there as well — so
+"which step is it on" has an answer that is not *Thought for 60.6s*.
+
+The reason is the delivery check: when the loop stops, the declared files are
+looked for on disk, and while any are missing the run is told which ones and
+carries on from where it stopped instead of closing as done.
+
+It is deliberately **Agent mode only**. Loop mode does not need it — the plan
+runner already re-queues a step that fails its check, and stacking both would
+bill the same delivery twice. Planning mode must not have it: that mode ends
+with the plan written and nothing done, which is exactly the state a chase reads
+as unfinished work. See [how a run works](/agent/) for the full rule, including
+the two cases the harness deliberately refuses to chase.
 
 ## What crosses between steps
 

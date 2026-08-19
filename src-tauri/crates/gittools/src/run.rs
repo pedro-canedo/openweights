@@ -112,6 +112,20 @@ pub async fn run_in(
     args: &[&str],
     max_output: usize,
 ) -> ToolResult<GitRun> {
+    run_in_with(program, cwd, args, max_output, |_| {}).await
+}
+
+/// Como [`run_in`], mas entregando a saída em pedaços enquanto o git roda.
+///
+/// Existe separada para não obrigar os chamadores de teste e de fixture a
+/// carregar um callback que eles não têm o que fazer com ele.
+pub async fn run_in_with(
+    program: &str,
+    cwd: PathBuf,
+    args: &[&str],
+    max_output: usize,
+    on_output: impl FnMut(&str) + Send,
+) -> ToolResult<GitRun> {
     let full: Vec<String> = FORCED_CONFIG
         .iter()
         .chain(args.iter())
@@ -122,7 +136,7 @@ pub async fn run_in(
         .with_timeout(TIMEOUT_SECS)
         .with_max_output(max_output.max(MIN_BUDGET_BYTES));
 
-    let outcome = spawner::run(request, |_| {})
+    let outcome = spawner::run(request, on_output)
         .await
         .map_err(|e| start_error(program, &e))?;
 
@@ -145,7 +159,7 @@ pub async fn git(ctx: &ToolContext, args: &[&str]) -> ToolResult<GitRun> {
         .max_output_bytes
         .saturating_sub(OVERHEAD_BYTES)
         .max(MIN_BUDGET_BYTES);
-    run_in(GIT, cwd, args, budget).await
+    run_in_with(GIT, cwd, args, budget, ctx.output_fn()).await
 }
 
 /// Mensagem para quando o git não pôde ser iniciado.

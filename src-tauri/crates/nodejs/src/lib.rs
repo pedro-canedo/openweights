@@ -373,6 +373,10 @@ impl NodeManager {
             }
         }
         let mut cmd = tokio::process::Command::new(node);
+        // A flag vai na origem, não no chamador: quem recebe este `Command`
+        // não tem como saber que faltava, e um `npm install` com console
+        // aberto é uma janela preta na cara do usuário.
+        lr_proc::no_window(&mut cmd);
         cmd.arg(npm).args(args).current_dir(cwd);
         for (k, v) in self.env_isolado(prefix) {
             cmd.env(k, v);

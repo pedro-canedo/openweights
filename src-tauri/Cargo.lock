@@ -2682,6 +2682,7 @@ name = "lr_checkpoint"
 version = "0.2.1"
 dependencies = [
  "log",
+ "lr_proc",
  "serde",
  "serde_json",
  "tempfile",
@@ -2694,6 +2695,7 @@ version = "0.2.1"
 dependencies = [
  "getrandom 0.3.4",
  "log",
+ "lr_proc",
  "lr_tools",
  "lr_types",
  "serde",
@@ -2892,6 +2894,7 @@ version = "0.2.1"
 dependencies = [
  "log",
  "lr_fetch",
+ "lr_proc",
  "reqwest 0.12.28",
  "serde",
  "tempfile",

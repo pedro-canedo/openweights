@@ -2490,3 +2490,37 @@ async fn planning_mode_is_not_charged_for_deliveries_it_never_promised_to_make()
         "nada pode ser criado no planejamento"
     );
 }
+
+/// Orçamento esgotado com entrega faltando: o resultado precisa dizer O QUE
+/// ficou de fora. "Parei no limite de N passos" não ajuda ninguém a decidir o
+/// próximo passo; o nome do arquivo que falta, sim.
+#[tokio::test]
+async fn running_out_of_budget_says_which_deliveries_are_missing() {
+    let plano = r#"{"tasks":[{"title":"a HUD","instruction":"crie hud.js",
+        "done_when":"existe","files":["hud.js"]}]}"#;
+    // Sempre texto, nunca uma ferramenta: o run gasta os passos sem entregar.
+    let server = FakeLlama::spawn_with_plan(Vec::new(), plano);
+    let h = Harness::new();
+    let mut options = h.options(RunMode::Yolo);
+    options.max_steps = 2;
+
+    let status = h
+        .run_with_options("crie a HUD", options, server.endpoint())
+        .await;
+
+    assert_eq!(status, RunStatus::MaxSteps);
+    let resumo = h
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|e| match &e.event {
+            RunEventKind::RunFinished { summary, .. } => Some(summary.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    assert!(
+        resumo.contains("a HUD"),
+        "o resumo tinha que nomear a entrega que faltou: {resumo:?}"
+    );
+}

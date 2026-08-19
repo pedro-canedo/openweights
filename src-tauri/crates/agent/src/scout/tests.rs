@@ -591,6 +591,7 @@ fn tool_runner(h: &Harness, tools: &PlanTools) -> ToolRunner {
     ToolRunner {
         dentro_de_programa: false,
         escalonar_apos_programa: None,
+        saida_ao_vivo: None,
         code_menu: None,
         run_id: "r1".into(),
         mode: RunMode::Yolo,

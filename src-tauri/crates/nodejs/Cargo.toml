@@ -7,6 +7,7 @@ description = "Runtime Node.js portátil, isolado do Node do sistema"
 
 [dependencies]
 lr_fetch = { path = "../fetch" }
+lr_proc = { path = "../proc" }
 serde.workspace = true
 thiserror.workspace = true
 log.workspace = true

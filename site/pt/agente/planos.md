@@ -22,13 +22,40 @@ pretende fazer — e os arquivos que espera tocar — antes de qualquer escrita.
 O plano é pedido ao modelo com **JSON Schema forçado**. O llama-server converte
 o schema em gramática, e é isso que faz um modelo de 8B devolver algo parseável.
 
+O schema pede os **arquivos** que cada entrega vai produzir, e o pedido explica o
+que preencher ali. O `plan_create` — a ferramenta por onde o modo Planejamento
+registra o plano — também pede, o que significa que um plano aprovado ali chega
+ao modo Laço já dizendo o que cada etapa vai criar. Esse campo não é enfeite: é
+o que torna o fim da execução verificável, e sem ele a conferência de entrega
+não tem o que olhar.
+
 Mesmo assim o resultado é validado com desconfiança: um plano que não sobrevive
 à validação vira um plano de uma entrega só. A decomposição nunca derruba a
-execução.
+execução. Caminhos que nunca poderiam ser encontrados sob a pasta do projeto são
+descartados na leitura do plano — caminho absoluto, `..`, unidade do Windows.
+Manter um criaria uma pendência impossível de satisfazer, cobrada para sempre.
 
 Tetos: **12 entregas** por plano, **8 passos** por entrega, **2 tentativas**
 antes de considerar uma entrega travada. O teto global de passos da execução
 continua valendo por cima.
+
+## Entregas no modo Agente
+
+Quebrar o pedido em entregas deixou de ser exclusividade do modo Laço. No modo
+**Agente** o pedido também é quebrado, e o quadro aparece lá também — então "em
+que etapa ele está" passa a ter resposta, em vez de *Pensou por 60,6s*.
+
+O motivo é a conferência de entrega: quando o laço para, os arquivos declarados
+são procurados no disco, e enquanto faltar algum a execução é avisada de quais
+são e continua de onde parou, em vez de fechar como concluída.
+
+Ela é deliberadamente **exclusiva do modo Agente**. O modo Laço não precisa — o
+executor do plano já reenfileira a etapa que não passa na verificação, e
+empilhar as duas cobraria a mesma entrega em dobro. E o modo Planejamento não
+pode ter: ele termina com o plano escrito e nada feito, que é exatamente o
+estado que uma cobrança leria como trabalho inacabado. Veja
+[como uma execução funciona](/pt/agente/) para a regra inteira, incluindo os
+dois casos que o harness se recusa deliberadamente a cobrar.
 
 ## O que atravessa entre etapas
 

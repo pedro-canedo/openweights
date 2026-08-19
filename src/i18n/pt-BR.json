@@ -518,6 +518,10 @@
       "scopeWorkspace": "neste projeto",
       "scopeGlobal": "em todos os projetos"
     },
+    "terminal": {
+      "title": "Terminal da sessão",
+      "empty": "Nenhum comando executado nesta conversa ainda."
+    },
     "tool": {
       "running": "Executando...",
       "ok": "Concluído",

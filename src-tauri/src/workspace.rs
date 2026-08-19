@@ -132,6 +132,7 @@ fn open_in_file_manager(path: &Path) -> WsResult<()> {
     #[cfg(target_os = "windows")]
     {
         let mut cmd = std::process::Command::new("explorer");
+        lr_proc::no_window_std(&mut cmd);
         if path.is_file() {
             cmd.arg(format!("/select,{}", path.display()));
         } else {
@@ -142,6 +143,7 @@ fn open_in_file_manager(path: &Path) -> WsResult<()> {
     #[cfg(target_os = "macos")]
     {
         let mut cmd = std::process::Command::new("open");
+        lr_proc::no_window_std(&mut cmd);
         if path.is_file() {
             cmd.args(["-R", &path.to_string_lossy()]);
         } else {
@@ -156,7 +158,8 @@ fn open_in_file_manager(path: &Path) -> WsResult<()> {
         } else {
             path
         };
-        std::process::Command::new("xdg-open").arg(target).spawn()?;
+        let mut cmd = std::process::Command::new("xdg-open");
+        lr_proc::no_window_std(&mut cmd).arg(target).spawn()?;
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {

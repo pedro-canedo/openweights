@@ -518,6 +518,10 @@
       "scopeWorkspace": "in this project",
       "scopeGlobal": "in every project"
     },
+    "terminal": {
+      "title": "Session terminal",
+      "empty": "No command has run in this conversation yet."
+    },
     "tool": {
       "running": "Running...",
       "ok": "Done",

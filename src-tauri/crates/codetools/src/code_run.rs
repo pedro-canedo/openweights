@@ -235,7 +235,7 @@ impl Tool for CodeRun {
         let timeout = timeout_of(&args, DEFAULT_TIMEOUT_SECS);
         // Roda na raiz do projeto: caminho relativo dentro do trecho aponta
         // para o projeto, que é como o modelo escreve.
-        let run = exec::run(&cmd, &root, timeout, budget(ctx)).await?;
+        let run = exec::run(&cmd, &root, timeout, budget(ctx), ctx.output_fn()).await?;
 
         let mut body = format!("{} — trecho em {program}", run.header());
         let stdout = run.outcome.stdout.trim_end();

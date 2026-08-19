@@ -273,31 +273,36 @@ pub async fn run(
         tokio::select! {
             biased;
             chunk = rx.recv(), if draining => match chunk {
-                // Ao estourar o teto paramos de acumular (e de avisar a
-                // interface), mas seguimos drenando o cano: parar de ler
-                // travaria o processo num pipe cheio.
-                Some((which, text)) if !truncated => {
-                    let room = req.max_output_bytes.saturating_sub(kept);
-                    let piece = if text.len() <= room {
-                        text.as_str()
-                    } else {
-                        truncated = true;
-                        let mut cut = room;
-                        while cut > 0 && !text.is_char_boundary(cut) {
-                            cut -= 1;
-                        }
-                        &text[..cut]
-                    };
-                    if !piece.is_empty() {
-                        kept += piece.len();
-                        on_output(piece);
-                        match which {
-                            Stream::Out => stdout.push_str(piece),
-                            Stream::Err => stderr.push_str(piece),
+                // Ao estourar o teto paramos de acumular, mas seguimos
+                // drenando o cano: parar de ler travaria o processo num pipe
+                // cheio. Quem está olhando continua recebendo tudo — o teto
+                // existe para o CONTEXTO do modelo, e cortar aqui deixaria o
+                // terminal da sessão mudo no meio de um build longo.
+                Some((which, text)) => {
+                    if !text.is_empty() {
+                        on_output(&text);
+                    }
+                    if !truncated {
+                        let room = req.max_output_bytes.saturating_sub(kept);
+                        let piece = if text.len() <= room {
+                            text.as_str()
+                        } else {
+                            truncated = true;
+                            let mut cut = room;
+                            while cut > 0 && !text.is_char_boundary(cut) {
+                                cut -= 1;
+                            }
+                            &text[..cut]
+                        };
+                        if !piece.is_empty() {
+                            kept += piece.len();
+                            match which {
+                                Stream::Out => stdout.push_str(piece),
+                                Stream::Err => stderr.push_str(piece),
+                            }
                         }
                     }
                 }
-                Some(_) => {}
                 None => draining = false,
             },
             res = child.wait(), if status.is_none() => {
@@ -591,6 +596,28 @@ mod tests {
             started.elapsed() < Duration::from_secs(10),
             "demorou demais: {:?}",
             started.elapsed()
+        );
+    }
+
+    /// O teto corta o que vai ao MODELO, não o que vai aos olhos.
+    ///
+    /// O terminal da sessão mostra o comando rodando; se o streaming parasse
+    /// junto com a acumulação, um build longo ficaria mudo depois dos
+    /// primeiros KB — exatamente quando quem está olhando mais precisa ver.
+    #[tokio::test]
+    async fn streaming_keeps_going_after_the_model_budget_is_spent() {
+        let cmd = line(
+            "i=0; while [ $i -lt 3000 ]; do echo linha-de-saida-$i; i=$((i+1)); done",
+            "for /L %i in (1,1,3000) do @echo linha-de-saida-%i",
+        );
+        let mut visto = 0usize;
+        let req = sh(&cmd).with_max_output(1_000).with_timeout(60);
+        let out = run(req, |chunk| visto += chunk.len()).await.unwrap();
+        assert!(out.truncated, "o cenário depende de estourar o teto");
+        assert!(out.stdout.len() <= 1_000, "guardou {}", out.stdout.len());
+        assert!(
+            visto > out.stdout.len() * 4,
+            "o callback viu {visto} bytes; o teto era 1000 — parou junto com a acumulação?"
         );
     }
 

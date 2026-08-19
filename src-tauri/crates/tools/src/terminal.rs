@@ -187,7 +187,7 @@ impl Tool for TerminalRun {
         .with_max_output(budget);
 
         let program = request.program.clone();
-        let outcome = spawner::run(request, |_| {}).await.map_err(|e| {
+        let outcome = spawner::run(request, ctx.output_fn()).await.map_err(|e| {
             ToolError::Other(format!(
                 "não foi possível iniciar `{program}` ({e}). Confira se o programa está instalado \
                  e se o nome está certo."
@@ -256,6 +256,34 @@ mod tests {
 
     async fn run(args: Value, ctx: &ToolContext) -> ToolResult<ToolOutput> {
         TerminalRun.execute(args, ctx).await
+    }
+
+    /// O contrato que o terminal da sessão consome: a saída chega ENQUANTO o
+    /// comando roda, não só no resultado. Sem isto o painel fica em branco
+    /// durante um build de três minutos e volta a ser um `<pre>` estático.
+    #[tokio::test]
+    async fn the_session_sink_receives_output_while_the_command_runs() {
+        let (dir, base) = project();
+        let visto = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let alvo = visto.clone();
+        let ctx = base.with_output_sink(std::sync::Arc::new(move |chunk: &str| {
+            alvo.lock().unwrap().push_str(chunk);
+        }));
+
+        // `echo` não é programa no Windows (é embutido do `cmd`), e prefixar
+        // com `cmd /c` deixaria a linha opaca — que pede confirmação até no
+        // modo automático. `findstr`/`grep` são programas de verdade nos dois
+        // lados, e `marca.txt` é escrito pelo `project()`.
+        let cmd = line("grep -n . marca.txt", "findstr /n . marca.txt");
+        let out = run(json!({ "command": cmd }), &ctx).await.unwrap();
+
+        let streamed = visto.lock().unwrap().clone();
+        assert!(
+            streamed.contains("conteudo"),
+            "o sink não recebeu nada: {streamed:?}"
+        );
+        assert!(out.content.contains("conteudo"), "{}", out.content);
+        drop(dir);
     }
 
     #[test]

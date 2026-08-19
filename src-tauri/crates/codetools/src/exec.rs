@@ -85,11 +85,16 @@ impl Run {
 /// Só devolve `Err` quando o programa não pôde nem começar. Programa que roda
 /// e falha (teste vermelho, compilação quebrada) é `Ok`: o interessante está
 /// na saída, e é isso que o agente precisa ler para se corrigir.
+///
+/// `on_output` recebe a saída em pedaços enquanto o comando roda — é o que
+/// alimenta o terminal da sessão. Tentativa que nem começa (o plano B do
+/// `candidates`) nunca emite nada, então o painel não vê nome errado.
 pub async fn run(
     cmd: &Cmd,
     cwd: &Path,
     timeout_secs: u64,
     max_output_bytes: usize,
+    mut on_output: impl FnMut(&str) + Send,
 ) -> ToolResult<Run> {
     if cmd.argv.is_empty() {
         return Err(ToolError::Other("comando vazio".into()));
@@ -102,7 +107,7 @@ pub async fn run(
             .with_timeout(timeout)
             .with_max_output(max_output_bytes.max(2_048));
 
-        match spawner::run(request, |_| {}).await {
+        match spawner::run(request, &mut on_output).await {
             Ok(outcome) => {
                 // Se o plano B foi usado, o resumo mostra o nome que rodou de
                 // verdade — senão a pessoa procura um erro em outro lugar.
@@ -261,7 +266,7 @@ mod tests {
     #[tokio::test]
     async fn a_program_that_does_not_exist_becomes_an_actionable_error() {
         let cmd = Cmd::new(["programa-inexistente-xyz", "--versao"]);
-        let err = run(&cmd, &tmp(), 20, 4_096).await.unwrap_err();
+        let err = run(&cmd, &tmp(), 20, 4_096, |_| {}).await.unwrap_err();
         let msg = err.to_model_message();
         assert!(msg.contains("programa-inexistente-xyz"), "{msg}");
         assert!(msg.contains("PATH"), "{msg}");
@@ -279,6 +284,7 @@ mod tests {
             &tmp(),
             60,
             8_192,
+            |_| {},
         )
         .await
         .unwrap();
@@ -293,7 +299,7 @@ mod tests {
             return;
         }
         let cmd = Cmd::new(["node", "-e", "setTimeout(()=>{}, 60000)"]);
-        let run = run(&cmd, &tmp(), 1, 4_096).await.unwrap();
+        let run = run(&cmd, &tmp(), 1, 4_096, |_| {}).await.unwrap();
         assert!(run.outcome.timed_out);
         assert!(run.header().contains("INTERROMPIDO"), "{}", run.header());
     }

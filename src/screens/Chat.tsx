@@ -59,6 +59,7 @@ import ApprovalBar from "../components/agent/ApprovalBar";
 import FocusChip from "../components/agent/FocusChip";
 import ModeSelect from "../components/agent/ModeSelect";
 import RunTimeline, { RunTrail } from "../components/agent/RunTimeline";
+import SessionTerminal from "../components/agent/SessionTerminal";
 import TaskBoard from "../components/agent/TaskBoard";
 import YoloBadge from "../components/agent/YoloBadge";
 import ChatHero from "../components/chat/ChatHero";
@@ -369,6 +370,11 @@ export default function Chat() {
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
   const [traceOpen, setTraceOpen] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  // Abre sozinho na primeira execução do run: quem liga o agente quer VER o
+  // comando rodando. Depois disso a escolha é da pessoa — fechar fica
+  // fechado até o próximo run.
+  const autoOpened = useRef<string | null>(null);
   // Execuções desta conversa por runId: dão a contagem de ações de cada
   // resposta sem precisar reconstruir a trilha inteira de todas elas.
   const [runSummaries, setRunSummaries] = useState<Record<string, RunSummary>>(
@@ -647,7 +653,22 @@ export default function Chat() {
   const openTrace = () => {
     setTraceOpen(true);
     setParamsOpen(false);
+    setTerminalOpen(false);
   };
+
+  // Primeira execução do run abre o terminal sozinha — é o momento em que
+  // ele tem o que mostrar. Uma vez por run: se a pessoa fechar, fica fechado.
+  useEffect(() => {
+    if (!run || autoOpened.current === run.runId) return;
+    const executando = Object.values(run.tools).some(
+      (c) => c.state === "running" && c.category === "execute",
+    );
+    if (!executando) return;
+    autoOpened.current = run.runId;
+    setTerminalOpen(true);
+    setTraceOpen(false);
+    setParamsOpen(false);
+  }, [run]);
 
   /**
    * Tira do fluxo a trilha de um run já encerrado (cancelado, com erro, no
@@ -1102,10 +1123,38 @@ export default function Chat() {
                   </svg>
                 </button>
               )}
+              {(agentOn || run != null || traceRunId != null) && (
+                <button
+                  onClick={() => {
+                    setTerminalOpen((o) => !o);
+                    setTraceOpen(false);
+                    setParamsOpen(false);
+                  }}
+                  title={t("agent.terminal.title")}
+                  className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
+                    terminalOpen
+                      ? "border-accent text-accent"
+                      : "border-edge text-dim hover:border-accent hover:text-ink"
+                  }`}
+                >
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M4 17l6-5-6-5M12 19h8" />
+                  </svg>
+                </button>
+              )}
               <button
                 onClick={() => {
                   setParamsOpen((o) => !o);
                   setTraceOpen(false);
+                  setTerminalOpen(false);
                 }}
                 title={t("chat.params")}
                 className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
@@ -1307,6 +1356,13 @@ export default function Chat() {
               run={run ?? null}
               runId={traceRunId}
               onClose={() => setTraceOpen(false)}
+            />
+          )}
+          {terminalOpen && (
+            <SessionTerminal
+              run={run ?? null}
+              runId={traceRunId}
+              onClose={() => setTerminalOpen(false)}
             />
           )}
         </div>

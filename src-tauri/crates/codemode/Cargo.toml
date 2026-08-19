@@ -17,4 +17,5 @@ tokio.workspace = true
 getrandom = "0.3"
 
 [dev-dependencies]
+lr_proc = { path = "../proc" }
 tempfile = "3"

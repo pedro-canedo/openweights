@@ -30,6 +30,15 @@ faz stash e não reescreve nada do seu histórico git. Se você tinha trabalho n
 commitado quando o agente começou, ele continua exatamente como estava.
 :::
 
+::: tip Sem janelas de console no Windows
+Cada checkpoint chama o `git` algumas vezes, e até a v0.2.2 cada uma dessas
+chamadas piscava uma janela preta por cima do que você estava fazendo. O app não
+tem console próprio, então o Windows dava um console novo a cada processo filho.
+Agora todo processo que o OpenWeights inicia nasce sem console: nada aparece por
+cima da sua tela, e nenhuma janela solta pode ser fechada por engano no meio de
+uma tarefa.
+:::
+
 ## Restaurar
 
 Clique em **Restaurar** em qualquer checkpoint. Ele pergunta antes —

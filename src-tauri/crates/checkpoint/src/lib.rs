@@ -89,8 +89,19 @@ pub fn engine_for(
     Ok(Box::new(CopySnapshot::new(workspace, store_dir)))
 }
 
+/// Todo `git` do módulo nasce daqui — é o que garante a flag no Windows.
+///
+/// Sem `CREATE_NO_WINDOW` cada chamada abre um console novo, e o checkpoint
+/// dispara vários `git` por tarefa: era a rajada de janelas pretas que o
+/// usuário via. Construtor único justamente para o próximo `git` não esquecer.
+fn git_cmd() -> Command {
+    let mut cmd = Command::new("git");
+    lr_proc::no_window_std(&mut cmd);
+    cmd
+}
+
 fn git_available() -> bool {
-    Command::new("git")
+    git_cmd()
         .arg("--version")
         .output()
         .map(|o| o.status.success())
@@ -222,7 +233,7 @@ impl GitShadow {
     }
 
     fn git(&self, args: &[&str]) -> Result<String, CheckpointError> {
-        let out = Command::new("git")
+        let out = git_cmd()
             .env("GIT_DIR", &self.git_dir)
             .env("GIT_WORK_TREE", &self.workspace)
             // Isola de configurações e hooks do usuário.
@@ -242,7 +253,7 @@ impl GitShadow {
 
     /// Comando sem `GIT_WORK_TREE` — `init` e `config` recusam a variável.
     fn git_bare(&self, args: &[&str]) -> Result<String, CheckpointError> {
-        let out = Command::new("git")
+        let out = git_cmd()
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("HOME", &self.git_dir)
             .env("GIT_TERMINAL_PROMPT", "0")
@@ -498,7 +509,7 @@ mod tests {
 
         // Repositório do usuário, com um commit próprio.
         let user_git = |args: &[&str]| {
-            Command::new("git")
+            git_cmd()
                 .args(args)
                 .current_dir(ws.path())
                 .env("GIT_CONFIG_NOSYSTEM", "1")

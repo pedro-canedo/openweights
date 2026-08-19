@@ -30,6 +30,15 @@ rewrite anything in your git history. If you have uncommitted work when the
 agent starts, it stays exactly as it was.
 :::
 
+::: tip No console windows on Windows
+Each checkpoint calls `git` a handful of times, and until v0.2.2 every one of
+those calls flashed a black console window over whatever you were doing. The
+app has no console of its own, so Windows handed a brand new one to each child
+process. Now every process OpenWeights starts is created without a console:
+nothing pops up over your screen, and no stray window can be closed by accident
+in the middle of a run.
+:::
+
 ## Restoring
 
 Click **Restore** on any checkpoint. It asks first — *"Restore files to this

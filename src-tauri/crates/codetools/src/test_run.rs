@@ -92,7 +92,14 @@ impl Tool for TestRun {
     async fn execute(&self, args: Value, ctx: &ToolContext) -> ToolResult<ToolOutput> {
         let (target, cmd) = self.plan(&args, ctx)?;
         let timeout = timeout_of(&args, DEFAULT_TIMEOUT_SECS);
-        let run = exec::run(&cmd, &target.cwd, timeout, exec::CAPTURE_BYTES).await?;
+        let run = exec::run(
+            &cmd,
+            &target.cwd,
+            timeout,
+            exec::CAPTURE_BYTES,
+            ctx.output_fn(),
+        )
+        .await?;
 
         let output = combined(&run.outcome.stdout, &run.outcome.stderr);
         let mut body = format!("{}\nstack: {}", run.header(), target.where_line());
