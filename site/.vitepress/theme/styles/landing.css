@@ -15,11 +15,7 @@
 /* ------------------------------------------------------------------ hero --- */
 
 .ow-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  gap: var(--ow-16);
-  align-items: start;
-  padding: var(--ow-24) 0 var(--ow-16);
+  padding: var(--ow-24) 0 var(--ow-8);
 }
 
 .ow-hero__name {
@@ -30,21 +26,28 @@
   text-transform: uppercase;
   color: var(--ow-ink-3);
 }
+/* Sem a coluna da direita, o hero cresce para ocupar a faixa: um título de
+   dois terços da largura e metade da linha vazia pareceria descuido, não
+   respiro. */
 .ow-hero__tagline {
   margin: var(--ow-4) 0 0;
-  font-size: var(--ow-text-3xl);
+  font-size: clamp(2.25rem, 5.2vw, 4rem);
   font-weight: 620;
-  line-height: 1.08;
-  letter-spacing: -0.03em;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
   color: var(--ow-ink);
-  max-width: 15ch;
+  max-width: 20ch;
+  /* Sem isto a última linha fica com uma palavra solta ("rules." sozinho),
+     que num título desse corpo é a diferença entre composto e derramado. */
+  text-wrap: balance;
 }
 .ow-hero__lede {
-  margin: var(--ow-6) 0 0;
-  max-width: 54ch;
+  margin: var(--ow-8) 0 0;
+  max-width: 60ch;
   font-size: var(--ow-text-md);
   line-height: 1.65;
   color: var(--ow-ink-2);
+  text-wrap: pretty;
 }
 
 .ow-actions {
@@ -91,8 +94,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--ow-2) var(--ow-4);
-  margin: var(--ow-8) 0 0;
-  padding: 0;
+  margin: var(--ow-16) 0 0;
+  padding: var(--ow-4) 0 0;
+  border-top: 1px solid var(--ow-line);
   list-style: none;
   font-size: var(--ow-text-xs);
   color: var(--ow-ink-3);
@@ -103,83 +107,17 @@
   color: var(--ow-line-strong);
 }
 
-/* ------------------------------------------------- amostra da interface --- */
-
-.ow-sample {
-  margin: var(--ow-2) 0 0;
-  border: 1px solid var(--ow-line);
-  border-radius: var(--ow-radius-lg);
-  background-color: var(--ow-surface);
-  overflow: hidden;
-}
-.ow-sample__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--ow-4);
-  padding: var(--ow-3) var(--ow-4);
-  border-bottom: 1px solid var(--ow-line);
-}
-.ow-sample__title {
-  font-size: var(--ow-text-xs);
-  font-weight: 600;
-  letter-spacing: var(--ow-tracking-wide);
-  text-transform: uppercase;
-  color: var(--ow-ink-3);
-}
-.ow-sample__hw {
-  font-size: var(--ow-text-xs);
-  color: var(--ow-ink-3);
-  font-variant-numeric: tabular-nums;
-}
-.ow-sample__model {
-  padding: var(--ow-3) var(--ow-4) var(--ow-2);
-  font-size: var(--ow-text-sm);
-  font-weight: 550;
-  color: var(--ow-ink);
-}
-.ow-sample__rows {
-  margin: 0;
-  padding: 0 0 var(--ow-2);
-  list-style: none;
-}
-.ow-sample__rows li {
-  display: grid;
-  grid-template-columns: 5.5rem 5rem 1fr auto;
-  align-items: center;
-  gap: var(--ow-3);
-  padding: var(--ow-2) var(--ow-4);
-  font-size: var(--ow-text-sm);
-  color: var(--ow-ink-2);
-}
-.ow-sample__rows li.is-pick {
-  color: var(--ow-ink);
-  background-color: var(--ow-surface-2);
-}
-.ow-sample__rows code {
-  font-family: var(--vp-font-family-mono);
-  font-size: var(--ow-text-xs);
-  color: var(--ow-ink);
-}
-.ow-sample__size {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-.ow-sample__verdict {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ow-2);
-}
-.ow-sample__pick {
-  font-size: var(--ow-text-xs);
-  color: var(--ow-accent);
-}
-
 /* -------------------------------------------------------------- seções --- */
 
 .ow-section {
   padding: var(--ow-16) 0;
   border-top: 1px solid var(--ow-line);
+}
+/* A régua da linha de fatos já fecha o hero; duas linhas a 70px uma da outra
+   viram um sanduíche. */
+.ow-hero + .ow-section {
+  border-top: 0;
+  padding-top: var(--ow-12);
 }
 .ow-section--split {
   display: grid;
@@ -408,6 +346,33 @@
   gap: var(--ow-6);
 }
 
+/* ------------------------------------------------------------ vereditos --- */
+
+.ow-verdicts {
+  margin: 0;
+  font-size: var(--ow-text-sm);
+  line-height: 1.6;
+}
+.ow-verdicts > div {
+  padding: var(--ow-4) 0;
+  border-top: 1px solid var(--ow-line);
+}
+.ow-verdicts > div:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.ow-verdicts dt {
+  display: flex;
+  align-items: center;
+  gap: var(--ow-2);
+  font-weight: 600;
+  color: var(--ow-ink);
+}
+.ow-verdicts dd {
+  margin: 2px 0 0 calc(8px + var(--ow-2));
+  color: var(--ow-ink-2);
+}
+
 /* --------------------------------------------------------------- código --- */
 
 .ow-code {
@@ -481,8 +446,6 @@
 
 @media (max-width: 960px) {
   .ow-hero {
-    grid-template-columns: 1fr;
-    gap: var(--ow-12);
     padding-top: var(--ow-16);
   }
   .ow-hero__tagline {
@@ -532,14 +495,6 @@
     grid-template-columns: 1fr;
     gap: var(--ow-6);
   }
-  .ow-sample__rows li {
-    grid-template-columns: 4.5rem 4.5rem 1fr;
-    row-gap: 0;
-  }
-  .ow-sample__pick {
-    grid-column: 2 / -1;
-    padding-bottom: var(--ow-1);
-  }
   .ow-btn {
     height: 44px;
     flex: 1 1 auto;
@@ -581,12 +536,5 @@
 @media (max-width: 720px) {
   .ow-measure {
     padding: var(--ow-4);
-  }
-  /* Título e placa lado a lado só cabem enquanto há largura; empilhados
-     eles continuam legíveis em vez de quebrarem no meio da frase. */
-  .ow-sample__head {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--ow-1);
   }
 }

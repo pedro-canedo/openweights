@@ -28,16 +28,16 @@ const en = {
   learn: "How it works",
   meta: ["MIT", "Windows, macOS and Linux", "Rust + Tauri 2", "No account"],
 
-  sampleTitle: "Quantization for this machine",
-  sampleModel: "Qwen2.5-Coder 14B · GGUF",
-  sampleHw: "RTX 5060 Ti · 16 GB",
-  sampleRows: [
-    { q: "Q8_0", size: "15.7 GB", verdict: "CPU only", kind: "cpu" },
-    { q: "Q6_K", size: "12.1 GB", verdict: "Splits with CPU", kind: "split" },
-    { q: "Q5_K_M", size: "10.5 GB", verdict: "Fits on GPU", kind: "gpu" },
-    { q: "Q4_K_M", size: "9.0 GB", verdict: "Fits on GPU", kind: "gpu", pick: true },
+  modelsKicker: "Models",
+  modelsTitle: "The quantization that actually fits",
+  modelsBody: "OpenWeights searches GGUF on Hugging Face and grades every file against the machine it is running on — VRAM, file size and the context window you asked for, because the KV cache lives in that same memory. The verdict comes before the download, not after it.",
+  verdicts: [
+    ["gpu", "Fits on the GPU", "The whole model in video memory. The fast case."],
+    ["split", "Splits with the CPU", "Part of the layers go to system RAM. It works; it is slower."],
+    ["cpu", "CPU only", "Fine for small models, painful for large ones."],
   ],
-  samplePick: "recommended",
+  modelsNote: "A smaller quantization fully on the GPU usually beats a better one spilling into RAM — which is why the app grades files instead of ranking them.",
+  modelsLink: "Models and quantization",
 
   hwKicker: "Hardware",
   hwTitle: "The setup step, removed",
@@ -120,16 +120,16 @@ const ptBR = {
   learn: "Como funciona",
   meta: ["MIT", "Windows, macOS e Linux", "Rust + Tauri 2", "Sem conta"],
 
-  sampleTitle: "Quantização para esta máquina",
-  sampleModel: "Qwen2.5-Coder 14B · GGUF",
-  sampleHw: "RTX 5060 Ti · 16 GB",
-  sampleRows: [
-    { q: "Q8_0", size: "15,7 GB", verdict: "Só CPU", kind: "cpu" },
-    { q: "Q6_K", size: "12,1 GB", verdict: "Divide com a CPU", kind: "split" },
-    { q: "Q5_K_M", size: "10,5 GB", verdict: "Cabe na GPU", kind: "gpu" },
-    { q: "Q4_K_M", size: "9,0 GB", verdict: "Cabe na GPU", kind: "gpu", pick: true },
+  modelsKicker: "Modelos",
+  modelsTitle: "A quantização que realmente cabe",
+  modelsBody: "O OpenWeights busca GGUF no Hugging Face e classifica cada arquivo contra a máquina em que está rodando — VRAM, tamanho do arquivo e a janela de contexto que você pediu, porque o cache KV mora nessa mesma memória. O veredito vem antes do download, não depois.",
+  verdicts: [
+    ["gpu", "Cabe na GPU", "O modelo inteiro na memória de vídeo. O caso rápido."],
+    ["split", "Divide com a CPU", "Parte das camadas vai para a RAM do sistema. Funciona; é mais lento."],
+    ["cpu", "Só CPU", "Tudo bem em modelo pequeno, sofrido em modelo grande."],
   ],
-  samplePick: "recomendada",
+  modelsNote: "Uma quantização menor inteira na GPU costuma ganhar de uma melhor transbordando para a RAM — é por isso que o app classifica os arquivos em vez de ordená-los.",
+  modelsLink: "Modelos e quantização",
 
   hwKicker: "Hardware",
   hwTitle: "A etapa de configuração, removida",
@@ -215,6 +215,7 @@ const links = computed(() =>
         install: "/guia/instalacao",
         guide: "/guia/",
         firstRun: "/guia/primeira-execucao",
+        models: "/guia/modelos",
         agent: "/agente/",
         code: "/agente/code-mode",
         memory: "/agente/memoria",
@@ -224,6 +225,7 @@ const links = computed(() =>
         install: "/guide/install",
         guide: "/guide/",
         firstRun: "/guide/first-run",
+        models: "/guide/models",
         agent: "/agent/",
         code: "/agent/code-mode",
         memory: "/agent/memory",
@@ -236,7 +238,7 @@ const links = computed(() =>
   <div class="ow-landing">
     <!-- ------------------------------------------------------------ hero -->
     <header class="ow-hero">
-      <div class="ow-hero__text">
+      <div>
         <h1 class="ow-hero__name">OpenWeights</h1>
         <p class="ow-hero__tagline">{{ t.tagline }}</p>
         <p class="ow-hero__lede">{{ t.lede }}</p>
@@ -254,26 +256,6 @@ const links = computed(() =>
         </ul>
       </div>
 
-      <!-- Amostra da interface, e não ilustração: é o veredito que o app dá
-           para um modelo real numa placa real. -->
-      <figure class="ow-sample">
-        <figcaption class="ow-sample__head">
-          <span class="ow-sample__title">{{ t.sampleTitle }}</span>
-          <span class="ow-sample__hw">{{ t.sampleHw }}</span>
-        </figcaption>
-        <div class="ow-sample__model">{{ t.sampleModel }}</div>
-        <ul class="ow-sample__rows">
-          <li v-for="r in t.sampleRows" :key="r.q" :class="{ 'is-pick': r.pick }">
-            <code>{{ r.q }}</code>
-            <span class="ow-sample__size">{{ r.size }}</span>
-            <span class="ow-sample__verdict">
-              <i :class="`ow-verdict ow-verdict--${r.kind}`" />
-              {{ r.verdict }}
-            </span>
-            <span v-if="r.pick" class="ow-sample__pick">{{ t.samplePick }}</span>
-          </li>
-        </ul>
-      </figure>
     </header>
 
     <!-- -------------------------------------------------------- hardware -->
@@ -294,6 +276,31 @@ const links = computed(() =>
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <!-- --------------------------------------------------------- modelos -->
+    <section id="models" class="ow-section ow-section--split ow-section--reverse">
+      <div class="ow-section__lead">
+        <p class="ow-kicker">
+          <OwIcon name="model" :size="14" />{{ t.modelsKicker }}
+        </p>
+        <h2>{{ t.modelsTitle }}</h2>
+        <p class="ow-body">{{ t.modelsBody }}</p>
+        <p class="ow-note">{{ t.modelsNote }}</p>
+        <a class="ow-link" :href="href(links.models)">
+          {{ t.modelsLink }}<OwIcon name="arrowRight" :size="14" />
+        </a>
+      </div>
+
+      <dl class="ow-verdicts">
+        <div v-for="v in t.verdicts" :key="v[0]">
+          <dt>
+            <i :class="`ow-verdict ow-verdict--${v[0]}`" />
+            {{ v[1] }}
+          </dt>
+          <dd>{{ v[2] }}</dd>
+        </div>
+      </dl>
     </section>
 
     <!-- ---------------------------------------------------------- agente -->
