@@ -171,7 +171,15 @@ pub async fn run_script(
     let main = dir.join("main.mjs");
     std::fs::write(&main, montar_main(&req.code, &req.plugins))?;
 
-    let caminho_main = main.to_string_lossy().into_owned();
+    // O Node resolve o caminho do entrypoint com `realpath` ANTES de aplicar
+    // as permissões. Se o caminho atravessa um link simbólico, ele tenta ler
+    // o alvo do link — que não está liberado — e o programa morre com
+    // `ERR_ACCESS_DENIED` antes da primeira linha. No macOS isso não é caso
+    // exótico: `/var` e `/tmp` são links para `/private/...`, então qualquer
+    // projeto ali dentro derrubava o Code Mode inteiro. Entregar o caminho já
+    // canonizado é entregar ao Node o mesmo que ele resolveria sozinho.
+    let dir_real = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+    let caminho_main = dir_real.join("main.mjs").to_string_lossy().into_owned();
     let monta = |args: Vec<String>| {
         SpawnRequest::new(req.node.clone(), args, req.workspace.clone())
             .with_timeout(req.timeout_secs)
@@ -185,7 +193,7 @@ pub async fn run_script(
 
     let com_permissoes = vec![
         "--permission".to_string(),
-        format!("--allow-fs-read={}", dir.to_string_lossy()),
+        format!("--allow-fs-read={}", dir_real.to_string_lossy()),
         caminho_main.clone(),
     ];
     let primeiro = match spawner::run(monta(com_permissoes), &mut on_output).await {
@@ -327,6 +335,58 @@ mod tests {
             }
             vistos
         })
+    }
+
+    /// O caminho do projeto passa por um link simbólico — o caso comum no
+    /// macOS, onde `/var` e `/tmp` apontam para `/private/...` e é ali que
+    /// mora a pasta temporária. Sem canonizar o caminho antes de entregá-lo
+    /// ao Node, o `realpath` do carregador tenta ler o alvo do link, esbarra
+    /// no modo de permissões e o programa morre com `ERR_ACCESS_DENIED` antes
+    /// da primeira linha: o Code Mode inteiro ficava indisponível na
+    /// plataforma.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn o_programa_roda_quando_o_projeto_e_alcancado_por_um_link() {
+        if !tem_node() {
+            eprintln!("pulando: `node` não está instalado");
+            return;
+        }
+        let real = TempDir::new().unwrap();
+        let real_projeto = real.path().join("projeto");
+        std::fs::create_dir(&real_projeto).unwrap();
+
+        let casa = TempDir::new().unwrap();
+        let link = casa.path().join("atalho");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real_projeto, &link).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_dir(&real_projeto, &link).is_err() {
+            // Sem privilégio de criar link (padrão no Windows), não há o que
+            // medir aqui — e o defeito que este teste cobre é de Unix.
+            eprintln!("pulando: sem permissão para criar link simbólico");
+            return;
+        }
+
+        let (ponte, rx) = Bridge::start().unwrap();
+        let hospedeiro = hospedar(rx);
+
+        let req = ScriptRequest::new(
+            "const texto = await fs_read({ path: \"a.txt\" });\nsay(texto);\n",
+            link.clone(),
+            vec![eco()],
+        )
+        .with_bridge(ponte.url(), ponte.token())
+        .with_timeout(30);
+
+        let resultado = run_script(req, |_| {}).await.expect("rodou");
+        let outcome = &resultado.spawn;
+        assert!(
+            outcome.success(),
+            "o programa tinha que rodar mesmo alcançado por link: {outcome:?}"
+        );
+        assert!(outcome.stdout.contains("olá do harness"), "{outcome:?}");
+
+        drop(ponte);
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), hospedeiro).await;
     }
 
     #[tokio::test(flavor = "multi_thread")]
