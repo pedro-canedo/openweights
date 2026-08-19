@@ -29,9 +29,9 @@ usually faster *and* more pleasant than a `Q6_K` spilling into system RAM.
 
 In the quantization drawer each file is scored against your actual hardware:
 
-- 🟢 **Green** — fits fully in VRAM, with room for the context window.
-- 🟡 **Yellow** — part of the layers go to the CPU. It works; it is slower.
-- ⚪ **Grey** — CPU-only. Usable for small models, painful for large ones.
+- <span class="ow-verdict ow-verdict--gpu"></span> **Green** — fits fully in VRAM, with room for the context window.
+- <span class="ow-verdict ow-verdict--split"></span> **Yellow** — part of the layers go to the CPU. It works; it is slower.
+- <span class="ow-verdict ow-verdict--cpu"></span> **Grey** — CPU-only. Usable for small models, painful for large ones.
 
 The score accounts for the context window too, because the KV cache lives in the
 same memory: a model that fits at 4k tokens may not fit at 32k.

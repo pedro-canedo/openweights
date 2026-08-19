@@ -31,9 +31,9 @@ RAM do sistema.
 Na gaveta de quantizações cada arquivo é pontuado contra o seu hardware de
 verdade:
 
-- 🟢 **Verde** — cabe inteiro na VRAM, com espaço para a janela de contexto.
-- 🟡 **Amarelo** — parte das camadas vai para a CPU. Funciona; é mais lento.
-- ⚪ **Cinza** — só CPU. Usável em modelos pequenos, sofrido nos grandes.
+- <span class="ow-verdict ow-verdict--gpu"></span> **Verde** — cabe inteiro na VRAM, com espaço para a janela de contexto.
+- <span class="ow-verdict ow-verdict--split"></span> **Amarelo** — parte das camadas vai para a CPU. Funciona; é mais lento.
+- <span class="ow-verdict ow-verdict--cpu"></span> **Cinza** — só CPU. Usável em modelos pequenos, sofrido nos grandes.
 
 A conta inclui a janela de contexto, porque o cache KV mora na mesma memória: um
 modelo que cabe com 4k tokens pode não caber com 32k.

@@ -127,10 +127,7 @@ export default defineConfig({
             link: "/integrations/local-api",
             activeMatch: "/integrations/",
           },
-          {
-            text: "Download",
-            link: "https://github.com/pedro-canedo/openweights/releases/latest",
-          },
+          { text: "Download", link: "/guide/install" },
         ],
         sidebar: enSidebar,
         editLink: {
@@ -159,10 +156,7 @@ export default defineConfig({
             link: "/pt/integracoes/api-local",
             activeMatch: "/pt/integracoes/",
           },
-          {
-            text: "Baixar",
-            link: "https://github.com/pedro-canedo/openweights/releases/latest",
-          },
+          { text: "Baixar", link: "/pt/guia/instalacao" },
         ],
         sidebar: ptSidebar,
         editLink: {
@@ -181,7 +175,7 @@ export default defineConfig({
   },
 
   themeConfig: {
-    logo: "/mark.svg",
+    logo: { light: "/mark-light.svg", dark: "/mark.svg" },
     siteTitle: "OpenWeights",
     socialLinks: [
       {
@@ -189,9 +183,36 @@ export default defineConfig({
         link: "https://github.com/pedro-canedo/openweights",
       },
     ],
-    search: { provider: "local" },
+    search: {
+      provider: "local",
+      options: {
+        // O índice é por idioma; sem isto a caixa continuaria em inglês na
+        // versão em português, e é a primeira coisa que a pessoa toca.
+        locales: {
+          pt: {
+            translations: {
+              button: { buttonText: "Buscar", buttonAriaLabel: "Buscar" },
+              modal: {
+                displayDetails: "Mostrar detalhes",
+                resetButtonTitle: "Limpar busca",
+                backButtonTitle: "Fechar busca",
+                noResultsText: "Nenhum resultado para",
+                footer: {
+                  selectText: "selecionar",
+                  navigateText: "navegar",
+                  closeText: "fechar",
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     footer: {
-      message: "MIT · nothing runs on our servers, because we have none.",
+      message:
+        '<a href="https://github.com/pedro-canedo/openweights">GitHub</a> · ' +
+        '<a href="https://github.com/pedro-canedo/openweights/blob/main/LICENSE">MIT</a> · ' +
+        '<a href="https://github.com/pedro-canedo/openweights/releases/latest">Releases</a>',
       copyright: "© OpenWeights contributors",
     },
   },

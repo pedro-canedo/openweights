@@ -33,9 +33,9 @@ instalador do OpenWeights não redistribui bibliotecas da NVIDIA.
 Em **Descobrir**, busque um modelo (`qwen`, `llama`, `gemma`…) e abra. A lista
 de quantizações é colorida para a *sua* máquina:
 
-- 🟢 **verde** — roda inteiro na GPU;
-- 🟡 **amarelo** — divide entre GPU e CPU, mais devagar;
-- ⚪ **cinza** — só CPU.
+- <span class="ow-verdict ow-verdict--gpu"></span> **verde** — roda inteiro na GPU;
+- <span class="ow-verdict ow-verdict--split"></span> **amarelo** — divide entre GPU e CPU, mais devagar;
+- <span class="ow-verdict ow-verdict--cpu"></span> **cinza** — só CPU.
 
 Escolha uma, baixe, e ela aparece em **Meus Modelos**. Downloads interrompidos
 podem ser retomados, mesmo depois de reiniciar o computador.

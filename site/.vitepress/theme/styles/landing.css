@@ -1,0 +1,592 @@
+/* A home.
+ *
+ * Nada aqui é cartão por padrão: os blocos são separados por espaço e por
+ * linhas de 1px. Onde há superfície, é porque o conteúdo é uma amostra da
+ * interface ou um dado tabulado — coisas que precisam de moldura para não se
+ * confundirem com o texto ao redor.
+ */
+
+.ow-landing {
+  max-width: var(--ow-page);
+  margin: 0 auto;
+  padding: 0 var(--ow-6) var(--ow-24);
+}
+
+/* ------------------------------------------------------------------ hero --- */
+
+.ow-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: var(--ow-16);
+  align-items: start;
+  padding: var(--ow-24) 0 var(--ow-16);
+}
+
+.ow-hero__name {
+  margin: 0;
+  font-size: var(--ow-text-sm);
+  font-weight: 600;
+  letter-spacing: var(--ow-tracking-wide);
+  text-transform: uppercase;
+  color: var(--ow-ink-3);
+}
+.ow-hero__tagline {
+  margin: var(--ow-4) 0 0;
+  font-size: var(--ow-text-3xl);
+  font-weight: 620;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: var(--ow-ink);
+  max-width: 15ch;
+}
+.ow-hero__lede {
+  margin: var(--ow-6) 0 0;
+  max-width: 54ch;
+  font-size: var(--ow-text-md);
+  line-height: 1.65;
+  color: var(--ow-ink-2);
+}
+
+.ow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ow-3);
+  margin-top: var(--ow-8);
+}
+
+.ow-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ow-2);
+  height: 40px;
+  padding: 0 var(--ow-4);
+  border: 1px solid var(--ow-line-strong);
+  border-radius: var(--ow-radius);
+  font-size: var(--ow-text-sm);
+  font-weight: 500;
+  color: var(--ow-ink);
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color var(--ow-fast) var(--ow-ease),
+    border-color var(--ow-fast) var(--ow-ease),
+    opacity var(--ow-fast) var(--ow-ease);
+}
+.ow-btn:hover {
+  background-color: var(--ow-surface-2);
+  border-color: var(--ow-ink-3);
+}
+.ow-btn--primary {
+  background-color: var(--ow-ink);
+  border-color: var(--ow-ink);
+  color: var(--ow-bg);
+}
+.ow-btn--primary:hover {
+  background-color: var(--ow-ink);
+  border-color: var(--ow-ink);
+  opacity: 0.86;
+}
+
+.ow-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ow-2) var(--ow-4);
+  margin: var(--ow-8) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--ow-text-xs);
+  color: var(--ow-ink-3);
+}
+.ow-meta li + li::before {
+  content: "·";
+  margin-right: var(--ow-4);
+  color: var(--ow-line-strong);
+}
+
+/* ------------------------------------------------- amostra da interface --- */
+
+.ow-sample {
+  margin: var(--ow-2) 0 0;
+  border: 1px solid var(--ow-line);
+  border-radius: var(--ow-radius-lg);
+  background-color: var(--ow-surface);
+  overflow: hidden;
+}
+.ow-sample__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ow-4);
+  padding: var(--ow-3) var(--ow-4);
+  border-bottom: 1px solid var(--ow-line);
+}
+.ow-sample__title {
+  font-size: var(--ow-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--ow-tracking-wide);
+  text-transform: uppercase;
+  color: var(--ow-ink-3);
+}
+.ow-sample__hw {
+  font-size: var(--ow-text-xs);
+  color: var(--ow-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.ow-sample__model {
+  padding: var(--ow-3) var(--ow-4) var(--ow-2);
+  font-size: var(--ow-text-sm);
+  font-weight: 550;
+  color: var(--ow-ink);
+}
+.ow-sample__rows {
+  margin: 0;
+  padding: 0 0 var(--ow-2);
+  list-style: none;
+}
+.ow-sample__rows li {
+  display: grid;
+  grid-template-columns: 5.5rem 5rem 1fr auto;
+  align-items: center;
+  gap: var(--ow-3);
+  padding: var(--ow-2) var(--ow-4);
+  font-size: var(--ow-text-sm);
+  color: var(--ow-ink-2);
+}
+.ow-sample__rows li.is-pick {
+  color: var(--ow-ink);
+  background-color: var(--ow-surface-2);
+}
+.ow-sample__rows code {
+  font-family: var(--vp-font-family-mono);
+  font-size: var(--ow-text-xs);
+  color: var(--ow-ink);
+}
+.ow-sample__size {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ow-sample__verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ow-2);
+}
+.ow-sample__pick {
+  font-size: var(--ow-text-xs);
+  color: var(--ow-accent);
+}
+
+/* -------------------------------------------------------------- seções --- */
+
+.ow-section {
+  padding: var(--ow-16) 0;
+  border-top: 1px solid var(--ow-line);
+}
+.ow-section--split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--ow-16);
+  align-items: start;
+}
+.ow-section--reverse > .ow-section__lead {
+  order: 2;
+}
+.ow-section--wide .ow-section__lead--wide {
+  max-width: 62ch;
+  margin-bottom: var(--ow-12);
+}
+
+.ow-kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--ow-2);
+  margin: 0 0 var(--ow-4);
+  font-size: var(--ow-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--ow-tracking-wide);
+  text-transform: uppercase;
+  color: var(--ow-ink-3);
+}
+
+.ow-landing h2 {
+  margin: 0;
+  font-size: var(--ow-text-xl);
+  font-weight: 620;
+  line-height: 1.2;
+  letter-spacing: var(--ow-tracking-tight);
+  color: var(--ow-ink);
+  max-width: 22ch;
+}
+.ow-landing .ow-h2--compact {
+  margin-bottom: var(--ow-8);
+}
+
+.ow-body {
+  margin: var(--ow-4) 0 0;
+  max-width: 58ch;
+  font-size: var(--ow-text-base);
+  line-height: 1.7;
+  color: var(--ow-ink-2);
+}
+.ow-body--sm {
+  font-size: var(--ow-text-sm);
+}
+
+.ow-subhead {
+  margin: 0 0 var(--ow-4);
+  font-size: var(--ow-text-sm);
+  font-weight: 600;
+  color: var(--ow-ink);
+}
+
+.ow-note {
+  margin: var(--ow-4) 0 0;
+  max-width: 52ch;
+  font-size: var(--ow-text-xs);
+  line-height: 1.65;
+  color: var(--ow-ink-3);
+}
+
+.ow-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ow-2);
+  margin-top: var(--ow-6);
+  font-size: var(--ow-text-sm);
+  font-weight: 500;
+  color: var(--ow-accent);
+  text-decoration: none;
+}
+.ow-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.ow-link .ow-icon {
+  transition: transform var(--ow-fast) var(--ow-ease);
+}
+.ow-link:hover .ow-icon {
+  transform: translateX(2px);
+}
+
+/* -------------------------------------------------------------- tabelas --- */
+
+.ow-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ow-text-sm);
+}
+.ow-table th[scope="row"] {
+  padding: var(--ow-3) var(--ow-4) var(--ow-3) 0;
+  font-weight: 500;
+  color: var(--ow-ink);
+  text-align: left;
+  white-space: nowrap;
+}
+.ow-table td {
+  padding: var(--ow-3) 0;
+  color: var(--ow-ink-2);
+}
+.ow-table tbody tr {
+  border-top: 1px solid var(--ow-line);
+}
+.ow-table tbody tr:first-child {
+  border-top: 0;
+}
+
+.ow-measure {
+  padding: var(--ow-4) var(--ow-6);
+  border: 1px solid var(--ow-line);
+  border-radius: var(--ow-radius);
+}
+.ow-measure__title {
+  margin: 0;
+  font-size: var(--ow-text-sm);
+  font-weight: 600;
+  color: var(--ow-ink);
+}
+.ow-measure__sub {
+  margin: var(--ow-1) 0 var(--ow-4);
+  font-size: var(--ow-text-xs);
+  color: var(--ow-ink-3);
+}
+.ow-table--measure th[scope="col"] {
+  padding: 0 0 var(--ow-2);
+  font-size: var(--ow-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--ow-tracking-wide);
+  text-transform: uppercase;
+  color: var(--ow-ink-3);
+  text-align: right;
+}
+.ow-table--measure th[scope="col"]:first-child {
+  text-align: left;
+}
+.ow-table--measure td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ow-table--measure tr.is-pick th[scope="row"],
+.ow-table--measure tr.is-pick td {
+  color: var(--ow-ink);
+  font-weight: 550;
+}
+
+/* --------------------------------------------------------------- listas --- */
+
+.ow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ow-16);
+}
+.ow-grid--tight {
+  gap: var(--ow-12);
+}
+
+.ow-subhead--rule {
+  padding-bottom: var(--ow-3);
+  margin-bottom: var(--ow-6);
+  border-bottom: 1px solid var(--ow-line);
+  font-size: var(--ow-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--ow-tracking-wide);
+  text-transform: uppercase;
+  color: var(--ow-ink-3);
+}
+.ow-section--wide .ow-subhead--rule:not(:first-of-type) {
+  margin-top: var(--ow-12);
+}
+
+/* Os quatro passos são uma sequência, então ocupam uma linha: lidos lado a
+   lado eles mostram a ordem, e nenhuma coluna fica pendurada. */
+.ow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ow-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ow-steps li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ow-1);
+  font-size: var(--ow-text-sm);
+  line-height: 1.6;
+  color: var(--ow-ink-2);
+}
+.ow-steps__n {
+  font-size: var(--ow-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ow-ink-3);
+}
+.ow-steps strong {
+  font-weight: 600;
+  color: var(--ow-ink);
+}
+
+.ow-defs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ow-6) var(--ow-8);
+  margin: 0;
+  font-size: var(--ow-text-sm);
+  line-height: 1.6;
+}
+.ow-defs dt {
+  font-weight: 600;
+  color: var(--ow-ink);
+}
+.ow-defs dd {
+  margin: 2px 0 0;
+  color: var(--ow-ink-2);
+}
+
+/* Coluna que empilha visual e dado: os dois pertencem ao mesmo lado da
+   seção, e juntos ficam da altura do texto ao lado. */
+.ow-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ow-6);
+}
+
+/* --------------------------------------------------------------- código --- */
+
+.ow-code {
+  margin: 0;
+  padding: var(--ow-6);
+  border: 1px solid var(--ow-line);
+  border-radius: var(--ow-radius);
+  background-color: var(--ow-surface);
+  overflow-x: auto;
+  font-family: var(--vp-font-family-mono);
+  font-size: var(--ow-text-sm);
+  line-height: 1.7;
+  color: var(--ow-ink-2);
+  tab-size: 2;
+}
+
+/* ----------------------------------------------------------------- fluxo --- */
+
+.ow-flow__chain {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ow-flow__chain li {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ow-2);
+}
+.ow-flow__node {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ow-2);
+  min-width: 13rem;
+  padding: var(--ow-3) var(--ow-4);
+  border: 1px solid var(--ow-line-strong);
+  border-radius: var(--ow-radius);
+  font-size: var(--ow-text-sm);
+  font-weight: 500;
+  color: var(--ow-ink);
+}
+.ow-flow__arrow {
+  margin-left: var(--ow-6);
+  color: var(--ow-ink-3);
+}
+.ow-flow__note {
+  margin: var(--ow-4) 0 0;
+  font-size: var(--ow-text-xs);
+  color: var(--ow-ink-3);
+}
+.ow-flow__opt {
+  margin-top: var(--ow-12);
+  padding-top: var(--ow-6);
+  border-top: 1px solid var(--ow-line);
+}
+.ow-flow__opt .ow-link {
+  margin-top: var(--ow-4);
+}
+
+/* ----------------------------------------------------------- fechamento --- */
+
+.ow-end {
+  padding: var(--ow-16) 0 0;
+  border-top: 1px solid var(--ow-line);
+}
+.ow-end .ow-body {
+  margin-bottom: var(--ow-2);
+}
+
+/* ------------------------------------------------------------ responsivo --- */
+
+@media (max-width: 960px) {
+  .ow-hero {
+    grid-template-columns: 1fr;
+    gap: var(--ow-12);
+    padding-top: var(--ow-16);
+  }
+  .ow-hero__tagline {
+    max-width: 18ch;
+  }
+  .ow-section--split {
+    grid-template-columns: 1fr;
+    gap: var(--ow-8);
+  }
+  /* Numa coluna só, o texto vem antes do visual em todas as seções: a
+     inversão só faz sentido enquanto há duas colunas para alternar. */
+  .ow-section--reverse > .ow-section__lead {
+    order: 0;
+  }
+  .ow-grid {
+    gap: var(--ow-12);
+  }
+  .ow-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--ow-6);
+  }
+  .ow-defs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .ow-landing {
+    padding: 0 var(--ow-4) var(--ow-16);
+  }
+  :root {
+    --ow-text-3xl: 2.25rem;
+    --ow-text-xl: 1.5rem;
+  }
+  .ow-hero {
+    padding-top: var(--ow-12);
+  }
+  .ow-hero__tagline {
+    max-width: none;
+  }
+  .ow-section {
+    padding: var(--ow-12) 0;
+  }
+  .ow-grid,
+  .ow-steps,
+  .ow-defs {
+    grid-template-columns: 1fr;
+    gap: var(--ow-6);
+  }
+  .ow-sample__rows li {
+    grid-template-columns: 4.5rem 4.5rem 1fr;
+    row-gap: 0;
+  }
+  .ow-sample__pick {
+    grid-column: 2 / -1;
+    padding-bottom: var(--ow-1);
+  }
+  .ow-btn {
+    height: 44px;
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .ow-flow__node {
+    width: 100%;
+  }
+}
+
+/* ------------------------------------------------- encaixe no VitePress --- */
+/* A landing traz a própria largura e o próprio respiro; o contêiner de página
+   do tema só precisa sair da frente. */
+
+.VPContent:has(.ow-landing),
+.VPPage:has(.ow-landing) {
+  padding: 0;
+}
+
+/* ------------------------------------------------- conter o transbordo --- */
+/* Item de grid nasce com `min-width: auto`, ou seja: nunca encolhe abaixo do
+   conteúdo mínimo. Numa tela de 390px a tabela de medição (393px de
+   min-content) empurrava a seção inteira para fora da janela e a página
+   ganhava rolagem lateral. `min-width: 0` devolve ao layout o direito de
+   encolher; o que ainda não couber rola dentro do próprio bloco, nunca na
+   página. */
+
+.ow-section--split > *,
+.ow-grid > *,
+.ow-stack,
+.ow-stack > * {
+  min-width: 0;
+}
+
+.ow-measure {
+  overflow-x: auto;
+}
+
+@media (max-width: 720px) {
+  .ow-measure {
+    padding: var(--ow-4);
+  }
+  /* Título e placa lado a lado só cabem enquanto há largura; empilhados
+     eles continuam legíveis em vez de quebrarem no meio da frase. */
+  .ow-sample__head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--ow-1);
+  }
+}

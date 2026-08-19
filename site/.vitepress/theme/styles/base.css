@@ -1,0 +1,378 @@
+/* Ajustes sobre o tema padrão do VitePress.
+ *
+ * O tema padrão é bom de estrutura e ruim de acabamento: pesos tipográficos
+ * altos demais, cartões onde bastava uma linha, destaque colorido em coisa
+ * que não é ação. Aqui ele é calibrado, não substituído — trocar o tema
+ * inteiro custaria a busca, o sumário e o i18n, que funcionam.
+ */
+
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--vp-font-family-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ------------------------------------------------------------- cabeçalho --- */
+
+.VPNav {
+  border-bottom: 1px solid var(--ow-line);
+}
+.VPNavBar,
+.VPNavBar.has-sidebar .content {
+  background-color: color-mix(in srgb, var(--ow-bg) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+}
+.VPNavBar .divider {
+  display: none;
+}
+.VPNavBar .title {
+  font-size: var(--ow-text-base);
+  font-weight: 600;
+  letter-spacing: var(--ow-tracking-tight);
+}
+.VPNavBar .logo {
+  height: 20px;
+  margin-right: var(--ow-2);
+}
+.VPNavBarMenuLink,
+.VPNavBarMenuGroup .VPFlyout .text {
+  font-size: var(--ow-text-sm);
+  font-weight: 450;
+  color: var(--ow-ink-2);
+  transition: color var(--ow-fast) var(--ow-ease);
+}
+.VPNavBarMenuLink:hover,
+.VPNavBarMenuLink.active {
+  color: var(--ow-ink);
+}
+/* O item ativo é marcado por peso e cor do texto, não por uma cor de marca:
+   navegação não é ação. */
+.VPNavBarMenuLink.active {
+  font-weight: 550;
+}
+
+/* ---------------------------------------------------------------- lateral --- */
+
+.VPSidebar {
+  padding-top: var(--ow-6);
+}
+.VPSidebarItem.level-0 > .item > .text {
+  font-size: var(--ow-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--ow-tracking-wide);
+  text-transform: uppercase;
+  color: var(--ow-ink-3);
+}
+.VPSidebarItem.level-1 .link .text,
+.VPSidebarItem.level-2 .link .text {
+  font-size: var(--ow-text-sm);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ow-ink-2);
+  transition: color var(--ow-fast) var(--ow-ease);
+}
+.VPSidebarItem .link:hover .text {
+  color: var(--ow-ink);
+}
+/* O item aberto fica com a cor de destaque — estado ativo é um dos poucos
+   lugares onde ela ganha significado — e com meio peso a mais, para a
+   posição na coluna ser legível mesmo sem enxergar a cor. */
+.VPSidebarItem.is-active > .item .link .text {
+  font-weight: 550;
+}
+
+/* ---------------------------------------------------------------- página --- */
+
+.vp-doc {
+  font-size: var(--ow-text-base);
+  line-height: 1.75;
+}
+.vp-doc .content-container {
+  max-width: 780px;
+}
+
+.vp-doc h1 {
+  font-size: var(--ow-text-2xl);
+  font-weight: 620;
+  letter-spacing: var(--ow-tracking-tight);
+  line-height: 1.15;
+  margin-bottom: var(--ow-6);
+}
+.vp-doc h2 {
+  margin-top: var(--ow-16);
+  padding-top: var(--ow-8);
+  border-top: 1px solid var(--ow-line);
+  font-size: var(--ow-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--ow-tracking-tight);
+}
+.vp-doc h3 {
+  margin-top: var(--ow-8);
+  font-size: var(--ow-text-md);
+  font-weight: 600;
+}
+.vp-doc p,
+.vp-doc ul,
+.vp-doc ol {
+  color: var(--ow-ink-2);
+}
+.vp-doc h1 + p {
+  font-size: var(--ow-text-md);
+  line-height: 1.65;
+}
+.vp-doc strong {
+  color: var(--ow-ink);
+  font-weight: 600;
+}
+
+.vp-doc a {
+  color: var(--ow-ink);
+  font-weight: 450;
+  text-decoration: none;
+  border-bottom: 1px solid var(--ow-line-strong);
+  transition:
+    border-color var(--ow-fast) var(--ow-ease),
+    color var(--ow-fast) var(--ow-ease);
+}
+.vp-doc a:hover {
+  color: var(--ow-accent);
+  border-bottom-color: var(--ow-accent);
+}
+
+/* -------------------------------------------------------------- tabelas --- */
+
+.vp-doc table {
+  display: table;
+  width: 100%;
+  margin: var(--ow-6) 0;
+  font-size: var(--ow-text-sm);
+  border-collapse: collapse;
+}
+.vp-doc div:has(> table) {
+  overflow-x: auto;
+}
+.vp-doc th {
+  padding: var(--ow-2) var(--ow-3);
+  border: 0;
+  border-bottom: 1px solid var(--ow-line-strong);
+  background: transparent;
+  font-size: var(--ow-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--ow-tracking-wide);
+  text-transform: uppercase;
+  color: var(--ow-ink-3);
+  text-align: left;
+}
+.vp-doc td {
+  padding: var(--ow-3);
+  border: 0;
+  border-bottom: 1px solid var(--ow-line);
+  vertical-align: top;
+}
+.vp-doc tr {
+  background: transparent;
+  border: 0;
+}
+.vp-doc tr:nth-child(2n) {
+  background: transparent;
+}
+
+/* --------------------------------------------------------------- código --- */
+
+.vp-doc div[class*="language-"] {
+  border: 1px solid var(--ow-line);
+  border-radius: var(--ow-radius);
+  background-color: var(--ow-surface);
+  margin: var(--ow-6) 0;
+}
+.vp-doc [class*="language-"] code {
+  font-size: var(--ow-text-sm);
+  line-height: 1.7;
+}
+.vp-doc :not(pre) > code {
+  font-size: 0.875em;
+  background-color: var(--ow-surface-2);
+  border-radius: 4px;
+  color: var(--ow-ink);
+}
+.vp-doc .vp-code-group .tabs {
+  background-color: transparent;
+  border-bottom: 1px solid var(--ow-line);
+  box-shadow: none;
+}
+
+/* ------------------------------------------------------------ containers --- */
+/* Os avisos do VitePress vêm com fundo cheio e borda grossa. Um filete na
+   margem diz a mesma coisa e não rouba a página. */
+
+.vp-doc .custom-block {
+  padding: var(--ow-4) var(--ow-6);
+  border: 0;
+  border-left: 2px solid var(--ow-line-strong);
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--ow-text-sm);
+}
+.vp-doc .custom-block .custom-block-title {
+  font-size: var(--ow-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--ow-tracking-wide);
+  text-transform: uppercase;
+  color: var(--ow-ink-3);
+  margin-bottom: var(--ow-1);
+}
+.vp-doc .custom-block.tip {
+  border-left-color: var(--ow-accent);
+}
+.vp-doc .custom-block.warning {
+  border-left-color: var(--ow-warn);
+}
+.vp-doc .custom-block.danger {
+  border-left-color: #dc2626;
+}
+.vp-doc .custom-block p,
+.vp-doc .custom-block a {
+  color: var(--ow-ink-2);
+}
+
+/* ---------------------------------------------------- rodapé e acessórios --- */
+
+.VPDocFooter,
+.VPFooter {
+  border-top: 1px solid var(--ow-line);
+}
+.VPFooter {
+  padding: var(--ow-8) var(--ow-6);
+  background: transparent;
+}
+.VPFooter .message,
+.VPFooter .copyright {
+  font-size: var(--ow-text-xs);
+  color: var(--ow-ink-3);
+  line-height: 1.7;
+}
+.VPDocOutlineItem a,
+.VPDocAsideOutline .outline-title {
+  font-size: var(--ow-text-sm);
+}
+.VPLastUpdated {
+  font-size: var(--ow-text-xs) !important;
+  color: var(--ow-ink-3);
+}
+
+/* ------------------------------------------------ marcador de veredito --- */
+/* Usado nas páginas de modelos: um quadrado de 8px vale o que valia o emoji,
+   com a vantagem de herdar a paleta e de não mudar de desenho por sistema. */
+
+.ow-verdict {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: var(--ow-1);
+  border-radius: 2px;
+  vertical-align: 1px;
+}
+.ow-verdict--gpu {
+  background: var(--ow-ok);
+}
+.ow-verdict--split {
+  background: var(--ow-warn);
+}
+.ow-verdict--cpu {
+  background: var(--ow-ink-3);
+}
+
+/* --------------------------------------------------------- acessibilidade --- */
+
+:where(a, button, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--ow-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* -------------------------------------------------- o download no header --- */
+/* O tema não deixa marcar um item do menu como principal, então o alvo é o
+   href: é o único item do cabeçalho que pede uma ação, e ele se parece com um
+   botão em vez de competir em pé de igualdade com a navegação. */
+
+.VPNavBarMenu .VPNavBarMenuLink[href$="/install"],
+.VPNavBarMenu .VPNavBarMenuLink[href$="/instalacao"] {
+  height: 32px;
+  padding: 0 var(--ow-3);
+  margin-left: var(--ow-2);
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  border: 1px solid var(--ow-line-strong);
+  border-radius: var(--ow-radius);
+  background-color: transparent;
+  color: var(--ow-ink);
+  font-weight: 500;
+  transition:
+    background-color var(--ow-fast) var(--ow-ease),
+    border-color var(--ow-fast) var(--ow-ease);
+}
+.VPNavBarMenu .VPNavBarMenuLink[href$="/install"]:hover,
+.VPNavBarMenu .VPNavBarMenuLink[href$="/instalacao"]:hover {
+  background-color: var(--ow-surface-2);
+  border-color: var(--ow-ink-3);
+}
+
+/* ------------------------------------------------------------- a busca --- */
+/* O campo padrão é alto e muito arredondado para o resto do cabeçalho. Aqui
+   ele fica com a altura e o raio do botão ao lado. */
+
+.VPNavBar .VPNavBarSearch .DocSearch-Button {
+  height: 32px;
+  padding: 0 var(--ow-2) 0 var(--ow-3);
+  border: 1px solid var(--ow-line);
+  border-radius: var(--ow-radius);
+  background: transparent;
+  transition: border-color var(--ow-fast) var(--ow-ease);
+}
+.VPNavBar .VPNavBarSearch .DocSearch-Button:hover {
+  border-color: var(--ow-line-strong);
+  background: transparent;
+  box-shadow: none;
+}
+.VPNavBar .VPNavBarSearch .DocSearch-Button-Placeholder {
+  font-size: var(--ow-text-sm);
+  font-weight: 400;
+  color: var(--ow-ink-3);
+  padding: 0 var(--ow-6) 0 var(--ow-2);
+}
+.VPNavBar .VPNavBarSearch .DocSearch-Search-Icon {
+  width: 15px;
+  height: 15px;
+  color: var(--ow-ink-3);
+}
+.VPNavBar .VPNavBarSearch .DocSearch-Button-Keys {
+  min-width: auto;
+}
+.VPNavBar .VPNavBarSearch .DocSearch-Button-Key {
+  width: auto;
+  height: 18px;
+  padding: 0 4px;
+  margin: 0 0 0 2px;
+  border: 1px solid var(--ow-line);
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  font-size: 11px;
+  color: var(--ow-ink-3);
+}

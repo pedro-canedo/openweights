@@ -1,0 +1,104 @@
+/* Sistema visual do site.
+ *
+ * A paleta é a do app (src/styles.css): quem sai daqui e abre o OpenWeights
+ * tem de reconhecer o mesmo produto. O que muda é a disciplina — no site a
+ * cor de destaque só aparece onde há ação, link ou estado ativo. Tirando a
+ * cor, a página continua legível: a hierarquia é de tamanho, peso e espaço.
+ */
+
+:root {
+  /* -------------------------------------------------------------- cores --- */
+  --ow-bg: #ffffff;
+  --ow-surface: #fafafa;
+  --ow-surface-2: #f4f4f6;
+  --ow-line: #e6e6ea;
+  --ow-line-strong: #d6d6dc;
+  --ow-ink: #15161a;
+  --ow-ink-2: #5f6169;
+  --ow-ink-3: #6e7078;
+  --ow-accent: #5b3ce6;
+  --ow-accent-ink: #ffffff;
+  --ow-ok: #15803d;
+  --ow-warn: #a16207;
+
+  /* --------------------------------------------------------- tipografia --- */
+  --ow-text-xs: 0.75rem;
+  --ow-text-sm: 0.8125rem;
+  --ow-text-base: 0.9375rem;
+  --ow-text-md: 1.0625rem;
+  --ow-text-lg: 1.375rem;
+  --ow-text-xl: 1.75rem;
+  --ow-text-2xl: 2.25rem;
+  --ow-text-3xl: 3rem;
+
+  --ow-tracking-tight: -0.02em;
+  --ow-tracking-wide: 0.08em;
+
+  /* ------------------------------------------------------------ espaço --- */
+  /* Escala de 4: tudo no site é múltiplo dela, e é isso que faz o
+     alinhamento parecer decidido em vez de aproximado. */
+  --ow-1: 4px;
+  --ow-2: 8px;
+  --ow-3: 12px;
+  --ow-4: 16px;
+  --ow-6: 24px;
+  --ow-8: 32px;
+  --ow-12: 48px;
+  --ow-16: 64px;
+  --ow-24: 96px;
+  --ow-32: 128px;
+
+  --ow-radius: 6px;
+  --ow-radius-lg: 10px;
+
+  --ow-page: 1120px;
+  --ow-prose: 68ch;
+
+  --ow-fast: 160ms;
+  --ow-ease: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+.dark {
+  --ow-bg: #0a0d14;
+  --ow-surface: #10141d;
+  --ow-surface-2: #161b26;
+  --ow-line: #1e2431;
+  --ow-line-strong: #2b3243;
+  --ow-ink: #e8eaf0;
+  --ow-ink-2: #969eaf;
+  --ow-ink-3: #828a9a;
+  --ow-accent: #a48dff;
+  --ow-accent-ink: #0a0d14;
+  --ow-ok: #4ade80;
+  --ow-warn: #fbbf24;
+}
+
+/* O tema padrão do VitePress lê as próprias variáveis; ligamos as duas
+   listas num lugar só para não existirem duas paletas discordando. */
+:root {
+  --vp-c-brand-1: var(--ow-accent);
+  --vp-c-brand-2: var(--ow-accent);
+  --vp-c-brand-3: var(--ow-accent);
+  --vp-c-brand-soft: color-mix(in srgb, var(--ow-accent) 12%, transparent);
+
+  --vp-c-bg: var(--ow-bg);
+  --vp-c-bg-alt: var(--ow-surface);
+  --vp-c-bg-soft: var(--ow-surface);
+  --vp-c-bg-elv: var(--ow-bg);
+  --vp-c-divider: var(--ow-line);
+  --vp-c-border: var(--ow-line);
+  --vp-c-gutter: var(--ow-line);
+  --vp-c-text-1: var(--ow-ink);
+  --vp-c-text-2: var(--ow-ink-2);
+  --vp-c-text-3: var(--ow-ink-3);
+
+  --vp-layout-max-width: 1440px;
+  --vp-nav-height: 60px;
+
+  --vp-button-brand-bg: var(--ow-ink);
+  --vp-button-brand-text: var(--ow-bg);
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-bg: var(--ow-ink);
+  --vp-button-brand-hover-text: var(--ow-bg);
+  --vp-button-brand-active-bg: var(--ow-ink);
+}

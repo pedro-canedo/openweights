@@ -34,9 +34,9 @@ installer does not redistribute NVIDIA libraries.
 From **Discover**, search for a model (`qwen`, `llama`, `gemma`…) and open it.
 The quantization list is colour-coded for *your* machine:
 
-- 🟢 **green** — runs fully on the GPU;
-- 🟡 **yellow** — splits between GPU and CPU, slower;
-- ⚪ **grey** — CPU-only.
+- <span class="ow-verdict ow-verdict--gpu"></span> **green** — runs fully on the GPU;
+- <span class="ow-verdict ow-verdict--split"></span> **yellow** — splits between GPU and CPU, slower;
+- <span class="ow-verdict ow-verdict--cpu"></span> **grey** — CPU-only.
 
 Pick one, download it, and it lands in **My Models**. Interrupted downloads are
 resumable, even after restarting the computer.
