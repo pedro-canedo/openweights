@@ -55,6 +55,7 @@ import {
   type Attachment,
 } from "../components/chat/AttachmentChips";
 import AgentToggle from "../components/agent/AgentToggle";
+import LiveStatus from "../components/agent/LiveStatus";
 import ApprovalBar from "../components/agent/ApprovalBar";
 import FocusChip from "../components/agent/FocusChip";
 import ModeSelect from "../components/agent/ModeSelect";
@@ -1244,6 +1245,12 @@ export default function Chat() {
                     onOpenTrace={openTrace}
                   />
                 )}
+
+                {/* O que ele está fazendo agora — some sozinha quando não há
+                    run ativo ou quando a barra de aprovação assume o espaço. */}
+                <div className="px-6">
+                  <LiveStatus run={run} />
+                </div>
 
                 {/* Confirmação pendente: Enter permite, Esc nega. */}
                 {pendingCall && run && (

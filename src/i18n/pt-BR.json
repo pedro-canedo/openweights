@@ -573,6 +573,12 @@
       "toolsUnsupported": "Sem ferramentas: o template deste modelo não sabe recebê-las.",
       "toolsRejected": "O servidor recusou o pedido com ferramentas — segui sem elas."
     },
+    "live": {
+      "thinking": "Pensando no próximo passo",
+      "writing": "Escrevendo a resposta",
+      "task": "Etapa {{n}}/{{total}}: {{title}}",
+      "step": "passo {{n}}"
+    },
     "focus": {
       "title": "Plano",
       "empty": "Sem plano definido"

@@ -573,6 +573,12 @@
       "toolsUnsupported": "No tools: this model's chat template can't take them.",
       "toolsRejected": "The server refused the request with tools — carried on without them."
     },
+    "live": {
+      "thinking": "Thinking about the next step",
+      "writing": "Writing the answer",
+      "task": "Step {{n}}/{{total}}: {{title}}",
+      "step": "step {{n}}"
+    },
     "focus": {
       "title": "Plan",
       "empty": "No plan yet"
