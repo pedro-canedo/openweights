@@ -77,7 +77,7 @@ impl Store {
         transport: &str,
         config_json: &str,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO mcp_servers (id, name, transport, config_json, enabled, created_at)
              VALUES (?1, ?2, ?3, ?4, 1, ?5)
@@ -89,7 +89,7 @@ impl Store {
     }
 
     pub fn list_mcp_servers(&self) -> Result<Vec<McpServerRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, name, transport, config_json, enabled, tools_hash, tools_approved_hash
              FROM mcp_servers ORDER BY name",
@@ -115,7 +115,7 @@ impl Store {
     }
 
     pub fn set_mcp_enabled(&self, id: &str, enabled: bool) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE mcp_servers SET enabled = ?2 WHERE id = ?1",
             params![id, enabled as i64],
@@ -124,14 +124,14 @@ impl Store {
     }
 
     pub fn remove_mcp_server(&self, id: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM mcp_servers WHERE id = ?1", [id])?;
         Ok(())
     }
 
     /// Grava o hash atual das definições (sem aprovar).
     pub fn set_mcp_tools_hash(&self, id: &str, hash: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE mcp_servers SET tools_hash = ?2 WHERE id = ?1",
             params![id, hash],
@@ -141,7 +141,7 @@ impl Store {
 
     /// Usuário revisou e aprovou as ferramentas atuais.
     pub fn approve_mcp_tools(&self, id: &str, hash: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE mcp_servers SET tools_hash = ?2, tools_approved_hash = ?2 WHERE id = ?1",
             params![id, hash],
@@ -155,7 +155,7 @@ impl Store {
         server_id: &str,
         tools: &[McpToolRow],
     ) -> Result<(), StoreError> {
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn();
         let tx = conn.transaction()?;
         tx.execute(
             "DELETE FROM mcp_tools_cache WHERE server_id = ?1",
@@ -173,7 +173,7 @@ impl Store {
     }
 
     pub fn list_mcp_tools(&self, server_id: &str) -> Result<Vec<McpToolRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT server_id, name, description, schema_json, annotations_json
              FROM mcp_tools_cache WHERE server_id = ?1 ORDER BY name",
@@ -203,7 +203,7 @@ impl Store {
 
     /// Config bruta de um servidor (para o host conectar).
     pub fn mcp_config(&self, id: &str) -> Result<Option<String>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let cfg = conn
             .query_row(
                 "SELECT config_json FROM mcp_servers WHERE id = ?1",

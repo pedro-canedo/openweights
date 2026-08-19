@@ -70,17 +70,32 @@ export async function runStart(
  * Reata a um run já em curso, pedindo o replay dos eventos com `seq` maior
  * que `afterSeq`. É o que reconstrói a trilha quando a tela do Chat remonta
  * (navegar para outra tela DESMONTA o Chat) ou o app é reaberto.
+ *
+ * Devolve `false` quando o backend já não conhece o run — ou ele terminou
+ * (o desfecho está no banco) ou morreu sem rastro; quem decide é o chamador,
+ * via `runReap` + `run_events_list`. Antes esse `false` era descartado e a
+ * interface ficava "trabalhando" para sempre.
  */
 export async function runAttach(
   runId: string,
   afterSeq: number,
   onEvent: RunEventHandler,
-): Promise<void> {
+): Promise<boolean> {
   if (!isTauri) return mockRunAttach(runId, afterSeq, onEvent);
   const { Channel, invoke: rawInvoke } = await core();
   const ch = new Channel<RunEvent>();
   ch.onmessage = onEvent;
-  await rawInvoke<void>("run_attach", { runId, afterSeq, onEvent: ch });
+  return rawInvoke<boolean>("run_attach", { runId, afterSeq, onEvent: ch });
+}
+
+/**
+ * Carimba um run que a interface acha vivo mas o processo já não conhece:
+ * o backend grava a causa e um `run.finished` sintético na trilha. `true` =
+ * havia um órfão e ele foi carimbado (releia a trilha para ver o desfecho).
+ */
+export function runReap(runId: string): Promise<boolean> {
+  if (!isTauri) return Promise.resolve(false);
+  return invoke<boolean>("run_reap", { runId });
 }
 
 export function runApprove(
@@ -99,7 +114,8 @@ export function runCancel(runId: string): Promise<void> {
     : mockRunCancel(runId);
 }
 
-export function runsList(chatId: number): Promise<RunSummary[]> {
+/** Sem `chatId`, devolve TODAS as execuções (runs de automação não têm conversa). */
+export function runsList(chatId?: number): Promise<RunSummary[]> {
   return isTauri
     ? invoke<RunSummary[]>("runs_list", { chatId })
     : mockRunsList(chatId);
@@ -1056,14 +1072,20 @@ function mockRunAttach(
   runId: string,
   afterSeq: number,
   onEvent: RunEventHandler,
-): Promise<void> {
+): Promise<boolean> {
+  // Mesmo contrato do backend real: `false` tanto para run desconhecido
+  // quanto para run já terminado (nunca rejeita) — é o que exercita o
+  // caminho de reap + replay da cauda no navegador.
   const run = mockRuns.get(runId);
-  if (!run) return Promise.reject(new Error(`run desconhecido: ${runId}`));
+  const vivo =
+    run != null &&
+    (run.status === "running" || run.status === "waitingApproval");
+  if (!run || !vivo) return Promise.resolve(false);
   run.handler = onEvent;
   for (const event of run.events) {
     if (event.seq > afterSeq) onEvent(event);
   }
-  return Promise.resolve();
+  return Promise.resolve(true);
 }
 
 function mockRunApprove(
@@ -1140,9 +1162,9 @@ function mockRunPlanReplan(runId: string): Promise<void> {
   return Promise.resolve();
 }
 
-function mockRunsList(chatId: number): Promise<RunSummary[]> {
+function mockRunsList(chatId?: number): Promise<RunSummary[]> {
   const rows = [...mockRuns.values()]
-    .filter((r) => r.chatId === chatId)
+    .filter((r) => chatId == null || r.chatId === chatId)
     .sort((a, b) => b.createdAt - a.createdAt)
     .map<RunSummary>((r) => ({
       id: r.id,

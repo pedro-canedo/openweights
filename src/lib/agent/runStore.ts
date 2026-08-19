@@ -25,6 +25,7 @@ import {
   runPlanApprove,
   runPlanGet,
   runPlanReplan,
+  runReap,
   runStart,
   runsList,
   type RunCallOutput,
@@ -321,8 +322,16 @@ function note(
  * repetido (`seq` já visto) — é isso que torna o replay idempotente.
  */
 export function reduceEvent(run: RunView, event: RunEvent): RunView {
-  if (event.seq <= run.lastSeq) return run;
-  const next: RunView = { ...run, lastSeq: event.seq };
+  if (event.seq <= run.lastSeq) {
+    // Exceção única: um `run.finished` sintético (carimbo de run órfão) é
+    // numerado pelo último seq PERSISTIDO, que fica atrás do seq vivo quando
+    // houve deltas (eles avançam o contador sem ir ao banco). Descartá-lo
+    // pelo seq deixaria o run "trabalhando" para sempre — exatamente o que
+    // o carimbo existe para impedir. Aplicar duas vezes é inofensivo: o
+    // estado terminal é idempotente.
+    if (event.kind !== "run.finished" || !isRunActive(run.status)) return run;
+  }
+  const next: RunView = { ...run, lastSeq: Math.max(run.lastSeq, event.seq) };
 
   switch (event.kind) {
     case "run.started":
@@ -781,11 +790,6 @@ function liveTpsOf(chatId: number | null): number | null {
 }
 
 function handleEvent(event: RunEvent): void {
-  if (event.kind === "assistant.delta" || event.kind === "reasoning.delta") {
-    notaDelta(event.runId, event.text.length);
-  } else if (event.kind === "run.finished") {
-    tpsAmostras.delete(event.runId);
-  }
   const known = runs.get(event.runId);
   let base =
     known ??
@@ -800,12 +804,22 @@ function handleEvent(event: RunEvent): void {
     }
   }
   const next = reduceEvent(base, event);
-  if (known && next === known) return; // seq repetido
+  if (known && next === known) return; // seq repetido (replay, canal duplicado)
+  // Efeitos colaterais SÓ depois do dedupe: um evento entregue duas vezes
+  // não pode realimentar o tok/s estimado nem renovar o relógio do vigia.
+  lastEventAt.set(event.runId, Date.now());
+  if (event.kind === "assistant.delta" || event.kind === "reasoning.delta") {
+    notaDelta(event.runId, event.text.length);
+  } else if (event.kind === "run.finished") {
+    tpsAmostras.delete(event.runId);
+    lastEventAt.delete(event.runId);
+  }
   next.attached = true;
   runs.set(next.runId, next);
   if (next.chatId >= 0 && byChat.get(next.chatId) !== next.runId) {
     byChat.set(next.chatId, next.runId);
   }
+  if (isRunActive(next.status)) armarVigia();
   emit();
   // O plano mudou de forma (etapa começou/terminou): recarrega o estruturado.
   if (event.kind === "focus.updated" || event.kind === "run.finished") {
@@ -866,8 +880,51 @@ async function attachTo(run: RunView): Promise<void> {
   if (attaching.has(run.runId)) return;
   attaching.add(run.runId);
   try {
-    await runAttach(run.runId, run.lastSeq, handleEvent);
-    patchRun(run.runId, { attached: true });
+    const vivo = await runAttach(run.runId, run.lastSeq, handleEvent);
+    if (vivo) {
+      patchRun(run.runId, { attached: true });
+      // O attach pode não trazer evento nenhum (run vivo mas mudo). Semear o
+      // relógio e armar o vigia AQUI é o que garante socorro também para
+      // runs reconstruídos após um reload — antes, só quem recebia evento
+      // vivo entrava no radar do vigia.
+      const atual = runs.get(run.runId);
+      if (atual && isRunActive(atual.status)) {
+        lastEventAt.set(run.runId, Date.now());
+        armarVigia();
+      }
+      return;
+    }
+    // O backend já não conhece este run: ou ele terminou (o desfecho está
+    // no banco) ou morreu sem rastro. O `run_reap` carimba o segundo caso —
+    // garante que exista um `run.finished` com a causa — e o replay abaixo
+    // traz o desfecho para a tela. Antes, este `false` era descartado e a
+    // interface ficava "trabalhando" para sempre.
+    await runReap(run.runId).catch((e) => {
+      console.warn("run_reap falhou:", errorMessage(e));
+    });
+    const cauda = await runEventsList(run.runId, run.lastSeq);
+    for (const ev of cauda) handleEvent(ev);
+    // Trilha sem `run.finished` (banco legado, evento perdido, carimbo com
+    // seq atrás do vivo) mas linha do banco já com desfecho: a linha é a
+    // verdade — fecha a visão por ela em vez de deixar um zumbi "rodando"
+    // que o vigia socorreria em vão. Runs de automação não têm conversa
+    // (chatId -1), por isso a busca sem filtro.
+    const atual = runs.get(run.runId);
+    if (atual && isRunActive(atual.status)) {
+      const lista = await runsList(
+        atual.chatId >= 0 ? atual.chatId : undefined,
+      ).catch(() => []);
+      const linha = lista.find((r) => r.id === run.runId);
+      if (linha && !isRunActive(linha.status)) {
+        patchRun(run.runId, {
+          status: linha.status,
+          summary: linha.summary ?? "",
+          finishedAtMs: Date.now(),
+        });
+        lastEventAt.delete(run.runId);
+      }
+    }
+    patchRun(run.runId, { attached: false });
   } catch (e) {
     // Run já encerrado no backend (ou app reiniciado): a trilha reconstruída
     // pelo `run_events_list` continua na tela; só não há mais streaming.
@@ -876,6 +933,52 @@ async function attachTo(run: RunView): Promise<void> {
   } finally {
     attaching.delete(run.runId);
   }
+}
+
+// ------------------------------------------------------ vigia de silêncio ---
+//
+// O canal pode morrer sem aviso (task perdida no backend, webview que
+// dormiu). Sem relógio nenhum, um run assim fica "trabalhando" para sempre.
+// A cada tique: run ativo e anexado, sem evento há mais que o prazo → reata
+// (o replay por `seq` preenche qualquer buraco); se nem o backend o conhece
+// mais, o `attachTo` acima carimba via `run_reap` e traz o desfecho.
+const VIGIA_TIQUE_MS = 30_000;
+/**
+ * Maior silêncio legítimo: processar um prompt grande em CPU leva minutos —
+ * o Rust espera até 180 s pelo primeiro token (`first_token_timeout`) — e o
+ * vigia só pode agir acima disso, senão reata à toa no meio do trabalho.
+ */
+const VIGIA_SILENCIO_MS = 240_000;
+const lastEventAt = new Map<string, number>();
+let vigia: number | null = null;
+
+function armarVigia(): void {
+  if (vigia != null) return;
+  vigia = window.setInterval(() => {
+    const agora = Date.now();
+    let algumAtivo = false;
+    for (const run of runs.values()) {
+      if (!isRunActive(run.status)) continue;
+      algumAtivo = true;
+      // Esperando confirmação não gera eventos por desenho — não é silêncio.
+      if (run.status === "waitingApproval") continue;
+      const visto = lastEventAt.get(run.runId);
+      if (visto == null) {
+        // Primeira vez no radar: semeia o relógio AGORA. O startedAtMs
+        // original pode ser de horas atrás (run reconstruído do banco) e
+        // dispararia um socorro imediato em cima de um attach saudável.
+        lastEventAt.set(run.runId, agora);
+        continue;
+      }
+      if (agora - visto < VIGIA_SILENCIO_MS) continue;
+      lastEventAt.set(run.runId, agora); // um socorro por prazo, não por tique
+      void attachTo(run);
+    }
+    if (!algumAtivo && vigia != null) {
+      window.clearInterval(vigia);
+      vigia = null;
+    }
+  }, VIGIA_TIQUE_MS);
 }
 
 export const runStore = {

@@ -244,6 +244,17 @@ impl AppState {
             self.kill_orphan_pids();
             return;
         }
+        // Runs vivos: cancela e deixa cada um fechar pelo caminho normal
+        // enquanto o processo ainda respira (trilha íntegra, desfecho
+        // "cancelado"). NÃO carimbamos o banco aqui: o carimbo correndo
+        // contra um run vivo rouba o `seq` do próximo evento real e pode
+        // contradizer um desfecho legítimo — o que não fechar a tempo é
+        // carimbado com causa no próximo boot (`fail_orphan_runs`), onde
+        // não há corrida nenhuma.
+        let vivos = self.agent.cancel_all();
+        if vivos > 0 {
+            log::info!("{vivos} execução(ões) cancelada(s) pelo fechamento do app");
+        }
         if let Ok(mut guard) = self.server.try_lock() {
             if let Some(srv) = guard.as_mut() {
                 srv.stop_blocking();

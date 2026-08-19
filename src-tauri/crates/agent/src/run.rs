@@ -1063,6 +1063,19 @@ impl ToolRunner {
         // `&mut self` (o programa do Code Mode reentra no runner a cada
         // chamada que faz).
         let handle = self.handle.clone();
+        // Teto absoluto de uma chamada: estourar vira um erro normal de
+        // ferramenta (o modelo recebe o motivo, o erro conta no teto do run)
+        // em vez de um run pendurado para sempre sem evento nenhum.
+        //
+        // O `run_code` fica DE FORA do teto: ele hospeda até 200 chamadas
+        // internas — cada uma reentra aqui e ganha o próprio teto — mais as
+        // esperas de aprovação delas (15 min cada), então um programa
+        // saudável estoura qualquer número razoável. Pior: dropar o futuro
+        // dele no meio de uma chamada interna deixa `dentro_de_programa`
+        // ligado, a tool_call interna aberta e, se cair numa aprovação, o
+        // run preso em waitingApproval. O relógio do programa em si é o do
+        // hospedeiro Node (lr_codemode), que já existe.
+        let teto = (name != codemode::RUN_CODE).then_some(self.config.tool_call_timeout);
         let outcome = tokio::select! {
             biased;
             _ = handle.cancelled() => {
@@ -1073,7 +1086,15 @@ impl ToolRunner {
                 let _ = self.store.finish_tool_call(call_id, false, "", 0, Some("cancelado"));
                 return CallFlow::Cancelled;
             }
-            r = self.despachar(name, call_id, args.clone(), step_id, step_index, &ctx) => r,
+            r = async {
+                let chamada = self.despachar(name, call_id, args.clone(), step_id, step_index, &ctx);
+                match teto {
+                    Some(t) => tokio::time::timeout(t, chamada)
+                        .await
+                        .unwrap_or(Err(ToolError::Timeout(t.as_secs()))),
+                    None => chamada.await,
+                }
+            } => r,
         };
         // O agrupador segura até 4 KB ou 100 ms; sem este flush o último
         // trecho de um comando rápido nunca chegaria à interface.
@@ -1219,9 +1240,12 @@ impl ToolRunner {
     /// Pergunta para a pessoa e espera (o run fica pausado até a resposta).
     async fn ask_user(&mut self, call_id: &str, name: &str, args: Value, reason: &str) -> Ask {
         let rx = self.handle.register_pending(call_id);
-        let _ = self
+        if let Err(e) = self
             .store
-            .set_run_status(&self.run_id, RunStatus::WaitingApproval);
+            .set_run_status(&self.run_id, RunStatus::WaitingApproval)
+        {
+            log::error!("run {}: não gravou a pausa no banco: {e}", self.run_id);
+        }
         self.sink.emit(RunEventKind::RunPaused {
             reason: lr_types::agent::PauseReason::WaitingApproval,
         });
@@ -1252,7 +1276,9 @@ impl ToolRunner {
                         return Ask::Abandoned;
                     }
                     log::warn!("confirmação de `{name}` expirou; nego a chamada e sigo");
-                    let _ = self.store.set_run_status(&self.run_id, RunStatus::Running);
+                    if let Err(e) = self.store.set_run_status(&self.run_id, RunStatus::Running) {
+                log::error!("run {}: não gravou a retomada no banco: {e}", self.run_id);
+            }
                     self.sink.emit(RunEventKind::RunResumed);
                     return Ask::Denied(
                         "ninguém respondeu à confirmação a tempo — a ação foi negada. \
@@ -1264,7 +1290,9 @@ impl ToolRunner {
             },
         };
         self.handle.clear_pending(call_id);
-        let _ = self.store.set_run_status(&self.run_id, RunStatus::Running);
+        if let Err(e) = self.store.set_run_status(&self.run_id, RunStatus::Running) {
+            log::error!("run {}: não gravou a retomada no banco: {e}", self.run_id);
+        }
         self.sink.emit(RunEventKind::RunResumed);
         log::debug!("confirmação de `{name}` resolvida ({reason})");
 
@@ -1869,7 +1897,9 @@ impl StepEngine<'_> {
                 let dito = parcial.clone();
                 let mut on_delta = move |delta: ChatDelta| match delta {
                     ChatDelta::Text(text) => {
-                        dito.lock().unwrap().push_str(&text);
+                        dito.lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .push_str(&text);
                         sink_delta.emit(RunEventKind::AssistantDelta {
                             step_id: step.clone(),
                             text,
@@ -1903,7 +1933,7 @@ impl StepEngine<'_> {
                     let resultado = tokio::select! {
                         biased;
                         _ = self.handle.cancelled() => {
-                            out.text = parcial.lock().unwrap().clone();
+                            out.text = parcial.lock().unwrap_or_else(|e| e.into_inner()).clone();
                             break 'run RunStatus::Cancelled;
                         }
                         r = self.client.chat_stream(&request, &mut on_delta) => r,
@@ -1946,7 +1976,7 @@ impl StepEngine<'_> {
                             let retomada = tokio::select! {
                                 biased;
                                 _ = self.handle.cancelled() => {
-                                    out.text = parcial.lock().unwrap().clone();
+                                    out.text = parcial.lock().unwrap_or_else(|e| e.into_inner()).clone();
                                     break 'run RunStatus::Cancelled;
                                 }
                                 r = self.client.chat_stream(&sem_tools, &mut on_delta) => r,
@@ -1964,7 +1994,8 @@ impl StepEngine<'_> {
                                     break outcome;
                                 }
                                 Err(e2) => {
-                                    out.text = parcial.lock().unwrap().clone();
+                                    out.text =
+                                        parcial.lock().unwrap_or_else(|e| e.into_inner()).clone();
                                     self.sink.emit(RunEventKind::RunError {
                                         message: format!("O modelo não respondeu: {e2}"),
                                         retryable: true,
@@ -1982,14 +2013,14 @@ impl StepEngine<'_> {
                             log::warn!(
                                 "stream falhou (tentativa {tentativa}/{MAX_TENTATIVAS_STREAM}): {e}"
                             );
-                            parcial.lock().unwrap().clear();
+                            parcial.lock().unwrap_or_else(|e| e.into_inner()).clear();
                             tokio::time::sleep(std::time::Duration::from_millis(
                                 400 * u64::from(tentativa),
                             ))
                             .await;
                         }
                         Err(e) => {
-                            out.text = parcial.lock().unwrap().clone();
+                            out.text = parcial.lock().unwrap_or_else(|e| e.into_inner()).clone();
                             self.sink.emit(RunEventKind::RunError {
                                 message: format!("O modelo não respondeu: {e}"),
                                 retryable: true,
@@ -2704,7 +2735,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     // pessoa precisa ler.
     let keep_in_chat = |text: &str| {
         if !text.trim().is_empty() && opts.chat_id > 0 {
-            let _ = deps.store.add_message(
+            let gravou = deps.store.add_message(
                 opts.chat_id,
                 "assistant",
                 text,
@@ -2720,6 +2751,9 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
                 // feito (ler, escrever, rodar) em vez de só o texto final.
                 Some(run_id.as_str()),
             );
+            if let Err(e) = gravou {
+                log::error!("run {run_id}: a resposta não entrou na conversa: {e}");
+            }
         }
     };
 
@@ -2766,9 +2800,19 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     };
 
     let usage_json = serde_json::to_string(&usage).unwrap_or_else(|_| "{}".into());
-    let _ = deps
+    if let Err(e) = deps
         .store
-        .finish_run(&run_id, status, &summary, &usage_json);
+        .finish_run(&run_id, status, &summary, &usage_json)
+    {
+        // O `run.finished` sai mesmo assim (a interface ao vivo mostra o
+        // fim), mas o banco ficou para trás: sem este aviso o run reabriria
+        // como "rodando", sem ninguém saber o porquê.
+        log::error!("run {run_id}: não gravou o desfecho no banco: {e}");
+        sink.emit(RunEventKind::RunError {
+            message: format!("o desfecho não foi gravado no banco: {e}"),
+            retryable: false,
+        });
+    }
 
     // Episódio: o que aconteceu nesta execução, para a memória consolidar
     // depois em fatos duráveis. Só vale a pena guardar o que produziu algo —

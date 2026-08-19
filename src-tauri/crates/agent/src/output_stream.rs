@@ -48,7 +48,7 @@ impl ChunkCoalescer {
             return;
         }
         let pronto = {
-            let mut guarda = self.pendente.lock().unwrap();
+            let mut guarda = self.pendente.lock().unwrap_or_else(|e| e.into_inner());
             guarda.0.push_str(chunk);
             let vencido = guarda.1.elapsed() >= FLUSH_INTERVAL;
             if guarda.0.len() >= FLUSH_BYTES || vencido {
@@ -67,7 +67,7 @@ impl ChunkCoalescer {
     /// quando ela foi cancelada, senão o último trecho se perde.
     pub fn flush(&self) {
         let resto = {
-            let mut guarda = self.pendente.lock().unwrap();
+            let mut guarda = self.pendente.lock().unwrap_or_else(|e| e.into_inner());
             guarda.1 = Instant::now();
             std::mem::take(&mut guarda.0)
         };

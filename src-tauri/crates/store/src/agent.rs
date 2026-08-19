@@ -7,7 +7,8 @@
 
 use crate::{Store, StoreError};
 use lr_types::agent::{
-    ApprovalSource, PolicyScope, RunEvent, RunMode, RunStatus, RunSummary, ToolPolicy,
+    ApprovalSource, PolicyScope, RunEvent, RunEventKind, RunMode, RunStatus, RunSummary,
+    ToolPolicy, UsageStats,
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -186,7 +187,7 @@ impl Store {
         workspace_dir: Option<&str>,
         prompt: &str,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO runs (id, chat_id, model, mode, yolo, workspace_dir, status, prompt, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -206,7 +207,7 @@ impl Store {
     }
 
     pub fn set_run_status(&self, run_id: &str, status: RunStatus) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE runs SET status = ?2 WHERE id = ?1",
             params![run_id, enum_str(&status)],
@@ -221,7 +222,7 @@ impl Store {
         summary: &str,
         usage_json: &str,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE runs SET status = ?2, summary = ?3, usage_json = ?4, finished_at = ?5
              WHERE id = ?1",
@@ -231,7 +232,7 @@ impl Store {
     }
 
     pub fn set_run_focus(&self, run_id: &str, focus_md: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE runs SET focus_md = ?2 WHERE id = ?1",
             params![run_id, focus_md],
@@ -241,7 +242,7 @@ impl Store {
 
     /// Guarda o plano de trabalho (Scout Rule) do run.
     pub fn set_run_plan(&self, run_id: &str, plan_json: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE runs SET plan_json = ?2 WHERE id = ?1",
             params![run_id, plan_json],
@@ -251,7 +252,7 @@ impl Store {
 
     /// Plano de trabalho do run, se houver.
     pub fn get_run_plan(&self, run_id: &str) -> Result<Option<String>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let plan = conn
             .query_row("SELECT plan_json FROM runs WHERE id = ?1", [run_id], |r| {
                 r.get::<_, Option<String>>(0)
@@ -263,7 +264,7 @@ impl Store {
 
     /// Runs de uma conversa (mais recentes primeiro). `None` = todos.
     pub fn list_runs(&self, chat_id: Option<i64>) -> Result<Vec<RunSummary>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let sql = "SELECT id, chat_id, model, mode, status, prompt, summary, workspace_dir,
                           created_at, finished_at, usage_json
                    FROM runs {WHERE} ORDER BY created_at DESC LIMIT 200";
@@ -301,22 +302,113 @@ impl Store {
         Ok(self.list_runs(None)?.into_iter().find(|r| r.id == run_id))
     }
 
-    /// Marca como `Error` runs deixados em aberto por um fechamento abrupto.
+    /// Marca como `Error` runs deixados em aberto por um fechamento abrupto —
+    /// com a causa escrita: cada um ganha `summary` e um `run.finished`
+    /// sintético no fim da própria trilha. Sem isso a conversa reaberta
+    /// terminava no nada, como se a execução tivesse evaporado.
     pub fn fail_orphan_runs(&self) -> Result<usize, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        const CAUSA: &str = "O aplicativo foi fechado com esta execução em andamento — \
+                             ela não chegou ao fim.";
+        let conn = self.conn();
+        let orfaos: Vec<String> = {
+            let mut stmt =
+                conn.prepare("SELECT id FROM runs WHERE status IN ('running', 'waitingApproval')")?;
+            stmt.query_map([], |r| r.get(0))?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        for id in &orfaos {
+            Self::carimbar_orfao(&conn, id, CAUSA)?;
+        }
+        Ok(orfaos.len())
+    }
+
+    /// Carimba UM run que o processo já não conhece mas o banco ainda diz
+    /// vivo — é o run que morreu sem rastro (pânico engolido, task perdida).
+    /// Devolve `true` quando havia algo a carimbar; um run que já tem
+    /// desfecho legítimo NUNCA é sobrescrito.
+    pub fn reap_run(&self, run_id: &str, causa: &str) -> Result<bool, StoreError> {
+        let conn = self.conn();
+        let vivo: Option<i64> = conn
+            .query_row(
+                "SELECT 1 FROM runs WHERE id = ?1 AND status IN ('running', 'waitingApproval')",
+                params![run_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if vivo.is_none() {
+            return Ok(false);
+        }
+        Self::carimbar_orfao(&conn, run_id, causa)?;
+        Ok(true)
+    }
+
+    /// `finish_run` que NUNCA sobrescreve um desfecho: só grava se o run
+    /// ainda está aberto. Devolve `true` quando gravou. É o que o socorro de
+    /// pânico usa — sem inserir evento sintético, porque quem chama tem o
+    /// `EventSink` vivo e o emit persiste o `run.finished` uma vez só.
+    pub fn finish_run_if_open(
+        &self,
+        run_id: &str,
+        status: RunStatus,
+        summary: &str,
+    ) -> Result<bool, StoreError> {
+        let conn = self.conn();
         let n = conn.execute(
-            "UPDATE runs SET status = ?1, finished_at = ?2
-             WHERE status IN ('running', 'waitingApproval')",
-            params![enum_str(&RunStatus::Error), Self::now()],
+            "UPDATE runs SET status = ?2, summary = ?3, finished_at = ?4
+             WHERE id = ?1 AND status IN ('running', 'waitingApproval')",
+            params![run_id, enum_str(&status), summary, Self::now()],
         )?;
-        Ok(n)
+        Ok(n > 0)
+    }
+
+    /// A trilha deste run já tem um `run.finished`?
+    pub fn run_has_finish_event(&self, run_id: &str) -> Result<bool, StoreError> {
+        let conn = self.conn();
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM run_events WHERE run_id = ?1 AND kind = 'run.finished'",
+            params![run_id],
+            |r| r.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Desfecho de socorro: `status = Error` + `summary` com a causa + um
+    /// `run.finished` sintético no fim da trilha, para o replay terminar em
+    /// explicação e não no nada.
+    fn carimbar_orfao(conn: &Connection, id: &str, causa: &str) -> Result<(), StoreError> {
+        conn.execute(
+            "UPDATE runs SET status = ?2, summary = ?3, finished_at = ?4 WHERE id = ?1",
+            params![id, enum_str(&RunStatus::Error), causa, Self::now()],
+        )?;
+        let seq: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(seq), 0) + 1 FROM run_events WHERE run_id = ?1",
+            params![id],
+            |r| r.get(0),
+        )?;
+        let ev = RunEvent {
+            run_id: id.to_string(),
+            seq: seq as u64,
+            ts_ms: Self::now_ms().max(0) as u64,
+            event: RunEventKind::RunFinished {
+                status: RunStatus::Error,
+                summary: causa.to_string(),
+                usage: UsageStats::default(),
+            },
+        };
+        let payload = serde_json::to_string(&ev).unwrap_or_else(|_| "{}".into());
+        conn.execute(
+            "INSERT OR IGNORE INTO run_events (run_id, seq, kind, payload_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, seq, ev.kind_name(), payload, Self::now()],
+        )?;
+        Ok(())
     }
 
     // ------------------------------------------------------------ eventos --
 
     pub fn append_run_event(&self, ev: &RunEvent) -> Result<(), StoreError> {
         let payload = serde_json::to_string(ev).unwrap_or_else(|_| "{}".into());
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT OR IGNORE INTO run_events (run_id, seq, kind, payload_json, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -337,7 +429,7 @@ impl Store {
         run_id: &str,
         after_seq: u64,
     ) -> Result<Vec<RunEventRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT seq, kind, payload_json, created_at FROM run_events
              WHERE run_id = ?1 AND seq > ?2 ORDER BY seq",
@@ -357,7 +449,7 @@ impl Store {
 
     /// Maior `seq` já gravado (para retomar a numeração).
     pub fn last_run_seq(&self, run_id: &str) -> Result<u64, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let seq: Option<i64> = conn
             .query_row(
                 "SELECT MAX(seq) FROM run_events WHERE run_id = ?1",
@@ -372,7 +464,7 @@ impl Store {
     // -------------------------------------------------------------- steps --
 
     pub fn create_step(&self, id: &str, run_id: &str, idx: u32) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO steps (id, run_id, idx, started_at) VALUES (?1, ?2, ?3, ?4)",
             params![id, run_id, idx, Self::now_ms()],
@@ -388,7 +480,7 @@ impl Store {
         prompt_tokens: Option<u32>,
         completion_tokens: Option<u32>,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE steps SET assistant_content = ?2, reasoning = ?3, prompt_tokens = ?4,
                     completion_tokens = ?5, finished_at = ?6 WHERE id = ?1",
@@ -415,7 +507,7 @@ impl Store {
         origin: &str,
         args_json: &str,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO tool_calls (id, run_id, step_id, tool_name, origin, args_json, state)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'requested')",
@@ -425,7 +517,7 @@ impl Store {
     }
 
     pub fn set_tool_call_state(&self, id: &str, state: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let started = if state == "running" {
             Some(Self::now_ms())
         } else {
@@ -446,7 +538,7 @@ impl Store {
         result_bytes: u64,
         error: Option<&str>,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE tool_calls SET state = ?2, result_json = ?3, result_bytes = ?4,
                     error = ?5, finished_at = ?6 WHERE id = ?1",
@@ -463,7 +555,7 @@ impl Store {
     }
 
     pub fn list_tool_calls(&self, run_id: &str) -> Result<Vec<ToolCallRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, run_id, step_id, tool_name, origin, args_json, state, result_json,
                     error, started_at, finished_at
@@ -500,7 +592,7 @@ impl Store {
         source: ApprovalSource,
         args_hash: &str,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO approvals (run_id, tool_call_id, tool_name, decision, source, args_hash, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -526,7 +618,7 @@ impl Store {
         tool_name: &str,
         policy: ToolPolicy,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO tool_permissions (scope, workspace_dir, tool_name, policy, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)
@@ -549,7 +641,7 @@ impl Store {
         workspace_dir: Option<&str>,
         tool_name: &str,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "DELETE FROM tool_permissions WHERE scope = ?1 AND workspace_dir = ?2 AND tool_name = ?3",
             params![enum_str(&scope), workspace_dir.unwrap_or(""), tool_name],
@@ -562,7 +654,7 @@ impl Store {
         &self,
         workspace_dir: Option<&str>,
     ) -> Result<Vec<ToolPermissionRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, scope, workspace_dir, tool_name, policy FROM tool_permissions
              WHERE scope = 'global' OR workspace_dir = ?1
@@ -596,7 +688,7 @@ impl Store {
         label: Option<&str>,
         files_json: Option<&str>,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO checkpoints (id, run_id, workspace_dir, backend, ref_id, label, files_json, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -615,7 +707,7 @@ impl Store {
     }
 
     pub fn list_checkpoints(&self, workspace_dir: &str) -> Result<Vec<CheckpointRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, run_id, workspace_dir, backend, ref_id, label, created_at
              FROM checkpoints WHERE workspace_dir = ?1 ORDER BY created_at DESC LIMIT 100",
@@ -637,7 +729,7 @@ impl Store {
     }
 
     pub fn get_checkpoint(&self, id: &str) -> Result<Option<CheckpointRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let row = conn
             .query_row(
                 "SELECT id, run_id, workspace_dir, backend, ref_id, label, created_at
@@ -778,7 +870,7 @@ mod tests {
         s.create_tool_call("c1", "r", None, "fs_read", "builtin", "{}")
             .unwrap();
         {
-            let conn = s.conn.lock().unwrap();
+            let conn = s.conn();
             conn.execute(
                 "UPDATE tool_calls SET started_at = 1_700_000_000,
                         finished_at = 1_700_000_002 WHERE id = 'c1'",

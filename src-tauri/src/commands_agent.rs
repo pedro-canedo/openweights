@@ -174,6 +174,26 @@ pub fn runs_list(state: State<'_, AppState>, chat_id: Option<i64>) -> CmdResult<
     state.store.list_runs(chat_id).map_err(err_str)
 }
 
+/// Carimba um run que a interface acha vivo mas o processo já não conhece:
+/// morreu sem rastro (pânico, task perdida). Grava a causa e um
+/// `run.finished` sintético na trilha. `false` = não havia o que carimbar
+/// (o run está vivo de verdade, ou já tem desfecho no banco).
+#[tauri::command]
+pub fn run_reap(state: State<'_, AppState>, run_id: String) -> CmdResult<bool> {
+    if state.agent.get(&run_id).is_some() {
+        // Vivo de verdade: a interface deve reatar, não carimbar.
+        return Ok(false);
+    }
+    state
+        .store
+        .reap_run(
+            &run_id,
+            "A execução morreu sem chegar ao fim: o aplicativo perdeu o processo \
+             dela. Detalhes podem estar no log.",
+        )
+        .map_err(err_str)
+}
+
 #[tauri::command]
 pub fn run_events_list(
     state: State<'_, AppState>,

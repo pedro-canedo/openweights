@@ -234,10 +234,20 @@ impl Store {
             .unwrap_or(0)
     }
 
+    /// Conexão compartilhada, tolerante a envenenamento: se outra thread
+    /// entrou em pânico segurando o lock, recupera o guard em vez de
+    /// propagar o pânico. Cada método daqui faz transações curtas e
+    /// completas, então não há invariante quebrada a herdar — e sem isso um
+    /// único pânico condenaria todo acesso a banco do processo, inclusive o
+    /// registro do fim do run que explicaria o pânico à pessoa.
+    pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     // ------------------------------------------------------------- chats --
 
     pub fn create_chat(&self, title: &str, model_id: Option<&str>) -> Result<i64, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO chats (title, model_id, created_at) VALUES (?1, ?2, ?3)",
             rusqlite::params![title, model_id, Self::now()],
@@ -246,7 +256,7 @@ impl Store {
     }
 
     pub fn list_chats(&self) -> Result<Vec<ChatRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, title, model_id, created_at, params_json FROM chats ORDER BY id DESC",
         )?;
@@ -265,13 +275,13 @@ impl Store {
     }
 
     pub fn delete_chat(&self, chat_id: i64) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM chats WHERE id = ?1", [chat_id])?;
         Ok(())
     }
 
     pub fn rename_chat(&self, chat_id: i64, title: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE chats SET title = ?1 WHERE id = ?2",
             rusqlite::params![title, chat_id],
@@ -281,7 +291,7 @@ impl Store {
 
     /// Guarda o modelo em uso pela conversa (o seletor pode trocar no meio).
     pub fn set_chat_model(&self, chat_id: i64, model_id: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE chats SET model_id = ?1 WHERE id = ?2",
             rusqlite::params![model_id, chat_id],
@@ -290,7 +300,7 @@ impl Store {
     }
 
     pub fn set_chat_params(&self, chat_id: i64, params_json: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE chats SET params_json = ?1 WHERE id = ?2",
             rusqlite::params![params_json, chat_id],
@@ -314,7 +324,7 @@ impl Store {
         // Execução do agente que gerou a resposta (`None` no chat comum).
         run_id: Option<&str>,
     ) -> Result<i64, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO messages (chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, model_id, profile_key, run_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -335,7 +345,7 @@ impl Store {
     }
 
     pub fn list_messages(&self, chat_id: i64) -> Result<Vec<MessageRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, run_id
              FROM messages WHERE chat_id = ?1 ORDER BY id",
@@ -359,13 +369,13 @@ impl Store {
     }
 
     pub fn delete_message(&self, message_id: i64) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM messages WHERE id = ?1", [message_id])?;
         Ok(())
     }
 
     pub fn update_message_content(&self, message_id: i64, content: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE messages SET content = ?1 WHERE id = ?2",
             rusqlite::params![content, message_id],
@@ -376,7 +386,7 @@ impl Store {
     // ----------------------------------------------------------- presets --
 
     pub fn list_presets(&self) -> Result<Vec<PresetRow>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare("SELECT id, name, json FROM presets ORDER BY name")?;
         let rows = stmt
             .query_map([], |r| {
@@ -392,7 +402,7 @@ impl Store {
 
     /// Insere ou atualiza (UPSERT por `name`) e devolve o id da linha.
     pub fn save_preset(&self, name: &str, json: &str) -> Result<i64, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO presets (name, json) VALUES (?1, ?2)
              ON CONFLICT(name) DO UPDATE SET json = excluded.json",
@@ -407,7 +417,7 @@ impl Store {
     }
 
     pub fn delete_preset(&self, id: i64) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM presets WHERE id = ?1", [id])?;
         Ok(())
     }
@@ -415,7 +425,7 @@ impl Store {
     // ---------------------------------------------------------- settings --
 
     pub fn set_setting(&self, key: &str, value: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO settings (key, value) VALUES (?1, ?2)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -425,7 +435,7 @@ impl Store {
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
         let mut rows = stmt.query([key])?;
         Ok(match rows.next()? {
@@ -438,6 +448,23 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Um pânico segurando a conexão não pode condenar o banco: o processo
+    /// precisa continuar gravando — é assim que o fim de um run vira registro
+    /// mesmo quando algo explodiu no meio dele.
+    #[test]
+    fn panico_com_o_lock_nao_condena_o_banco() {
+        let s = Store::open_in_memory().unwrap();
+        std::thread::scope(|scope| {
+            let apavorada = scope.spawn(|| {
+                let _guard = s.conn();
+                panic!("pânico proposital segurando a conexão");
+            });
+            assert!(apavorada.join().is_err(), "a thread deveria ter panicado");
+        });
+        let chat = s.create_chat("depois do pânico", None).unwrap();
+        assert!(s.list_chats().unwrap().iter().any(|c| c.id == chat));
+    }
 
     #[test]
     fn chat_and_message_roundtrip() {
@@ -554,7 +581,7 @@ mod tests {
         s.finish_run("r1", RunStatus::Done, "ok", "{}").unwrap();
 
         {
-            let conn = s.conn.lock().unwrap();
+            let conn = s.conn();
             // O `init` já rodou o backfill neste banco novo: desfaz a marca
             // para exercitar a migração como ela roda no banco de alguém.
             conn.execute(
@@ -706,7 +733,7 @@ mod tests {
 
         // Reaplicar a migração num banco já migrado é no-op seguro.
         {
-            let conn = s.conn.lock().unwrap();
+            let conn = s.conn();
             ensure_column(&conn, "chats", "params_json", "TEXT").unwrap();
         }
         assert_eq!(s.list_chats().unwrap().len(), 1);

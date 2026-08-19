@@ -81,7 +81,7 @@ const COLUNAS: &str = "machine_key, model_id, profile_key, build_number, gen_tps
 impl Store {
     #[allow(clippy::too_many_arguments)]
     pub fn add_perf_run(&self, run: &PerfRun) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO perf_runs (machine_key, model_id, profile_key, build_number,
                                     gen_tps, prompt_tps, gen_stddev, gpu_bytes, source,
@@ -115,7 +115,7 @@ impl Store {
         model_id: &str,
         build_number: u64,
     ) -> Result<Vec<PerfRun>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUNAS} FROM perf_runs
              WHERE machine_key = ?1 AND model_id = ?2 AND build_number = ?3
@@ -138,7 +138,7 @@ impl Store {
         profile_key: &str,
         build_number: u64,
     ) -> Result<Option<PerfRun>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUNAS} FROM perf_runs
              WHERE machine_key = ?1 AND model_id = ?2 AND profile_key = ?3

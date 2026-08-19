@@ -70,7 +70,7 @@ fn migrate_ctx_sizes(conn: &Connection) -> Result<(), StoreError> {
 impl Store {
     /// Perfil de um modelo. Ausente = nada escolhido.
     pub fn model_profile(&self, model_id: &str) -> Result<Option<ModelProfile>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let raw: Option<String> = conn
             .query_row(
                 "SELECT profile_json FROM model_profiles WHERE model_id = ?1",
@@ -83,7 +83,7 @@ impl Store {
 
     /// Todos os perfis, para montar o INI de uma vez.
     pub fn model_profiles(&self) -> Result<Vec<(String, ModelProfile)>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare("SELECT model_id, profile_json FROM model_profiles")?;
         let rows = stmt
             .query_map([], |r| {
@@ -104,7 +104,7 @@ impl Store {
         model_id: &str,
         profile: &ModelProfile,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         if profile.is_empty() {
             conn.execute("DELETE FROM model_profiles WHERE model_id = ?1", [model_id])?;
             return Ok(());
@@ -177,7 +177,7 @@ mod tests {
         // A migração roda na abertura do banco; aqui chamamos à mão porque o
         // setting foi escrito depois.
         {
-            let conn = s.conn.lock().unwrap();
+            let conn = s.conn();
             migrate_ctx_sizes(&conn).unwrap();
         }
 
@@ -205,7 +205,7 @@ mod tests {
         s.set_setting(LEGACY_CTX_SETTING, r#"{"m.gguf": 65536}"#)
             .unwrap();
         {
-            let conn = s.conn.lock().unwrap();
+            let conn = s.conn();
             migrate_ctx_sizes(&conn).unwrap();
         }
         assert_eq!(s.model_profile("m.gguf").unwrap().unwrap(), escolhido);

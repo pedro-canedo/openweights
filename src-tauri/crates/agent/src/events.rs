@@ -31,7 +31,26 @@ pub struct EventSink {
     store: Option<Arc<Store>>,
     /// Ouvintes ao vivo. O mesmo cadeado protege a gravação, para que um
     /// `attach` no meio do run não veja um evento duas vezes nem pule nenhum.
-    listeners: Mutex<Vec<EventCallback>>,
+    listeners: Mutex<Ouvintes>,
+}
+
+/// Quem recebe os eventos ao vivo.
+///
+/// `fixos` são os do começo do run (o canal do `run_start`, o relógio das
+/// automações). `reattach` é o ÚNICO canal de religação da interface: cada
+/// `attach` SUBSTITUI o anterior — o app tem um webview só, e empilhar os
+/// canais de religações repetidas entregava cada evento N vezes (o tok/s
+/// estimado multiplicava, e todo evento virava N reduções).
+#[derive(Default)]
+struct Ouvintes {
+    fixos: Vec<EventCallback>,
+    reattach: Option<EventCallback>,
+}
+
+impl Ouvintes {
+    fn todos(&self) -> impl Iterator<Item = &EventCallback> {
+        self.fixos.iter().chain(self.reattach.as_ref())
+    }
 }
 
 impl EventSink {
@@ -40,7 +59,7 @@ impl EventSink {
             run_id: run_id.into(),
             seq: AtomicU64::new(0),
             store,
-            listeners: Mutex::new(Vec::new()),
+            listeners: Mutex::new(Ouvintes::default()),
         }
     }
 
@@ -51,7 +70,11 @@ impl EventSink {
     }
 
     pub fn with_listener(self, cb: EventCallback) -> Self {
-        self.listeners.lock().unwrap().push(cb);
+        self.listeners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .fixos
+            .push(cb);
         self
     }
 
@@ -79,9 +102,15 @@ impl EventSink {
             && let Some(store) = &self.store
             && let Err(e) = store.append_run_event(&ev)
         {
-            log::warn!("não foi possível gravar o evento {}: {e}", ev.kind_name());
+            log::error!(
+                "run {}: evento {} (seq {}) não foi gravado — o replay desta trilha \
+                 ficará com um buraco: {e}",
+                self.run_id,
+                ev.kind_name(),
+                ev.seq
+            );
         }
-        for cb in listeners.iter() {
+        for cb in listeners.todos() {
             cb(ev.clone());
         }
         ev
@@ -106,7 +135,7 @@ impl EventSink {
                 Err(e) => log::warn!("falha ao reler os eventos do run: {e}"),
             }
         }
-        listeners.push(cb);
+        listeners.reattach = Some(cb);
     }
 }
 
@@ -213,6 +242,34 @@ mod tests {
         let seen = seen.lock().unwrap();
         assert_eq!(seen.len(), 3, "o novo evento chega ao vivo");
         assert_eq!(seen[2].seq, 3);
+    }
+
+    /// Religações repetidas não podem empilhar canais: cada evento seria
+    /// entregue N vezes à mesma interface (tok/s multiplicado, N reduções).
+    #[test]
+    fn a_second_attach_replaces_the_previous_channel() {
+        let store = Arc::new(Store::open_in_memory().unwrap());
+        store
+            .create_run("r1", None, "m", RunMode::Yolo, true, None, "p")
+            .unwrap();
+        let sink = EventSink::new("r1", Some(store.clone()));
+        sink.emit(started());
+
+        let (cb1, seen1) = collector();
+        sink.attach(1, cb1);
+        let (cb2, seen2) = collector();
+        sink.attach(1, cb2);
+
+        sink.emit(RunEventKind::StepStarted {
+            step_id: "s1".into(),
+            index: 1,
+        });
+        assert_eq!(
+            seen1.lock().unwrap().len(),
+            0,
+            "o canal substituído não recebe mais nada"
+        );
+        assert_eq!(seen2.lock().unwrap().len(), 1, "só o canal novo segue vivo");
     }
 
     #[test]

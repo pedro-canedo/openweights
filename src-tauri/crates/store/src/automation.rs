@@ -64,7 +64,7 @@ fn task_from(r: &Row<'_>) -> rusqlite::Result<ScheduledTask> {
 
 impl Store {
     pub fn list_scheduled_tasks(&self) -> Result<Vec<ScheduledTask>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUNAS} FROM scheduled_tasks ORDER BY name"
         ))?;
@@ -75,7 +75,7 @@ impl Store {
     }
 
     pub fn scheduled_task(&self, id: &str) -> Result<Option<ScheduledTask>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUNAS} FROM scheduled_tasks WHERE id = ?1"
         ))?;
@@ -97,7 +97,7 @@ impl Store {
         now_ms: i64,
     ) -> Result<String, StoreError> {
         let id = input.id.clone().unwrap_or_else(|| new_id.to_string());
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO scheduled_tasks
                 (id, name, prompt, workspace_dir, model, mode, work_mode, every_minutes,
@@ -131,14 +131,14 @@ impl Store {
     }
 
     pub fn delete_scheduled_task(&self, id: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM scheduled_tasks WHERE id = ?1", [id])?;
         Ok(())
     }
 
     /// Automações ligadas cuja hora chegou.
     pub fn due_scheduled_tasks(&self, now_ms: i64) -> Result<Vec<ScheduledTask>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUNAS} FROM scheduled_tasks
              WHERE enabled = 1 AND every_minutes > 0
@@ -162,7 +162,7 @@ impl Store {
         run_id: Option<&str>,
         now_ms: i64,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE scheduled_tasks
                 SET last_run_at = ?2,
@@ -184,7 +184,7 @@ impl Store {
     /// demorar, e a marcação de "começou" tem que ser imediata para o relógio
     /// não disparar a mesma tarefa de novo no tique seguinte.
     pub fn set_scheduled_task_run(&self, id: &str, run_id: &str) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE scheduled_tasks SET last_run_id = ?2 WHERE id = ?1",
             params![id, run_id],
@@ -199,7 +199,7 @@ impl Store {
     /// por `fail_orphan_runs`, mas sem este acerto o card continuaria
     /// calculando "rodando" para sempre a partir do status vazio.
     pub fn fail_orphan_scheduled_tasks(&self) -> Result<usize, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let n = conn.execute(
             "UPDATE scheduled_tasks
                 SET last_status = ?1, last_summary = ?2
@@ -219,7 +219,7 @@ impl Store {
         status: Option<RunStatus>,
         summary: &str,
     ) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "UPDATE scheduled_tasks SET last_status = ?2, last_summary = ?3 WHERE id = ?1",
             params![

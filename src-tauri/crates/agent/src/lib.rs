@@ -21,7 +21,7 @@ use crate::run::{RunDeps, execute_run};
 use lr_engine::ChatMessage;
 use lr_store::Store;
 use lr_tools::ToolRegistry;
-use lr_types::agent::{ApprovalDecision, RunOptions};
+use lr_types::agent::{ApprovalDecision, RunEventKind, RunOptions, RunStatus, UsageStats};
 use lr_types::scout::WorkMode;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -63,6 +63,12 @@ pub struct AgentConfig {
     /// é servidor travado — sem este relógio, um stream pendurado segurava o
     /// run para sempre.
     pub idle_timeout: Duration,
+    /// Teto de UMA chamada de ferramenta, do despacho ao resultado. É rede de
+    /// segurança, não política: fica ACIMA do maior relógio interno (um
+    /// comando de terminal pode pedir até 3600s) e só dispara quando uma
+    /// ferramenta pendurou sem que nenhum relógio de baixo visse — antes
+    /// disso, o run ficava preso para sempre, sem evento nenhum.
+    pub tool_call_timeout: Duration,
     /// Onde achar o Node que o Code Mode usa, perguntado A CADA execução.
     ///
     /// É uma função, e não um caminho, porque o app instala o Node **depois**
@@ -82,6 +88,7 @@ impl std::fmt::Debug for AgentConfig {
             .field("context_ratio", &self.context_ratio)
             .field("first_token_timeout", &self.first_token_timeout)
             .field("idle_timeout", &self.idle_timeout)
+            .field("tool_call_timeout", &self.tool_call_timeout)
             .field("node_path", &self.node_path.is_some())
             .finish()
     }
@@ -96,6 +103,7 @@ impl AgentConfig {
             context_ratio: 0.85,
             first_token_timeout: Duration::from_secs(180),
             idle_timeout: Duration::from_secs(90),
+            tool_call_timeout: Duration::from_secs(3_900),
             node_path: None,
         }
     }
@@ -206,6 +214,29 @@ impl RunHandle {
     }
 }
 
+/// Faxina garantida do fim de um run: tira o handle do mapa de vivos e
+/// devolve a trava do workspace no `Drop` — isto é, mesmo quando o caminho
+/// normal explodiu em pânico. É deliberadamente um guarda, não código no fim
+/// da task: código no fim não roda quando algo antes dele cai.
+struct FaxinaDoRun {
+    id: String,
+    vivos: Arc<Mutex<HashMap<String, Arc<RunHandle>>>>,
+    travas: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl Drop for FaxinaDoRun {
+    fn drop(&mut self) {
+        self.vivos
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.id);
+        self.travas
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.id);
+    }
+}
+
 /// Ponto de entrada: sobe e acompanha execuções.
 pub struct AgentHost {
     store: Arc<Store>,
@@ -299,19 +330,89 @@ impl AgentHost {
             config: self.config.clone(),
         };
         let h = handle.clone();
-        let vivos = self.runs.clone();
-        let travas = self.workspaces.clone();
-        let terminado = h.id.clone();
+        let store = self.store.clone();
+        let chat_id = req.options.chat_id;
+        let model = req.options.model.clone();
+        let faxina = FaxinaDoRun {
+            id: h.id.clone(),
+            vivos: self.runs.clone(),
+            travas: self.workspaces.clone(),
+        };
         tokio::spawn(async move {
-            execute_run(req, h, deps).await;
-            vivos
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(&terminado);
-            travas
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .remove(&terminado);
+            // A faxina vive DENTRO da task e é um guarda de `Drop`: aconteça
+            // o que acontecer daqui para baixo — inclusive um pânico no
+            // próprio código de socorro — o handle sai do mapa de vivos e a
+            // pasta de projeto é destravada. Antes disso, um pânico deixava
+            // o workspace recusando execuções até reiniciar o app.
+            let faxina = faxina;
+            // O laço roda numa task própria para o pânico ficar contido no
+            // JoinError em vez de matar a execução sem rastro: um run nunca
+            // pode acabar sem um `run.finished` que diga o porquê.
+            let caiu = tokio::spawn(execute_run(req, h.clone(), deps)).await;
+            if let Err(e) = caiu {
+                let summary = if e.is_panic() {
+                    "A execução caiu por um erro interno do aplicativo. O que \
+                     aparece na trilha foi feito; o restante, não. Detalhes \
+                     estão no log."
+                } else {
+                    "A execução foi interrompida pelo encerramento do \
+                     aplicativo antes de terminar."
+                };
+                log::error!("run {}: laço morreu sem epílogo: {e}", faxina.id);
+                // Só carimba run ainda aberto: um pânico DEPOIS do
+                // `finish_run` legítimo (no episódio de memória, num
+                // listener do sink) não pode sobrescrever Done com Error nem
+                // duplicar a âncora que `keep_in_chat` já gravou. O evento
+                // sai pelo sink vivo (que também o persiste) — por isso
+                // NÃO usamos o `reap_run`, que inseriria um segundo
+                // `run.finished` sintético na trilha.
+                match store.finish_run_if_open(&faxina.id, RunStatus::Error, summary) {
+                    Ok(false) => {
+                        // A linha já tinha desfecho — mas a trilha pode não
+                        // ter: o pânico cabe entre o `finish_run` e o emit
+                        // do `run.finished`. Completa a trilha com o
+                        // desfecho REAL da linha, senão a interface fica
+                        // "trabalhando" sem fim para um run que terminou.
+                        if let Ok(false) = store.run_has_finish_event(&faxina.id)
+                            && let Ok(Some(r)) = store.get_run(&faxina.id)
+                        {
+                            h.sink().emit(RunEventKind::RunFinished {
+                                status: r.status,
+                                summary: r.summary.unwrap_or_default(),
+                                usage: r.usage.unwrap_or_default(),
+                            });
+                        }
+                    }
+                    Ok(true) => {
+                        if chat_id > 0
+                            && let Err(e) = store.add_message(
+                                chat_id,
+                                "assistant",
+                                summary,
+                                None,
+                                None,
+                                None,
+                                Some(&model),
+                                None,
+                                Some(&faxina.id),
+                            )
+                        {
+                            log::error!(
+                                "run {}: não ancorou o fim de socorro no chat: {e}",
+                                faxina.id
+                            );
+                        }
+                        h.sink().emit(RunEventKind::RunFinished {
+                            status: RunStatus::Error,
+                            summary: summary.to_string(),
+                            usage: UsageStats::default(),
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("run {}: não gravou o fim de socorro: {e}", faxina.id);
+                    }
+                }
+            }
         });
         Ok(handle)
     }
@@ -335,6 +436,24 @@ impl AgentHost {
     /// contar é a resposta para "posso derrubar o motor?".
     pub fn live_count(&self) -> usize {
         self.runs.lock().unwrap_or_else(|e| e.into_inner()).len()
+    }
+
+    /// Cancela todas as execuções vivas (fechamento do app). Devolve quantas.
+    /// É melhor esforço: se o runtime viver o bastante, cada uma fecha pelo
+    /// caminho normal de cancelamento, com trilha íntegra; o que não fechar
+    /// é carimbado com causa no próximo boot (`fail_orphan_runs`).
+    pub fn cancel_all(&self) -> usize {
+        let handles: Vec<Arc<RunHandle>> = self
+            .runs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .cloned()
+            .collect();
+        for h in &handles {
+            h.cancel();
+        }
+        handles.len()
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<RunHandle>> {

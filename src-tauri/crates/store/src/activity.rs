@@ -92,7 +92,7 @@ impl Store {
     /// A decisão vem por `LEFT JOIN`: ação sem linha em `approvals` é ação que
     /// não precisou de confirmação, e isso também é informação.
     pub fn list_recent_calls(&self, limit: u32) -> Result<Vec<ActivityCall>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT c.id, c.run_id, c.tool_name, c.origin, c.state, c.error,
                     c.started_at, c.finished_at, a.decision, a.source
@@ -112,7 +112,7 @@ impl Store {
         &self,
         run_id: &str,
     ) -> Result<Vec<ActivityCall>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT c.id, c.run_id, c.tool_name, c.origin, c.state, c.error,
                     c.started_at, c.finished_at, a.decision, a.source
@@ -134,7 +134,7 @@ impl Store {
     /// ficava só com o preview de 400 caracteres do evento `tool.result` — um
     /// `terminal_run` que falhou perdia o stdout inteiro.
     pub fn run_call_outputs(&self, run_id: &str) -> Result<Vec<CallOutput>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, result_json, error FROM tool_calls
              WHERE run_id = ?1 ORDER BY rowid",
@@ -154,7 +154,7 @@ impl Store {
     /// Contas das execuções criadas a partir de `since` (epoch em SEGUNDOS —
     /// é a unidade de `runs.created_at`, não a de `ts_ms` dos eventos).
     pub fn activity_stats(&self, since: i64) -> Result<ActivityStats, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut out = ActivityStats::default();
 
         // Uma varredura só: `usage_json` é texto e precisa ser lido em Rust.

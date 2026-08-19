@@ -89,7 +89,7 @@ impl Store {
         if let Some(f) = existing {
             return Ok(f.id);
         }
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO memory_facts (workspace_dir, content, source_run_id, created_at)
              VALUES (?1, ?2, ?3, ?4)",
@@ -103,7 +103,7 @@ impl Store {
         &self,
         workspace_dir: Option<&str>,
     ) -> Result<Vec<MemoryFact>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, workspace_dir, content, source_run_id, created_at
              FROM memory_facts
@@ -126,14 +126,14 @@ impl Store {
     }
 
     pub fn delete_memory_fact(&self, id: i64) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("DELETE FROM memory_facts WHERE id = ?1", [id])?;
         Ok(())
     }
 
     /// Arquiva em vez de apagar (a consolidação prefere arquivar).
     pub fn archive_memory_fact(&self, id: i64) -> Result<(), StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute("UPDATE memory_facts SET archived = 1 WHERE id = ?1", [id])?;
         Ok(())
     }
@@ -145,7 +145,7 @@ impl Store {
         run_id: Option<&str>,
         summary: &str,
     ) -> Result<i64, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         conn.execute(
             "INSERT INTO memory_episodes (workspace_dir, chat_id, run_id, summary, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -166,7 +166,7 @@ impl Store {
         workspace_dir: Option<&str>,
         limit: u32,
     ) -> Result<Vec<MemoryEpisode>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, workspace_dir, chat_id, run_id, summary, created_at
              FROM memory_episodes
@@ -193,7 +193,7 @@ impl Store {
         if ids.is_empty() {
             return Ok(());
         }
-        let mut conn = self.conn.lock().unwrap();
+        let mut conn = self.conn();
         let tx = conn.transaction()?;
         for id in ids {
             tx.execute(
@@ -211,7 +211,7 @@ impl Store {
         workspace_dir: Option<&str>,
         limit: u32,
     ) -> Result<Vec<MemoryEpisode>, StoreError> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, workspace_dir, chat_id, run_id, summary, created_at
              FROM memory_episodes
