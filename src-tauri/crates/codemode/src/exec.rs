@@ -171,14 +171,7 @@ pub async fn run_script(
     let main = dir.join("main.mjs");
     std::fs::write(&main, montar_main(&req.code, &req.plugins))?;
 
-    // O Node resolve o caminho do entrypoint com `realpath` ANTES de aplicar
-    // as permissões. Se o caminho atravessa um link simbólico, ele tenta ler
-    // o alvo do link — que não está liberado — e o programa morre com
-    // `ERR_ACCESS_DENIED` antes da primeira linha. No macOS isso não é caso
-    // exótico: `/var` e `/tmp` são links para `/private/...`, então qualquer
-    // projeto ali dentro derrubava o Code Mode inteiro. Entregar o caminho já
-    // canonizado é entregar ao Node o mesmo que ele resolveria sozinho.
-    let dir_real = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+    let dir_real = caminho_para_node(&dir);
     let caminho_main = dir_real.join("main.mjs").to_string_lossy().into_owned();
     let monta = |args: Vec<String>| {
         SpawnRequest::new(req.node.clone(), args, req.workspace.clone())
@@ -251,6 +244,34 @@ fn montar_main(code: &str, plugins: &[Plugin]) -> String {
     out.push_str(code);
     out.push('\n');
     out
+}
+
+/// O caminho da pasta da execução, na forma que o Node entende.
+///
+/// O Node resolve o caminho do entrypoint com `realpath` ANTES de aplicar as
+/// permissões. Quando esse caminho atravessa um link simbólico, ele tenta ler
+/// o alvo do link — que não está liberado — e o programa morre com
+/// `ERR_ACCESS_DENIED` sem executar uma linha. No macOS isso não é caso
+/// exótico: `/var` e `/tmp` são links para `/private/...`, que é onde a pasta
+/// temporária mora; o Code Mode inteiro ficava indisponível na plataforma.
+///
+/// Canonizar resolve isso — mas no Windows o canônico volta com o prefixo
+/// verbatim (`\\?\C:\...`), que o Node lê errado e derruba com
+/// `lstat 'C:'`. Lá o prefixo sai; num UNC verbatim, onde tirá-lo mudaria o
+/// caminho, fica o original.
+fn caminho_para_node(dir: &Path) -> PathBuf {
+    let Ok(real) = std::fs::canonicalize(dir) else {
+        return dir.to_path_buf();
+    };
+    #[cfg(windows)]
+    if let Some(sem_prefixo) = real.to_str().and_then(|s| s.strip_prefix(r"\\?\")) {
+        return if sem_prefixo.starts_with("UNC\\") {
+            dir.to_path_buf()
+        } else {
+            PathBuf::from(sem_prefixo)
+        };
+    }
+    real
 }
 
 /// Sufixo único e seguro para nome de pasta (o `call_id` vem de fora).
