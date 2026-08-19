@@ -12,6 +12,7 @@
 
 use crate::checkpoint;
 use crate::codemode;
+use crate::delivery;
 use crate::events::EventSink;
 use crate::menu;
 use crate::plan_tools::{PlanTools, SharedPlan, shared_plan, snapshot};
@@ -2482,7 +2483,15 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         messages_do_agente.extend(history);
         append_prompt(&mut messages_do_agente, &prompt);
 
-        let outcome = engine
+        // A lista de entregas do pedido, antes de agir. É ela que dá ao run
+        // um critério de "pronto" que não depende da frase final do modelo —
+        // e é ela que aparece no quadro, para a pessoa saber em que etapa ele
+        // está em vez de olhar "Pensou por 60s".
+        if tools_on && work_mode == WorkMode::Agent {
+            scout::plan_for_agent(&engine, &plan, &prompt, window, max_tasks).await;
+        }
+
+        let mut outcome = engine
             .drive(
                 &mut runner,
                 &mut messages_do_agente,
@@ -2494,6 +2503,62 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         usage.steps += outcome.steps;
         usage.prompt_tokens += outcome.prompt_tokens;
         usage.completion_tokens += outcome.completion_tokens;
+
+        // O laço parou dizendo que acabou. Acabou mesmo?
+        //
+        // Quem responde é o disco, não o texto: as entregas do plano declaram
+        // arquivos, e ou eles existem ou não. Enquanto faltarem — e enquanto
+        // houver orçamento de passos —, a cobrança volta para a conversa e o
+        // trabalho continua de onde parou. É o que separa "o modelo parou de
+        // agir" de "a tarefa terminou", que era a confusão que fechava um
+        // pedido de dezenas de requisitos como Concluído em quatro passos.
+        if tools_on && outcome.status == RunStatus::Done {
+            let mut anterior: Option<Vec<delivery::Pendencia>> = None;
+            loop {
+                let pendentes = delivery::pendencias(&snapshot(&plan), workspace.as_deref());
+                if pendentes.is_empty() {
+                    break;
+                }
+                if budget.used() >= budget.max() {
+                    outcome.status = RunStatus::MaxSteps;
+                    break;
+                }
+                // Cobrar de novo exatamente o mesmo, depois de uma rodada
+                // inteira, é girar em falso: o modelo já mostrou que não vai
+                // sair do lugar, e insistir só queima o orçamento que a
+                // pessoa paga. Devolve para ela com o que faltou escrito.
+                if anterior.as_ref().is_some_and(|ant| *ant == pendentes) {
+                    outcome.escalation = Some(delivery::resumo_do_que_faltou(&pendentes));
+                    outcome.status = RunStatus::Escalated;
+                    break;
+                }
+                anterior = Some(pendentes.clone());
+
+                messages_do_agente.push(ChatMessage::user(delivery::cobranca(&pendentes)));
+                let extra = engine
+                    .drive(
+                        &mut runner,
+                        &mut messages_do_agente,
+                        &mut budget,
+                        scout::MAX_STEPS_PER_TASK,
+                        &build_prompt,
+                    )
+                    .await;
+                usage.steps += extra.steps;
+                usage.prompt_tokens += extra.prompt_tokens;
+                usage.completion_tokens += extra.completion_tokens;
+                if !extra.text.trim().is_empty() {
+                    outcome.text = extra.text.clone();
+                }
+                // Cancelou, travou, estourou: o desfecho da rodada manda.
+                if extra.status != RunStatus::Done {
+                    outcome.status = extra.status;
+                    outcome.escalation = outcome.escalation.or(extra.escalation);
+                    break;
+                }
+            }
+        }
+
         final_text = outcome.text.clone();
         escalation = outcome.escalation;
 

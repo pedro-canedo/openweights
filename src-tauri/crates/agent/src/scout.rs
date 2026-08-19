@@ -702,20 +702,67 @@ fn failure_of(step: &StepOutcome, report: Option<&VerifyReport>) -> Option<Strin
 /// Grava o plano e avisa a interface. Chamado a cada mudança: é assim que a
 /// pessoa vê a divisão do trabalho acontecendo.
 fn publish(ctx: &PlanRun<'_>, motivo: &str) {
-    let plan = snapshot(&ctx.plan);
+    publish_plan(ctx.engine, &ctx.plan, motivo);
+}
+
+/// Divide o pedido em entregas ANTES do laço do agente começar.
+///
+/// No modo laço isto acontece dentro de [`run_plan`]. No modo agente não
+/// acontecia — e era por isso que um pedido de dezenas de requisitos entrava
+/// no laço como uma frase só: sem lista, não há o que conferir no fim, e
+/// "respondeu texto" acabava valendo como "terminou".
+///
+/// Falhar aqui não derruba nada: um objetivo que o modelo não consegue
+/// dividir vira uma entrega só, exatamente como no modo laço.
+pub(crate) async fn plan_for_agent(
+    engine: &StepEngine<'_>,
+    plan: &SharedPlan,
+    goal: &str,
+    window: WindowBudget,
+    max_tasks: u32,
+) {
+    if !snapshot(plan).tasks.is_empty() {
+        return;
+    }
+    let novo = match decompose(
+        engine.client,
+        &engine.opts.model,
+        goal,
+        window,
+        "",
+        max_tasks,
+    )
+    .await
+    {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("não consegui dividir o pedido ({e}); sigo com uma entrega só");
+            single_task_plan(goal, window.per_task())
+        }
+    };
+    *lock_plan(plan) = novo;
+    publish_plan(engine, plan, "entregas do pedido");
+}
+
+/// Grava e emite o plano.
+///
+/// Separado de [`publish`] porque o modo agente também divide o pedido em
+/// entregas — e o quadro na tela é o que a pessoa usa para saber em que etapa
+/// o run está. Sem isto, o modo agente teria a lista por dentro e nada na
+/// interface.
+pub(crate) fn publish_plan(engine: &StepEngine<'_>, plan: &SharedPlan, motivo: &str) {
+    let plan = snapshot(plan);
     match serde_json::to_string(&plan) {
         Ok(json) => {
-            if let Err(e) = ctx.engine.store.set_run_plan(&ctx.engine.run_id, &json) {
+            if let Err(e) = engine.store.set_run_plan(&engine.run_id, &json) {
                 log::warn!("não consegui gravar o plano ({motivo}): {e}");
             }
         }
         Err(e) => log::warn!("plano não serializou ({motivo}): {e}"),
     }
     let md = plan.to_markdown();
-    let _ = ctx.engine.store.set_run_focus(&ctx.engine.run_id, &md);
-    ctx.engine
-        .sink
-        .emit(RunEventKind::FocusUpdated { todo_md: md });
+    let _ = engine.store.set_run_focus(&engine.run_id, &md);
+    engine.sink.emit(RunEventKind::FocusUpdated { todo_md: md });
 }
 
 /// O texto que abre o contexto de uma etapa.

@@ -5,6 +5,7 @@
 
 mod checkpoint;
 mod codemode;
+mod delivery;
 mod events;
 mod menu;
 mod plan_tools;
