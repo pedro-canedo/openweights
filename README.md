@@ -9,6 +9,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Windows, macOS and Linux](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
+📖 **[Documentation](https://pedro-canedo.github.io/openweights/)** — install
+guide, the agent harness explained piece by piece, and the integrations.
+
 Run LLMs on your own PC — no terminal, no CUDA setup, no guessing which
 quantization fits.
 

@@ -1,0 +1,70 @@
+# Publica o site de documentação (site/) no GitHub Pages.
+#
+# Separado do `ci.yml` e do `release.yml` de propósito: documentação não
+# compila Rust, não precisa de matriz de sistemas e não pode ficar refém de um
+# build de 20 minutos. Um typo corrigido no meio da tarde deve estar no ar em
+# dois minutos.
+#
+# Só roda quando `site/` (ou este arquivo) muda — um commit que mexe apenas no
+# app não tem por que republicar página nenhuma.
+
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/docs.yml"
+  # Permite republicar sem commit — útil depois de mexer nas configurações do
+  # Pages no próprio GitHub.
+  workflow_dispatch:
+
+# Leitura do repositório + o par que o deploy do Pages exige.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Uma publicação por vez, e a mais nova ganha: republicar por cima de um deploy
+# em andamento é o comportamento desejado aqui.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # `lastUpdated` do VitePress lê a data do commit de cada arquivo: com
+          # o clone raso padrão, toda página diria a mesma data.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/.vitepress/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

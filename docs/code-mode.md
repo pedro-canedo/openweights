@@ -1,5 +1,7 @@
 # Code Mode — o que foi medido aqui
 
+> Versão pública, com o contexto em volta: <https://pedro-canedo.github.io/openweights/pt/agente/code-mode>
+
 O Code Mode entrega as ferramentas ao modelo como uma biblioteca e pede um
 **programa**; só o que o programa imprime volta para a conversa. A promessa é
 gastar menos idas ao modelo e menos janela de contexto. Este documento guarda a

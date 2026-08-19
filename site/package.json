@@ -1,0 +1,14 @@
+{
+  "name": "openweights-site",
+  "private": true,
+  "type": "module",
+  "description": "Site e documentação do OpenWeights.",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  }
+}

@@ -9,6 +9,9 @@
 [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-blue.svg)](LICENSE)
 ![Windows, macOS e Linux](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
+📖 **[Documentação](https://pedro-canedo.github.io/openweights/pt/)** — guia de
+instalação, o harness agêntico explicado por partes e as integrações.
+
 Rode LLMs no seu PC sem terminal, sem CUDA e sem chute de quantização.
 
 OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://github.com/ggml-org/llama.cpp) atrás de uma interface simples: detecta o hardware, instala o runtime certo e indica quais modelos cabem na sua máquina. Tudo local — nada vai para a nuvem. Windows, macOS e Linux.
