@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS runs (
     focus_md TEXT,
     usage_json TEXT,
     plan_json TEXT,
+    verify_json TEXT,
     created_at INTEGER NOT NULL,
     finished_at INTEGER
 );
@@ -240,6 +241,21 @@ impl Store {
         Ok(())
     }
 
+    /// Guarda o veredito da conferência automática do run.
+    pub fn set_run_verification(
+        &self,
+        run_id: &str,
+        verification: &lr_types::agent::RunVerification,
+    ) -> Result<(), StoreError> {
+        let json = serde_json::to_string(verification).unwrap_or_else(|_| "{}".into());
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE runs SET verify_json = ?2 WHERE id = ?1",
+            params![run_id, json],
+        )?;
+        Ok(())
+    }
+
     /// Guarda o plano de trabalho (Scout Rule) do run.
     pub fn set_run_plan(&self, run_id: &str, plan_json: &str) -> Result<(), StoreError> {
         let conn = self.conn();
@@ -266,7 +282,8 @@ impl Store {
     pub fn list_runs(&self, chat_id: Option<i64>) -> Result<Vec<RunSummary>, StoreError> {
         let conn = self.conn();
         let sql = "SELECT id, chat_id, model, mode, status, prompt, summary, workspace_dir,
-                          created_at, finished_at, usage_json
+                          created_at, finished_at, usage_json, verify_json,
+                          plan_json IS NOT NULL AND plan_json != ''
                    FROM runs {WHERE} ORDER BY created_at DESC LIMIT 200";
         let map = |r: &rusqlite::Row<'_>| -> rusqlite::Result<RunSummary> {
             Ok(RunSummary {
@@ -283,6 +300,10 @@ impl Store {
                 usage: r
                     .get::<_, Option<String>>(10)?
                     .and_then(|j| serde_json::from_str(&j).ok()),
+                verification: r
+                    .get::<_, Option<String>>(11)?
+                    .and_then(|j| serde_json::from_str(&j).ok()),
+                has_plan: r.get(12)?,
             })
         };
         let rows = match chat_id {

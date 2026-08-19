@@ -199,6 +199,9 @@ impl Store {
         agent::init(&conn)?;
         // Plano de trabalho (Scout Rule) de execuções já existentes.
         ensure_column(&conn, "runs", "plan_json", "TEXT")?;
+        // Veredito da conferência automática — o cartão do run na conversa
+        // mostra passou/reprovou sem recarregar a trilha inteira.
+        ensure_column(&conn, "runs", "verify_json", "TEXT")?;
         mcp::init(&conn)?;
         memory::init(&conn)?;
         automation::init(&conn)?;

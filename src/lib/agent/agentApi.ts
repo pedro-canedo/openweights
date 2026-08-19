@@ -1175,6 +1175,7 @@ function mockRunsList(chatId?: number): Promise<RunSummary[]> {
       prompt: r.prompt,
       summary: r.summary,
       workspaceDir: r.workspaceDir,
+      hasPlan: mockPlans.has(r.id),
       createdAt: r.createdAt,
       finishedAt: r.finishedAt,
     }));

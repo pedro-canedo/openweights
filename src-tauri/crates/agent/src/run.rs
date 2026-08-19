@@ -2671,13 +2671,52 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     // Verificação do que ficou em disco — agora em QUALQUER desfecho com
     // efeito colateral: um run que estourou o teto com arquivos escritos
     // merece o relatório MAIS que um que terminou redondo.
+    //
+    // No modo LAÇO o agregado bruto mente: cada etapa já foi conferida na
+    // própria fatia e a reprovada foi REENFEILEIRADA — mas os registros da
+    // tentativa falhada continuam no acumulado (um `npm test` vermelho que a
+    // retentativa consertou por outro comando reprovaria um run cujas etapas
+    // todas passaram). Lá, o veredito honesto é o do plano: etapa por etapa.
     let mut status = status;
-    let mut verificacao = matches!(
-        status,
-        RunStatus::Done | RunStatus::MaxSteps | RunStatus::Escalated
-    )
-    .then(|| verify::verify(workspace.as_deref(), &runner.written, &runner.commands))
-    .flatten();
+    let mut verificacao = if work_mode == WorkMode::Loop {
+        matches!(
+            status,
+            RunStatus::Done | RunStatus::MaxSteps | RunStatus::Escalated
+        )
+        .then(|| {
+            let foto = snapshot(&plan);
+            (!foto.tasks.is_empty()).then(|| {
+                let pendentes: Vec<&str> = foto
+                    .tasks
+                    .iter()
+                    .filter(|t| !t.status.is_finished())
+                    .map(|t| t.title.as_str())
+                    .collect();
+                if pendentes.is_empty() {
+                    verify::VerifyReport {
+                        passed: true,
+                        notes: format!(
+                            "as {} etapas do plano foram concluídas e conferidas uma a uma",
+                            foto.tasks.len()
+                        ),
+                    }
+                } else {
+                    verify::VerifyReport {
+                        passed: false,
+                        notes: format!("etapas sem conclusão: {}", pendentes.join("; ")),
+                    }
+                }
+            })
+        })
+        .flatten()
+    } else {
+        matches!(
+            status,
+            RunStatus::Done | RunStatus::MaxSteps | RunStatus::Escalated
+        )
+        .then(|| verify::verify(workspace.as_deref(), &runner.written, &runner.commands))
+        .flatten()
+    };
 
     // Reprovou no modo agente: UMA rodada de conserto, com o relatório na
     // mesa e um teto curto próprio (o orçamento global continua valendo por
@@ -2725,6 +2764,17 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
             passed: report.passed,
             notes: report.notes.clone(),
         });
+        // Persistido com o run: é o veredito que o cartão da conversa mostra
+        // sem precisar recarregar a trilha inteira.
+        if let Err(e) = deps.store.set_run_verification(
+            &run_id,
+            &lr_types::agent::RunVerification {
+                passed: report.passed,
+                notes: report.notes.clone(),
+            },
+        ) {
+            log::error!("run {run_id}: não gravou o veredito da conferência: {e}");
+        }
     }
 
     usage.tool_calls = runner.tool_calls + helpers.tool_calls();
@@ -2757,47 +2807,47 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         }
     };
 
-    let summary = match status {
-        RunStatus::Done => {
-            keep_in_chat(&final_text);
-            summary_override.unwrap_or_else(|| head_chars(final_text.trim(), 280))
-        }
+    let (texto_do_chat, summary) = match status {
+        RunStatus::Done => (
+            final_text.clone(),
+            summary_override.unwrap_or_else(|| head_chars(final_text.trim(), 280)),
+        ),
         RunStatus::MaxSteps => match summary_override {
-            Some(plan_summary) => {
-                keep_in_chat(&plan_summary);
-                plan_summary
-            }
-            None => {
-                keep_in_chat(&final_text);
+            Some(plan_summary) => (plan_summary.clone(), plan_summary),
+            None => (
+                final_text.clone(),
                 format!(
                     "Parei no limite de {} passos sem terminar a tarefa.",
                     budget.max()
-                )
-            }
+                ),
+            ),
         },
         RunStatus::Escalated => match summary_override {
-            Some(plan_summary) => {
-                keep_in_chat(&plan_summary);
-                plan_summary
-            }
-            None => {
-                keep_in_chat(&final_text);
-                escalation.unwrap_or_else(|| "Execução interrompida.".into())
-            }
+            Some(plan_summary) => (plan_summary.clone(), plan_summary),
+            None => (
+                final_text.clone(),
+                escalation.unwrap_or_else(|| "Execução interrompida.".into()),
+            ),
         },
         // Parar ou falhar não apaga o que o agente já tinha dito. A trilha
         // guarda os passos, mas ela não sobrevive inteira a um recarregar —
         // e sem isto o texto sumia da conversa ao voltar para ela, que é
         // exatamente a queixa de "as mensagens da IA somem".
-        RunStatus::Cancelled => {
-            keep_in_chat(&final_text);
-            "Execução cancelada.".to_string()
-        }
-        _ => {
-            keep_in_chat(&final_text);
-            "A execução falhou.".to_string()
-        }
+        RunStatus::Cancelled => (final_text.clone(), "Execução cancelada.".to_string()),
+        _ => (final_text.clone(), "A execução falhou.".to_string()),
     };
+    // Âncora SEMPRE: todo run com conversa deixa exatamente UMA mensagem com
+    // `run_id` — é por ela que a conversa reaberta reencontra o plano e a
+    // trilha. Um run que terminou sem texto (só efeitos: arquivos, comandos)
+    // ancorava nada e desaparecia por completo do chat.
+    let ancora = if !texto_do_chat.trim().is_empty() {
+        texto_do_chat
+    } else if !summary.trim().is_empty() {
+        summary.clone()
+    } else {
+        "A execução terminou sem resposta em texto — a trilha mostra o que foi feito.".to_string()
+    };
+    keep_in_chat(&ancora);
 
     let usage_json = serde_json::to_string(&usage).unwrap_or_else(|_| "{}".into());
     if let Err(e) = deps

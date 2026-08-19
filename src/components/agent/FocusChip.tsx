@@ -1,29 +1,52 @@
 // Chip do plano corrente (Focus Chain): mostra a tarefa em aberto e o
-// progresso; clicar abre a lista inteira. O plano chega como markdown de
-// checkboxes no evento `focus.updated`.
+// progresso; clicar abre a lista inteira. A fonte preferida é o plano
+// ESTRUTURADO do run (a mesma verdade do quadro de tarefas); o markdown do
+// evento `focus.updated` é só o fallback legado.
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { isTaskFinished, type TaskPlan } from "../../lib/agent/scout";
 
 export interface FocusTask {
   done: boolean;
   text: string;
 }
 
-/** Extrai as tarefas do markdown (`- [ ] item` / `- [x] item`). */
+/**
+ * Extrai as tarefas do markdown. Aceita as duas formas que o app produz:
+ * checkbox (`- [ ] item` / `- [x] item`, da ferramenta todo_update) e lista
+ * numerada do plano (`1. [ ] Título`, com marcadores `>`/`!`/`e`/`-` para
+ * rodando/bloqueada/falhou/pulada) — a regex antiga só entendia a primeira,
+ * e o chip dizia "Sem plano definido" com o plano cheio na tela.
+ */
 export function parseFocus(todoMd: string): FocusTask[] {
   const out: FocusTask[] = [];
   for (const line of todoMd.split("\n")) {
-    const m = /^\s*[-*]\s*\[( |x|X)\]\s*(.+?)\s*$/.exec(line);
+    const m = /^\s*(?:\d+[.)]|[-*])\s*\[(.)\]\s*(.+?)\s*$/.exec(line);
     if (m) out.push({ done: m[1].toLowerCase() === "x", text: m[2] });
   }
   return out;
 }
 
-export default function FocusChip({ todoMd }: { todoMd: string }) {
+export default function FocusChip({
+  todoMd,
+  plan = null,
+}: {
+  todoMd: string;
+  /** Plano estruturado do run — quando existe, é a fonte da verdade. */
+  plan?: TaskPlan | null;
+}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const tasks = useMemo(() => parseFocus(todoMd), [todoMd]);
+  const tasks = useMemo<FocusTask[]>(() => {
+    if (plan && plan.tasks.length > 0) {
+      return plan.tasks.map((task) => ({
+        done: isTaskFinished(task.status),
+        text: task.title,
+      }));
+    }
+    return parseFocus(todoMd);
+  }, [plan, todoMd]);
 
   const done = tasks.filter((task) => task.done).length;
   const current = tasks.find((task) => !task.done);

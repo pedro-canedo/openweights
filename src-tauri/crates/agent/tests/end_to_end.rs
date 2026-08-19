@@ -2524,3 +2524,57 @@ async fn running_out_of_budget_says_which_deliveries_are_missing() {
         "o resumo tinha que nomear a entrega que faltou: {resumo:?}"
     );
 }
+
+/// Um run que termina sem ter dito NADA ainda assim deixa a âncora na
+/// conversa — a mensagem com `run_id` da qual a trilha (plano, ferramentas,
+/// veredito) fica pendurada ao reabrir. Antes, um run sem texto final não
+/// gravava mensagem nenhuma e desaparecia por completo do chat.
+#[tokio::test]
+async fn a_run_with_no_text_still_anchors_itself_in_the_chat() {
+    let h = Harness::new();
+    let chat = h.store.create_chat("conversa", None).expect("conversa");
+    // O modelo responde VAZIO em todas as tentativas: o laço cutuca, insiste
+    // e desiste — o desfecho exato não importa aqui, só a âncora.
+    let server = FakeLlama::spawn(vec![vec![done()]; 8]);
+
+    let mut opts = h.options(RunMode::Yolo);
+    opts.chat_id = chat;
+    let sink = h.events.clone();
+    h.host
+        .start(
+            StartRun {
+                prompt: "faça algo".into(),
+                history: Vec::new(),
+                memory: Vec::new(),
+                options: opts,
+                endpoint: server.endpoint(),
+                work_mode: WorkMode::Agent,
+                plan: None,
+            },
+            Some(Arc::new(move |ev: RunEvent| {
+                sink.lock().unwrap().push(ev);
+            })),
+        )
+        .expect("run começou");
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !h.has("run.finished") {
+        assert!(Instant::now() < deadline, "o run não encerrou");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mensagens = h.store.list_messages(chat).expect("mensagens");
+    let ancoras: Vec<_> = mensagens
+        .iter()
+        .filter(|m| m.role == "assistant" && m.run_id.is_some())
+        .collect();
+    assert_eq!(
+        ancoras.len(),
+        1,
+        "todo run com conversa deixa exatamente UMA âncora: {mensagens:?}"
+    );
+    assert!(
+        !ancoras[0].content.trim().is_empty(),
+        "a âncora precisa dizer alguma coisa (o resumo do desfecho)"
+    );
+}

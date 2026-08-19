@@ -304,7 +304,7 @@ function AgentBar({
   const focusMd = run?.focusMd ?? "";
   const yolo = mode === "yolo";
 
-  if (!yolo && !focusMd && !startError && !showTrace) return null;
+  if (!yolo && !focusMd && !run?.plan && !startError && !showTrace) return null;
 
   return (
     <div className="px-6">
@@ -316,7 +316,9 @@ function AgentBar({
             onOpenCheckpoint={() => openExplorer()}
           />
         )}
-        {focusMd && <FocusChip todoMd={focusMd} />}
+        {(run?.plan || focusMd) && (
+          <FocusChip todoMd={focusMd} plan={run?.plan ?? null} />
+        )}
         {showTrace && (
           <button
             type="button"
@@ -758,14 +760,12 @@ export default function Chat() {
   }, [job?.id, job?.state, activeChatId, t]);
 
   /**
-   * Run encerrado: o Rust grava na conversa o que o agente produziu — e isso
-   * vale também para cancelado, erro e limite de passos, porque parar não
-   * apaga o que já foi dito. Recarregamos do banco e, **quando houve resposta
-   * gravada**, tiramos a trilha do fluxo (ela continua inteira no painel).
-   *
-   * Quando não houve nada a gravar (cancelou antes de o modelo falar, ou o
-   * run morreu com erro), a trilha FICA: aí ela é mesmo o único lugar onde
-   * aquele trabalho — e a mensagem de erro — existem.
+   * Run encerrado: o Rust SEMPRE grava a âncora na conversa (o texto final,
+   * ou o resumo do desfecho quando não houve texto) — em qualquer status.
+   * Recarregamos do banco e, com a âncora confirmada, tiramos a trilha viva
+   * do fluxo: o PastRunTrail pendurado nela assume, com plano + veredito +
+   * ações. A trilha só FICA quando a leitura falhou — aí ela é o único lugar
+   * onde aquele trabalho existe na tela até o próximo envio.
    */
   useEffect(() => {
     if (activeChatId == null || run == null) return;
@@ -783,7 +783,14 @@ export default function Chat() {
       try {
         ui = (await listMessages(chatId)).map(rowToUi);
       } catch {
-        ui = null; // segue com o texto que já está na trilha
+        // Uma releitura única: falha transitória aqui deixaria a trilha
+        // pendurada e o texto final em dobro até o próximo envio.
+        await new Promise((r) => setTimeout(r, 1000));
+        try {
+          ui = (await listMessages(chatId)).map(rowToUi);
+        } catch {
+          ui = null; // segue com o texto que já está na trilha
+        }
       }
       if (convEpochRef.current !== epoch) return;
       // O run que acabou de terminar não estava na lista carregada na
@@ -795,11 +802,14 @@ export default function Chat() {
           setRunSummaries(Object.fromEntries(list.map((r) => [r.id, r])));
         })
         .catch(() => {});
-      // A trilha só sai do fluxo quando existe resposta gravada para ficar no
-      // lugar dela. Sem isso, um run que morreu sem falar nada não deixaria
-      // rastro nenhum na tela.
-      const gravou = ui?.[ui.length - 1]?.role === "assistant";
-      if (gravou || run.status === "done") {
+      // A trilha só sai do fluxo quando a ÂNCORA deste run está confirmada no
+      // banco (o Rust agora grava sempre — com o resumo quando não há texto).
+      // É nela que o PastRunTrail se pendura com plano + veredito + ações; um
+      // dismiss sem âncora confirmada era como o histórico sumia do chat.
+      const ancorada =
+        ui?.some((m) => m.role === "assistant" && m.runId === finishedId) ??
+        false;
+      if (ancorada) {
         setLastTrace({ chatId, runId: finishedId });
         runStore.dismiss(chatId);
       }
@@ -951,9 +961,37 @@ export default function Chat() {
         // A última execução parou ESPERANDO esta resposta (pergunta do
         // agente, etapa bloqueada)? Então a mensagem retoma o plano de onde
         // parou, em vez de começar um trabalho novo do zero.
-        if (run && run.status === "escalated") {
+        //
+        // A regra é UMA: o desvio só vale quando a pergunta do agente é a
+        // ÚLTIMA coisa na conversa — a âncora do run escalado é a última
+        // mensagem do assistente ANTES desta. Isso mata três sequestros: o
+        // run escalado de outra conversa (a âncora vem das mensagens DESTA),
+        // o escalado antigo enterrado no meio do papo (qualquer resposta
+        // posterior o desativa) e a janela pós-dismiss (o banco responde na
+        // hora, não o cache de resumos).
+        const esperando = await (async () => {
+          if (run && run.status === "escalated") return run.runId;
+          let ancora: UiMessage | undefined;
+          for (let i = history.length - 1; i >= 0; i--) {
+            if (history[i].role === "assistant") {
+              ancora = history[i];
+              break;
+            }
+          }
+          const runDaAncora = ancora?.runId;
+          if (!runDaAncora) return null;
+          let resumo: RunSummary | undefined = runSummaries[runDaAncora];
+          if (!resumo) {
+            // O run acabou de escalar e o cache de resumos ainda não o viu
+            // (ou a leitura anterior falhou): pergunta ao banco.
+            const lista = await runsList(chatId).catch(() => []);
+            resumo = lista.find((r) => r.id === runDaAncora);
+          }
+          return resumo?.status === "escalated" ? resumo.id : null;
+        })();
+        if (esperando) {
           const continuou = await runStore
-            .answer(chatId, run.runId, content)
+            .answer(chatId, esperando, content)
             .catch(() => false);
           if (continuou) return;
         }

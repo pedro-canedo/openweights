@@ -579,6 +579,17 @@ impl RunOptions {
     }
 }
 
+/// Veredito da conferência automática de um run, persistido com ele.
+///
+/// É o que o cartão do run na conversa mostra sem precisar recarregar a
+/// trilha: passou/reprovou e o porquê, com as palavras da conferência.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunVerification {
+    pub passed: bool,
+    pub notes: String,
+}
+
 /// Resumo de um run para listagens e para o painel de execuções.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -596,6 +607,13 @@ pub struct RunSummary {
     /// tokens, que é o que um modelo local cobra.
     #[serde(default)]
     pub usage: Option<UsageStats>,
+    /// Veredito da conferência automática (`None` = não houve conferência).
+    #[serde(default)]
+    pub verification: Option<RunVerification>,
+    /// O run tem plano de trabalho gravado — o cartão pode buscá-lo sem
+    /// tentar à toa nos runs que nunca tiveram um.
+    #[serde(default)]
+    pub has_plan: bool,
     pub created_at: i64,
     pub finished_at: Option<i64>,
 }

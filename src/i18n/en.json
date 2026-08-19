@@ -571,7 +571,13 @@
       "subagentDone": "Helper finished in {{steps}} step(s)",
       "subagentStopped": "Helper stopped before finishing ({{steps}} step(s))",
       "toolsUnsupported": "No tools: this model's chat template can't take them.",
-      "toolsRejected": "The server refused the request with tools — carried on without them."
+      "toolsRejected": "The server refused the request with tools — carried on without them.",
+      "verdictOk": "Check: passed",
+      "verdictFail": "Check: failed",
+      "endCancelled": "Cancelled",
+      "endError": "Failed",
+      "endMaxSteps": "Stopped at the step limit",
+      "endEscalated": "Stopped for your decision"
     },
     "live": {
       "thinking": "Thinking about the next step",

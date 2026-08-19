@@ -24,7 +24,9 @@ import {
   type ToolsItem,
 } from "../../lib/agent/runStore";
 import type { RunSummary } from "../../lib/agent/types";
-import { plansFirst } from "../../lib/agent/scout";
+import { plansFirst, type TaskPlan } from "../../lib/agent/scout";
+import { runPlanGet } from "../../lib/agent/agentApi";
+import { formatEta } from "../../lib/format";
 import { errorMessage } from "../../lib/serverSession";
 import Markdown from "../chat/Markdown";
 import ThinkingBlock from "../chat/ThinkingBlock";
@@ -469,9 +471,11 @@ export function RunTrail({
  * tela Atividade sabia dele — e ninguém volta a uma conversa passando por
  * outra tela para descobrir o que aconteceu nela.
  *
- * Fechado por padrão (a conversa é do texto, não do processo) e carregado
- * só quando alguém abre: reconstruir a trilha custa duas consultas por
- * execução, e uma conversa longa tem muitas.
+ * Colapsada mas COMPLETA: o plano de trabalho, o veredito da conferência e a
+ * causa do fim ficam sempre visíveis (vêm do resumo e do `plan_json`, sem
+ * abrir a trilha); os passos/ferramentas/pensamentos moram no grupo
+ * expansível, carregado só quando alguém abre — reconstruir a trilha custa
+ * duas consultas por execução, e uma conversa longa tem muitas.
  */
 export function PastRunTrail({
   runId,
@@ -488,6 +492,22 @@ export function PastRunTrail({
   const [view, setView] = useState<RunView | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<TaskPlan | null>(null);
+
+  // O plano fica sempre à vista no cartão. Buscado uma vez, e só quando o
+  // resumo diz que este run teve um — runs sem plano não pagam a consulta.
+  useEffect(() => {
+    if (!summary?.hasPlan || plan) return;
+    let cancelled = false;
+    void runPlanGet(runId)
+      .then((p) => {
+        if (!cancelled && p) setPlan(p);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [runId, summary?.hasPlan, plan]);
 
   useEffect(() => {
     if (!open || view || loading) return;
@@ -518,9 +538,28 @@ export function PastRunTrail({
     : view?.usage
       ? view.usage.durationMs / 1000
       : null;
+  const verdict = summary?.verification ?? null;
+  // A causa do fim, quando o run NÃO terminou bem — "concluído" é o padrão e
+  // não precisa de selo; os outros desfechos precisam ficar à vista.
+  const fim = summary?.status;
+  const fimLabel =
+    fim === "cancelled"
+      ? t("agent.run.endCancelled")
+      : fim === "error"
+        ? t("agent.run.endError")
+        : fim === "maxSteps"
+          ? t("agent.run.endMaxSteps")
+          : fim === "escalated"
+            ? t("agent.run.endEscalated")
+            : null;
 
   return (
     <div className="mt-1.5 flex flex-col gap-2">
+      {plan && (
+        <div className="rounded-lg border border-edge bg-panel p-2.5">
+          <TaskBoard plan={plan} model={summary?.model ?? null} compact />
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-dim">
         <button
           type="button"
@@ -536,7 +575,18 @@ export function PastRunTrail({
             : t("agent.run.actionsOpen")}
         </button>
         {seconds != null && (
-          <span className="tabular-nums">{seconds.toFixed(1)}s</span>
+          <span className="tabular-nums">{formatEta(seconds)}</span>
+        )}
+        {fimLabel && <span className="text-warn">{fimLabel}</span>}
+        {verdict && (
+          <span
+            className={verdict.passed ? "text-ok" : "text-bad"}
+            title={verdict.notes}
+          >
+            {verdict.passed
+              ? t("agent.run.verdictOk")
+              : t("agent.run.verdictFail")}
+          </span>
         )}
         {onOpenTrace && (
           <button
@@ -548,6 +598,9 @@ export function PastRunTrail({
           </button>
         )}
       </div>
+      {verdict && !verdict.passed && verdict.notes && (
+        <p className="text-[11px] text-bad">{verdict.notes}</p>
+      )}
 
       {open && (
         <div className="flex flex-col gap-2.5 border-l border-edge pl-3">

@@ -233,6 +233,10 @@ export interface RunSummary {
    * tokens — é o que a tela de atividade mostra no lugar de um preço.
    */
   usage?: UsageStats | null;
+  /** Veredito da conferência automática (`null` = não houve conferência). */
+  verification?: { passed: boolean; notes: string } | null;
+  /** O run tem plano de trabalho gravado — o cartão pode buscá-lo. */
+  hasPlan?: boolean;
   /** Epoch em SEGUNDOS (a unidade da tabela `runs`, não a dos eventos). */
   createdAt: number;
   finishedAt: number | null;

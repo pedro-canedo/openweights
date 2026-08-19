@@ -571,7 +571,13 @@
       "subagentDone": "Ajudante concluiu em {{steps}} passo(s)",
       "subagentStopped": "Ajudante parou antes de concluir ({{steps}} passo(s))",
       "toolsUnsupported": "Sem ferramentas: o template deste modelo não sabe recebê-las.",
-      "toolsRejected": "O servidor recusou o pedido com ferramentas — segui sem elas."
+      "toolsRejected": "O servidor recusou o pedido com ferramentas — segui sem elas.",
+      "verdictOk": "Conferência: passou",
+      "verdictFail": "Conferência: reprovou",
+      "endCancelled": "Cancelada",
+      "endError": "Falhou",
+      "endMaxSteps": "Parou no limite de passos",
+      "endEscalated": "Parou para você decidir"
     },
     "live": {
       "thinking": "Pensando no próximo passo",
