@@ -1033,8 +1033,8 @@ export default function Chat() {
     models !== null && models.length === 0 && selectedModel === "";
 
   return (
-    <div className="flex h-full">
-      <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <WorkspaceHost
           dir={params.workspaceDir}
           onDirChange={(workspaceDir) =>

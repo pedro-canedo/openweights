@@ -84,14 +84,27 @@ export default function App() {
           <UpdateBadge />
         </nav>
 
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          {screen === "discover" && <Discover />}
-          {screen === "models" && <MyModels />}
-          {screen === "chat" && <Chat />}
-          {screen === "activity" && <Activity />}
-          {screen === "server" && <LocalServer />}
-          {screen === "providers" && <Providers />}
-          {screen === "settings" && <Settings />}
+        {/* O palco não rola: quem rola é a tela.
+
+            O Chat monta a própria altura (a lista de mensagens rola, o
+            compositor fica parado no rodapé). Enquanto o `main` rolava, uma
+            coluna alta — a trilha da execução, o explorador de arquivos —
+            esticava o conteúdo e levava a interface inteira junto, compositor
+            incluso: só a barra lateral ficava no lugar. As demais telas são
+            documentos, e rolam por dentro do palco. */}
+        <main className="min-w-0 flex-1 overflow-hidden">
+          {screen === "chat" ? (
+            <Chat />
+          ) : (
+            <div className="h-full overflow-y-auto">
+              {screen === "discover" && <Discover />}
+              {screen === "models" && <MyModels />}
+              {screen === "activity" && <Activity />}
+              {screen === "server" && <LocalServer />}
+              {screen === "providers" && <Providers />}
+              {screen === "settings" && <Settings />}
+            </div>
+          )}
         </main>
       </div>
 

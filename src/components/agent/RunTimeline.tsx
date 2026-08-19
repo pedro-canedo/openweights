@@ -621,7 +621,7 @@ export default function RunTimeline({
   const showBoard = view != null && (view.plan != null || planning);
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-edge bg-panel">
+    <aside className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden border-l border-edge bg-panel">
       <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium tracking-wide text-dim uppercase">
           {t("agent.run.trace")}

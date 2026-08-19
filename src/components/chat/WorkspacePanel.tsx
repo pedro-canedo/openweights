@@ -598,7 +598,7 @@ export function WorkspaceExplorer() {
   if (!explorerOpen) return null;
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-l border-edge bg-panel">
+    <aside className="flex min-h-0 w-64 shrink-0 flex-col overflow-hidden border-l border-edge bg-panel">
       <div className="flex items-center gap-2 border-b border-edge px-3 py-2">
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium tracking-wide text-dim uppercase">
           {dir ? folderName(dir) : t("workspace.explorer")}
@@ -650,25 +650,33 @@ export function WorkspaceExplorer() {
               <FileTree nodes={tree} depth={0} />
             )}
           </div>
-          {/* Desfazer das alterações do agente, junto dos arquivos. */}
-          <CheckpointList workspaceDir={dir} reloadKey={checkpointsKey} />
-          {/* Índice do projeto: clicar num resultado abre o arquivo no mesmo
-              editor da árvore (o trecho traz caminho e linha). */}
-          <RagPanel
-            workspaceDir={dir}
-            onOpenFile={(path) =>
-              void openFile({
-                path,
-                name: path.split("/").pop() ?? path,
-                bytes: 0,
-              })
-            }
-          />
-          <MemoryPanel
-            workspaceDir={dir}
-            reloadKey={checkpointsKey}
-            onChanged={reloadFiles}
-          />
+          {/* Checkpoints, índice e memória continuam ancorados no rodapé da
+              coluna, mas agora dentro de um bloco que ENCOLHE: numa janela
+              baixa os três somados passavam da altura disponível e empurravam
+              o explorador para fora da janela, levando a interface junto.
+              `min-h-0` é o que autoriza o flexbox a encolher aqui; a rolagem
+              própria devolve o que o encolhimento tirou. */}
+          <div className="flex min-h-0 flex-col overflow-y-auto">
+            {/* Desfazer das alterações do agente, junto dos arquivos. */}
+            <CheckpointList workspaceDir={dir} reloadKey={checkpointsKey} />
+            {/* Índice do projeto: clicar num resultado abre o arquivo no mesmo
+                editor da árvore (o trecho traz caminho e linha). */}
+            <RagPanel
+              workspaceDir={dir}
+              onOpenFile={(path) =>
+                void openFile({
+                  path,
+                  name: path.split("/").pop() ?? path,
+                  bytes: 0,
+                })
+              }
+            />
+            <MemoryPanel
+              workspaceDir={dir}
+              reloadKey={checkpointsKey}
+              onChanged={reloadFiles}
+            />
+          </div>
         </>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">

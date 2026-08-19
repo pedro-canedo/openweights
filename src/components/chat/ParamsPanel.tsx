@@ -117,7 +117,7 @@ export default function ParamsPanel({
   };
 
   return (
-    <aside className="flex w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l border-edge bg-panel p-4">
+    <aside className="flex min-h-0 w-72 shrink-0 flex-col gap-4 overflow-y-auto border-l border-edge bg-panel p-4">
       <div className="text-[11px] font-medium tracking-wide text-dim uppercase">
         {t("chat.params")}
       </div>
