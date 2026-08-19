@@ -128,6 +128,35 @@ chamadas com argumentos e saída, blocos de raciocínio, checkpoints, notas, o
 plano quando existe, e o contador final — *N passos · M ferramentas · Xs*.
 Execuções antigas são reabertas pela tela de **Atividade**.
 
+## O terminal da sessão
+
+A trilha diz *o que* foi executado. O terminal diz o que está sendo impresso,
+enquanto é impresso: um painel no chat onde cada comando que o agente executa
+aparece ao vivo — a linha de comando, a pasta em que roda, a saída chegando na
+hora e o resultado no fim.
+
+Antes, a saída só aparecia depois que o comando terminava, espalhada pelos
+cartões da trilha. Um teste de três minutos ficava mudo até o fim, e não havia
+como distinguir compilação lenta de processo pendurado. Essa distinção é o
+motivo inteiro de acompanhar a saída ao vivo.
+
+Cada comando mostra a linha executada, a pasta em que rodou, a saída conforme
+ela chega, o estado (*Executando*, *Concluído*, *Falhou*), a duração e um aviso
+quando a saída foi cortada. Reabrir uma conversa antiga repõe as saídas, que vêm
+do banco — então o painel serve também para consulta.
+
+O painel abre sozinho na primeira vez que um comando começa a rodar em cada
+tarefa; se você fechar, ele fica fechado até a tarefa seguinte. O botão fica no
+canto superior direito do chat, ao lado do da trilha, com o ícone `>_`. Os três
+painéis da direita — parâmetros, trilha, terminal — são exclusivos: abrir um
+fecha os outros.
+
+Duas coisas a esperar, ambas consequência de não usar terminal emulado: a saída
+vem sem cores, e barra de progresso aparece como linhas repetidas em vez de
+atualizar no lugar. Não é defeito de exibição — é exatamente o texto que o modelo
+lê. E este painel mostra os comandos *do agente*; os logs do llama-server
+continuam na tela **Servidor Local**.
+
 ## A seguir
 
 - [Autorização e permissões](/pt/agente/autorizacao) — quem decide o que roda.

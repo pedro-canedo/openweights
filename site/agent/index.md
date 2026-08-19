@@ -126,6 +126,34 @@ steps, tool calls with arguments and output, thinking blocks, checkpoints,
 notes, the plan when there is one, and the closing counter — *N steps · M tools
 · Xs*. Old runs are re-openable from the **Activity** screen.
 
+## The session terminal
+
+The trail tells you *what* was run. The terminal tells you what it is printing,
+while it prints: a panel in the chat where every command the agent executes
+shows up live — the command line, the folder it runs in, the output arriving as
+it happens, and the result at the end.
+
+Before, output only surfaced once a command had finished, spread across the
+trail's cards. A three-minute test suite stayed silent until the very end, and
+there was no way to tell a slow build from a stuck one. That distinction is the
+whole point of watching output stream.
+
+Each command shows the line that ran, the folder it ran in, the output as it
+arrives, the state (*Running*, *Done*, *Failed*), how long it took, and a notice
+when the output was truncated. Reopening an old conversation brings the output
+back from the database, so the panel doubles as a record.
+
+The panel opens by itself the first time a command starts in a task; close it
+and it stays closed until the next one. The button is at the top right of the
+chat, next to the trail's, marked `>_`. The three right-hand panels — parameters,
+trail, terminal — are exclusive: opening one closes the others.
+
+Two things to expect, both consequences of not emulating a terminal: output
+arrives without colours, and a progress bar shows up as repeated lines instead
+of updating in place. That is not a display bug — it is exactly the text the
+model reads. And this panel shows the *agent's* commands; llama-server's own
+logs stay on the **Local Server** screen.
+
 ## Next
 
 - [Authorization and permissions](/agent/authorization) — who decides what runs.
