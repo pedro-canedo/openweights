@@ -1,6 +1,6 @@
 //! Cluster RPC na LAN: descoberta, emparelhamento, GPU extra.
 
-use crate::commands::{restart_engine, start_engine};
+use crate::commands::restart_engine;
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, State};
 
@@ -25,15 +25,47 @@ async fn ensure_rpc_binaries(app: &AppHandle, state: &AppState) -> CmdResult<boo
     Ok(st.rpc_ready)
 }
 
+async fn engine_is_running(state: &AppState) -> bool {
+    state
+        .server
+        .lock()
+        .await
+        .as_ref()
+        .is_some_and(|s| s.is_spawned())
+}
+
+/// Só reinicia se o usuário já tinha o motor ligado. Parear não liga o
+/// servidor sozinho.
+async fn restart_if_running(app: &AppHandle, state: &AppState) -> CmdResult<()> {
+    if !engine_is_running(state).await {
+        return Ok(());
+    }
+    restart_engine(app, state, false).await.map(|_| ())
+}
+
 #[tauri::command]
-pub async fn cluster_status(
-    state: State<'_, AppState>,
-) -> CmdResult<lr_cluster::ClusterSnapshot> {
+pub async fn cluster_status(state: State<'_, AppState>) -> CmdResult<lr_cluster::ClusterSnapshot> {
     let ready = {
         let variant = lr_runtime::select_variant(&state.profile);
         state.runtime_mgr.state(variant).rpc_ready
     };
     state.cluster.set_rpc_ready(ready).await;
+    Ok(state.cluster.snapshot().await)
+}
+
+#[tauri::command]
+pub async fn cluster_set_enabled(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> CmdResult<lr_cluster::ClusterSnapshot> {
+    if enabled {
+        let _ = ensure_rpc_binaries(&app, &state).await;
+        state.cluster.set_enabled(true).await?;
+    } else {
+        state.cluster.set_enabled(false).await?;
+        let _ = restart_if_running(&app, &state).await;
+    }
     Ok(state.cluster.snapshot().await)
 }
 
@@ -55,8 +87,7 @@ pub async fn cluster_request_pair(
 ) -> CmdResult<lr_cluster::ClusterSnapshot> {
     if !ensure_rpc_binaries(&app, &state).await? {
         return Err(
-            "o motor instalado não traz RPC. Os dois apps precisam do overlay da mesma tag."
-                .into(),
+            "o motor instalado não traz RPC. Os dois apps precisam do overlay da mesma tag.".into(),
         );
     }
     state.cluster.request_pair(&peer_id).await?;
@@ -68,26 +99,20 @@ pub async fn cluster_accept(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<lr_cluster::ClusterSnapshot> {
+    if engine_is_running(&state).await {
+        return Err("pare o servidor local nesta máquina antes de emprestar a GPU".into());
+    }
     if !ensure_rpc_binaries(&app, &state).await? {
         return Err(
-            "o motor instalado não traz RPC. Os dois apps precisam do overlay da mesma tag."
-                .into(),
+            "o motor instalado não traz RPC. Os dois apps precisam do overlay da mesma tag.".into(),
         );
     }
     state.cluster.accept_incoming().await?;
-    state
-        .rpc_pid
-        .store(
-            state.cluster.worker_pid().await,
-            std::sync::atomic::Ordering::SeqCst,
-        );
     Ok(state.cluster.snapshot().await)
 }
 
 #[tauri::command]
-pub async fn cluster_reject(
-    state: State<'_, AppState>,
-) -> CmdResult<lr_cluster::ClusterSnapshot> {
+pub async fn cluster_reject(state: State<'_, AppState>) -> CmdResult<lr_cluster::ClusterSnapshot> {
     state.cluster.reject_incoming().await?;
     Ok(state.cluster.snapshot().await)
 }
@@ -100,11 +125,8 @@ pub async fn cluster_forget(
 ) -> CmdResult<lr_cluster::ClusterSnapshot> {
     let was_host = state.cluster.remote_vram().await > 0;
     state.cluster.forget(&peer_id).await;
-    state
-        .rpc_pid
-        .store(0, std::sync::atomic::Ordering::SeqCst);
     if was_host {
-        let _ = restart_or_start(&app, &state).await;
+        let _ = restart_if_running(&app, &state).await;
     }
     Ok(state.cluster.snapshot().await)
 }
@@ -116,31 +138,18 @@ pub async fn cluster_disconnect(
 ) -> CmdResult<lr_cluster::ClusterSnapshot> {
     let was_host = state.cluster.remote_vram().await > 0;
     state.cluster.disconnect().await;
-    state
-        .rpc_pid
-        .store(0, std::sync::atomic::Ordering::SeqCst);
     if was_host {
-        let _ = restart_or_start(&app, &state).await;
+        let _ = restart_if_running(&app, &state).await;
     }
     Ok(state.cluster.snapshot().await)
 }
 
-/// Relê `--rpc` no llama-server depois que o worker aceita.
+/// Relê `--rpc` no llama-server depois que o worker aceita — só se já estava ligado.
 #[tauri::command]
 pub async fn cluster_apply_engine(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<lr_cluster::ClusterSnapshot> {
-    restart_or_start(&app, &state).await?;
+    restart_if_running(&app, &state).await?;
     Ok(state.cluster.snapshot().await)
-}
-
-async fn restart_or_start(app: &AppHandle, state: &AppState) -> CmdResult<()> {
-    match restart_engine(app, state, false).await {
-        Ok(_) => Ok(()),
-        Err(e) if e.starts_with("engine-busy:") => Err(e),
-        Err(_) => {
-            start_engine(app, state).await.map(|_| ())
-        }
-    }
 }

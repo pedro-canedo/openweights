@@ -7,6 +7,7 @@ import {
   clusterForget,
   clusterReject,
   clusterRequestPair,
+  clusterSetEnabled,
   engineBusyReason,
   getClusterStatus,
   onCluster,
@@ -40,23 +41,33 @@ export default function ClusterPanel() {
     };
   }, []);
 
+  // Aplicar o `--rpc` quando o par sobe, e TIRÁ-LO quando o par cai. A queda
+  // pelo heartbeat (o outro sumiu) acontece dentro do Rust, sem passar por
+  // comando nenhum: sem esta segunda metade o llama-server segue apontando
+  // para um endereço morto e o próximo modelo não carrega.
   useEffect(() => {
-    if (
-      snap?.role === "host" &&
-      snap.connected &&
-      applied.current !== snap.connected.rpcAddr
-    ) {
-      applied.current = snap.connected.rpcAddr;
-      clusterApplyEngine().then(setSnap).catch((e) => {
-        const who = engineBusyReason(e);
-        setError(
-          who
-            ? t("server.busyToApply", {
-                who: who.map((w) => t(`server.busyWith.${w}`)).join(", "),
-              })
-            : String(e),
-        );
-      });
+    const apply = () => {
+      clusterApplyEngine()
+        .then(setSnap)
+        .catch((e) => {
+          const who = engineBusyReason(e);
+          setError(
+            who
+              ? t("server.busyToApply", {
+                  who: who.map((w) => t(`server.busyWith.${w}`)).join(", "),
+                })
+              : String(e),
+          );
+        });
+    };
+    if (snap?.role === "host" && snap.connected) {
+      if (applied.current !== snap.connected.rpcAddr) {
+        applied.current = snap.connected.rpcAddr;
+        apply();
+      }
+    } else if (applied.current !== null) {
+      applied.current = null;
+      apply();
     }
   }, [snap?.role, snap?.connected?.rpcAddr, t]);
 
@@ -64,7 +75,11 @@ export default function ClusterPanel() {
     setBusy(true);
     setError(null);
     try {
-      setSnap(await fn());
+      const s = await fn();
+      // Desligar e esquecer já reiniciam o motor no Rust; sincronizar o ref
+      // aqui evita que o efeito acima peça um segundo reinício em seguida.
+      applied.current = s.connected?.rpcAddr ?? null;
+      setSnap(s);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -101,14 +116,35 @@ export default function ClusterPanel() {
         {t("server.cluster.security")}
       </p>
 
+      <label className="mt-3 flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={snap.enabled}
+          disabled={busy}
+          onChange={(e) => void run(() => clusterSetEnabled(e.target.checked))}
+          className="accent-[var(--lr-accent)]"
+        />
+        {t("server.cluster.enable")}
+        {busy && (
+          <span className="text-[11px] text-dim">{t("server.cluster.preparing")}</span>
+        )}
+      </label>
+      <p className="mt-1 text-[11px] leading-relaxed text-dim">
+        {t("server.cluster.enableHint")}
+      </p>
+
+      {error && <p className="mt-2 text-[12px] text-bad">{error}</p>}
+
+      {!snap.enabled ? (
+        <p className="mt-4 text-[12px] text-dim">{t("server.cluster.off")}</p>
+      ) : (
+        <>
       {!snap.rpcReady && (
         <p className="mt-3 text-[12px] text-warn">{t("server.cluster.noRpc")}</p>
       )}
       {snap.warning && (
         <p className="mt-2 text-[12px] text-warn">{snap.warning}</p>
       )}
-      {error && <p className="mt-2 text-[12px] text-bad">{error}</p>}
-
       {snap.pendingFrom && (
         <div className="mt-4 rounded-lg border border-accent/40 bg-panel2 p-3">
           <p className="text-sm">
@@ -120,7 +156,7 @@ export default function ClusterPanel() {
           <div className="mt-3 flex gap-2">
             <button
               type="button"
-              disabled={busy || !canShare}
+              disabled={busy || !canShare || !snap.pendingFrom.tagOk}
               onClick={() => void run(clusterAccept)}
               className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
             >
@@ -189,7 +225,10 @@ export default function ClusterPanel() {
               </div>
             </div>
             <div className="flex shrink-0 gap-2">
-              {p.tagOk && snap.role !== "worker" && !snap.connected && (
+              {p.tagOk &&
+                p.advertisedBytes > 0 &&
+                snap.role !== "worker" &&
+                !snap.connected && (
                 <button
                   type="button"
                   disabled={busy}
@@ -198,6 +237,11 @@ export default function ClusterPanel() {
                 >
                   {t("server.cluster.useExtra")}
                 </button>
+              )}
+              {p.advertisedBytes === 0 && (
+                <span className="text-[11px] text-dim">
+                  {t("server.cluster.noGpuPeer")}
+                </span>
               )}
               {p.paired && (
                 <button
@@ -213,6 +257,8 @@ export default function ClusterPanel() {
           </li>
         ))}
       </ul>
+        </>
+      )}
     </div>
   );
 }
@@ -224,13 +270,22 @@ export function ClusterChip() {
 
   useEffect(() => {
     let un: (() => void) | undefined;
+    let cancelled = false;
     getClusterStatus()
-      .then(setSnap)
+      .then((s) => {
+        if (!cancelled) setSnap(s);
+      })
       .catch(() => {});
-    onCluster(setSnap).then((f) => {
-      un = f;
+    onCluster((s) => {
+      if (!cancelled) setSnap(s);
+    }).then((f) => {
+      if (cancelled) f();
+      else un = f;
     });
-    return () => un?.();
+    return () => {
+      cancelled = true;
+      un?.();
+    };
   }, []);
 
   if (snap?.role !== "host" && snap?.role !== "worker") return null;

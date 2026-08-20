@@ -218,6 +218,7 @@ export async function clusterStatus(): Promise<ClusterSnapshot> {
     pendingFrom: null,
     connected: null,
     warning: null,
+    enabled: true,
   };
 }
 

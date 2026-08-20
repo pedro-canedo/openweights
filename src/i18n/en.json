@@ -389,7 +389,7 @@
     "cluster": {
       "title": "Extra GPU on the network",
       "subtitle": "Another OpenWeights on this LAN can lend its GPU. Together they load a model that neither machine can hold alone.",
-      "security": "The RPC channel has no password. Only accept machines you recognise, and never expose the port to the internet.",
+      "security": "The RPC channel has no password, and the pairing secret travels unencrypted on this network — good against a stranger who only knows the public name, not against someone capturing traffic. Only accept machines you recognise, never expose the port to the internet, and do not chat on this machine while lending the GPU.",
       "noRpc": "This engine build does not include RPC yet. Both apps need the same llama.cpp tag with the RPC overlay.",
       "empty": "No other OpenWeights visible on this network. Open the app on the other machine.",
       "useExtra": "Use as extra GPU",
@@ -405,7 +405,12 @@
       "youAre": "This machine: {{name}} · {{gpu}} advertised",
       "chipHost": "Extra GPU: {{name}}",
       "chipWorker": "Lending GPU",
-      "firstLoad": "The first load sends weights to the other PC over the LAN — on gigabit, ~16 GB takes about two minutes."
+      "firstLoad": "The first load sends weights to the other PC over the LAN — on gigabit, ~16 GB takes about two minutes.",
+      "enable": "Offer GPU on the network",
+      "enableHint": "Off by default. Turning it on announces this app on the LAN and opens the control port — only on networks you trust.",
+      "off": "Turn it on to see other OpenWeights on this network.",
+      "noGpuPeer": "no GPU",
+      "preparing": "preparing the RPC engine…"
     }
   },
   "settings": {

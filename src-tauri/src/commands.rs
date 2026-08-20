@@ -421,7 +421,9 @@ fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
                 entry = entry.with_extra(chave, valor);
             }
         }
-        if let Some(ts) = state.cluster.tensor_split_now() {
+        if let Some(ts) = state.cluster.tensor_split_now()
+            && model_needs_cluster_split(state, &a)
+        {
             entry = entry.with_extra("tensor-split", ts);
             // Sem ngl+fit=off o `--fit` do llama.cpp briga com o `-ts`.
             if !entry.extras.iter().any(|(k, _)| k == "n-gpu-layers") {
@@ -467,6 +469,35 @@ fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
     Ok(preset_path)
 }
 
+/// Só reparte pela rede o que não cabe inteiro na GPU desta máquina.
+///
+/// O orçamento aqui é o LOCAL de propósito (sem a VRAM do peer): a pergunta
+/// é "preciso do outro?". As camadas vêm do cabeçalho do GGUF quando ele
+/// responde — a tabela por faixa de parâmetros erra feio nos extremos, e um
+/// modelo pequeno classificado como "não cabe" iria para a rede à toa.
+fn model_needs_cluster_split(state: &AppState, a: &lr_models::LocalArtifact) -> bool {
+    let ctx = profile_for(state, &a.name)
+        .and_then(|p| p.ctx)
+        .unwrap_or(8192);
+    let budget = advisor::MemoryBudget::from_profile(&state.profile);
+    let cabecalho = lr_models::read_local_meta(&a.primary_path);
+    let mut meta = advisor::ModelMeta::estimate_from_params(params_from_bytes(a.total_bytes), ctx);
+    if let Some(n) = cabecalho.n_layers.filter(|n| *n > 0) {
+        meta.n_layers = n;
+    }
+    let r = advisor::evaluate(&budget, &meta, a.total_bytes);
+    !matches!(r.verdict, advisor::FitVerdict::FullGpu { .. })
+}
+
+/// Parâmetros a partir do tamanho do arquivo, a ~4,8 bits por peso.
+///
+/// É a média das quantizações que as pessoas de fato baixam (Q4_K_M a Q5_K_M)
+/// e só serve para escolher a FAIXA da geometria; quem manda no número de
+/// camadas é o cabeçalho.
+fn params_from_bytes(total_bytes: u64) -> u64 {
+    ((total_bytes as f64) * 8.0 / 4.8) as u64
+}
+
 #[tauri::command]
 pub async fn server_status(state: State<'_, AppState>) -> CmdResult<ServerStatusView> {
     let prefs = server_prefs(&state);
@@ -503,9 +534,13 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         let variant = lr_runtime::select_variant(&state.profile);
         state.runtime_mgr.state(variant)
     };
-    let exe = runtime
-        .server_exe
-        .ok_or("runtime do llama.cpp ainda não instalado")?;
+    let extra = state.cluster.host_extra_args().await;
+    let exe = if extra.is_empty() {
+        runtime.server_exe
+    } else {
+        runtime.rpc_server_exe.or(runtime.server_exe)
+    }
+    .ok_or("runtime do llama.cpp ainda não instalado")?;
 
     let ServerPrefs {
         port,
@@ -546,7 +581,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         // momento em que a garantia pode entrar.
         crate::commands_tuning::ensure_agent_profiles(state);
         cfg.models_preset = Some(write_router_preset(state)?);
-        cfg.extra_args = state.cluster.host_extra_args().await;
+        cfg.extra_args = extra;
 
         let mut srv = lr_engine::LlamaServer::new(cfg);
         srv.spawn().map_err(err_str)?;

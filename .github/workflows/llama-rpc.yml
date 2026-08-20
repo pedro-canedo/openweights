@@ -6,6 +6,9 @@
 #
 # Publica (ou atualiza) o release `llama-rpc-<tag>` no repositório
 # OpenWeights. Disparar à mão depois de promover PINNED_TAG.
+#
+# O release NÃO pode ser draft: o app baixa sem autenticação. Assets em
+# rascunho devolvem 404.
 
 name: llama-rpc overlay
 
@@ -33,14 +36,30 @@ jobs:
 
       - name: Build
         run: |
-          cmake -B build -DGGML_METAL=ON -DGGML_RPC=ON -DCMAKE_BUILD_TYPE=Release
+          cmake -B build \
+            -DGGML_METAL=ON \
+            -DGGML_METAL_EMBED_LIBRARY=ON \
+            -DGGML_RPC=ON \
+            -DGGML_NATIVE=OFF \
+            -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j --target llama-server ggml-rpc-server
 
       - name: Pack
         run: |
+          set -euo pipefail
           mkdir -p dist
-          cp build/bin/llama-server build/bin/ggml-rpc-server dist/ || \
-            cp build/llama-server build/ggml-rpc-server dist/
+          BIN=build/bin
+          if [ ! -x "$BIN/llama-server" ]; then BIN=build; fi
+          cp "$BIN/llama-server" "$BIN/ggml-rpc-server" dist/
+          # TODAS as dylibs: além de ggml e llama, o llama-server linka
+          # libmtmd (multimodal). Copiar só as duas primeiras dá um binário
+          # que não abre.
+          if ls "$BIN"/*.dylib >/dev/null 2>&1; then
+            cp "$BIN"/*.dylib dist/
+          fi
+          cp "$BIN"/*.metallib dist/ 2>/dev/null || true
+          test -x dist/llama-server
+          test -x dist/ggml-rpc-server
           tar -czf llama-${{ inputs.tag }}-rpc-macos-arm64.tar.gz -C dist .
 
       - uses: actions/upload-artifact@v4
@@ -66,21 +85,29 @@ jobs:
         with:
           cuda: "${{ matrix.cuda }}.0"
           method: network
-          sub-packages: '["nvcc","cudart"]'
+          # GGML_CUDA=ON linka CUDA::cublas/cublasLt e usa thrust; só nvcc e
+          # cudart fazem o `cmake -B build` falhar no configure. O
+          # visual_studio_integration é o que faz o MSBuild achar os alvos CUDA.
+          sub-packages: '["nvcc","cudart","cublas","cublas_dev","thrust","nvrtc","nvrtc_dev","visual_studio_integration"]'
 
       - name: Build
         shell: pwsh
         run: |
-          cmake -B build -DGGML_CUDA=ON -DGGML_RPC=ON -DCMAKE_BUILD_TYPE=Release
+          cmake -B build -DGGML_CUDA=ON -DGGML_RPC=ON -DGGML_NATIVE=OFF -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j --target llama-server ggml-rpc-server
 
       - name: Pack
         shell: pwsh
         run: |
-          $bin = if (Test-Path build/bin/Release) { "build/bin/Release" } else { "build/bin" }
+          $ErrorActionPreference = "Stop"
+          $bin = if (Test-Path build/bin/Release) { "build/bin/Release" } elseif (Test-Path build/bin) { "build/bin" } else { "build" }
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item "$bin/llama-server.exe","$bin/ggml-rpc-server.exe" dist/ -ErrorAction SilentlyContinue
-          Copy-Item "$bin/*.dll" dist/ -ErrorAction SilentlyContinue
+          Copy-Item "$bin/llama-server.exe" dist/
+          Copy-Item "$bin/ggml-rpc-server.exe" dist/
+          Get-ChildItem $bin -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination dist
+          if (-not (Test-Path dist/llama-server.exe) -or -not (Test-Path dist/ggml-rpc-server.exe)) {
+            throw "faltou llama-server.exe ou ggml-rpc-server.exe no pacote"
+          }
           Compress-Archive -Path dist/* -DestinationPath "llama-${{ inputs.tag }}-rpc-win-cuda-${{ matrix.cuda }}-x64.zip"
 
       - uses: actions/upload-artifact@v4
@@ -100,8 +127,15 @@ jobs:
         with:
           tag_name: llama-rpc-${{ inputs.tag }}
           name: llama.cpp RPC overlay ${{ inputs.tag }}
-          draft: true
+          draft: false
+          # O updater do app consulta releases/latest/download/latest.json.
+          # Sem estes dois, o overlay vira a "latest" do repositório e a
+          # atualização automática para de encontrar o arquivo — em silêncio,
+          # para todo mundo, até a próxima release do app.
+          make_latest: false
+          prerelease: true
           files: artifacts/**/*
           body: |
             Overlay `GGML_RPC=ON` para o OpenWeights, mesma tag do runtime pinado.
-            Extraído por cima do zip oficial: traz `llama-server` com `--rpc` e `ggml-rpc-server`.
+            Pasta própria (`…/cuda-13.3-rpc`), não por cima do zip oficial.
+            Traz `llama-server` com `--rpc` e `ggml-rpc-server`.

@@ -106,6 +106,7 @@ fn main() {
             commands::server_busy,
             commands::server_props,
             commands_cluster::cluster_status,
+            commands_cluster::cluster_set_enabled,
             commands_cluster::cluster_ensure_rpc,
             commands_cluster::cluster_request_pair,
             commands_cluster::cluster_accept,

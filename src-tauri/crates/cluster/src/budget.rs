@@ -29,12 +29,29 @@ pub fn advertised_bytes(profile: &HardwareProfile) -> u64 {
 /// Device que o `ggml-rpc-server` deve pinar com `-d`.
 ///
 /// Sem pin, o Mac anuncia Metal **e** o BLAS da Apple; o scheduler quebra.
-pub fn device_pin(profile: &HardwareProfile) -> Option<&'static str> {
+/// O índice segue a enumeração do `hw`: iGPU+dGPU não pode virar sempre
+/// `Vulkan0` se a discreta (a que anunciamos) é a segunda da lista.
+pub fn device_pin(profile: &HardwareProfile) -> Option<String> {
     let gpu = profile.best_gpu()?;
     Some(match gpu.vendor {
-        GpuVendor::Apple => "MTL0",
-        GpuVendor::Nvidia => "CUDA0",
-        GpuVendor::Amd | GpuVendor::Intel | GpuVendor::Other => "Vulkan0",
+        GpuVendor::Apple => "MTL0".into(),
+        GpuVendor::Nvidia => {
+            let idx = profile
+                .gpus
+                .iter()
+                .filter(|g| g.vendor == GpuVendor::Nvidia)
+                .position(|g| std::ptr::eq(g, gpu))
+                .unwrap_or(0);
+            format!("CUDA{idx}")
+        }
+        GpuVendor::Amd | GpuVendor::Intel | GpuVendor::Other => {
+            let idx = profile
+                .gpus
+                .iter()
+                .position(|g| std::ptr::eq(g, gpu))
+                .unwrap_or(0);
+            format!("Vulkan{idx}")
+        }
     })
 }
 
@@ -97,7 +114,7 @@ mod tests {
     fn nvidia_advertises_three_quarters_of_vram() {
         let p = profile("windows", 61, Some(nvidia(12)));
         assert_eq!(advertised_bytes(&p), ((12u64 << 30) as f64 * 0.75) as u64);
-        assert_eq!(device_pin(&p), Some("CUDA0"));
+        assert_eq!(device_pin(&p).as_deref(), Some("CUDA0"));
     }
 
     #[test]
@@ -107,7 +124,7 @@ mod tests {
         let metal_cap = ((24u64 << 30) as f64 * 0.75) as u64;
         let pesos = (metal_cap as f64 * 0.75) as u64;
         assert_eq!(advertised_bytes(&p), pesos);
-        assert_eq!(device_pin(&p), Some("MTL0"));
+        assert_eq!(device_pin(&p).as_deref(), Some("MTL0"));
     }
 
     #[test]
@@ -128,6 +145,30 @@ mod tests {
             cuda_compute: None,
         };
         let p = profile("windows", 32, Some(gpu));
-        assert_eq!(device_pin(&p), Some("Vulkan0"));
+        assert_eq!(device_pin(&p).as_deref(), Some("Vulkan0"));
+    }
+
+    #[test]
+    fn vulkan_pin_follows_best_gpu_index() {
+        let igpu = GpuInfo {
+            name: "Intel Graphics".into(),
+            vendor: GpuVendor::Intel,
+            vram_total_bytes: 1 << 30,
+            is_integrated: true,
+            driver_version: None,
+            cuda_compute: None,
+        };
+        let dgpu = GpuInfo {
+            name: "Radeon".into(),
+            vendor: GpuVendor::Amd,
+            vram_total_bytes: 16 << 30,
+            is_integrated: false,
+            driver_version: None,
+            cuda_compute: None,
+        };
+        let p = profile("windows", 32, None);
+        let mut p = p;
+        p.gpus = vec![igpu, dgpu];
+        assert_eq!(device_pin(&p).as_deref(), Some("Vulkan1"));
     }
 }

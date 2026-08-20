@@ -389,7 +389,7 @@
     "cluster": {
       "title": "GPU extra na rede",
       "subtitle": "Outro OpenWeights na mesma rede pode emprestar a placa. Os dois juntos carregam um modelo que nenhuma máquina segura sozinha.",
-      "security": "O canal RPC não tem senha. Só aceite máquinas que você reconhece, e nunca exponha a porta na internet.",
+      "security": "O canal RPC não tem senha, e o segredo do emparelhamento viaja sem criptografia nesta rede — protege de quem só sabe o nome público, não de quem captura o tráfego. Só aceite máquinas que você reconhece, nunca exponha a porta na internet e não use o chat nesta máquina ao mesmo tempo em que empresta a GPU.",
       "noRpc": "Este motor ainda não traz RPC. Os dois apps precisam da mesma tag do llama.cpp com o overlay RPC.",
       "empty": "Nenhum outro OpenWeights visível nesta rede. Abra o app na outra máquina.",
       "useExtra": "Usar como GPU extra",
@@ -405,7 +405,12 @@
       "youAre": "Esta máquina: {{name}} · {{gpu}} anunciados",
       "chipHost": "GPU extra: {{name}}",
       "chipWorker": "Emprestando GPU",
-      "firstLoad": "No primeiro carregamento os pesos vão pela rede até o outro PC — em gigabit, uns 16 GB levam cerca de dois minutos."
+      "firstLoad": "No primeiro carregamento os pesos vão pela rede até o outro PC — em gigabit, uns 16 GB levam cerca de dois minutos.",
+      "enable": "Oferecer GPU na rede",
+      "enableHint": "Desligado por padrão. Ligar anuncia este app na LAN e abre a porta de controle — só em redes em que você confia.",
+      "off": "Ligue para ver outros OpenWeights nesta rede.",
+      "noGpuPeer": "sem GPU",
+      "preparing": "preparando o motor RPC…"
     }
   },
   "settings": {

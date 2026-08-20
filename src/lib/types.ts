@@ -67,6 +67,7 @@ export interface RuntimeState {
   serverExe: string | null;
   dir?: string | null;
   rpcExe?: string | null;
+  rpcServerExe?: string | null;
   rpcReady?: boolean;
 }
 
@@ -304,6 +305,7 @@ export interface ClusterSnapshot {
   pendingFrom: ClusterPeer | null;
   connected: ClusterConnected | null;
   warning: string | null;
+  enabled: boolean;
 }
 
 export const DEFAULT_CHAT_PARAMS: ChatParams = {

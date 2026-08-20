@@ -32,7 +32,7 @@ pub struct AppState {
     /// llama-server em Router mode (um processo para todos os modelos).
     pub server: tokio::sync::Mutex<Option<lr_engine::LlamaServer>>,
     /// PID do llama-server (0 = nenhum). Sobrevive a um mutex ocupado no exit.
-    pub server_pid: AtomicU32,
+    pub server_pid: Arc<AtomicU32>,
     /// Catálogo do OpenRouter já buscado, com o instante da busca.
     ///
     /// São 400+ modelos e a tela consulta a cada abertura; sem isto cada
@@ -52,7 +52,7 @@ pub struct AppState {
     pub gateway_pid: AtomicU32,
     /// Cluster RPC (1 host + 1 worker na LAN).
     pub cluster: std::sync::Arc<lr_cluster::ClusterHost>,
-    pub rpc_pid: AtomicU32,
+    pub rpc_pid: Arc<AtomicU32>,
     shutdown_done: AtomicBool,
 }
 
@@ -175,11 +175,12 @@ impl AppState {
                 let _ = store_save.set_setting(lr_cluster::SETTING_KEY, &json);
             }
         });
+        let rpc_pid = Arc::new(AtomicU32::new(0));
         let data_rpc = data_dir.clone();
         let profile_rpc = profile.clone();
         let rpc_exe: lr_cluster::RpcExeFn = std::sync::Arc::new(move || {
             let variant = lr_runtime::select_variant(&profile_rpc);
-            let dir = lr_runtime::runtime_dir(&data_rpc, lr_runtime::PINNED_TAG, variant);
+            let dir = lr_runtime::rpc_runtime_dir(&data_rpc, lr_runtime::PINNED_TAG, variant);
             let exe = dir.join(lr_runtime::rpc_exe_name());
             exe.is_file().then_some(exe)
         });
@@ -187,7 +188,26 @@ impl AppState {
         let on_notify: lr_cluster::NotifyFn = std::sync::Arc::new(move |title, body| {
             let _ = desktop_n.notify(title, body);
         });
-        let cluster = lr_cluster::ClusterHost::new(identity, persist, save, rpc_exe, on_notify);
+        let rpc_pid_cb = Arc::clone(&rpc_pid);
+        let on_pid: lr_cluster::PidFn = std::sync::Arc::new(move |pid| {
+            rpc_pid_cb.store(pid, Ordering::SeqCst);
+        });
+        // Emprestar a GPU com o llama-server local no ar reserva a mesma VRAM
+        // duas vezes. O aceite manual já recusa no comando; o automático não
+        // passa por comando nenhum, então a pergunta desce até o crate.
+        let server_pid = Arc::new(AtomicU32::new(0));
+        let server_pid_cb = Arc::clone(&server_pid);
+        let engine_busy: lr_cluster::EngineBusyFn =
+            std::sync::Arc::new(move || server_pid_cb.load(Ordering::SeqCst) != 0);
+        let cluster = lr_cluster::ClusterHost::new(
+            identity,
+            persist,
+            save,
+            rpc_exe,
+            on_notify,
+            on_pid,
+            engine_busy,
+        );
 
         Ok(Self {
             profile,
@@ -195,7 +215,7 @@ impl AppState {
             runtime_mgr: lr_runtime::RuntimeManager::new(data_dir.clone()),
             downloads: lr_models::DownloadManager::new(models_dir.clone()),
             server: tokio::sync::Mutex::new(None),
-            server_pid: AtomicU32::new(0),
+            server_pid,
             openrouter_cache: tokio::sync::Mutex::new(None),
             node: lr_nodejs::NodeManager::new(data_dir.join("providers"), os, arch),
             ninerouter: tokio::sync::Mutex::new(None),
@@ -203,7 +223,7 @@ impl AppState {
             gateway: tokio::sync::Mutex::new(None),
             gateway_pid: AtomicU32::new(0),
             cluster,
-            rpc_pid: AtomicU32::new(0),
+            rpc_pid,
             tools: std::sync::RwLock::new(tools),
             mcp,
             desktop,
@@ -325,10 +345,10 @@ impl AppState {
     /// `node` do 9router fica segurando a porta com o app já fechado.
     fn kill_orphan_pids(&self) {
         for slot in [
-            &self.server_pid,
+            &*self.server_pid,
             &self.ninerouter_pid,
             &self.gateway_pid,
-            &self.rpc_pid,
+            &*self.rpc_pid,
         ] {
             let pid = slot.swap(0, Ordering::SeqCst);
             if pid != 0 {

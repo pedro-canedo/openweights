@@ -1,11 +1,14 @@
 //! HTTP mínimo do plano de controle (JSON). Sem framework: um POST e um GET.
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 const MAX_BODY: usize = 64 * 1024;
+const READ_TIMEOUT: Duration = Duration::from_secs(8);
+const RPC_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct HttpRequest {
     pub method: String,
@@ -14,7 +17,13 @@ pub struct HttpRequest {
     pub peer: SocketAddr,
 }
 
-pub async fn read_request(
+pub async fn read_request(stream: &mut TcpStream, peer: SocketAddr) -> Result<HttpRequest, String> {
+    tokio::time::timeout(READ_TIMEOUT, read_request_inner(stream, peer))
+        .await
+        .map_err(|_| "tempo esgotado lendo o pedido".to_string())?
+}
+
+async fn read_request_inner(
     stream: &mut TcpStream,
     peer: SocketAddr,
 ) -> Result<HttpRequest, String> {
@@ -32,10 +41,6 @@ pub async fn read_request(
         if let Some(req) = parse_http(&buf, peer) {
             return Ok(req);
         }
-        if n < tmp.len() && !buf.windows(4).any(|w| w == b"\r\n\r\n") {
-            // Ainda sem cabeçalho completo; continua.
-            continue;
-        }
     }
     parse_http(&buf, peer).ok_or_else(|| "pedido HTTP incompleto".into())
 }
@@ -50,7 +55,12 @@ fn parse_http(buf: &[u8], peer: SocketAddr) -> Option<HttpRequest> {
     let path = parts.next()?.to_string();
     let mut content_length = 0usize;
     for line in lines {
-        let (k, v) = line.split_once(':')?;
+        if line.is_empty() {
+            continue;
+        }
+        let Some((k, v)) = line.split_once(':') else {
+            continue;
+        };
         if k.eq_ignore_ascii_case("content-length") {
             content_length = v.trim().parse().ok()?;
         }
@@ -95,6 +105,25 @@ pub async fn post_json<T: serde::de::DeserializeOwned>(
     serde_json::from_str(&text).map_err(|e| e.to_string())
 }
 
+pub async fn get_json<T: serde::de::DeserializeOwned>(
+    ip: &str,
+    port: u16,
+    path: &str,
+) -> Result<T, String> {
+    let text = exchange(ip, port, "GET", path, None).await?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+/// `true` para 2xx. Não usa `contains(" 200 ")` — um `2000` no reason
+/// phrase não pode passar.
+pub fn status_is_success(status_line: &str) -> bool {
+    let code = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u16>().ok());
+    matches!(code, Some(c) if (200..300).contains(&c))
+}
+
 async fn exchange(
     ip: &str,
     port: u16,
@@ -103,13 +132,10 @@ async fn exchange(
     body: Option<&str>,
 ) -> Result<String, String> {
     let addr = format!("{ip}:{port}");
-    let mut stream = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        TcpStream::connect(&addr),
-    )
-    .await
-    .map_err(|_| format!("tempo esgotado ao falar com {addr}"))?
-    .map_err(|e| format!("não alcancei {addr}: {e}"))?;
+    let mut stream = tokio::time::timeout(RPC_TIMEOUT, TcpStream::connect(&addr))
+        .await
+        .map_err(|_| format!("tempo esgotado ao falar com {addr}"))?
+        .map_err(|e| format!("não alcancei {addr}: {e}"))?;
 
     let body_s = body.unwrap_or("");
     let req = format!(
@@ -123,16 +149,19 @@ async fn exchange(
     stream.flush().await.map_err(|e| e.to_string())?;
 
     let mut buf = Vec::new();
-    stream
-        .read_to_end(&mut buf)
+    tokio::time::timeout(RPC_TIMEOUT, stream.read_to_end(&mut buf))
         .await
+        .map_err(|_| format!("tempo esgotado lendo {addr}"))?
         .map_err(|e| e.to_string())?;
     let text = String::from_utf8_lossy(&buf);
-    let (_, rest) = text.split_once("\r\n\r\n").ok_or("resposta HTTP vazia")?;
-    if let Some(status_line) = text.lines().next()
-        && !status_line.contains(" 200 ")
-        && !status_line.contains(" 202 ")
-    {
+    let (status_line, rest) = match text.split_once("\r\n") {
+        Some((s, _)) => {
+            let body = text.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+            (s, body)
+        }
+        None => return Err("resposta HTTP vazia".into()),
+    };
+    if !status_is_success(status_line) {
         return Err(format!("HTTP {status_line}: {rest}"));
     }
     Ok(rest.trim().to_string())
@@ -161,5 +190,15 @@ mod tests {
         let req = parse_http(raw.as_bytes(), "127.0.0.1:1".parse().unwrap()).unwrap();
         assert_eq!(req.method, "POST");
         assert_eq!(std::str::from_utf8(&req.body).unwrap(), body);
+    }
+
+    #[test]
+    fn success_is_the_status_code_not_a_substring() {
+        assert!(status_is_success("HTTP/1.1 200 OK"));
+        assert!(status_is_success("HTTP/1.1 202 Accepted"));
+        assert!(!status_is_success("HTTP/1.1 404 Not Found"));
+        assert!(!status_is_success("HTTP/1.1 503 Unavailable"));
+        // O antigo `contains(" 200 ")` aceitaria isto.
+        assert!(!status_is_success("HTTP/1.1 404 200 would match"));
     }
 }

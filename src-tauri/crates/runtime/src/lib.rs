@@ -139,9 +139,8 @@ pub fn rpc_overlay_asset(tag: &str, variant: BackendVariant) -> Option<String> {
     match variant {
         BackendVariant::Cuda13 => Some(format!("llama-{tag}-rpc-win-cuda-13.3-x64.zip")),
         BackendVariant::Cuda12 => Some(format!("llama-{tag}-rpc-win-cuda-12.4-x64.zip")),
-        BackendVariant::Vulkan => Some(format!("llama-{tag}-rpc-win-vulkan-x64.zip")),
         BackendVariant::MacosArm64 => Some(format!("llama-{tag}-rpc-macos-arm64.tar.gz")),
-        BackendVariant::Cpu | BackendVariant::MacosX64 => None,
+        BackendVariant::Vulkan | BackendVariant::Cpu | BackendVariant::MacosX64 => None,
     }
 }
 
@@ -187,6 +186,16 @@ pub fn runtime_dir(data_dir: &std::path::Path, tag: &str, variant: BackendVarian
         BackendVariant::MacosX64 => "macos-x64",
     };
     data_dir.join("runtimes").join(tag).join(v)
+}
+
+/// Overlay RPC: pasta própria, não por cima do zip oficial.
+pub fn rpc_runtime_dir(data_dir: &std::path::Path, tag: &str, variant: BackendVariant) -> PathBuf {
+    let base = runtime_dir(data_dir, tag, variant);
+    let name = base
+        .file_name()
+        .map(|s| format!("{}-rpc", s.to_string_lossy()))
+        .unwrap_or_else(|| "rpc".into());
+    base.parent().unwrap_or(&base).join(name)
 }
 
 #[cfg(test)]
@@ -298,6 +307,13 @@ mod tests {
             Some("llama-b10441-rpc-macos-arm64.tar.gz")
         );
         assert_eq!(rpc_overlay_asset("b10441", BackendVariant::Cpu), None);
+        assert_eq!(rpc_overlay_asset("b10441", BackendVariant::Vulkan), None);
+        let dir = rpc_runtime_dir(
+            std::path::Path::new("/data"),
+            "b10441",
+            BackendVariant::Cuda13,
+        );
+        assert!(dir.ends_with("cuda-13.3-rpc"));
         assert_eq!(
             rpc_overlay_url("b10441", "llama-b10441-rpc-win-cuda-13.3-x64.zip"),
             "https://github.com/pedro-canedo/openweights/releases/download/llama-rpc-b10441/llama-b10441-rpc-win-cuda-13.3-x64.zip"

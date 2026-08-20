@@ -158,6 +158,11 @@ export const getClusterStatus = () =>
     ? invoke<ClusterSnapshot>("cluster_status")
     : mocks.clusterStatus();
 
+export const clusterSetEnabled = (enabled: boolean) =>
+  isTauri
+    ? invoke<ClusterSnapshot>("cluster_set_enabled", { enabled })
+    : mocks.clusterStatus();
+
 export const clusterRequestPair = (peerId: string) =>
   isTauri
     ? invoke<ClusterSnapshot>("cluster_request_pair", { peerId })

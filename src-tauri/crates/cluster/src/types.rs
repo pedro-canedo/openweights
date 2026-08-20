@@ -26,11 +26,7 @@ pub struct NodeIdentity {
 }
 
 impl NodeIdentity {
-    pub fn from_profile(
-        id: String,
-        profile: &lr_types::HardwareProfile,
-        llama_tag: &str,
-    ) -> Self {
+    pub fn from_profile(id: String, profile: &lr_types::HardwareProfile, llama_tag: &str) -> Self {
         let hostname = hostname::get()
             .ok()
             .map(|h| h.to_string_lossy().into_owned())
@@ -42,7 +38,7 @@ impl NodeIdentity {
             os: profile.os.clone(),
             llama_tag: llama_tag.to_string(),
             gpu_name: crate::budget::gpu_label(profile),
-            device_id: crate::budget::device_pin(profile).map(str::to_string),
+            device_id: crate::budget::device_pin(profile),
             advertised_bytes: crate::budget::advertised_bytes(profile),
         }
     }
@@ -76,11 +72,7 @@ pub struct ConnectedView {
 }
 
 impl ConnectedView {
-    pub fn from_plan(
-        peer: &PeerView,
-        rpc_addr: String,
-        plan: &SplitPlan,
-    ) -> Self {
+    pub fn from_plan(peer: &PeerView, rpc_addr: String, plan: &SplitPlan) -> Self {
         Self {
             peer_id: peer.id.clone(),
             hostname: peer.hostname.clone(),
@@ -106,6 +98,8 @@ pub struct ClusterSnapshot {
     pub pending_from: Option<PeerView>,
     pub connected: Option<ConnectedView>,
     pub warning: Option<String>,
+    /// mDNS + porta de controle. Desligado por padrão.
+    pub enabled: bool,
 }
 
 /// Pedido de emparelhamento (host → worker).
@@ -119,7 +113,8 @@ pub struct PairRequest {
     pub device_id: Option<String>,
     pub advertised_bytes: u64,
     pub llama_tag: String,
-    pub ip: String,
+    /// Porta do plano de controle. O ENDEREÇO não vem no corpo de propósito:
+    /// quem recebe usa o IP observado da conexão, que ninguém pode mentir.
     pub control_port: u16,
     pub token: String,
 }
