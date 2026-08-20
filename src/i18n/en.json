@@ -385,7 +385,28 @@
       "rag": "the project indexing"
     },
     "parallel": "Conversations at once",
-    "parallelHint": "Each simultaneous conversation takes a slice of the context window. With 1, the window you ask for is the window you get."
+    "parallelHint": "Each simultaneous conversation takes a slice of the context window. With 1, the window you ask for is the window you get.",
+    "cluster": {
+      "title": "Extra GPU on the network",
+      "subtitle": "Another OpenWeights on this LAN can lend its GPU. Together they load a model that neither machine can hold alone.",
+      "security": "The RPC channel has no password. Only accept machines you recognise, and never expose the port to the internet.",
+      "noRpc": "This engine build does not include RPC yet. Both apps need the same llama.cpp tag with the RPC overlay.",
+      "empty": "No other OpenWeights visible on this network. Open the app on the other machine.",
+      "useExtra": "Use as extra GPU",
+      "accept": "Accept",
+      "reject": "Decline",
+      "forget": "Forget",
+      "disconnect": "Disconnect",
+      "incoming": "{{name}} wants to use this GPU.",
+      "linked": "Linked to {{name}}",
+      "split": "split {{ts}}",
+      "tagMismatch": "different tag — update",
+      "paired": "already paired",
+      "youAre": "This machine: {{name}} · {{gpu}} advertised",
+      "chipHost": "Extra GPU: {{name}}",
+      "chipWorker": "Lending GPU",
+      "firstLoad": "The first load sends weights to the other PC over the LAN — on gigabit, ~16 GB takes about two minutes."
+    }
   },
   "settings": {
     "title": "Settings",
@@ -403,6 +424,7 @@
     "runtimeMissing": "not installed",
     "runtimeInstall": "Install / update",
     "version": "Version",
+    "clusterLink": "Extra GPU on the network — open Local Server",
     "webSearch": {
       "title": "Web search",
       "subtitle": "Without a key, the agent searches via DuckDuckGo — free, lower quality, and prone to blocking. With a Brave or Tavily key, results get better.",

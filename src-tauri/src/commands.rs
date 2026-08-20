@@ -196,7 +196,8 @@ pub async fn models_quants(
         .unwrap_or(8192)
         .min(teto_do_modelo.unwrap_or(u32::MAX));
 
-    let budget = advisor::MemoryBudget::from_profile(&state.profile);
+    let budget = advisor::MemoryBudget::from_profile(&state.profile)
+        .with_extra_vram(state.cluster.remote_vram_now());
     let meta = advisor::ModelMeta::estimate_from_params(params, janela);
     let qfiles: Vec<advisor::QuantFile> = artifacts
         .iter()
@@ -420,6 +421,16 @@ fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
                 entry = entry.with_extra(chave, valor);
             }
         }
+        if let Some(ts) = state.cluster.tensor_split_now() {
+            entry = entry.with_extra("tensor-split", ts);
+            // Sem ngl+fit=off o `--fit` do llama.cpp briga com o `-ts`.
+            if !entry.extras.iter().any(|(k, _)| k == "n-gpu-layers") {
+                entry = entry.with_extra("n-gpu-layers", "99");
+            }
+            if !entry.extras.iter().any(|(k, _)| k == "fit") {
+                entry = entry.with_extra("fit", "off");
+            }
+        }
 
         let modo = perfil
             .as_ref()
@@ -535,6 +546,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         // momento em que a garantia pode entrar.
         crate::commands_tuning::ensure_agent_profiles(state);
         cfg.models_preset = Some(write_router_preset(state)?);
+        cfg.extra_args = state.cluster.host_extra_args().await;
 
         let mut srv = lr_engine::LlamaServer::new(cfg);
         srv.spawn().map_err(err_str)?;

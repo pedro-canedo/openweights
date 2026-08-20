@@ -50,6 +50,9 @@ pub struct AppState {
     /// chat depende dele.
     pub gateway: tokio::sync::Mutex<Option<lr_gateway::Gateway>>,
     pub gateway_pid: AtomicU32,
+    /// Cluster RPC (1 host + 1 worker na LAN).
+    pub cluster: std::sync::Arc<lr_cluster::ClusterHost>,
+    pub rpc_pid: AtomicU32,
     shutdown_done: AtomicBool,
 }
 
@@ -149,6 +152,43 @@ impl AppState {
         // linha dele, e o Node precisa saber a plataforma.
         let (os, arch) = (profile.os.clone(), profile.arch.clone());
 
+        let mut persist: lr_cluster::ClusterPersist = store
+            .get_setting(lr_cluster::SETTING_KEY)
+            .ok()
+            .flatten()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        if persist.instance_id.is_empty() {
+            persist.instance_id = lr_cluster::new_instance_id();
+            if let Ok(json) = serde_json::to_string(&persist) {
+                let _ = store.set_setting(lr_cluster::SETTING_KEY, &json);
+            }
+        }
+        let identity = lr_cluster::NodeIdentity::from_profile(
+            persist.instance_id.clone(),
+            &profile,
+            lr_runtime::PINNED_TAG,
+        );
+        let store_save = store.clone();
+        let save: lr_cluster::SaveFn = std::sync::Arc::new(move |p| {
+            if let Ok(json) = serde_json::to_string(p) {
+                let _ = store_save.set_setting(lr_cluster::SETTING_KEY, &json);
+            }
+        });
+        let data_rpc = data_dir.clone();
+        let profile_rpc = profile.clone();
+        let rpc_exe: lr_cluster::RpcExeFn = std::sync::Arc::new(move || {
+            let variant = lr_runtime::select_variant(&profile_rpc);
+            let dir = lr_runtime::runtime_dir(&data_rpc, lr_runtime::PINNED_TAG, variant);
+            let exe = dir.join(lr_runtime::rpc_exe_name());
+            exe.is_file().then_some(exe)
+        });
+        let desktop_n = desktop.clone();
+        let on_notify: lr_cluster::NotifyFn = std::sync::Arc::new(move |title, body| {
+            let _ = desktop_n.notify(title, body);
+        });
+        let cluster = lr_cluster::ClusterHost::new(identity, persist, save, rpc_exe, on_notify);
+
         Ok(Self {
             profile,
             hf: tokio::sync::Mutex::new(lr_models::HfClient::new(token)),
@@ -162,6 +202,8 @@ impl AppState {
             ninerouter_pid: AtomicU32::new(0),
             gateway: tokio::sync::Mutex::new(None),
             gateway_pid: AtomicU32::new(0),
+            cluster,
+            rpc_pid: AtomicU32::new(0),
             tools: std::sync::RwLock::new(tools),
             mcp,
             desktop,
@@ -273,6 +315,7 @@ impl AppState {
             }
             *guard = None;
         }
+        self.cluster.stop_blocking();
         self.kill_orphan_pids();
     }
 
@@ -281,7 +324,12 @@ impl AppState {
     /// É a rede de segurança para quando o mutex estava ocupado: sem ela um
     /// `node` do 9router fica segurando a porta com o app já fechado.
     fn kill_orphan_pids(&self) {
-        for slot in [&self.server_pid, &self.ninerouter_pid, &self.gateway_pid] {
+        for slot in [
+            &self.server_pid,
+            &self.ninerouter_pid,
+            &self.gateway_pid,
+            &self.rpc_pid,
+        ] {
             let pid = slot.swap(0, Ordering::SeqCst);
             if pid != 0 {
                 lr_engine::kill_process_tree(pid);

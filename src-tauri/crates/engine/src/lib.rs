@@ -524,6 +524,26 @@ mod tests {
         assert!(joined.contains("--models-preset /tmp/router-models.ini"));
     }
 
+    #[test]
+    fn extra_args_append_after_the_router_flags() {
+        let mut cfg = ServerConfig::new(PathBuf::from("srv"), PathBuf::from("m"), 9000);
+        cfg.extra_args = vec![
+            "--rpc".into(),
+            "192.168.1.8:50052".into(),
+            "--device".into(),
+            "RPC0,CUDA0".into(),
+            "--tensor-split".into(),
+            "3,2".into(),
+        ];
+        let joined = cfg.to_args().join(" ");
+        assert!(joined.contains("--rpc 192.168.1.8:50052"));
+        assert!(joined.contains("--device RPC0,CUDA0"));
+        assert!(joined.contains("--tensor-split 3,2"));
+        let rpc_at = joined.find("--rpc").unwrap();
+        let port_at = joined.find("--port").unwrap();
+        assert!(rpc_at > port_at, "RPC entra por último, depois do roteador");
+    }
+
     /// Pasta temporária isolada por teste (o id do processo é o mesmo para
     /// todos os testes do binário).
     fn temp_dir(tag: &str) -> PathBuf {

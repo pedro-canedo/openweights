@@ -13,12 +13,20 @@ import type {
   QuantView,
   RuntimeState,
   ServerStatus,
+  ClusterSnapshot,
 } from "./types";
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function runtimeStatus(): Promise<RuntimeState> {
-  return { tag: "b10441", variant: "cuda13", installed: true, serverExe: "C:/fake/llama-server.exe" };
+  return {
+    tag: "b10441",
+    variant: "cuda13",
+    installed: true,
+    serverExe: "C:/fake/llama-server.exe",
+    rpcReady: true,
+    rpcExe: "C:/fake/ggml-rpc-server.exe",
+  };
 }
 
 export async function ensureRuntime(): Promise<RuntimeState> {
@@ -181,6 +189,36 @@ let mockServer: ServerStatus = {
 
 export async function serverStatus(): Promise<ServerStatus> {
   return mockServer;
+}
+
+export async function clusterStatus(): Promise<ClusterSnapshot> {
+  return {
+    instanceId: "mock",
+    hostname: "Dev-PC",
+    llamaTag: "b10441",
+    rpcReady: true,
+    deviceId: "CUDA0",
+    advertisedBytes: 12 * 2 ** 30 * 0.75,
+    role: "idle",
+    peers: [
+      {
+        id: "mac",
+        hostname: "MacBook-de-Pedro",
+        os: "macos",
+        gpuName: "Apple GPU",
+        deviceId: "MTL0",
+        advertisedBytes: 18 * 2 ** 30 * 0.75,
+        llamaTag: "b10441",
+        ip: "192.168.1.8",
+        controlPort: 17890,
+        tagOk: true,
+        paired: false,
+      },
+    ],
+    pendingFrom: null,
+    connected: null,
+    warning: null,
+  };
 }
 
 export async function startServer(): Promise<ServerStatus> {

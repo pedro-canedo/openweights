@@ -87,6 +87,10 @@ pub struct RuntimeState {
     /// irmãos do servidor (`llama-fit-params`, `llama-bench`), que o
     /// otimizador usa para responder "cabe?" e "rende quanto?".
     pub dir: Option<PathBuf>,
+    /// `ggml-rpc-server` ao lado do llama-server, quando o pacote traz RPC.
+    pub rpc_exe: Option<PathBuf>,
+    /// O host consegue `--rpc` e o worker existe. Sem isto o cluster recusa.
+    pub rpc_ready: bool,
 }
 
 /// Gerencia a instalação dos runtimes em `<data_dir>/runtimes/`.
@@ -112,12 +116,16 @@ impl RuntimeManager {
         // "Instalado" é a presença do executável: não há manifesto separado
         // que pudesse divergir do que está no disco.
         let installed = exe.is_file();
+        let rpc = dir.join(crate::rpc_exe_name());
+        let rpc_ready = installed && rpc.is_file();
         RuntimeState {
             tag: tag.to_string(),
             variant,
             installed,
             server_exe: installed.then_some(exe),
             dir: installed.then_some(dir),
+            rpc_exe: rpc_ready.then_some(rpc),
+            rpc_ready,
         }
     }
 
@@ -297,6 +305,110 @@ impl RuntimeManager {
                 },
             }
         }
+    }
+
+    /// Garante o runtime E o worker RPC. Os zips oficiais quase nunca
+    /// trazem `ggml-rpc-server`; tentamos o overlay publicado na tag
+    /// `llama-rpc-<PINNED_TAG>` do OpenWeights. 404 = ainda não há build.
+    pub async fn ensure_rpc(
+        &self,
+        profile: &lr_types::HardwareProfile,
+        on_event: impl Fn(RuntimeEvent) + Send + Sync,
+    ) -> Result<RuntimeState, RuntimeError> {
+        let state = self.ensure_best(profile, &on_event).await?;
+        if state.rpc_ready {
+            return Ok(state);
+        }
+        let variant = state.variant;
+        let Some(asset) = crate::rpc_overlay_asset(crate::PINNED_TAG, variant) else {
+            return Err(RuntimeError::Verification(
+                "esta variante do motor não tem overlay RPC (CPU puro)".into(),
+            ));
+        };
+        let _install_guard = self.install_lock.lock().await;
+        if self.state(variant).rpc_ready {
+            return Ok(self.state(variant));
+        }
+        let session = lr_fetch::Session::new(&self.data_dir.join("runtimes"))?;
+        let result = self.install_rpc_overlay(variant, &asset, session.path(), &on_event).await;
+        drop(session);
+        match result {
+            Ok(()) => {
+                on_event(RuntimeEvent::Ready);
+                let st = self.state(variant);
+                if !st.rpc_ready {
+                    return Err(RuntimeError::Verification(
+                        "o overlay RPC não trouxe o ggml-rpc-server".into(),
+                    ));
+                }
+                Ok(st)
+            }
+            Err(e) => {
+                on_event(RuntimeEvent::Failed {
+                    message: e.to_string(),
+                });
+                Err(e)
+            }
+        }
+    }
+
+    async fn install_rpc_overlay<F>(
+        &self,
+        variant: BackendVariant,
+        asset: &str,
+        session: &std::path::Path,
+        on_event: &F,
+    ) -> Result<(), RuntimeError>
+    where
+        F: Fn(RuntimeEvent) + Send + Sync,
+    {
+        let tag = crate::PINNED_TAG;
+        let client = lr_fetch::client(USER_AGENT)?;
+        let url = crate::rpc_overlay_url(tag, asset);
+        let part = session.join(format!("{asset}.part"));
+        let nome = asset.to_string();
+        let baixou = lr_fetch::download_to(
+            &client,
+            &url,
+            &part,
+            &|received_bytes, total_bytes| {
+                on_event(RuntimeEvent::Progress {
+                    asset: nome.clone(),
+                    received_bytes,
+                    total_bytes,
+                });
+            },
+        )
+        .await;
+        if let Err(e) = baixou {
+            return Err(RuntimeError::Verification(format!(
+                "sem pacote RPC para {tag} ({e}). O workflow llama-rpc ainda não publicou este overlay"
+            )));
+        }
+        on_event(RuntimeEvent::Extracting {
+            asset: asset.to_string(),
+        });
+        let extract_dir = session.join("extract-rpc");
+        lr_fetch::extract_archive_async(part.clone(), asset.to_string(), extract_dir.clone())
+            .await?;
+        let _ = std::fs::remove_file(&part);
+
+        let final_dir = crate::runtime_dir(&self.data_dir, tag, variant);
+        if !final_dir.is_dir() {
+            return Err(RuntimeError::Verification(
+                "instale o motor de IA antes do overlay RPC".into(),
+            ));
+        }
+        // Copia o que o overlay trouxer (llama-server com RPC + ggml-rpc-server)
+        // por cima do pacote oficial, na mesma pasta.
+        if let Some(root) = lr_fetch::find_dir_containing(&extract_dir, crate::rpc_exe_name())
+            .or_else(|| lr_fetch::find_dir_containing(&extract_dir, crate::server_exe_name()))
+        {
+            lr_fetch::move_files_flat(&root, &final_dir)?;
+        } else {
+            lr_fetch::move_files_flat(&extract_dir, &final_dir)?;
+        }
+        Ok(())
     }
 }
 

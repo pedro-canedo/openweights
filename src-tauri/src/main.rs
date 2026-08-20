@@ -5,6 +5,7 @@ mod commands;
 mod commands_activity;
 mod commands_agent;
 mod commands_automation;
+mod commands_cluster;
 mod commands_mcp;
 mod commands_memory;
 mod commands_providers;
@@ -67,6 +68,17 @@ fn main() {
             app.manage(state);
             // O relógio das automações precisa do estado já publicado.
             scheduler::spawn_loop(app.handle().clone());
+
+            let cluster = app.state::<state::AppState>().cluster.clone();
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let on = std::sync::Arc::new(move |snap: lr_cluster::ClusterSnapshot| {
+                    let _ = handle.emit("cluster", &snap);
+                });
+                if let Err(e) = cluster.start(on).await {
+                    log::warn!("cluster: {e}");
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -93,6 +105,14 @@ fn main() {
             commands::server_restart,
             commands::server_busy,
             commands::server_props,
+            commands_cluster::cluster_status,
+            commands_cluster::cluster_ensure_rpc,
+            commands_cluster::cluster_request_pair,
+            commands_cluster::cluster_accept,
+            commands_cluster::cluster_reject,
+            commands_cluster::cluster_forget,
+            commands_cluster::cluster_disconnect,
+            commands_cluster::cluster_apply_engine,
             commands::model_set_ctx,
             commands::model_get_profile,
             commands::model_set_profile,

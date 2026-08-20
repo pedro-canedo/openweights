@@ -18,6 +18,7 @@ tokio = { version = "1", features = [
   "process",
   "fs",
   "io-util",
+  "net",
   "time",
   "sync",
 ] }
@@ -85,6 +86,7 @@ lr_webtools = { path = "crates/webtools" }
 lr_codetools = { path = "crates/codetools" }
 lr_gittools = { path = "crates/gittools" }
 lr_datatools = { path = "crates/datatools" }
+lr_cluster = { path = "crates/cluster" }
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"

@@ -18,6 +18,7 @@ import type {
   ServerStatus,
   Telemetry,
   WorkspaceFile,
+  ClusterSnapshot,
 } from "./types";
 import type { ModelProfile } from "./tuning";
 import { emptyProfile } from "./tuning";
@@ -149,6 +150,46 @@ export const onServerStatus = (h: (s: ServerStatus) => void) =>
 
 export const onServerLog = (h: (line: string) => void) =>
   listen<string>("server-log", h);
+
+// --------------------------------------------------------------- cluster ---
+
+export const getClusterStatus = () =>
+  isTauri
+    ? invoke<ClusterSnapshot>("cluster_status")
+    : mocks.clusterStatus();
+
+export const clusterRequestPair = (peerId: string) =>
+  isTauri
+    ? invoke<ClusterSnapshot>("cluster_request_pair", { peerId })
+    : mocks.clusterStatus();
+
+export const clusterAccept = () =>
+  isTauri
+    ? invoke<ClusterSnapshot>("cluster_accept")
+    : mocks.clusterStatus();
+
+export const clusterReject = () =>
+  isTauri
+    ? invoke<ClusterSnapshot>("cluster_reject")
+    : mocks.clusterStatus();
+
+export const clusterForget = (peerId: string) =>
+  isTauri
+    ? invoke<ClusterSnapshot>("cluster_forget", { peerId })
+    : mocks.clusterStatus();
+
+export const clusterDisconnect = () =>
+  isTauri
+    ? invoke<ClusterSnapshot>("cluster_disconnect")
+    : mocks.clusterStatus();
+
+export const clusterApplyEngine = () =>
+  isTauri
+    ? invoke<ClusterSnapshot>("cluster_apply_engine")
+    : mocks.clusterStatus();
+
+export const onCluster = (h: (s: ClusterSnapshot) => void) =>
+  listen<ClusterSnapshot>("cluster", h);
 
 // ----------------------------------------------------------------- chat ---
 

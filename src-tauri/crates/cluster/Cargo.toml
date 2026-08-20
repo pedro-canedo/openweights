@@ -1,0 +1,21 @@
+[package]
+name = "lr_cluster"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Cluster llama.cpp RPC: 1 host + 1 worker na LAN"
+
+[dependencies]
+lr_types.workspace = true
+lr_proc = { path = "../proc" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+tokio.workspace = true
+getrandom = "0.3"
+hostname = "0.4"
+mdns-sd = "0.13"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -1,0 +1,107 @@
+# Builds llama.cpp com GGML_RPC=ON na mesma tag pinada do app.
+#
+# Os zips oficiais do llama.cpp não compilam o backend RPC. Este workflow
+# gera o overlay que o RuntimeManager baixa quando o cluster é ligado:
+# llama-server com --rpc + ggml-rpc-server.
+#
+# Publica (ou atualiza) o release `llama-rpc-<tag>` no repositório
+# OpenWeights. Disparar à mão depois de promover PINNED_TAG.
+
+name: llama-rpc overlay
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag do llama.cpp (ex. b10441)"
+        required: true
+        default: "b10441"
+
+permissions:
+  contents: write
+
+jobs:
+  macos-metal:
+    name: macOS arm64 Metal+RPC
+    runs-on: macos-14
+    steps:
+      - name: Checkout llama.cpp
+        uses: actions/checkout@v5
+        with:
+          repository: ggml-org/llama.cpp
+          ref: ${{ inputs.tag }}
+
+      - name: Build
+        run: |
+          cmake -B build -DGGML_METAL=ON -DGGML_RPC=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j --target llama-server ggml-rpc-server
+
+      - name: Pack
+        run: |
+          mkdir -p dist
+          cp build/bin/llama-server build/bin/ggml-rpc-server dist/ || \
+            cp build/llama-server build/ggml-rpc-server dist/
+          tar -czf llama-${{ inputs.tag }}-rpc-macos-arm64.tar.gz -C dist .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpc-macos-arm64
+          path: llama-${{ inputs.tag }}-rpc-macos-arm64.tar.gz
+
+  windows-cuda:
+    name: Windows CUDA+RPC
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cuda: ["12.4", "13.3"]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: ggml-org/llama.cpp
+          ref: ${{ inputs.tag }}
+
+      - name: CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.25
+        with:
+          cuda: "${{ matrix.cuda }}.0"
+          method: network
+          sub-packages: '["nvcc","cudart"]'
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake -B build -DGGML_CUDA=ON -DGGML_RPC=ON -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j --target llama-server ggml-rpc-server
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          $bin = if (Test-Path build/bin/Release) { "build/bin/Release" } else { "build/bin" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "$bin/llama-server.exe","$bin/ggml-rpc-server.exe" dist/ -ErrorAction SilentlyContinue
+          Copy-Item "$bin/*.dll" dist/ -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist/* -DestinationPath "llama-${{ inputs.tag }}-rpc-win-cuda-${{ matrix.cuda }}-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpc-win-cuda-${{ matrix.cuda }}
+          path: llama-${{ inputs.tag }}-rpc-win-cuda-${{ matrix.cuda }}-x64.zip
+
+  publish:
+    needs: [macos-metal, windows-cuda]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: llama-rpc-${{ inputs.tag }}
+          name: llama.cpp RPC overlay ${{ inputs.tag }}
+          draft: true
+          files: artifacts/**/*
+          body: |
+            Overlay `GGML_RPC=ON` para o OpenWeights, mesma tag do runtime pinado.
+            Extraído por cima do zip oficial: traz `llama-server` com `--rpc` e `ggml-rpc-server`.

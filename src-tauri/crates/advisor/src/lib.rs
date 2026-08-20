@@ -45,6 +45,12 @@ impl MemoryBudget {
             unified,
         }
     }
+
+    /// Soma a memória anunciada de um worker RPC. Só o host conectado chama.
+    pub fn with_extra_vram(mut self, extra: u64) -> Self {
+        self.vram_bytes = self.vram_bytes.saturating_add(extra);
+        self
+    }
 }
 
 /// Metadados do modelo necessários para estimar o KV cache. Vêm do
@@ -430,6 +436,17 @@ mod tests {
         let meta = ModelMeta::estimate_from_params(8_000_000_000, 4096);
         let r = evaluate(&budget, &meta, 5 << 30);
         assert_eq!(r.verdict, FitVerdict::CpuOnly);
+    }
+
+    #[test]
+    fn extra_vram_from_a_peer_is_added_to_the_budget() {
+        let sozinho = MemoryBudget {
+            vram_bytes: 8 << 30,
+            ram_bytes: 32 << 30,
+            unified: false,
+        };
+        let junto = sozinho.with_extra_vram(9 << 30);
+        assert_eq!(junto.vram_bytes, 17 << 30);
     }
 
     #[test]

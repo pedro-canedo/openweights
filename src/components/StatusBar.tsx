@@ -5,6 +5,7 @@ import { formatBytes } from "../lib/format";
 import MonitorPopover from "./monitor/MonitorPopover";
 import { telemetryStore } from "./monitor/telemetryStore";
 import { runStore } from "../lib/agent/runStore";
+import { ClusterChip } from "./server/ClusterPanel";
 
 function Meter({ percent }: { percent: number }) {
   const p = Math.max(0, Math.min(100, percent));
@@ -129,6 +130,7 @@ export default function StatusBar() {
       )}
 
       <div className="ml-auto flex items-center gap-3">
+        <ClusterChip />
         {gen.generating && (
           <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-accent">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />

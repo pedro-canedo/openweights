@@ -14,6 +14,7 @@ import McpConnectors from "../components/settings/McpConnectors";
 import ToolGroups from "../components/settings/ToolGroups";
 import WebSearchSettings from "../components/settings/WebSearchSettings";
 import { formatBytes } from "../lib/format";
+import { navigate } from "../lib/nav";
 import type { HardwareProfile, RuntimeEvent, RuntimeState } from "../lib/types";
 
 const row =
@@ -232,6 +233,13 @@ function HardwareCard({
               {t("settings.modelsDir")}: {modelsDir}
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => navigate("server")}
+            className="col-span-2 mt-1 text-left text-accent hover:underline"
+          >
+            {t("settings.clusterLink")}
+          </button>
         </div>
       ) : (
         <div className="mt-3 text-[13px] text-dim">{t("common.loading")}</div>

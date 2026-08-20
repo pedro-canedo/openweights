@@ -10,6 +10,7 @@ import {
   stopServer,
 } from "../lib/api";
 import type { ServerStatus } from "../lib/types";
+import ClusterPanel from "../components/server/ClusterPanel";
 
 const MAX_LOG_LINES = 500;
 
@@ -82,6 +83,7 @@ export default function LocalServer() {
       {error && <div className="mt-2 text-[12px] text-bad">{error}</div>}
 
       <ServerConfig running={!!status?.running} />
+      <ClusterPanel />
       {status?.running && status.baseUrl && (
         <LoadedModels baseUrl={status.baseUrl} />
       )}

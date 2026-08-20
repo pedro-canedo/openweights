@@ -385,7 +385,28 @@
       "rag": "a indexação do projeto"
     },
     "parallel": "Conversas ao mesmo tempo",
-    "parallelHint": "Cada conversa simultânea leva uma fatia da janela de contexto. Com 1, a janela que você pede é a janela que você recebe."
+    "parallelHint": "Cada conversa simultânea leva uma fatia da janela de contexto. Com 1, a janela que você pede é a janela que você recebe.",
+    "cluster": {
+      "title": "GPU extra na rede",
+      "subtitle": "Outro OpenWeights na mesma rede pode emprestar a placa. Os dois juntos carregam um modelo que nenhuma máquina segura sozinha.",
+      "security": "O canal RPC não tem senha. Só aceite máquinas que você reconhece, e nunca exponha a porta na internet.",
+      "noRpc": "Este motor ainda não traz RPC. Os dois apps precisam da mesma tag do llama.cpp com o overlay RPC.",
+      "empty": "Nenhum outro OpenWeights visível nesta rede. Abra o app na outra máquina.",
+      "useExtra": "Usar como GPU extra",
+      "accept": "Aceitar",
+      "reject": "Recusar",
+      "forget": "Esquecer",
+      "disconnect": "Desligar",
+      "incoming": "{{name}} quer usar esta GPU.",
+      "linked": "Ligado a {{name}}",
+      "split": "split {{ts}}",
+      "tagMismatch": "tag diferente — atualize",
+      "paired": "já emparelhado",
+      "youAre": "Esta máquina: {{name}} · {{gpu}} anunciados",
+      "chipHost": "GPU extra: {{name}}",
+      "chipWorker": "Emprestando GPU",
+      "firstLoad": "No primeiro carregamento os pesos vão pela rede até o outro PC — em gigabit, uns 16 GB levam cerca de dois minutos."
+    }
   },
   "settings": {
     "title": "Configurações",
@@ -403,6 +424,7 @@
     "runtimeMissing": "não instalado",
     "runtimeInstall": "Instalar / atualizar",
     "version": "Versão",
+    "clusterLink": "GPU extra na rede — abrir Servidor local",
     "webSearch": {
       "title": "Busca na web",
       "subtitle": "Sem chave, o agente busca pelo DuckDuckGo — grátis, com qualidade menor e sujeito a bloqueios. Com uma chave do Brave ou da Tavily, os resultados melhoram.",

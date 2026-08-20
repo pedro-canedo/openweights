@@ -39,7 +39,8 @@ fn err_str<E: std::fmt::Display>(e: E) -> String {
 /// sozinho e numa placa apertada entregava 8k — que mata o modo agente em
 /// silêncio.
 pub(crate) fn ensure_agent_profiles(state: &AppState) {
-    let budget = lr_advisor::MemoryBudget::from_profile(&state.profile);
+    let budget = lr_advisor::MemoryBudget::from_profile(&state.profile)
+        .with_extra_vram(state.cluster.remote_vram_now());
     for a in lr_models::scan_local(&state.models_dir) {
         if profile_for(state, &a.name).is_some() {
             continue;
@@ -118,7 +119,8 @@ pub async fn tune_advise(state: State<'_, AppState>, model: String) -> CmdResult
         .dir
         .ok_or("o runtime do llama.cpp ainda não está instalado")?;
 
-    let budget = lr_advisor::MemoryBudget::from_profile(&state.profile);
+    let budget = lr_advisor::MemoryBudget::from_profile(&state.profile)
+        .with_extra_vram(state.cluster.remote_vram_now());
     // Sem cabeçalho GGUF lido, a geometria vem do tamanho do arquivo: é
     // grosseira, mas só decide QUAIS candidatos sondar — quem dá o número
     // final é a sonda.

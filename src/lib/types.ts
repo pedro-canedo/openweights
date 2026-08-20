@@ -65,6 +65,9 @@ export interface RuntimeState {
   variant: BackendVariant;
   installed: boolean;
   serverExe: string | null;
+  dir?: string | null;
+  rpcExe?: string | null;
+  rpcReady?: boolean;
 }
 
 export type RuntimeEvent =
@@ -262,6 +265,45 @@ export interface WorkspaceFile {
   path: string;
   name: string;
   bytes: number;
+}
+
+export type ClusterRole = "idle" | "host" | "worker" | "pending";
+
+export interface ClusterPeer {
+  id: string;
+  hostname: string;
+  os: string;
+  gpuName: string;
+  deviceId: string;
+  advertisedBytes: number;
+  llamaTag: string;
+  ip: string;
+  controlPort: number;
+  tagOk: boolean;
+  paired: boolean;
+}
+
+export interface ClusterConnected {
+  peerId: string;
+  hostname: string;
+  gpuName: string;
+  devices: string;
+  tensorSplit: string;
+  rpcAddr: string;
+}
+
+export interface ClusterSnapshot {
+  instanceId: string;
+  hostname: string;
+  llamaTag: string;
+  rpcReady: boolean;
+  deviceId: string | null;
+  advertisedBytes: number;
+  role: ClusterRole;
+  peers: ClusterPeer[];
+  pendingFrom: ClusterPeer | null;
+  connected: ClusterConnected | null;
+  warning: string | null;
 }
 
 export const DEFAULT_CHAT_PARAMS: ChatParams = {
