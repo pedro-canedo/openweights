@@ -57,3 +57,10 @@ network you trust.
 
 The AI engine has to be installed first — that happens on your first run. Until
 then the screen says so rather than failing on start.
+
+## Borrowing a GPU from another machine
+
+The same screen carries the pairing panel for
+[**Extra GPU on the network**](/integrations/cluster): another OpenWeights on
+your network lends its card so the two of them can load a model neither could
+hold alone. It is off by default.

@@ -26,6 +26,7 @@ OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://gith
 - 🧠 **Memória e índice do projeto** — o agente lembra do que aprendeu e busca por significado no seu código.
 - 🧩 **Conectores MCP** — servidores do padrão Model Context Protocol entram como ferramentas, com aprovação por servidor.
 - 🔌 **API compatível com OpenAI** — outros apps apontam para `localhost` e usam o mesmo modelo.
+- 🖧 **GPU extra na rede** — duas máquinas na mesma rede carregam um modelo juntas: o arquivo fica em uma, a outra só empresta a placa, e um PC de 12 GB ao lado de um Mac de 18 GB viram 30 GB. Vem desligado, não anuncia nada até você ligar, e quem empresta a placa precisa aceitar o pedido na mão.
 - 🌐 **Outras fontes de modelo** — além da sua máquina, as conversas podem ser atendidas pelo **OpenRouter** (centenas de modelos por uma chave só, com catálogo nativo mostrando preço e contexto) ou pelo **9router**, um roteador local com painel próprio que o app instala, roda e remove numa pasta isolada — Node portátil incluído, sem tocar no seu sistema. O painel do 9router abre embutido no app.
 - 🚪 **Ponto de entrada único (opcional)** — um Traefik local que encaminha um endereço só para o motor local e para o 9router, por prefixo, para apontar outra ferramenta ao OpenWeights sem decorar portas. Não é túnel: nada fica acessível pela internet.
 - 📊 **Uso em tempo real** — CPU, RAM, GPU, VRAM e tokens/s enquanto você conversa.

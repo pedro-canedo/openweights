@@ -56,3 +56,10 @@ rede confiável.
 
 O motor de IA precisa estar instalado antes — o que acontece na sua primeira
 execução. Até lá a tela diz isso em vez de falhar ao iniciar.
+
+## Pegando emprestada a placa de outra máquina
+
+A mesma tela abriga o painel de emparelhamento da
+[**GPU extra na rede**](/pt/integracoes/cluster): outro OpenWeights na sua rede
+empresta a placa dele para os dois carregarem juntos um modelo que nenhum
+segurava sozinho. Vem desligado.

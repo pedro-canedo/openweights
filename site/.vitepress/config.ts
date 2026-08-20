@@ -37,6 +37,7 @@ const enSidebar = [
     text: "Integrations",
     items: [
       { text: "Local API server", link: "/integrations/local-api" },
+      { text: "Extra GPU on the network", link: "/integrations/cluster" },
       { text: "External model sources", link: "/integrations/providers" },
     ],
   },
@@ -78,6 +79,7 @@ const ptSidebar = [
     text: "Integrações",
     items: [
       { text: "Servidor de API local", link: "/pt/integracoes/api-local" },
+      { text: "GPU extra na rede", link: "/pt/integracoes/cluster" },
       { text: "Fontes externas de modelo", link: "/pt/integracoes/provedores" },
     ],
   },

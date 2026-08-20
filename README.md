@@ -51,6 +51,11 @@ Windows, macOS and Linux.
   per server.
 - 🔌 **OpenAI-compatible API** — other apps point at `localhost` and use the same
   model.
+- 🖧 **Extra GPU on the network** — two machines on the same network load one
+  model together: the file stays on one, the other only lends its card, and a
+  12 GB PC next to an 18 GB Mac becomes 30 GB. Off by default, it announces
+  nothing until you turn it on, and the machine lending the GPU has to accept
+  the request by hand.
 - 🌐 **Other model sources** — besides your own machine, conversations can be
   answered by **OpenRouter** (hundreds of models behind one key, with a native
   catalogue showing price and context) or by **9router**, a local router with
