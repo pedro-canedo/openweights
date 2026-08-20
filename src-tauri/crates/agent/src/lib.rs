@@ -5,8 +5,8 @@
 
 mod checkpoint;
 mod codemode;
-mod delivery;
 mod events;
+mod judge;
 mod menu;
 mod output_stream;
 mod plan_tools;
@@ -307,6 +307,12 @@ impl AgentHost {
                 &req.prompt,
             )
             .map_err(|e| e.to_string())?;
+        // O modo escolhido fica no run (a interface o perdia num reload).
+        // Persistimos o modo COMO PEDIDO — a normalização Agent→Loop é
+        // detalhe do laço, não da escolha da pessoa.
+        if let Err(e) = self.store.set_run_work_mode(&id, req.work_mode) {
+            log::warn!("run {id}: não gravou o modo de trabalho: {e}");
+        }
 
         let mut sink = EventSink::new(&id, Some(self.store.clone()));
         if let Some(cb) = on_event {

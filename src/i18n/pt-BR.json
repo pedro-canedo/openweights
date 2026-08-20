@@ -867,11 +867,11 @@
     "mode": {
       "chat": "Conversa",
       "plan": "Planejamento",
-      "agent": "Agente",
+      "agent": "Executar",
       "loop": "Laço",
       "chatHint": "Só responde, não usa ferramentas.",
       "planHint": "Investiga e propõe o plano. Não altera nada até você aprovar.",
-      "agentHint": "Executa a tarefa pedida, um passo por vez.",
+      "agentHint": "Planeja em etapas e executa cada uma com prova de conclusão.",
       "loopHint": "Executa o plano inteiro, conferindo cada entrega antes de seguir."
     }
   },

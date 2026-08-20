@@ -610,6 +610,10 @@ pub struct RunSummary {
     /// Veredito da conferência automática (`None` = não houve conferência).
     #[serde(default)]
     pub verification: Option<RunVerification>,
+    /// Como o agente trabalhou (Scout Rule). Persistido: antes vivia só na
+    /// memória da interface e se perdia num reload.
+    #[serde(default)]
+    pub work_mode: crate::scout::WorkMode,
     /// O run tem plano de trabalho gravado — o cartão pode buscá-lo sem
     /// tentar à toa nos runs que nunca tiveram um.
     #[serde(default)]

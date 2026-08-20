@@ -10,6 +10,7 @@ use lr_types::agent::{
     ApprovalSource, PolicyScope, RunEvent, RunEventKind, RunMode, RunStatus, RunSummary,
     ToolPolicy, UsageStats,
 };
+use lr_types::scout::WorkMode;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS runs (
     usage_json TEXT,
     plan_json TEXT,
     verify_json TEXT,
+    work_mode TEXT,
     created_at INTEGER NOT NULL,
     finished_at INTEGER
 );
@@ -207,6 +209,17 @@ impl Store {
         Ok(())
     }
 
+    /// Grava o modo de trabalho escolhido: o run reaberto precisa saber como
+    /// foi conduzido — antes isso vivia só na memória da interface.
+    pub fn set_run_work_mode(&self, run_id: &str, mode: WorkMode) -> Result<(), StoreError> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE runs SET work_mode = ?2 WHERE id = ?1",
+            params![run_id, enum_str(&mode)],
+        )?;
+        Ok(())
+    }
+
     pub fn set_run_status(&self, run_id: &str, status: RunStatus) -> Result<(), StoreError> {
         let conn = self.conn();
         conn.execute(
@@ -283,7 +296,7 @@ impl Store {
         let conn = self.conn();
         let sql = "SELECT id, chat_id, model, mode, status, prompt, summary, workspace_dir,
                           created_at, finished_at, usage_json, verify_json,
-                          plan_json IS NOT NULL AND plan_json != ''
+                          plan_json IS NOT NULL AND plan_json != '', work_mode
                    FROM runs {WHERE} ORDER BY created_at DESC LIMIT 200";
         let map = |r: &rusqlite::Row<'_>| -> rusqlite::Result<RunSummary> {
             Ok(RunSummary {
@@ -304,6 +317,10 @@ impl Store {
                     .get::<_, Option<String>>(11)?
                     .and_then(|j| serde_json::from_str(&j).ok()),
                 has_plan: r.get(12)?,
+                work_mode: r
+                    .get::<_, Option<String>>(13)?
+                    .and_then(|s| enum_from(&s))
+                    .unwrap_or_default(),
             })
         };
         let rows = match chat_id {

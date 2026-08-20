@@ -26,7 +26,10 @@ import type { ChatParams } from "../../lib/types";
 type AuthMode = Exclude<RunMode, "chat">;
 
 const AUTH_MODES: AuthMode[] = ["approve", "smart", "yolo"];
-const WORK_MODES: WorkMode[] = ["chat", "plan", "agent", "loop"];
+// "loop" saiu do seletor: o modo Executar (agent) JÁ é o laço etapa-por-etapa
+// — o backend normaliza Agent→Loop. Runs antigos gravados como "loop"
+// continuam legíveis (o tipo mantém a variante).
+const WORK_MODES: WorkMode[] = ["chat", "plan", "agent"];
 
 const WORK_ICONS: Record<WorkMode, string> = {
   chat: "M21 12a8 8 0 01-8 8H7l-4 3v-5.5A8 8 0 1121 12z",
@@ -158,12 +161,11 @@ export default function ModeSelect({
   const [confirmYolo, setConfirmYolo] = useState(false);
   const [needWorkspace, setNeedWorkspace] = useState(false);
 
-  const workMode: WorkMode = params.workMode ?? "agent";
+  // Conversa antiga pode ter "loop" salvo nos params: exibe como Executar.
+  const workMode: WorkMode =
+    params.workMode === "loop" ? "agent" : (params.workMode ?? "agent");
   const auth: RunMode = params.mode ?? "smart";
-  // O laço executa o plano inteiro sozinho: só faz sentido com o agente
-  // ligado (é ele quem dá as ferramentas).
-  const workOptions =
-    params.agent === true ? WORK_MODES : WORK_MODES.filter((m) => m !== "loop");
+  const workOptions = WORK_MODES;
   const executa = canExecute(workMode);
   const codeMode = params.codeMode === true;
 

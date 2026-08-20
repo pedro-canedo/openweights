@@ -867,11 +867,11 @@
     "mode": {
       "chat": "Chat",
       "plan": "Planning",
-      "agent": "Agent",
+      "agent": "Execute",
       "loop": "Loop",
       "chatHint": "Answers only, no tools.",
       "planHint": "Investigates and proposes the plan. Changes nothing until you approve.",
-      "agentHint": "Runs the requested task, one step at a time.",
+      "agentHint": "Plans in steps and executes each one with proof of completion.",
       "loopHint": "Runs the whole plan, checking each delivery before moving on."
     }
   },

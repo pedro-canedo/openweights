@@ -18,11 +18,12 @@
 //! - [`run_plan`]: executa o plano etapa a etapa, verificando cada entrega,
 //!   gravando o plano a cada mudança e seguindo em frente quando uma trava.
 
+use crate::judge;
 use crate::plan_tools::{SharedPlan, lock_plan, snapshot};
 use crate::reliability::StepBudget;
 use crate::run::{StepEngine, StepOutcome, SystemPrompt, ToolRunner, head_chars};
 use crate::verify::{self, VerifyReport};
-use lr_engine::{ChatMessage, ChatRequest, LlamaClient};
+use lr_engine::{ChatMessage, ChatRequest, LlamaClient, ToolCallReq};
 use lr_types::agent::{RunEventKind, RunStatus, ToolSpec};
 use lr_types::scout::{Task, TaskPlan, TaskStatus, WindowBudget, WorkMode};
 use serde_json::{Value, json};
@@ -95,9 +96,14 @@ fn plan_schema() -> Value {
                         // que a conferência final procura em disco: sem isto,
                         // "pronto" continuaria sendo palavra do modelo.
                         "files": { "type": "array", "items": { "type": "string" } },
+                        // Comando que sai 0 quando a entrega está pronta — o
+                        // Definition of Done executável. Vai em `required`
+                        // (com "" = não há): modelo pequeno é mais confiável
+                        // preenchendo sempre do que decidindo omitir.
+                        "check_cmd": { "type": "string" },
                         "depends_on": { "type": "array", "items": { "type": "integer" } }
                     },
-                    "required": ["title", "instruction", "done_when", "files"]
+                    "required": ["title", "instruction", "done_when", "files", "check_cmd"]
                 }
             }
         },
@@ -122,6 +128,10 @@ fn decompose_request(
          - `done_when` é conferível (um arquivo existe, um comando passa, um texto aparece);\n\
          - `files` lista os caminhos que ESTA entrega cria ou altera, relativos à pasta do \
          projeto; deixe vazio só quando a entrega não mexe em arquivo nenhum;\n\
+         - `check_cmd` é um comando de terminal que sai com código 0 quando a entrega está \
+         pronta (um teste, um build, um grep no arquivo criado); para entrega de código, \
+         escreva o teste PRIMEIRO e use-o aqui; use \"\" quando não houver comando que \
+         confira;\n\
          - `depends_on` só aponta para entregas ANTERIORES, pelo índice começando em 0;\n\
          - não invente etapas de \"revisar\" ou \"planejar\": só trabalho de verdade.\n"
     );
@@ -183,7 +193,7 @@ pub async fn decompose(
         .await
         .map_err(|e| e.to_string())?;
 
-    let plan = json_from_text(&outcome.content)
+    let mut plan = json_from_text(&outcome.content)
         .and_then(|v| plan_from_value(goal, &v, per_task))
         .unwrap_or_else(|| {
             log::warn!(
@@ -192,6 +202,17 @@ pub async fn decompose(
             );
             single_task_plan(goal, per_task)
         });
+    // O teto de passos é o que a pessoa (ou a automação) escolheu, e ponto.
+    // `wanted` é só sugestão no prompt — um modelo que devolve 12 entregas
+    // para um orçamento de 1 estouraria o combinado; corta aqui, não lá.
+    let teto = (max_tasks.max(1) as usize).min(MAX_TASKS);
+    if plan.tasks.len() > teto {
+        log::warn!(
+            "o modelo devolveu {} entregas para um orçamento de {teto}; corto o excesso",
+            plan.tasks.len()
+        );
+        plan.tasks.truncate(teto);
+    }
     Ok(with_notes(plan, context))
 }
 
@@ -281,12 +302,20 @@ pub fn plan_from_value(goal: &str, value: &Value, per_task: u32) -> Option<TaskP
             s => s,
         };
 
+        let check_cmd = clip(
+            field(
+                item,
+                &["check_cmd", "checkCmd", "check", "test_cmd", "comando"],
+            ),
+            MAX_INSTRUCTION_CHARS,
+        );
         tasks.push(Task {
             instruction,
             done_when,
             files: arquivos(item),
             depends_on: dependencies(item, index),
             est_tokens: per_task,
+            check_cmd: (!check_cmd.trim().is_empty()).then(|| check_cmd.trim().to_string()),
             ..Task::new(format!("t{}", index + 1), title)
         });
     }
@@ -477,6 +506,11 @@ pub(crate) struct PlanRun<'a> {
     pub window: WindowBudget,
     /// Quantas entregas cabem no teto de passos deste run.
     pub max_tasks: u32,
+    /// O comando de aceitação (`check_cmd`) pode rodar? Falso quando o modelo
+    /// não suporta ferramentas ou quando a pessoa DESLIGOU a família de
+    /// terminal — o harness não pode executar shell por um caminho que o
+    /// próprio menu proíbe ao modelo.
+    pub checar_com_terminal: bool,
 }
 
 /// O que o plano inteiro produziu.
@@ -553,12 +587,15 @@ pub(crate) async fn run_plan(
         if ctx.engine.handle.is_cancelled() {
             break RunStatus::Cancelled;
         }
-        if steps.used() >= steps.max() {
-            break RunStatus::MaxSteps;
-        }
+        // O estado do PLANO decide primeiro: sem etapa executável o desfecho
+        // é dele (concluído, ou travado → Escalated com as travadas nomeadas)
+        // — não "parei no limite", mesmo que o orçamento tenha acabado junto.
         let Some(index) = next_task(&ctx.plan) else {
             break RunStatus::Done;
         };
+        if steps.used() >= steps.max() {
+            break RunStatus::MaxSteps;
+        }
 
         let (task, digest, total, md) = start_task(&ctx.plan, index);
         publish(ctx, "etapa iniciada");
@@ -580,6 +617,31 @@ pub(crate) async fn run_plan(
 
         let files_before = runner.written.len();
         let commands_before = runner.commands.len();
+
+        // Camada TDD do Definition of Done: o comando de aceitação roda ANTES
+        // do trabalho (vermelho esperado — o teste que ainda falha) e DEPOIS
+        // dele. Os dois registros caem na fatia desta etapa; como têm o MESMO
+        // display, a conferência considera só o último — o vermelho inicial
+        // não reprova, o vermelho final sim. Só roda quando o terminal está
+        // ao alcance do run (família ligada + modelo com ferramentas).
+        let check_cmd = ctx
+            .checar_com_terminal
+            .then(|| task.check_cmd.clone())
+            .flatten()
+            .filter(|c| !c.trim().is_empty())
+            .map(|c| c.trim().to_string());
+        let check_before = match &check_cmd {
+            Some(cmd) => match run_check(runner, index, "antes", cmd).await {
+                Checagem::Codigo(code) => code,
+                Checagem::Parar(status) => {
+                    requeue(&ctx.plan, index);
+                    publish(ctx, "etapa bloqueada");
+                    break status;
+                }
+            },
+            None => None,
+        };
+
         let step = ctx
             .engine
             .drive(
@@ -594,7 +656,26 @@ pub(crate) async fn run_plan(
         out.prompt_tokens += step.prompt_tokens;
         out.completion_tokens += step.completion_tokens;
 
-        let files: Vec<String> = runner.written[files_before..].to_vec();
+        let check_after = match &check_cmd {
+            Some(cmd) if !ctx.engine.handle.is_cancelled() => {
+                match run_check(runner, index, "depois", cmd).await {
+                    Checagem::Codigo(code) => code,
+                    Checagem::Parar(status) => {
+                        requeue(&ctx.plan, index);
+                        publish(ctx, "etapa bloqueada");
+                        break status;
+                    }
+                }
+            }
+            _ => None,
+        };
+        anota_checks(&ctx.plan, index, check_before, check_after);
+
+        let mut files: Vec<String> = runner.written[files_before..].to_vec();
+        // A mesma etapa pode salvar um arquivo duas vezes; a lista que vai ao
+        // plano e à conferência não precisa repetir.
+        let mut vistos = std::collections::HashSet::new();
+        files.retain(|f| vistos.insert(f.clone()));
         let commands = runner.commands[commands_before..].to_vec();
 
         // O modelo chamou `ask_user`: o plano para onde está.
@@ -625,7 +706,39 @@ pub(crate) async fn run_plan(
             });
         }
 
-        if let Some(reason) = failure_of(&step, report.as_ref()) {
+        // Terceira camada: o juiz do `done_when`. Só quando NADA mecânico
+        // decidiu — etapa sem arquivo e sem comando de aceitação QUE TENHA
+        // RODADO (um check negado pela pessoa não é evidência), ou um
+        // comando que já passava antes (então ele não prova o trabalho DESTA
+        // etapa). O juiz nunca reverte reprovação mecânica.
+        let teste_ja_passava = check_before == Some(0) && check_after == Some(0);
+        let sem_evidencia = files.is_empty() && check_after.is_none();
+        let veredito = if step.status == RunStatus::Done
+            && report.as_ref().is_none_or(|r| r.passed)
+            && (sem_evidencia || teste_ja_passava)
+        {
+            judge::julgar(
+                ctx.engine.client,
+                &ctx.engine.opts.model,
+                &task,
+                &step.text,
+                &files,
+                &commands,
+                teste_ja_passava
+                    .then_some("o comando de aceitação JÁ passava antes desta etapa começar"),
+            )
+            .await
+        } else {
+            None
+        };
+        if let Some(v) = &veredito {
+            ctx.engine.sink.emit(RunEventKind::Verification {
+                passed: v.passou,
+                notes: format!("{} (juiz do critério): {}", task.title, v.porque),
+            });
+        }
+
+        if let Some(reason) = failure_of(&step, report.as_ref(), veredito.as_ref()) {
             let tries = attempts.entry(index).and_modify(|n| *n += 1).or_insert(1);
             fail_task(
                 &ctx.plan,
@@ -716,10 +829,72 @@ fn finish_task(plan: &SharedPlan, index: usize, handoff: String, files: Vec<Stri
     task.files = files;
 }
 
+/// O que a execução do comando de aceitação produziu.
+enum Checagem {
+    /// Código de saída — `None` = o comando não chegou a rodar (negado) ou
+    /// não informou código. NUNCA herda registro velho de outra fase.
+    Codigo(Option<i32>),
+    /// A chamada devolveu um sinal terminal (confirmações abandonadas, teto
+    /// de erros): o laço do plano precisa PARAR, não seguir sem ninguém.
+    Parar(RunStatus),
+}
+
+/// Roda o comando de aceitação da etapa pelo MESMO caminho de uma chamada do
+/// modelo — aprovação, trilha, timeout e registro em `commands` inclusos.
+///
+/// Duas diferenças deliberadas em relação a uma chamada do modelo:
+/// - o detector de repetição fica de fora (via `dentro_de_programa`, a mesma
+///   isenção do Code Mode): o check roda o MESMO comando de propósito, antes
+///   e depois — e o modelo continua com o direito de rodá-lo ele próprio;
+/// - o código de saída vem SÓ dos registros novos DESTA chamada: um check
+///   negado não pode herdar o exit de uma execução antiga como evidência.
+async fn run_check(runner: &mut ToolRunner, index: usize, fase: &str, cmd: &str) -> Checagem {
+    let tc = ToolCallReq {
+        id: crate::new_id(&format!("check_{index}_{fase}")),
+        name: "terminal_run".into(),
+        arguments_json: json!({ "command": cmd }).to_string(),
+    };
+    let antes = runner.commands.len();
+    let isento = runner.dentro_de_programa;
+    runner.dentro_de_programa = true;
+    let flow = runner.call("verificacao", 0, &tc).await;
+    runner.dentro_de_programa = isento;
+    match flow {
+        crate::run::CallFlow::Cancelled => Checagem::Parar(RunStatus::Cancelled),
+        crate::run::CallFlow::Escalate(_) => Checagem::Parar(RunStatus::Escalated),
+        _ => Checagem::Codigo(
+            runner.commands[antes..]
+                .iter()
+                .rev()
+                .find(|c| c.display == cmd)
+                .and_then(|c| c.exit_code),
+        ),
+    }
+}
+
+/// Guarda no plano a evidência TDD da etapa (código antes/depois do check).
+fn anota_checks(plan: &SharedPlan, index: usize, before: Option<i32>, after: Option<i32>) {
+    if before.is_none() && after.is_none() {
+        return;
+    }
+    let mut p = lock_plan(plan);
+    if let Some(task) = p.tasks.get_mut(index) {
+        task.check_before = before;
+        task.check_after = after;
+    }
+}
+
 /// Por que a etapa não passou — `None` quando passou.
-fn failure_of(step: &StepOutcome, report: Option<&VerifyReport>) -> Option<String> {
+fn failure_of(
+    step: &StepOutcome,
+    report: Option<&VerifyReport>,
+    veredito: Option<&judge::Veredito>,
+) -> Option<String> {
     if let Some(r) = report.filter(|r| !r.passed) {
         return Some(format!("a conferência não passou: {}", r.notes));
+    }
+    if let Some(v) = veredito.filter(|v| !v.passou) {
+        return Some(format!("o juiz do critério reprovou: {}", v.porque));
     }
     match step.status {
         RunStatus::Done => None,
@@ -741,51 +916,8 @@ fn publish(ctx: &PlanRun<'_>, motivo: &str) {
     publish_plan(ctx.engine, &ctx.plan, motivo);
 }
 
-/// Divide o pedido em entregas ANTES do laço do agente começar.
-///
-/// No modo laço isto acontece dentro de [`run_plan`]. No modo agente não
-/// acontecia — e era por isso que um pedido de dezenas de requisitos entrava
-/// no laço como uma frase só: sem lista, não há o que conferir no fim, e
-/// "respondeu texto" acabava valendo como "terminou".
-///
-/// Falhar aqui não derruba nada: um objetivo que o modelo não consegue
-/// dividir vira uma entrega só, exatamente como no modo laço.
-pub(crate) async fn plan_for_agent(
-    engine: &StepEngine<'_>,
-    plan: &SharedPlan,
-    goal: &str,
-    window: WindowBudget,
-    max_tasks: u32,
-) {
-    if !snapshot(plan).tasks.is_empty() {
-        return;
-    }
-    let novo = match decompose(
-        engine.client,
-        &engine.opts.model,
-        goal,
-        window,
-        "",
-        max_tasks,
-    )
-    .await
-    {
-        Ok(p) => p,
-        Err(e) => {
-            log::warn!("não consegui dividir o pedido ({e}); sigo com uma entrega só");
-            single_task_plan(goal, window.per_task())
-        }
-    };
-    *lock_plan(plan) = novo;
-    publish_plan(engine, plan, "entregas do pedido");
-}
-
-/// Grava e emite o plano.
-///
-/// Separado de [`publish`] porque o modo agente também divide o pedido em
-/// entregas — e o quadro na tela é o que a pessoa usa para saber em que etapa
-/// o run está. Sem isto, o modo agente teria a lista por dentro e nada na
-/// interface.
+/// Grava e emite o plano — o quadro na tela é o que a pessoa usa para saber
+/// em que etapa o run está.
 pub(crate) fn publish_plan(engine: &StepEngine<'_>, plan: &SharedPlan, motivo: &str) {
     let plan = snapshot(plan);
     match serde_json::to_string(&plan) {
@@ -814,13 +946,20 @@ fn task_brief(goal: &str, digest: &str, index: usize, total: usize, task: &Task)
         out.push_str("\n\n");
     }
     out.push_str(&format!(
-        "Sua etapa agora — {} de {}: {}\n{}\nPronto quando: {}\n\n",
+        "Sua etapa agora — {} de {}: {}\n{}\nPronto quando: {}\n",
         index + 1,
         total,
         task.title,
         task.instruction,
         task.done_when
     ));
+    if let Some(cmd) = task.check_cmd.as_deref().filter(|c| !c.trim().is_empty()) {
+        out.push_str(&format!(
+            "O comando de aceitação `{cmd}` PRECISA sair com código 0 ao fim — o harness o \
+             executa e confere.\n"
+        ));
+    }
+    out.push('\n');
     if let Some(erro) = task.error.as_deref().filter(|e| !e.trim().is_empty()) {
         out.push_str(&format!(
             "A tentativa anterior desta etapa não deu certo: {erro}\nTente outro caminho.\n\n"
@@ -891,7 +1030,22 @@ fn summarize(plan: &TaskPlan, status: RunStatus, question: Option<&str>, max_ste
     match status {
         RunStatus::Done => format!("Plano concluído: {done} de {total} entregas."),
         RunStatus::MaxSteps => {
-            format!("Parei no limite de {max_steps} passos com {done} de {total} entregas.")
+            // Acabar o orçamento não é desculpa para não dizer O QUE faltou.
+            let pendentes: Vec<&str> = plan
+                .tasks
+                .iter()
+                .filter(|t| !t.status.is_finished())
+                .map(|t| t.title.as_str())
+                .collect();
+            if pendentes.is_empty() {
+                format!("Parei no limite de {max_steps} passos com {done} de {total} entregas.")
+            } else {
+                format!(
+                    "Parei no limite de {max_steps} passos com {done} de {total} entregas. \
+                     Faltou: {}.",
+                    pendentes.join("; ")
+                )
+            }
         }
         RunStatus::Cancelled => {
             format!("Execução cancelada com {done} de {total} entregas prontas.")

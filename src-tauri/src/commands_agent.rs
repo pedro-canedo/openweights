@@ -46,6 +46,18 @@ pub struct StartOptions {
     pub work_mode: WorkMode,
 }
 
+/// Teto de passos que comporta um plano já existente: n etapas × passos por
+/// etapa + folga de retentativas. A granularidade já foi decidida (e, no
+/// planejamento, revisada pela pessoa) — o orçamento acompanha.
+fn teto_para(plan: Option<&TaskPlan>) -> u32 {
+    match plan {
+        Some(p) if !p.tasks.is_empty() => {
+            (p.tasks.len() as u32 * lr_agent::MAX_STEPS_PER_TASK + 4).clamp(24, 100)
+        }
+        _ => 24,
+    }
+}
+
 /// Começa uma execução do agente na conversa indicada.
 #[tauri::command]
 pub async fn run_start(
@@ -288,9 +300,7 @@ pub async fn run_plan_approve(
                     model: modelo.clone(),
                     mode: run.mode,
                     workspace_dir: run.workspace_dir.clone(),
-                    // O teto do laço é recalculado no crate do agente a
-                    // partir do tamanho do plano.
-                    max_steps: 24,
+                    max_steps: teto_para(Some(&plan)),
                     mcp_servers: Vec::new(),
                     temperature: None,
                     top_p: None,
@@ -412,7 +422,7 @@ Resposta da pessoa: {answer}",
                     model: modelo.clone(),
                     mode: run.mode,
                     workspace_dir: run.workspace_dir.clone(),
-                    max_steps: 24,
+                    max_steps: teto_para(plan.as_ref()),
                     mcp_servers: Vec::new(),
                     temperature: None,
                     top_p: None,

@@ -704,6 +704,7 @@ async fn each_task_runs_with_a_fresh_context_carrying_only_the_handoff() {
         context: String::new(),
         window: budget(),
         max_tasks: MAX_TASKS as u32,
+        checar_com_terminal: false,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -778,6 +779,7 @@ async fn a_task_that_fails_twice_is_blocked_and_the_loop_moves_on() {
         context: String::new(),
         window: budget(),
         max_tasks: MAX_TASKS as u32,
+        checar_com_terminal: false,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -857,6 +859,7 @@ async fn the_loop_stops_when_the_model_asks_the_person() {
         context: String::new(),
         window: budget(),
         max_tasks: MAX_TASKS as u32,
+        checar_com_terminal: false,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -915,6 +918,7 @@ async fn task_complete_closes_the_step_with_the_handoff_the_model_wrote() {
         context: String::new(),
         window: budget(),
         max_tasks: MAX_TASKS as u32,
+        checar_com_terminal: false,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -966,6 +970,7 @@ async fn an_empty_plan_is_decomposed_before_the_loop_starts() {
         context: String::new(),
         window: budget(),
         max_tasks: MAX_TASKS as u32,
+        checar_com_terminal: false,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
@@ -975,6 +980,9 @@ async fn an_empty_plan_is_decomposed_before_the_loop_starts() {
     assert_eq!(outcome.status, RunStatus::Done);
 }
 
+/// O teto de passos é o que a pessoa (ou automação) escolheu — o plano nunca
+/// o estoura. Uma automação de madrugada com 12 passos não pode virar 100
+/// porque o modelo resolveu devolver mais entregas.
 #[tokio::test]
 async fn the_global_step_ceiling_still_wins() {
     let server = loop_server(None);
@@ -1002,11 +1010,12 @@ async fn the_global_step_ceiling_still_wins() {
         context: String::new(),
         window: budget(),
         max_tasks: MAX_TASKS as u32,
+        checar_com_terminal: false,
     };
     let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
 
     assert_eq!(outcome.status, RunStatus::MaxSteps);
     let saved = crate::plan_tools::snapshot(&plan);
     assert_eq!(saved.tasks[1].status, TaskStatus::Pending);
-    assert!(outcome.summary.contains("limite"), "{}", outcome.summary);
+    assert!(outcome.summary.contains("Faltou"), "{}", outcome.summary);
 }

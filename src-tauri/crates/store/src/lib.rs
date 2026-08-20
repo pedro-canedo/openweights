@@ -202,6 +202,8 @@ impl Store {
         // Veredito da conferência automática — o cartão do run na conversa
         // mostra passou/reprovou sem recarregar a trilha inteira.
         ensure_column(&conn, "runs", "verify_json", "TEXT")?;
+        // Modo de trabalho (Scout Rule) do run — o painel reabre com o certo.
+        ensure_column(&conn, "runs", "work_mode", "TEXT")?;
         mcp::init(&conn)?;
         memory::init(&conn)?;
         automation::init(&conn)?;

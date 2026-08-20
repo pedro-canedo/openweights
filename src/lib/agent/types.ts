@@ -2,6 +2,8 @@
 // Fonte da verdade: src-tauri/crates/types/src/agent.rs (serde camelCase).
 // Qualquer mudança aqui exige a mudança correspondente lá — e vice-versa.
 
+import type { WorkMode } from "./scout";
+
 export type RunMode = "chat" | "approve" | "smart" | "yolo";
 
 export type ToolCategory = "read" | "edit" | "execute" | "network" | "mcp" | "meta";
@@ -237,6 +239,8 @@ export interface RunSummary {
   verification?: { passed: boolean; notes: string } | null;
   /** O run tem plano de trabalho gravado — o cartão pode buscá-lo. */
   hasPlan?: boolean;
+  /** Como o agente trabalhou (persistido; sobrevive a reload). */
+  workMode?: WorkMode;
   /** Epoch em SEGUNDOS (a unidade da tabela `runs`, não a dos eventos). */
   createdAt: number;
   finishedAt: number | null;

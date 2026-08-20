@@ -88,6 +88,18 @@ pub struct Task {
     pub est_tokens: u32,
     #[serde(default)]
     pub error: Option<String>,
+    /// Comando de aceitação (Definition of Done executável): sai com código 0
+    /// quando a entrega está pronta. `None`/vazio = não há comando conferível
+    /// — a etapa cai nas outras camadas de prova (arquivos, juiz).
+    #[serde(default)]
+    pub check_cmd: Option<String>,
+    /// Código de saída do comando de aceitação ANTES da etapa (TDD: o teste
+    /// que ainda falha) e DEPOIS dela. Preenchidos pelo harness, nunca pelo
+    /// modelo.
+    #[serde(default)]
+    pub check_before: Option<i32>,
+    #[serde(default)]
+    pub check_after: Option<i32>,
 }
 
 impl Task {
@@ -103,6 +115,9 @@ impl Task {
             depends_on: Vec::new(),
             est_tokens: 0,
             error: None,
+            check_cmd: None,
+            check_before: None,
+            check_after: None,
         }
     }
 }
@@ -244,13 +259,15 @@ impl WindowBudget {
     }
 
     /// Quantas tarefas pedir na decomposição, dado o tamanho do pedido.
-    /// Janela pequena → mais tarefas, cada uma menor.
+    /// Janela pequena → mais tarefas, cada uma menor. As bases são altas de
+    /// propósito: granularidade máxima é o que deixa cada etapa conferível —
+    /// etapa grande é onde o falso "concluído" se esconde.
     pub fn suggested_tasks(&self, prompt_tokens: u32) -> u32 {
         let base = match self.n_ctx {
-            0..=8_192 => 8,
-            8_193..=16_384 => 6,
-            16_385..=49_152 => 5,
-            _ => 4,
+            0..=8_192 => 10,
+            8_193..=16_384 => 8,
+            16_385..=49_152 => 7,
+            _ => 6,
         };
         // Pedido grande já ocupa janela: divide mais.
         let extra = (prompt_tokens / self.per_task().max(1)).min(4);

@@ -702,8 +702,9 @@ function hydrateStoredOutputs(view: RunView, rows: RunCallOutput[]): RunView {
 /**
  * Carrega um run antigo (usado pelo painel de execução). Não vira ativo.
  *
- * O modo de trabalho não viaja nos eventos: vem da memória da sessão
- * (`workModeByRun`) e cai no padrão depois de um reload do app.
+ * O modo de trabalho não viaja nos eventos: vem PERSISTIDO no resumo do run
+ * (`runs.work_mode`) — a memória da sessão é só fallback para bancos antigos
+ * sem a coluna preenchida.
  */
 export async function loadRunView(runId: string): Promise<RunView> {
   const events = await runEventsList(runId, 0);
@@ -711,6 +712,11 @@ export async function loadRunView(runId: string): Promise<RunView> {
   // A saída completa das ferramentas não viaja nos eventos: vem do banco.
   view = hydrateStoredOutputs(view, await runCallOutputs(runId));
   view.workMode = workModeByRun.get(runId) ?? view.workMode;
+  if (view.chatId >= 0) {
+    const lista = await runsList(view.chatId).catch(() => [] as RunSummary[]);
+    const resumo = lista.find((r) => r.id === runId);
+    if (resumo?.workMode) view.workMode = resumo.workMode;
+  }
   view.plan = await runPlanGet(runId).catch(() => null);
   return view;
 }
@@ -1301,7 +1307,10 @@ export const runStore = {
     // Saída das ferramentas: o replay não traz `tool.output`; o banco traz.
     view = hydrateStoredOutputs(view, await runCallOutputs(active.id));
     view.chatId = chatId;
-    view.workMode = workModeByChat.get(chatId) ?? view.workMode;
+    // O modo agora vem persistido no resumo; os mapas em memória são só
+    // fallback de sessões antigas do banco (sem a coluna preenchida).
+    view.workMode =
+      active.workMode ?? workModeByChat.get(chatId) ?? view.workMode;
     runs.set(view.runId, view);
     byChat.set(chatId, view.runId);
     emit();

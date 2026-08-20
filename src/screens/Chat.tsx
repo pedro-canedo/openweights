@@ -263,7 +263,11 @@ function toApiMessages(history: UiMessage[]): ChatMessage[] {
 }
 
 /** Teto de passos de um run disparado pelo chat (o Rust também limita). */
-const AGENT_MAX_STEPS = 24;
+// Comporta um plano de 12 entregas (12×8 + folga). O limite REAL de cada run
+// é o plano: cada etapa tem teto próprio de 8 passos e 2 tentativas, então um
+// plano pequeno para muito antes disto — o número alto só não estrangula a
+// granularidade máxima que o modo Executar promete.
+const AGENT_MAX_STEPS = 100;
 
 /** Texto final do run: o último passo com conteúdo (ou o resumo). */
 function runFinalText(run: RunView | undefined): string {

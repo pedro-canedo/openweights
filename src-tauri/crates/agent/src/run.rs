@@ -12,7 +12,6 @@
 
 use crate::checkpoint;
 use crate::codemode;
-use crate::delivery;
 use crate::events::EventSink;
 use crate::menu;
 use crate::output_stream::ChunkCoalescer;
@@ -345,15 +344,11 @@ const MAX_ERROS_TOTAIS: u32 = 8;
 const STALL_NUDGE: u32 = 3;
 const STALL_ESCALATE: u32 = 5;
 
-/// Teto de passos da rodada de conserto pós-verificação. Curto: ou o
-/// conserto é direto (criar o arquivo que falta, rodar de novo o comando),
-/// ou não é conserto — e o orçamento global continua valendo por cima.
-const MAX_PASSOS_DE_CONSERTO: u32 = 4;
-
-/// Contadores que atravessam o run inteiro — inclusive as etapas do modo
-/// laço, que zeram a memória de contexto (`reset_task_memory`) mas NÃO podem
-/// zerar isto: um modelo que só anuncia consumiria o orçamento repetindo o
-/// padrão etapa após etapa, com o contador local sempre voltando a zero.
+/// Contadores do run. A maioria atravessa o run inteiro; `cutucadas` e
+/// `sem_progresso` renascem a cada etapa do laço (`reset_task_memory`) —
+/// contexto novo apaga a correção ensinada, então o orçamento dela renasce
+/// junto. Quem vigia o modelo que só anuncia etapa após etapa é o GATE de
+/// prova por etapa (arquivos, comando de aceitação, juiz), não um contador.
 #[derive(Debug, Default)]
 pub(crate) struct RunCounters {
     pub cutucadas: u32,
@@ -392,6 +387,18 @@ impl RunCounters {
             self.sem_progresso = 0;
             return None;
         }
+        self.avanca_estagnacao()
+    }
+
+    /// Um passo que terminou SEM chamada nenhuma e não encerrou o trecho
+    /// (anúncio cutucado, nome de ferramenta inexistente) conta igual: era o
+    /// passo invisível que queimava minutos de "Pensou por..." sem produzir
+    /// nada — quatro deles seguidos e o run "concluía" sem ter feito nada.
+    fn passo_vazio(&mut self) -> Option<Stall> {
+        self.avanca_estagnacao()
+    }
+
+    fn avanca_estagnacao(&mut self) -> Option<Stall> {
         self.sem_progresso += 1;
         if self.sem_progresso >= STALL_ESCALATE {
             Some(Stall::Escalate)
@@ -400,6 +407,25 @@ impl RunCounters {
         } else {
             None
         }
+    }
+}
+
+/// Contabiliza um passo que terminou sem chamada nenhuma. A correção que
+/// acabou de entrar na conversa (a cutucada, o aviso de nome errado) JÁ é o
+/// empurrão — nenhum aviso extra é empilhado, porque duas mensagens de
+/// usuário seguidas quebram templates de alternância estrita (Gemma,
+/// Mistral). No teto, o run para com a causa escrita.
+fn vigia_passo_vazio(runner: &mut ToolRunner, out: &mut StepOutcome) -> Option<RunStatus> {
+    match runner.counters.passo_vazio() {
+        Some(Stall::Escalate) => {
+            out.escalation = Some(format!(
+                "O agente passou {} passos falando sem agir (nenhuma ferramenta \
+                 executada) e parou para você decidir.",
+                runner.counters.sem_progresso
+            ));
+            Some(RunStatus::Escalated)
+        }
+        _ => None,
     }
 }
 
@@ -588,6 +614,16 @@ impl ToolRunner {
         self.reads = ReadLedger::default();
         self.repeats = RepeatDetector::default();
         self.errors = ErrorStreak::default();
+        // Cutucadas e estagnação também são POR ETAPA: o contexto novo apaga
+        // a correção que a cutucada ensinou, então o orçamento dela precisa
+        // renascer junto — senão as etapas 3+ de um modelo que anuncia fecham
+        // sem nenhuma cutucada e reprovam à toa. O falso "Concluído" que o
+        // acúmulo global vigiava morreu com o gate de prova por etapa; e um
+        // stall estourado numa etapa não pode condenar a retentativa a
+        // escalar no primeiro passo (o 3-avisa/5-para valeria só uma vez).
+        // `erros_totais` continua global: teto de dano do run inteiro.
+        self.counters.cutucadas = 0;
+        self.counters.sem_progresso = 0;
     }
 
     fn tool_context(&self, call_id: &str) -> ToolContext {
@@ -1173,9 +1209,12 @@ impl ToolRunner {
                     self.reads.note(&key, step_index);
                 }
                 for file in &out.changed_files {
-                    if !self.written.contains(file) {
-                        self.written.push(file.clone());
-                    }
+                    // SEM deduplicar pelo run inteiro: a fatia de cada etapa
+                    // do laço é `written[antes..]`, e o dedup global esvaziava
+                    // a fatia de uma etapa que reedita arquivo já tocado — o
+                    // juiz então reprovava trabalho real por "nenhum arquivo
+                    // escrito". Repetição custa só uma releitura na conferência.
+                    self.written.push(file.clone());
                     // O arquivo MUDOU: a leitura antiga que está no histórico
                     // ficou velha, e a releitura de conferência tem que passar.
                     self.reads.invalidate_file(file);
@@ -1611,6 +1650,25 @@ fn args_hash(args: &Value) -> String {
         hash = hash.wrapping_mul(1099511628211);
     }
     format!("{hash:016x}")
+}
+
+/// Resumo curto da conversa para a decomposição: um pedido de continuação
+/// ("agora adicione X") só faz sentido com o que veio antes à vista.
+fn resumo_do_historico(history: &[ChatMessage]) -> String {
+    let mut linhas: Vec<String> = Vec::new();
+    for m in history.iter().rev().take(6) {
+        let texto = m
+            .content
+            .as_ref()
+            .map(|c| c.as_plain_text())
+            .unwrap_or_default();
+        if texto.trim().is_empty() {
+            continue;
+        }
+        linhas.push(format!("{}: {}", m.role, head_chars(texto.trim(), 280)));
+    }
+    linhas.reverse();
+    head_chars(&linhas.join("\n"), 1_800)
 }
 
 pub(crate) fn head_chars(s: &str, max: usize) -> String {
@@ -2144,6 +2202,9 @@ impl StepEngine<'_> {
                     runner.counters.cutucadas += 1;
                     messages.push(outcome.to_assistant_message());
                     messages.push(ChatMessage::user(texto.to_string()));
+                    if let Some(parada) = vigia_passo_vazio(runner, &mut out) {
+                        break parada;
+                    }
                     continue;
                 }
                 // Pedimos duas vezes e ele continua escrevendo a chamada em
@@ -2198,6 +2259,9 @@ impl StepEngine<'_> {
                         "Essa ferramenta não existe. Use exatamente um destes nomes: {}.",
                         self.menu.active_names().join(", ")
                     )));
+                    if let Some(parada) = vigia_passo_vazio(runner, &mut out) {
+                        break parada;
+                    }
                     continue;
                 }
                 out.text = outcome.content.clone();
@@ -2271,6 +2335,15 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         work_mode,
         plan: approved_plan,
     } = req;
+    // UM caminho executor: "Agente" É o laço etapa-por-etapa. O laço livre
+    // não tinha gate por entrega — o plano era decorativo e um run que só
+    // rodou `node -v` saía "Concluído". A variante `Agent` continua existindo
+    // nos enums (compat de banco e de conversas antigas); aqui ela vira Loop.
+    let work_mode = if work_mode == WorkMode::Agent {
+        WorkMode::Loop
+    } else {
+        work_mode
+    };
     let sink = handle.sink();
     let run_id = handle.id.clone();
     let workspace = opts
@@ -2337,6 +2410,9 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
             .flatten()
             .as_deref(),
     );
+    // Decidido AQUI (o vetor é movido adiante): o comando de aceitação das
+    // etapas só roda se a família de terminal está ao alcance deste run.
+    let terminal_ligado = groups.contains(&ToolGroup::Terminal);
     let available = specs.len();
     let mut curated = menu::curate(specs, &prompt, &groups, props.n_ctx);
     // Família desligada é escolha da pessoa: sai do alcance do agente, não
@@ -2529,21 +2605,24 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     let max_tasks = (max_steps / scout::MAX_STEPS_PER_TASK).max(1);
     let mut budget = StepBudget::new(max_steps);
 
-    // Vive fora do despacho porque a rodada de conserto (verificação
-    // reprovada no modo agente) continua a MESMA conversa.
-    let mut messages_do_agente: Vec<ChatMessage> = Vec::new();
     let status = if work_mode == WorkMode::Loop {
         // Divide o objetivo e executa entrega por entrega, cada uma com
-        // contexto novo.
+        // contexto novo. A decomposição enxerga um resumo curto da conversa:
+        // "agora adicione X" precisa saber o que veio antes.
         let plan_run = PlanRun {
             engine: &engine,
             build_system: &build_prompt,
             plan: plan.clone(),
             workspace: workspace.clone(),
             goal: prompt.clone(),
-            context: String::new(),
+            context: resumo_do_historico(&history),
             window,
             max_tasks,
+            // O check só pode rodar pelo que o run tem direito: modelo com
+            // ferramentas E família de terminal ligada pela pessoa. Executar
+            // shell por fora do que o menu permite seria o harness burlando
+            // a própria política.
+            checar_com_terminal: tools_on && terminal_ligado,
         };
         let outcome = scout::run_plan(&plan_run, &mut runner, &mut budget).await;
         usage.steps += outcome.steps;
@@ -2553,7 +2632,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         summary_override = Some(outcome.summary);
         outcome.status
     } else {
-        messages_do_agente = vec![ChatMessage::system(build_prompt(None))];
+        let mut messages_do_agente = vec![ChatMessage::system(build_prompt(None))];
         if work_mode == WorkMode::Plan {
             // Segunda mensagem de sistema: a reconstrução do prompt a cada
             // passo troca só a primeira, então esta sobrevive ao plano mudar.
@@ -2562,15 +2641,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         messages_do_agente.extend(history);
         append_prompt(&mut messages_do_agente, &prompt);
 
-        // A lista de entregas do pedido, antes de agir. É ela que dá ao run
-        // um critério de "pronto" que não depende da frase final do modelo —
-        // e é ela que aparece no quadro, para a pessoa saber em que etapa ele
-        // está em vez de olhar "Pensou por 60s".
-        if tools_on && work_mode == WorkMode::Agent {
-            scout::plan_for_agent(&engine, &plan, &prompt, window, max_tasks).await;
-        }
-
-        let mut outcome = engine
+        let outcome = engine
             .drive(
                 &mut runner,
                 &mut messages_do_agente,
@@ -2582,71 +2653,6 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         usage.steps += outcome.steps;
         usage.prompt_tokens += outcome.prompt_tokens;
         usage.completion_tokens += outcome.completion_tokens;
-
-        // O laço parou dizendo que acabou. Acabou mesmo?
-        //
-        // Quem responde é o disco, não o texto: as entregas do plano declaram
-        // arquivos, e ou eles existem ou não. Enquanto faltarem — e enquanto
-        // houver orçamento de passos —, a cobrança volta para a conversa e o
-        // trabalho continua de onde parou. É o que separa "o modelo parou de
-        // agir" de "a tarefa terminou", que era a confusão que fechava um
-        // pedido de dezenas de requisitos como Concluído em quatro passos.
-        // Só no modo agente. No planejamento o run entrega o PLANO, não o
-        // trabalho — cobrar as entregas ali mandaria o modelo executar antes
-        // de a pessoa aprovar, que é exatamente o que aquele modo promete não
-        // fazer. E no modo laço a cobrança é do `run_plan`, que reenfileira a
-        // etapa reprovada; empilhar as duas cobraria a mesma entrega em
-        // dobro.
-        if tools_on && work_mode == WorkMode::Agent && outcome.status == RunStatus::Done {
-            let mut anterior: Option<Vec<delivery::Pendencia>> = None;
-            loop {
-                let pendentes = delivery::pendencias(&snapshot(&plan), workspace.as_deref());
-                if pendentes.is_empty() {
-                    break;
-                }
-                if budget.used() >= budget.max() {
-                    // O orçamento acabou com entrega faltando. "Parei no
-                    // limite de N passos" não ajuda ninguém a decidir o que
-                    // fazer; o que ficou de fora, com nome de arquivo, ajuda.
-                    summary_override = Some(delivery::resumo_do_que_faltou(&pendentes));
-                    outcome.status = RunStatus::MaxSteps;
-                    break;
-                }
-                // Cobrar de novo exatamente o mesmo, depois de uma rodada
-                // inteira, é girar em falso: o modelo já mostrou que não vai
-                // sair do lugar, e insistir só queima o orçamento que a
-                // pessoa paga. Devolve para ela com o que faltou escrito.
-                if anterior.as_ref().is_some_and(|ant| *ant == pendentes) {
-                    outcome.escalation = Some(delivery::resumo_do_que_faltou(&pendentes));
-                    outcome.status = RunStatus::Escalated;
-                    break;
-                }
-                anterior = Some(pendentes.clone());
-
-                messages_do_agente.push(ChatMessage::user(delivery::cobranca(&pendentes)));
-                let extra = engine
-                    .drive(
-                        &mut runner,
-                        &mut messages_do_agente,
-                        &mut budget,
-                        scout::MAX_STEPS_PER_TASK,
-                        &build_prompt,
-                    )
-                    .await;
-                usage.steps += extra.steps;
-                usage.prompt_tokens += extra.prompt_tokens;
-                usage.completion_tokens += extra.completion_tokens;
-                if !extra.text.trim().is_empty() {
-                    outcome.text = extra.text.clone();
-                }
-                // Cancelou, travou, estourou: o desfecho da rodada manda.
-                if extra.status != RunStatus::Done {
-                    outcome.status = extra.status;
-                    outcome.escalation = outcome.escalation.or(extra.escalation);
-                    break;
-                }
-            }
-        }
 
         final_text = outcome.text.clone();
         escalation = outcome.escalation;
@@ -2677,8 +2683,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     // tentativa falhada continuam no acumulado (um `npm test` vermelho que a
     // retentativa consertou por outro comando reprovaria um run cujas etapas
     // todas passaram). Lá, o veredito honesto é o do plano: etapa por etapa.
-    let mut status = status;
-    let mut verificacao = if work_mode == WorkMode::Loop {
+    let verificacao = if work_mode == WorkMode::Loop {
         matches!(
             status,
             RunStatus::Done | RunStatus::MaxSteps | RunStatus::Escalated
@@ -2717,47 +2722,6 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         .then(|| verify::verify(workspace.as_deref(), &runner.written, &runner.commands))
         .flatten()
     };
-
-    // Reprovou no modo agente: UMA rodada de conserto, com o relatório na
-    // mesa e um teto curto próprio (o orçamento global continua valendo por
-    // cima). No modo laço NÃO: `scout::failure_of` já reenfileira a etapa
-    // reprovada, e empilhar os dois daria 16 passos por etapa ruim.
-    if work_mode == WorkMode::Agent
-        && status == RunStatus::Done
-        && verificacao.as_ref().is_some_and(|r| !r.passed)
-        && let Some(report) = verificacao.clone()
-    {
-        sink.emit(RunEventKind::Verification {
-            passed: report.passed,
-            notes: report.notes.clone(),
-        });
-        messages_do_agente.push(ChatMessage::user(format!(
-            "A verificação automática reprovou o resultado: {} Corrija AGORA o que ela \
-             aponta — crie o que falta ou rode de novo o comando que falhou depois de \
-             consertar a causa — e só então responda.",
-            report.notes
-        )));
-        let conserto = engine
-            .drive(
-                &mut runner,
-                &mut messages_do_agente,
-                &mut budget,
-                MAX_PASSOS_DE_CONSERTO,
-                &build_prompt,
-            )
-            .await;
-        usage.steps += conserto.steps;
-        usage.prompt_tokens += conserto.prompt_tokens;
-        usage.completion_tokens += conserto.completion_tokens;
-        if !conserto.text.trim().is_empty() {
-            final_text = conserto.text.clone();
-        }
-        escalation = escalation.or(conserto.escalation);
-        status = conserto.status;
-        // O resultado da rodada é FINAL: re-verifica e segue — sem segunda
-        // rodada, senão vira o mesmo laço com outro nome.
-        verificacao = verify::verify(workspace.as_deref(), &runner.written, &runner.commands);
-    }
 
     if let Some(report) = &verificacao {
         sink.emit(RunEventKind::Verification {

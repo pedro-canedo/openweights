@@ -29,6 +29,11 @@ export interface Task {
   dependsOn: number[];
   estTokens: number;
   error: string | null;
+  /** Comando de aceitação (DoD executável): sai 0 quando a entrega está pronta. */
+  checkCmd?: string | null;
+  /** Código de saída do comando de aceitação antes/depois da etapa (TDD). */
+  checkBefore?: number | null;
+  checkAfter?: number | null;
 }
 
 export interface TaskPlan {

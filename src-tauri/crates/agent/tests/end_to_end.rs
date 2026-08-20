@@ -703,7 +703,10 @@ async fn unknown_tool_becomes_feedback_not_a_crash() {
 }
 
 /// Repetir a MESMA chamada é sintoma de laço: o agente para e devolve para a
-/// pessoa antes de gastar o teto inteiro de passos.
+/// pessoa antes de gastar o teto inteiro de passos. No laço por etapa a
+/// repetição escala a ETAPA (aviso na 2ª chamada igual, parada na 3ª); a
+/// etapa é reenfileirada uma vez e, insistindo no mesmo giro, trava — e o
+/// run devolve Escalated.
 #[tokio::test]
 async fn identical_calls_stop_the_run_early() {
     let h = Harness::new();
@@ -727,8 +730,9 @@ async fn identical_calls_stop_the_run_early() {
         "chamada repetida deveria escalar: {:?}",
         h.kinds()
     );
-    // Parou antes do teto de 6 passos configurado no Harness.
-    assert!(server.calls.load(Ordering::SeqCst) < 6);
+    // 3 chamadas por tentativa da etapa × 2 tentativas — bem antes do teto
+    // derivado do plano (1 etapa × 8 passos + folga = 12).
+    assert!(server.calls.load(Ordering::SeqCst) <= 6);
 }
 
 /// Com chamadas DIFERENTES a cada passo o detector de repetição não dispara,
@@ -763,8 +767,10 @@ async fn step_ceiling_ends_a_runaway_loop() {
         "deveria parar no teto: {:?}",
         h.kinds()
     );
-    // 6 passos configurados no Harness — nunca muito além disso.
-    assert!(server.calls.load(Ordering::SeqCst) <= 7);
+    // O teto agora é derivado do plano (1 etapa × 8 passos + folga de
+    // retentativa = 12): 8 passos na primeira tentativa da etapa, 4 na
+    // segunda — e nunca além disso.
+    assert!(server.calls.load(Ordering::SeqCst) <= 12);
 }
 
 /// Cancelar interrompe de verdade, sem deixar o run pendurado.
@@ -1040,7 +1046,9 @@ async fn a_small_window_gets_a_partial_menu_the_model_can_extend() {
             _ => None,
         })
         .collect();
-    assert_eq!(selections.len(), 2, "abertura + pedido do modelo");
+    // Abertura + pedido do modelo — e o laço ainda recura o cardápio a cada
+    // etapa do plano, então seleções extras (não pedidas) podem aparecer.
+    assert!(selections.len() >= 2, "{selections:?}");
 
     // Abertura: o recorte cabe na janela e nenhuma zebra entrou.
     let (available, active, limit, requested) = &selections[0];
@@ -1050,13 +1058,21 @@ async fn a_small_window_gets_a_partial_menu_the_model_can_extend() {
         *available >= 14,
         "o catálogo do teste é maior que o recorte"
     );
-    // O recorte respeita o teto. As ferramentas DO RUN (a porta de saída e a
-    // delegação) ficam fora da conta: são a máquina, não o catálogo. O que
-    // não tem relação com o pedido fica de fora — sobra vaga vira
-    // enchimento, e tudo bem: o que não pode é o catálogo inteiro entrar.
+    // O recorte respeita o teto. As ferramentas DO RUN (a porta de saída, a
+    // delegação e as meta do plano do laço) ficam fora da conta: são a
+    // máquina, não o catálogo. O que não tem relação com o pedido fica de
+    // fora — sobra vaga vira enchimento, e tudo bem: o que não pode é o
+    // catálogo inteiro entrar.
+    const DO_RUN: [&str; 5] = [
+        "tools_find",
+        "agent_delegate",
+        "plan_update",
+        "task_complete",
+        "ask_user",
+    ];
     let do_catalogo = active
         .iter()
-        .filter(|n| *n != "tools_find" && *n != "agent_delegate")
+        .filter(|n| !DO_RUN.contains(&n.as_str()))
         .count();
     assert!(do_catalogo <= *limit as usize, "{active:?}");
     let zebras = active.iter().filter(|n| n.starts_with("zebra_")).count();
@@ -1069,11 +1085,13 @@ async fn a_small_window_gets_a_partial_menu_the_model_can_extend() {
         assert!(active.iter().any(|n| n == essencial), "faltou {essencial}");
     }
 
-    // Pedido do modelo: só o que acabou de entrar, e as zebras entraram.
-    let (_, pedidas, _, requested) = &selections[1];
-    assert!(requested);
+    // Pedido do modelo: exatamente UMA seleção pedida, só com a novidade —
+    // e as zebras entraram.
+    let pedidos: Vec<_> = selections.iter().filter(|s| s.3).collect();
+    assert_eq!(pedidos.len(), 1, "um pedido do modelo: {selections:?}");
+    let (_, pedidas, _, _) = pedidos[0];
     assert!(
-        pedidas.iter().all(|n| n.starts_with("zebra_")),
+        !pedidas.is_empty() && pedidas.iter().all(|n| n.starts_with("zebra_")),
         "o evento do pedido traz só a novidade: {pedidas:?}"
     );
 }
@@ -1234,6 +1252,11 @@ async fn a_model_that_cannot_take_tools_says_so_in_the_trail() {
 /// voltar, a resposta de um run cancelado (ou que morreu no limite de passos)
 /// simplesmente não estava mais lá. Agora ela é gravada como mensagem, que é
 /// onde a pessoa vai procurar por ela.
+///
+/// No modo agente (laço) a âncora do run cancelado é o veredito do PLANO
+/// ("cancelada com N de M entregas") — o texto em curso que precisa
+/// sobreviver ao cancelamento é o de uma RESPOSTA, e é o caminho de conversa
+/// que carrega essa garantia. É ele que este teste protege.
 #[tokio::test]
 async fn a_cancelled_run_keeps_what_it_already_said_in_the_chat() {
     let h = Harness::new();
@@ -1257,7 +1280,7 @@ async fn a_cancelled_run_keeps_what_it_already_said_in_the_chat() {
                 memory: Vec::new(),
                 options: opts,
                 endpoint: server.endpoint(),
-                work_mode: WorkMode::Agent,
+                work_mode: WorkMode::Chat,
                 plan: None,
             },
             Some(Arc::new(move |ev: RunEvent| {
@@ -1717,35 +1740,43 @@ async fn interleaved_errors_hit_the_total_cap() {
     );
 }
 
-/// Passos que rodam ferramenta e NÃO mudam nada (só releitura repetida)
-/// ganham a cutucada no terceiro e param no quinto — antes disso o run
-/// seguia queimando passos até o teto, calado.
+/// Passos que rodam ferramenta e NÃO mudam nada (releitura repetida, leitura
+/// que só dá erro) ganham a cutucada no terceiro e param no quinto — antes
+/// disso o run seguia queimando passos até o teto, calado. No laço por etapa
+/// a parada escala a ETAPA; o contador renasce na retentativa (o 3-avisa/
+/// 5-para vale de novo — punir a retentativa com o contador estourado seria
+/// escalar no primeiro passo), então a etapa só trava quando a retentativa
+/// REPETE o padrão inteiro de estagnação — e aí o run sai Escalated.
 #[tokio::test]
 async fn steps_without_progress_get_nudged_then_stopped() {
     let h = Harness::new();
-    for f in ["a.md", "b.md", "c.md", "d.md", "e.md"] {
+    for f in ["a.md", "b.md", "c.md"] {
         std::fs::write(h.workspace.join(f), "conteúdo\n").expect("semente");
     }
-    let mut roteiro = Vec::new();
-    // Cinco leituras frescas (progresso legítimo de exploração)...
-    for (i, f) in ["a.md", "b.md", "c.md", "d.md", "e.md"].iter().enumerate() {
-        roteiro.push(tool_call_chunks(
-            &format!("p{i}"),
-            "fs_read",
-            r#"{"path":"#,
-            &format!("\"{f}\"}}"),
-        ));
-    }
-    // ...e cinco RELEITURAS, que voltam do ledger sem mudar nada.
-    for (i, f) in ["a.md", "b.md", "c.md", "d.md", "e.md"].iter().enumerate() {
-        roteiro.push(tool_call_chunks(
-            &format!("d{i}"),
-            "fs_read",
-            r#"{"path":"#,
-            &format!("\"{f}\"}}"),
-        ));
-    }
-    let server = FakeLlama::spawn(roteiro);
+    let ler =
+        |id: &str, f: &str| tool_call_chunks(id, "fs_read", r#"{"path":"#, &format!("\"{f}\"}}"));
+    // Um ciclo de estagnação: três leituras frescas (progresso legítimo) e
+    // cinco passos que não mudam NADA, alternando releitura (barrada pelo
+    // detector de repetição) e leitura de arquivo inexistente (erro) —
+    // alternados para nenhum guard-rail mais agressivo disparar antes:
+    // 3º parado ganha a cutucada, 5º escala a etapa.
+    let ciclo = |tag: &str| {
+        vec![
+            ler(&format!("{tag}p0"), "a.md"),
+            ler(&format!("{tag}p1"), "b.md"),
+            ler(&format!("{tag}p2"), "c.md"),
+            ler(&format!("{tag}d0"), "a.md"),
+            ler(&format!("{tag}e0"), "x.md"),
+            ler(&format!("{tag}d1"), "b.md"),
+            ler(&format!("{tag}e1"), "y.md"),
+            ler(&format!("{tag}d2"), "c.md"),
+        ]
+    };
+    let mut replies = ciclo("t1_");
+    // Retentativa da etapa: contadores novos, mesmo hábito — o ciclo inteiro
+    // se repete e a etapa trava de vez.
+    replies.extend(ciclo("t2_"));
+    let server = FakeLlama::spawn(replies);
 
     let status = h
         .run_with_steps("explore", RunMode::Yolo, server.endpoint(), 20)
@@ -1759,8 +1790,10 @@ async fn steps_without_progress_get_nudged_then_stopped() {
 }
 
 /// Confirmação que expira NEGA a chamada (o modelo recebe o motivo e pode
-/// contornar); só a segunda expiração encerra o run — antes, a primeira já
+/// contornar); a segunda expiração escala a ETAPA — antes, a primeira já
 /// cancelava tudo, inclusive nas automações onde não há ninguém para clicar.
+/// O laço reenfileira a etapa uma vez; como o contador de expirações é do
+/// RUN, a expiração seguinte trava a etapa e o run sai Escalated.
 #[tokio::test]
 async fn an_expired_approval_denies_once_then_stops() {
     let h = Harness::with_config(|c| {
@@ -1773,6 +1806,13 @@ async fn an_expired_approval_denies_once_then_stops() {
             "fs_write",
             r#"{"path":"dois.md","#,
             r#""content":"b"}"#,
+        ),
+        // Retentativa da etapa: mais uma escrita sem ninguém para aprovar.
+        tool_call_chunks(
+            "w3",
+            "fs_write",
+            r#"{"path":"tres.md","#,
+            r#""content":"c"}"#,
         ),
         vec![text_chunk("Não deveria chegar aqui."), done()],
     ]);
@@ -1789,56 +1829,70 @@ async fn an_expired_approval_denies_once_then_stops() {
     // E nada foi escrito.
     assert!(!h.workspace.join("um.md").exists());
     assert!(!h.workspace.join("dois.md").exists());
+    assert!(!h.workspace.join("tres.md").exists());
 }
 
-/// Verificação reprovada no modo agente ganha UMA rodada de conserto — e o
-/// mesmo comando rodado de novo com sucesso supersede a falha histórica.
+/// Etapa reprovada pela conferência ganha UMA retentativa — e o MESMO
+/// comando de aceitação rodado de novo verde supersede a falha histórica.
 ///
-/// Antes, a reprovação só virava um evento que ninguém lia: o run terminava
-/// "concluído" com um comando falhado no meio e nada era feito a respeito.
+/// Herdeiro do teste da "rodada de conserto" pós-verificação, que morreu com
+/// o laço livre: hoje quem reprova e reenfileira é o gate por etapa, com o
+/// `check_cmd` do plano rodando ANTES e DEPOIS do trabalho (TDD executável).
+/// A 1ª tentativa declara vitória sem fazer nada e o check continua vermelho:
+/// a etapa reprova e volta para a fila COM o motivo. A 2ª cria o arquivo e o
+/// mesmo comando sai 0 — o vermelho histórico não pode condenar o conserto.
 #[tokio::test]
-async fn a_failed_verification_gets_one_repair_round() {
+async fn a_reproved_step_gets_one_retry_and_the_green_check_supersedes() {
     let h = Harness::new();
     // O teste precisa de um comando que FALHE sem o arquivo e PASSE com ele.
     // No Windows não existe `ls` no PATH (e `cmd /c dir` seria opaco, que
     // pede confirmação até no automático): o `findstr` é programa de verdade
-    // e sai com 2 quando o arquivo não abre, 0 quando casa. As duas chamadas
-    // usam a MESMA string de propósito — é por ela que a verificação casa a
-    // re-execução com a primeira.
-    let (lista_a, lista_b) = if cfg!(windows) {
-        (r#"{"command":"findstr"#, r#" . faltando.txt"}"#)
+    // e sai com 2 quando o arquivo não abre, 0 quando casa.
+    let check = if cfg!(windows) {
+        "findstr . faltando.txt"
     } else {
-        (r#"{"command":"ls"#, r#" faltando.txt"}"#)
+        "ls faltando.txt"
     };
-    let server = FakeLlama::spawn(vec![
-        // O comando falha (arquivo não existe) e o modelo declara vitória.
-        tool_call_chunks("c1", "terminal_run", lista_a, lista_b),
-        vec![text_chunk("Pronto, tudo certo."), done()],
-        // A rodada de conserto: cria o arquivo e roda de novo o MESMO comando.
-        tool_call_chunks(
-            "c2",
-            "fs_write",
-            r#"{"path":"faltando.txt","#,
-            r#""content":"agora existe"}"#,
-        ),
-        tool_call_chunks("c3", "terminal_run", lista_a, lista_b),
+    let plano = format!(
+        r#"{{"tasks":[{{"title":"o arquivo","instruction":"crie faltando.txt",
+            "done_when":"o comando de aceitação passa","files":["faltando.txt"],
+            "check_cmd":"{check}"}}]}}"#
+    );
+    let server = FakeLlama::spawn_with_plan(
         vec![
-            text_chunk("Consertei: o arquivo existe e o comando passa."),
-            done(),
+            // 1ª tentativa: só a declaração de vitória — o check segue
+            // vermelho e o gate da etapa reprova.
+            vec![text_chunk("Pronto, tudo certo."), done()],
+            // 2ª tentativa: cria o arquivo; o MESMO comando roda verde.
+            tool_call_chunks(
+                "c2",
+                "fs_write",
+                r#"{"path":"faltando.txt","#,
+                r#""content":"agora existe"}"#,
+            ),
+            vec![
+                text_chunk("Consertei: o arquivo existe e o comando passa."),
+                done(),
+            ],
         ],
-    ]);
+        &plano,
+    );
 
     let status = h
-        .run_with_steps("liste o arquivo", RunMode::Yolo, server.endpoint(), 12)
+        .run_with_steps("crie o arquivo", RunMode::Yolo, server.endpoint(), 12)
         .await;
     assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
 
-    // O relatório reprovado chegou ao modelo como instrução de conserto…
+    // O motivo da reprovação abriu a retentativa como instrução de conserto…
     let recebeu = (0..server.calls.load(Ordering::SeqCst))
-        .any(|i| server.body(i).contains("verificação automática reprovou"));
-    assert!(recebeu, "o modelo tinha que receber o relatório");
+        .any(|i| server.body(i).contains("conferência não passou"));
+    assert!(
+        recebeu,
+        "a retentativa tinha que saber por que a 1ª reprovou"
+    );
 
-    // …e a SEGUNDA verificação passou, porque o mesmo comando rodou verde.
+    // …e a trilha conta a história: etapa reprovada, etapa verde e, por fim,
+    // o veredito do plano inteiro.
     let verificacoes: Vec<bool> = h
         .events
         .lock()
@@ -1849,8 +1903,11 @@ async fn a_failed_verification_gets_one_repair_round() {
             _ => None,
         })
         .collect();
-    assert_eq!(verificacoes.len(), 2, "reprovada + re-verificada");
-    assert!(!verificacoes[0] && verificacoes[1], "{verificacoes:?}");
+    assert_eq!(
+        verificacoes,
+        vec![false, true, true],
+        "reprovada, re-verificada e o veredito do plano"
+    );
     assert!(h.workspace.join("faltando.txt").exists());
 }
 
@@ -2310,23 +2367,39 @@ async fn o_programa_recebe_lista_e_texto_cru_das_ferramentas() {
         std::fs::write(h.workspace.join("logs").join(nome), texto).unwrap();
     }
 
-    let server = FakeLlama::spawn(vec![
-        programa(
-            "call_1",
-            "const arquivos = await fs_glob({ pattern: \"logs/*.log\" });\n\
-             say(\"tipo:\", Array.isArray(arquivos) ? \"array\" : typeof arquivos);\n\
-             let linhas = 0;\n\
-             for (const arquivo of arquivos) {\n\
-               const texto = await fs_read({ path: arquivo });\n\
-               linhas += texto.trim().split(\"\\n\").length;\n\
-             }\n\
-             say(\"arquivos:\", arquivos.length, \"linhas:\", linhas);\n",
-        ),
-        vec![text_chunk("Contei as linhas."), done()],
-    ]);
+    // Janela de 32k: `fs_glob` não é do núcleo do cardápio, e numa janela de
+    // 8k a recuragem por etapa (núcleo + ferramentas do laço) não deixa vaga
+    // nenhuma — a biblioteca do programa perderia justamente a função que o
+    // roteiro usa. O recorte de janela pequena tem teste próprio.
+    const PROPS_32K: &str = r#"{"model_path":"/m/a.gguf",
+        "chat_template_caps":{"supports_tools":true},
+        "default_generation_settings":{"n_ctx":32768}}"#;
+    let server = FakeLlama::spawn_with_props(
+        vec![
+            programa(
+                "call_1",
+                "const arquivos = await fs_glob({ pattern: \"logs/*.log\" });\n\
+                 say(\"tipo:\", Array.isArray(arquivos) ? \"array\" : typeof arquivos);\n\
+                 let linhas = 0;\n\
+                 for (const arquivo of arquivos) {\n\
+                   const texto = await fs_read({ path: arquivo });\n\
+                   linhas += texto.trim().split(\"\\n\").length;\n\
+                 }\n\
+                 say(\"arquivos:\", arquivos.length, \"linhas:\", linhas);\n",
+            ),
+            vec![text_chunk("Contei as linhas."), done()],
+        ],
+        PROPS_32K,
+    );
 
+    // O objetivo fala em "glob" de propósito: é a pista que faz a curadoria
+    // manter `fs_glob` no cardápio — e, portanto, na biblioteca do programa.
     let status = h
-        .run_code_mode("conte as linhas", RunMode::Yolo, server.endpoint())
+        .run_code_mode(
+            "use um glob para achar os logs e conte as linhas",
+            RunMode::Yolo,
+            server.endpoint(),
+        )
         .await;
     assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
 
@@ -2397,21 +2470,27 @@ async fn o_segundo_programa_pode_repetir_a_chamada_do_primeiro() {
 
 // ------------------------------------------------- conferência de entrega ---
 
-/// O caso que motivou a conferência: um pedido grande, um modelo que pensa e
+/// O caso que motivou o gate: um pedido grande, um modelo que pensa e
 /// responde texto, e um run que fechava como **Concluído** sem ter criado um
-/// arquivo sequer. A frase não decide mais — o disco decide.
+/// arquivo sequer. A frase não decide mais — sem NENHUMA evidência mecânica
+/// (arquivo escrito na fatia da etapa, comando de aceitação), quem decide é
+/// o juiz do `done_when`; reprovado duas vezes, a etapa trava e o run sai
+/// Escalated. É o anti-falso-positivo do laço inteiro.
 #[tokio::test]
 async fn a_run_that_delivers_nothing_does_not_end_as_done() {
-    let plano = r#"{"tasks":[{"title":"o jogo","instruction":"crie jogo.js",
-        "done_when":"o arquivo existe","files":["jogo.js"]}]}"#;
+    // O canal sem stream do servidor falso atende TODAS as chamadas
+    // auxiliares. Este JSON não é um plano — a decomposição cai no plano de
+    // uma entrega só —, mas é exatamente o veredito que o juiz do `done_when`
+    // vai ler ao julgar uma etapa sem evidência nenhuma: reprovada.
+    let juiz = r#"{"passou": false, "porque": "nada foi criado"}"#;
     // Duas respostas de texto puro, sem chamada de ferramenta nenhuma: a
-    // primeira encerraria o run hoje; a segunda é a resposta à cobrança.
+    // primeira encerraria o run; a segunda é a retentativa da etapa.
     let server = FakeLlama::spawn_with_plan(
         vec![
             vec![text_chunk("Pronto, criei tudo o que você pediu."), done()],
             vec![text_chunk("Já está tudo pronto, como eu disse."), done()],
         ],
-        plano,
+        juiz,
     );
     let h = Harness::new();
 
@@ -2422,11 +2501,27 @@ async fn a_run_that_delivers_nothing_does_not_end_as_done() {
     assert_ne!(
         status,
         RunStatus::Done,
-        "o run não criou jogo.js: dizer Concluído seria mentir para a pessoa"
+        "o run não criou nada: dizer Concluído seria mentir para a pessoa"
     );
+    assert_eq!(status, RunStatus::Escalated, "eventos: {:?}", h.kinds());
     assert!(
         !h.workspace.join("jogo.js").exists(),
         "nada foi criado mesmo"
+    );
+    // E a pessoa fica sabendo POR QUE não concluiu.
+    let resumo = h
+        .events
+        .lock()
+        .unwrap()
+        .iter()
+        .find_map(|e| match &e.event {
+            RunEventKind::RunFinished { summary, .. } => Some(summary.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    assert!(
+        resumo.contains("nada foi criado"),
+        "o motivo do juiz tinha que chegar ao resumo: {resumo:?}"
     );
 }
 
@@ -2491,24 +2586,39 @@ async fn planning_mode_is_not_charged_for_deliveries_it_never_promised_to_make()
     );
 }
 
-/// Orçamento esgotado com entrega faltando: o resultado precisa dizer O QUE
-/// ficou de fora. "Parei no limite de N passos" não ajuda ninguém a decidir o
-/// próximo passo; o nome do arquivo que falta, sim.
+/// Orçamento esgotado com etapa faltando: o resultado precisa dizer O QUE
+/// ficou de fora. "Parei no limite de N passos" não ajuda ninguém a decidir
+/// o próximo passo; o nome da etapa que falta, sim. (Herdeiro do teste da
+/// cobrança de entregas, que morreu com o laço livre: hoje quem nomeia o que
+/// ficou de fora é o resumo do plano — "Faltou: ...".)
 #[tokio::test]
-async fn running_out_of_budget_says_which_deliveries_are_missing() {
+async fn running_out_of_budget_names_the_tasks_left_undone() {
     let plano = r#"{"tasks":[{"title":"a HUD","instruction":"crie hud.js",
         "done_when":"existe","files":["hud.js"]}]}"#;
-    // Sempre texto, nunca uma ferramenta: o run gasta os passos sem entregar.
-    let server = FakeLlama::spawn_with_plan(Vec::new(), plano);
     let h = Harness::new();
-    let mut options = h.options(RunMode::Yolo);
-    options.max_steps = 2;
+    std::fs::create_dir_all(h.workspace.join("a/b/c/d/e/f/g/h")).expect("pastas");
+    // Só exploração, nunca a entrega: caminhos diferentes a cada volta para
+    // nenhum outro guard-rail disparar antes do teto derivado do plano
+    // (1 etapa × 8 passos + folga de retentativa = 12).
+    let mut replies = Vec::new();
+    for i in 0..12 {
+        let path = "a/b/c/d/e/f/g/h"
+            .split('/')
+            .take((i % 8) + 1)
+            .collect::<Vec<_>>()
+            .join("/");
+        replies.push(tool_call_chunks(
+            &format!("call_{i}"),
+            "fs_list",
+            r#"{"pa"#,
+            &format!(r#"th":"{path}"}}"#),
+        ));
+    }
+    let server = FakeLlama::spawn_with_plan(replies, plano);
 
-    let status = h
-        .run_with_options("crie a HUD", options, server.endpoint())
-        .await;
+    let status = h.run("crie a HUD", RunMode::Yolo, server.endpoint()).await;
 
-    assert_eq!(status, RunStatus::MaxSteps);
+    assert_eq!(status, RunStatus::MaxSteps, "eventos: {:?}", h.kinds());
     let resumo = h
         .events
         .lock()
@@ -2520,8 +2630,8 @@ async fn running_out_of_budget_says_which_deliveries_are_missing() {
         })
         .unwrap_or_default();
     assert!(
-        resumo.contains("a HUD"),
-        "o resumo tinha que nomear a entrega que faltou: {resumo:?}"
+        resumo.contains("Faltou") && resumo.contains("a HUD"),
+        "o resumo tinha que nomear a etapa que faltou: {resumo:?}"
     );
 }
 
