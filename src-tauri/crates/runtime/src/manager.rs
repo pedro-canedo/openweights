@@ -329,7 +329,7 @@ impl RuntimeManager {
         let variant = state.variant;
         let Some(asset) = crate::rpc_overlay_asset(crate::PINNED_TAG, variant) else {
             return Err(RuntimeError::Verification(
-                "esta variante do motor não tem overlay RPC (CPU/Vulkan)".into(),
+                "esta máquina não tem GPU para o cluster (motor só de CPU)".into(),
             ));
         };
         let _install_guard = self.install_lock.lock().await;

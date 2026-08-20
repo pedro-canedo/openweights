@@ -89,6 +89,11 @@ jobs:
           # cudart fazem o `cmake -B build` falhar no configure. O
           # visual_studio_integration é o que faz o MSBuild achar os alvos CUDA.
           sub-packages: '["nvcc","cudart","cublas","cublas_dev","thrust","nvrtc","nvrtc_dev","visual_studio_integration"]'
+          # Os dois caches desligados de propósito: a action tenta salvar um
+          # diretório que ainda não existe e morre com "Path Validation Error"
+          # em dois segundos, antes de baixar pacote nenhum.
+          use-github-cache: false
+          use-local-cache: false
 
       - name: Build
         shell: pwsh
@@ -115,8 +120,53 @@ jobs:
           name: rpc-win-cuda-${{ matrix.cuda }}
           path: llama-${{ inputs.tag }}-rpc-win-cuda-${{ matrix.cuda }}-x64.zip
 
+  windows-vulkan:
+    name: Windows Vulkan+RPC
+    runs-on: windows-latest
+    env:
+      # A mesma versão que o workflow de release do llama.cpp usa hoje.
+      VULKAN_VERSION: 1.4.357.0
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: ggml-org/llama.cpp
+          ref: ${{ inputs.tag }}
+
+      - name: Vulkan SDK
+        shell: pwsh
+        run: |
+          curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/${env:VULKAN_VERSION}/windows/vulkansdk-windows-X64-${env:VULKAN_VERSION}.exe"
+          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\${env:VULKAN_VERSION}"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\${env:VULKAN_VERSION}\bin"
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake -B build -DGGML_VULKAN=ON -DGGML_RPC=ON -DGGML_NATIVE=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j --target llama-server ggml-rpc-server
+
+      - name: Pack
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bin = if (Test-Path build/bin/Release) { "build/bin/Release" } elseif (Test-Path build/bin) { "build/bin" } else { "build" }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "$bin/llama-server.exe" dist/
+          Copy-Item "$bin/ggml-rpc-server.exe" dist/
+          Get-ChildItem $bin -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination dist
+          if (-not (Test-Path dist/llama-server.exe) -or -not (Test-Path dist/ggml-rpc-server.exe)) {
+            throw "faltou llama-server.exe ou ggml-rpc-server.exe no pacote"
+          }
+          Compress-Archive -Path dist/* -DestinationPath "llama-${{ inputs.tag }}-rpc-win-vulkan-x64.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpc-win-vulkan
+          path: llama-${{ inputs.tag }}-rpc-win-vulkan-x64.zip
+
   publish:
-    needs: [macos-metal, windows-cuda]
+    needs: [macos-metal, windows-cuda, windows-vulkan]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

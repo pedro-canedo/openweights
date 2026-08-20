@@ -139,8 +139,11 @@ pub fn rpc_overlay_asset(tag: &str, variant: BackendVariant) -> Option<String> {
     match variant {
         BackendVariant::Cuda13 => Some(format!("llama-{tag}-rpc-win-cuda-13.3-x64.zip")),
         BackendVariant::Cuda12 => Some(format!("llama-{tag}-rpc-win-cuda-12.4-x64.zip")),
+        BackendVariant::Vulkan => Some(format!("llama-{tag}-rpc-win-vulkan-x64.zip")),
         BackendVariant::MacosArm64 => Some(format!("llama-{tag}-rpc-macos-arm64.tar.gz")),
-        BackendVariant::Vulkan | BackendVariant::Cpu | BackendVariant::MacosX64 => None,
+        // Sem GPU não há o que emprestar, e o host precisa de placa para o
+        // split: `plan_split` recusa orçamento local zerado.
+        BackendVariant::Cpu | BackendVariant::MacosX64 => None,
     }
 }
 
@@ -306,8 +309,13 @@ mod tests {
             rpc_overlay_asset("b10441", BackendVariant::MacosArm64).as_deref(),
             Some("llama-b10441-rpc-macos-arm64.tar.gz")
         );
+        assert_eq!(
+            rpc_overlay_asset("b10441", BackendVariant::Vulkan).as_deref(),
+            Some("llama-b10441-rpc-win-vulkan-x64.zip")
+        );
+        // CPU puro e Mac Intel não têm placa para emprestar nem para dividir.
         assert_eq!(rpc_overlay_asset("b10441", BackendVariant::Cpu), None);
-        assert_eq!(rpc_overlay_asset("b10441", BackendVariant::Vulkan), None);
+        assert_eq!(rpc_overlay_asset("b10441", BackendVariant::MacosX64), None);
         let dir = rpc_runtime_dir(
             std::path::Path::new("/data"),
             "b10441",

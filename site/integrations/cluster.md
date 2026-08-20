@@ -25,9 +25,15 @@ that would otherwise spill into system RAM and crawl.
 | **A GPU on both sides** | A machine with no GPU appears in the list marked *no GPU* and cannot be paired |
 | **Same network** | Discovery is mDNS; the control channel is a TCP port on your LAN |
 
-Overlay builds exist for **Windows with CUDA** and **macOS on Apple Silicon**.
-Vulkan and CPU-only machines can still see the panel, but there is nothing to
-download for them yet.
+The download is automatic and matched to your machine, exactly like the
+llama.cpp runtime the app fetches on first run: it looks at your GPU, picks the
+build that fits and installs it beside the engine. There is nothing to place by
+hand.
+
+Builds exist for **Windows with CUDA**, **Windows with Vulkan** (AMD and Intel)
+and **macOS on Apple Silicon**. A machine with no GPU has nothing to lend and
+nothing to split, so there is no build for it — the panel says so instead of
+downloading something useless.
 
 ## Turning it on
 

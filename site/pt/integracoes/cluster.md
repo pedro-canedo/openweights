@@ -26,8 +26,14 @@ sistema e arrastariam a geração.
 | **GPU nos dois lados** | Máquina sem placa aparece na lista marcada como *sem GPU* e não pode ser emparelhada |
 | **A mesma rede** | A descoberta é mDNS; o canal de controle é uma porta TCP na sua LAN |
 
-Há overlay para **Windows com CUDA** e **macOS em Apple Silicon**. Máquinas com
-Vulkan ou só CPU enxergam o painel, mas ainda não há o que baixar para elas.
+O download é automático e de acordo com a sua máquina, igual ao runtime do
+llama.cpp que o app busca na primeira execução: ele olha a sua placa, escolhe o
+build que serve e instala ao lado do motor. Não há nada para colocar na mão.
+
+Há build para **Windows com CUDA**, **Windows com Vulkan** (AMD e Intel) e
+**macOS em Apple Silicon**. Máquina sem placa não tem o que emprestar nem o que
+dividir, então não há build para ela — o painel diz isso em vez de baixar algo
+inútil.
 
 ## Ligando
 
