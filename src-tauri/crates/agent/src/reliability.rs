@@ -351,7 +351,9 @@ impl ContextBudget {
 /// "miolo" para resumir) e deixa o modelo local sem espaço para pensar.
 /// Cortar a mensagem GRANDE cedo é o que a fração 80/90% sozinha não faz.
 pub fn max_chars_per_message(n_ctx: u32) -> usize {
-    ((n_ctx as f32 * 0.20) as usize).saturating_mul(4).max(2_000)
+    ((n_ctx as f32 * 0.20) as usize)
+        .saturating_mul(4)
+        .max(2_000)
 }
 
 /// Encolhe mensagens de usuário/assistente que sozinhas estouram o teto.
@@ -389,10 +391,7 @@ fn clip_keep_structure(text: &str, max: usize) -> String {
     let head = (max * 7) / 10;
     let tail = (max * 2) / 10;
     let start: String = text.chars().take(head).collect();
-    let end: String = text
-        .chars()
-        .skip(n.saturating_sub(tail))
-        .collect();
+    let end: String = text.chars().skip(n.saturating_sub(tail)).collect();
     format!(
         "{start}\n\n[... {omitido} caracteres omitidos para caber na janela; \
          o recorte vivo está em `.openweights/progress.md` ...]\n\n{end}",

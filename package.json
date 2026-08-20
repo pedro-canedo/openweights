@@ -1,7 +1,7 @@
 {
   "name": "openweights",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "App desktop open source para rodar LLMs locais (llama.cpp) com harness agêntico — sem terminal, sem CUDA, sem chute de quantização.",
   "license": "MIT",
   "repository": {

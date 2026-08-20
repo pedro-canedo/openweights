@@ -28,6 +28,11 @@ O agente guarda fatos sozinho com `memory_save`, e você pode acrescentar ou
 esquecer um na mão no painel de Memória. Cada fato é **global** ou **deste
 projeto**.
 
+Não confunda com `.openweights/progress.md`, o rascunho de *uma* execução — o
+que já rodou, os arquivos tocados, o próximo passo. Ele é reescrito o tempo todo
+e não passa por curadoria nenhuma; está descrito em
+[modos de trabalho e planos](/pt/agente/planos).
+
 ## Índice do projeto
 
 O `grep` só acha o que você soube escrever. "Onde a gente valida o token de

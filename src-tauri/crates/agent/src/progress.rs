@@ -88,6 +88,11 @@ mod tests {
         let texto = read_progress(dir.path()).expect("gravou");
         assert!(texto.contains("src/app/page.tsx"));
         assert!(texto.contains("cena 3d"));
-        assert!(dir.path().join(".openweights").join("progress.md").is_file());
+        assert!(
+            dir.path()
+                .join(".openweights")
+                .join("progress.md")
+                .is_file()
+        );
     }
 }

@@ -44,7 +44,7 @@ needs the network. In order of importance:
 | **Error streak** | Three failures in a row and the run stops and hands the decision back to you, instead of insisting. |
 | **Repetition** | The same call three times over is a loop, not progress. |
 | **Re-read ledger** | Handing the model a file it already has only burns context. |
-| **Context budget** | At ~80% of the window the history is summarized so the run can keep going. The trail says *"Context summarized to keep going."* |
+| **Context budget** | At ~80% of the window the history is summarized so the run can keep going, and a single message past a fifth of the window is clipped before that. The trail says *"Context summarized to keep going."* |
 | **Proof per delivery** | No step closes on the model's word: the acceptance command has to exit 0, the promised files have to exist, and whatever has no mechanical proof goes through a criterion judge. Failed, the step goes back to the queue with the reason. |
 | **A step that only talks** | Announcing work without running anything counts as stalled. Three of those earn the nudge; on the fifth the run stops and hands the decision back to you. |
 

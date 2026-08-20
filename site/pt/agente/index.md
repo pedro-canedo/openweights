@@ -43,7 +43,7 @@ precise de rede. Em ordem de importância:
 | **Erros seguidos** | Três falhas em sequência e a execução para e devolve a decisão para você, em vez de insistir. |
 | **Repetição** | A mesma chamada três vezes é laço, não progresso. |
 | **Releitura** | Entregar ao modelo um arquivo que ele já tem só gasta contexto. |
-| **Orçamento de contexto** | Em torno de 80% da janela o histórico é resumido para a execução continuar. A trilha mostra *"Contexto resumido para continuar."* |
+| **Orçamento de contexto** | Em torno de 80% da janela o histórico é resumido para a execução continuar, e a mensagem que sozinha passa de um quinto da janela é cortada antes disso. A trilha mostra *"Contexto resumido para continuar."* |
 | **Prova por entrega** | Nenhuma etapa fecha na palavra do modelo: o comando de aceitação precisa sair com código 0, os arquivos prometidos precisam existir, e o que não tem prova mecânica passa por um juiz do critério. Reprovada, a etapa volta para a fila com o motivo. |
 | **Passo que só fala** | Anunciar trabalho sem executar nada conta como parado. Três desses ganham a cutucada; no quinto a execução para e devolve a decisão para você. |
 

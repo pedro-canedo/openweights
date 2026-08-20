@@ -27,6 +27,11 @@ Memory here is **little, short, curated and inspectable**:
 The agent saves facts itself with `memory_save`, and you can add or forget one
 by hand in the Memory panel. Each fact is either **global** or **this project**.
 
+Do not confuse this with `.openweights/progress.md`, the scratch pad of *one*
+run — what already ran, the files touched, the next step. It is rewritten
+constantly and curated by nobody; it is described in
+[work modes and plans](/agent/plans).
+
 ## Project index
 
 `grep` only finds what you knew how to spell. "Where do we validate the session

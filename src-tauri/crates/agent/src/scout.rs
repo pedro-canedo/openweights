@@ -288,11 +288,7 @@ fn goal_outline(goal: &str) -> String {
             goal.chars().count()
         );
         for (i, (title, body)) in fases.iter().enumerate() {
-            out.push_str(&format!(
-                "{}. {title} — {}\n",
-                i + 1,
-                clip(body, 180)
-            ));
+            out.push_str(&format!("{}. {title} — {}\n", i + 1, clip(body, 180)));
         }
         return out;
     }
@@ -891,8 +887,7 @@ pub(crate) async fn run_plan(
         // ESTA etapa. Nada do histórico anterior entra aqui — é a Scout Rule
         // em quatro linhas.
         runner.reset_task_memory();
-        runner.exige_escrita =
-            !task.files.is_empty() || expects_implementation(&task.instruction);
+        runner.exige_escrita = !task.files.is_empty() || expects_implementation(&task.instruction);
         runner.focus_md = Some(md.clone());
         let mut user = task_brief(&ctx.goal, &digest, index, total, &task);
         if let Some(ws) = ctx.workspace.as_deref()

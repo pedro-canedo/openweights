@@ -37,15 +37,34 @@ O schema também pede **até quatro perguntas**, para as decisões que mudam o
 plano e que só você pode tomar. Quando elas aparecem, nada executa: veja
 [perguntas](#perguntas-antes-de-trabalhar).
 
-Mesmo assim o resultado é validado com desconfiança: um plano que não sobrevive
-à validação vira um plano de uma entrega só. A decomposição nunca derruba a
-execução. Caminhos que nunca poderiam ser encontrados sob a pasta do projeto são
+O planejador nunca recebe o spec inteiro: ele recebe um **recorte** — as fases
+em uma linha cada, quando o pedido já vem escrito assim, ou os primeiros 2.500
+caracteres. Mandar o texto completo para *dividir* gasta a janela justamente no
+passo que mais precisa dela.
+
+Mesmo assim o resultado é validado com desconfiança — e o que acontece quando
+ele não sobrevive mudou. Antes, qualquer falha virava um plano de uma entrega
+só, e um spec de seis fases era executado como se fosse um pedido curto. Agora
+a saída é o **próprio pedido**: um texto já escrito em `Fase 1`, `Phase 2`,
+`Etapa 3` vira uma entrega por fase, e um pedido longo sem cabeçalho nenhum é
+fatiado em pedaços. O plano de uma entrega só ficou para o que ele sempre
+deveria ter sido — pedido curto. A decomposição nunca derruba a execução.
+
+A mesma régua vale para o plano que *passou* na validação com uma entrega
+gigante. Um modelo pequeno diante de um spec de seis fases responde "implemente
+o app", e isso não é um plano: é o pedido de volta. Quando o pedido tem fases
+escritas e o plano tem uma entrega só, valem as fases.
+
+Caminhos que nunca poderiam ser encontrados sob a pasta do projeto são
 descartados na leitura do plano — caminho absoluto, `..`, unidade do Windows.
 Manter um criaria uma pendência impossível de satisfazer, cobrada para sempre.
 
 Tetos: **12 entregas** por plano, **8 passos** por entrega, **2 tentativas**
-antes de considerar uma entrega travada. O teto global de passos da execução
-continua valendo por cima.
+antes de considerar uma entrega travada. O teto global de passos continua
+valendo por cima, mas ele não manda mais no *número de entregas*: com 24 passos
+e 8 por entrega, nenhum plano passava de três, e um spec de seis fases perdia
+metade antes de começar. Quem dimensiona as entregas é a janela; o teto de
+passos dimensiona o trabalho.
 
 ## Como uma entrega prova que terminou
 
@@ -55,11 +74,19 @@ nesta ordem — e as duas primeiras são mecânicas, sem modelo nenhum julgando:
 1. **O comando de aceitação.** Ele roda *antes* da etapa (onde se espera que
    falhe — é o teste vermelho) e *depois* dela. Sair com código diferente de
    zero no fim reprova a entrega. É a mesma política de autorização de qualquer
-   comando: se você desligou a família de terminal, ele não roda.
+   comando: se você desligou a família de terminal, ele não roda. Comando que
+   passaria em qualquer máquina — `node -v`, `ls`, `pwd`, `echo` — é recusado
+   como prova na leitura do plano: era com ele que a conferência ficava verde
+   com a pasta vazia.
 2. **Os arquivos.** O que a etapa disse que ia escrever precisa estar no disco.
 3. **O juiz do critério.** Só entra quando as duas primeiras não decidiram nada
    — etapa sem arquivo e sem comando conferível — e **nunca** reverte uma
    reprovação mecânica: é desempate sobre o vazio, não veto sobre o disco.
+
+Antes das três, para a etapa que promete código, vem uma exigência mais crua:
+**algum arquivo escrito nesta etapa**. Uma entrega que declara arquivos, ou cuja
+instrução pede implementação, não fecha com prosa — pensar, listar pastas e
+rodar `node -v` não é entrega, e agora reprova com essas palavras.
 
 Etapa reprovada volta para a fila com o motivo escrito, e a tentativa seguinte
 o recebe. Na segunda reprovação ela trava, e a execução segue para o que não
@@ -91,6 +118,37 @@ Esse é o truque inteiro. Como só um resumo atravessa, a janela não cresce com
 tamanho do pedido; cresce com o tamanho de *uma* etapa. O quadro mostra
 `Contexto novo para esta etapa` quando isso acontece.
 
+O handoff vive na janela, e a janela é apagada. Por isso a execução também
+escreve **`.openweights/progress.md`** na pasta do projeto: o que já rodou, os
+arquivos tocados, o próximo passo e os bloqueios. Ele é reescrito a cada passo e
+sobrevive ao fim da execução — abra no editor, versione se quiser. Não confunda
+com a [memória](/pt/agente/memoria): memória é fato curado que vale para sempre,
+o progresso é o rascunho *desta* execução.
+
+## Os trilhos de cada fase
+
+Um modelo de 8B não erra por má vontade: ele erra porque ninguém disse, naquele
+passo, o que conta como pronto. Dizer tudo o tempo todo também não funciona —
+prompt de sistema grande empurra o pedido para fora da janela.
+
+Então os trilhos entram **por fase**, e só a fase corrente:
+
+| Fase | Trilhos |
+|---|---|
+| Planejar | dividir o spec em uma entrega por fase, instrução curta, comando de aceitação que prova algo |
+| Executar | escrever arquivo de verdade neste passo, nomear o que foi criado, conferir com teste ou build |
+| As duas | janela curta: a memória da execução é `.openweights/progress.md`, não o histórico |
+
+Eles vêm embutidos no binário — o modelo pequeno não pode depender de você
+lembrar de anexar um guia. A seção inteira tem teto de caracteres, porque trilho
+comprido custa o mesmo que o pedido.
+
+Para trocar um trilho neste projeto, escreva
+`.openweights/skills/<nome>/SKILL.md` com o mesmo `name` do embutido —
+`planning`, `implementation`, `verification` ou `context`. Arquivo com nome
+desconhecido é ignorado de propósito: a janela é pequena demais para aceitar
+qualquer texto que apareça na pasta. No modo Chat nenhum trilho entra.
+
 ## O quadro
 
 Com um plano rodando, o chat mostra: objetivo, entregas com status (na fila, em
@@ -111,3 +169,10 @@ inventado é pior que nenhum.
 O quadro também mostra a conta com a qual está trabalhando: *janela do modelo: N
 tokens — entregas até M*. As entregas são dimensionadas contra a janela que você
 carregou de verdade, não contra uma hipotética.
+
+Resumir o histórico perto do teto não basta quando **uma** mensagem é o problema.
+Um pedido colado inteiro pode ocupar metade da janela sozinho, e aí não há miolo
+para resumir: a compactação roda e não sobra espaço mesmo assim. Então a mensagem
+que passa de um quinto da janela é cortada antes disso — o começo e o fim ficam,
+o meio vira uma linha dizendo quantos caracteres saíram e onde está o recorte
+vivo (`.openweights/progress.md`).
