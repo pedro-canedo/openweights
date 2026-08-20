@@ -355,7 +355,8 @@
       "title": "The agent has not done anything on this machine yet.",
       "body": "As soon as it reads a file, runs a command or touches your project, it all shows up here: every run with what it touched, the time and tokens it cost, and who approved each action — automations included, since those run with nobody watching.",
       "cta": "Start a chat"
-    }
+    },
+    "waitingAnswer": "Waiting for an answer"
   },
   "server": {
     "title": "Local Server",
@@ -832,6 +833,13 @@
       "sourceVector": "meaning",
       "sourceBoth": "text + meaning",
       "openFile": "Open file"
+    },
+    "question": {
+      "title": "The agent needs you",
+      "hint": "Click an option to fill in the answer, or write your own — the run resumes the plan where it stopped.",
+      "answerPlaceholder": "Your answer…",
+      "send": "Answer",
+      "failed": "Could not answer — this question may have been answered in another window."
     }
   },
   "plan": {

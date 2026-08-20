@@ -403,6 +403,13 @@ pub enum RunEventKind {
     },
     #[serde(rename = "verification")]
     Verification { passed: bool, notes: String },
+    /// A execução pausou com perguntas à pessoa (estruturadas: as opções
+    /// viram botões). Sai antes do `run.finished` do run pausado.
+    #[serde(rename = "question.asked")]
+    QuestionAsked {
+        items: Vec<crate::scout::QuestionItem>,
+        task_index: Option<u32>,
+    },
     #[serde(rename = "run.paused")]
     RunPaused { reason: PauseReason },
     #[serde(rename = "run.resumed")]
@@ -498,6 +505,7 @@ impl RunEvent {
             RunEventKind::FocusUpdated { .. } => "focus.updated",
             RunEventKind::ContextCompacted { .. } => "context.compacted",
             RunEventKind::Verification { .. } => "verification",
+            RunEventKind::QuestionAsked { .. } => "question.asked",
             RunEventKind::RunPaused { .. } => "run.paused",
             RunEventKind::RunResumed => "run.resumed",
             RunEventKind::RunError { .. } => "run.error",
@@ -614,6 +622,16 @@ pub struct RunSummary {
     /// memória da interface e se perdia num reload.
     #[serde(default)]
     pub work_mode: crate::scout::WorkMode,
+    /// Perguntas que pausaram este run (`None` = não pausou perguntando).
+    #[serde(default)]
+    pub question: Option<crate::scout::PendingQuestion>,
+    /// Resposta da pessoa, quando já veio (o run retomado fica em
+    /// `resumed_by`).
+    #[serde(default)]
+    pub answer: Option<String>,
+    /// Run que continuou este depois da resposta.
+    #[serde(default)]
+    pub resumed_by: Option<String>,
     /// O run tem plano de trabalho gravado — o cartão pode buscá-lo sem
     /// tentar à toa nos runs que nunca tiveram um.
     #[serde(default)]

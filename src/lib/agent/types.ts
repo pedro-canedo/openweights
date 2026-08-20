@@ -2,7 +2,7 @@
 // Fonte da verdade: src-tauri/crates/types/src/agent.rs (serde camelCase).
 // Qualquer mudança aqui exige a mudança correspondente lá — e vice-versa.
 
-import type { WorkMode } from "./scout";
+import type { PendingQuestion, QuestionItem, WorkMode } from "./scout";
 
 export type RunMode = "chat" | "approve" | "smart" | "yolo";
 
@@ -166,6 +166,11 @@ export type RunEvent = RunEventBase &
     | { kind: "focus.updated"; todoMd: string }
     | { kind: "context.compacted"; tokensBefore: number; tokensAfter: number }
     | { kind: "verification"; passed: boolean; notes: string }
+    | {
+        kind: "question.asked";
+        items: QuestionItem[];
+        taskIndex: number | null;
+      }
     | { kind: "run.paused"; reason: PauseReason }
     | { kind: "run.resumed" }
     | { kind: "run.error"; message: string; retryable: boolean }
@@ -241,6 +246,12 @@ export interface RunSummary {
   hasPlan?: boolean;
   /** Como o agente trabalhou (persistido; sobrevive a reload). */
   workMode?: WorkMode;
+  /** Perguntas que pausaram este run (`null` = não pausou perguntando). */
+  question?: PendingQuestion | null;
+  /** Resposta da pessoa, quando já veio. */
+  answer?: string | null;
+  /** Run que continuou este depois da resposta. */
+  resumedBy?: string | null;
   /** Epoch em SEGUNDOS (a unidade da tabela `runs`, não a dos eventos). */
   createdAt: number;
   finishedAt: number | null;

@@ -122,6 +122,48 @@ impl Task {
     }
 }
 
+/// Uma pergunta estruturada à pessoa. As opções viram botões na interface —
+/// achatá-las numa string era o que impedia a tela de oferecê-las.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionItem {
+    pub text: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+}
+
+/// Perguntas que PAUSARAM a execução, à espera de resposta. Moram no plano
+/// (persistidas com ele) — é o que faz a pausa sobreviver a reinício do app
+/// e ser respondível de fora do chat.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingQuestion {
+    pub items: Vec<QuestionItem>,
+    /// Etapa em que a pausa aconteceu (`None` = antes da primeira etapa,
+    /// levantada pela própria decomposição).
+    #[serde(default)]
+    pub task_index: Option<usize>,
+    #[serde(default)]
+    pub asked_at_ms: i64,
+}
+
+impl PendingQuestion {
+    /// A forma em texto corrido (resumo do run, prompt de retomada).
+    pub fn to_text(&self) -> String {
+        self.items
+            .iter()
+            .map(|q| {
+                if q.options.is_empty() {
+                    q.text.clone()
+                } else {
+                    format!("{} (opções: {})", q.text, q.options.join(" / "))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" | ")
+    }
+}
+
 /// O plano de trabalho de uma execução.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -138,6 +180,9 @@ pub struct TaskPlan {
     /// `true` depois que a pessoa aprovou o plano (modo planejamento).
     #[serde(default)]
     pub approved: bool,
+    /// Perguntas que pausaram a execução (a resposta as limpa).
+    #[serde(default)]
+    pub pending_question: Option<PendingQuestion>,
 }
 
 impl TaskPlan {

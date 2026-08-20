@@ -204,6 +204,12 @@ impl Store {
         ensure_column(&conn, "runs", "verify_json", "TEXT")?;
         // Modo de trabalho (Scout Rule) do run — o painel reabre com o certo.
         ensure_column(&conn, "runs", "work_mode", "TEXT")?;
+        // Pausa por pergunta: a pergunta estruturada, a resposta da pessoa e
+        // o run que retomou. É o que torna a pausa durável (sobrevive a
+        // reinício) e respondível de fora do chat (tela de Atividade).
+        ensure_column(&conn, "runs", "question_json", "TEXT")?;
+        ensure_column(&conn, "runs", "answer", "TEXT")?;
+        ensure_column(&conn, "runs", "resumed_by", "TEXT")?;
         mcp::init(&conn)?;
         memory::init(&conn)?;
         automation::init(&conn)?;

@@ -457,6 +457,17 @@ impl Tool for AskUser {
                 task.status = TaskStatus::Blocked;
                 task.error = Some(full.clone());
             }
+            // A forma ESTRUTURADA (opções em campo próprio) é a que a
+            // interface transforma em botões e o banco persiste — achatar em
+            // string era o que impedia a tela de oferecer as opções.
+            plan.pending_question = Some(lr_types::scout::PendingQuestion {
+                items: vec![lr_types::scout::QuestionItem {
+                    text: question.clone(),
+                    options: options.clone(),
+                }],
+                task_index: (current < plan.tasks.len()).then_some(current),
+                asked_at_ms: crate::events::now_ms() as i64,
+            });
         }
         self.halt.store(true, Ordering::SeqCst);
         Ok(ToolOutput::text(format!(

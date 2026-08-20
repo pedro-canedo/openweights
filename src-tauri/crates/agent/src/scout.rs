@@ -25,7 +25,9 @@ use crate::run::{StepEngine, StepOutcome, SystemPrompt, ToolRunner, head_chars};
 use crate::verify::{self, VerifyReport};
 use lr_engine::{ChatMessage, ChatRequest, LlamaClient, ToolCallReq};
 use lr_types::agent::{RunEventKind, RunStatus, ToolSpec};
-use lr_types::scout::{Task, TaskPlan, TaskStatus, WindowBudget, WorkMode};
+use lr_types::scout::{
+    PendingQuestion, QuestionItem, Task, TaskPlan, TaskStatus, WindowBudget, WorkMode,
+};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -105,9 +107,18 @@ fn plan_schema() -> Value {
                     },
                     "required": ["title", "instruction", "done_when", "files", "check_cmd"]
                 }
+            },
+            // Decisões que só a pessoa pode tomar, levantadas ANTES de
+            // trabalhar. Vazio = o pedido está claro. Em `required` (com [])
+            // pelo mesmo motivo do check_cmd: modelo pequeno preenche sempre
+            // melhor do que decide omitir.
+            "questions": {
+                "type": "array",
+                "maxItems": 4,
+                "items": { "type": "string" }
             }
         },
-        "required": ["tasks"]
+        "required": ["tasks", "questions"]
     })
 }
 
@@ -133,7 +144,10 @@ fn decompose_request(
          escreva o teste PRIMEIRO e use-o aqui; use \"\" quando não houver comando que \
          confira;\n\
          - `depends_on` só aponta para entregas ANTERIORES, pelo índice começando em 0;\n\
-         - não invente etapas de \"revisar\" ou \"planejar\": só trabalho de verdade.\n"
+         - não invente etapas de \"revisar\" ou \"planejar\": só trabalho de verdade;\n\
+         - se faltar uma decisão que MUDA o plano (stack, escopo, onde salvar), liste até 4 \
+         perguntas em `questions` e NÃO chute — mas nunca pergunte o que dá para descobrir \
+         lendo o projeto; deixe [] quando o pedido está claro.\n"
     );
     if !context.trim().is_empty() {
         user.push_str(&format!(
@@ -320,9 +334,35 @@ pub fn plan_from_value(goal: &str, value: &Value, per_task: u32) -> Option<TaskP
         });
     }
 
+    // Perguntas pré-trabalho: decisões que mudam o plano. Só as que vieram
+    // como texto simples; teto de 4 (mais que isso é o modelo empurrando a
+    // tarefa de volta).
+    let questions: Vec<QuestionItem> = value
+        .get("questions")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .take(4)
+                .map(|s| QuestionItem {
+                    text: clip(s, MAX_INSTRUCTION_CHARS),
+                    options: Vec::new(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     (!tasks.is_empty()).then(|| TaskPlan {
         goal: goal.trim().to_string(),
         tasks,
+        pending_question: (!questions.is_empty()).then_some(PendingQuestion {
+            items: questions,
+            task_index: None,
+            asked_at_ms: 0,
+        }),
         ..Default::default()
     })
 }
@@ -521,6 +561,8 @@ pub(crate) struct PlanOutcome {
     pub summary: String,
     /// Pergunta pendente, quando o modelo chamou `ask_user`.
     pub question: Option<String>,
+    /// A forma ESTRUTURADA da pausa (o que a interface e o banco recebem).
+    pub pending: Option<PendingQuestion>,
     pub steps: u32,
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
@@ -534,6 +576,7 @@ impl Default for PlanOutcome {
             status: RunStatus::Running,
             summary: String::new(),
             question: None,
+            pending: None,
             steps: 0,
             prompt_tokens: 0,
             completion_tokens: 0,
@@ -580,6 +623,25 @@ pub(crate) async fn run_plan(
         *lock_plan(&ctx.plan) = plan;
     }
     publish(ctx, "plano criado");
+
+    // Perguntas ANTES de trabalhar: a decomposição levantou decisões que só
+    // a pessoa pode tomar. NADA executa até a resposta — a pausa é durável
+    // (perguntas persistidas com o plano; `run_answer` limpa e retoma).
+    if let Some(mut q) = snapshot(&ctx.plan).pending_question {
+        q.asked_at_ms = crate::events::now_ms() as i64;
+        lock_plan(&ctx.plan).pending_question = Some(q.clone());
+        publish(ctx, "perguntas pendentes");
+        out.question = Some(q.to_text());
+        out.pending = Some(q);
+        out.status = RunStatus::Escalated;
+        out.summary = summarize(
+            &snapshot(&ctx.plan),
+            out.status,
+            out.question.as_deref(),
+            steps.max(),
+        );
+        return out;
+    }
 
     // 2. Uma entrega por vez.
     let mut attempts: HashMap<usize, u32> = HashMap::new();
@@ -681,6 +743,7 @@ pub(crate) async fn run_plan(
         // O modelo chamou `ask_user`: o plano para onde está.
         if let Some(question) = pending_question(&ctx.plan, index) {
             out.question = Some(question);
+            out.pending = snapshot(&ctx.plan).pending_question;
             publish(ctx, "etapa bloqueada");
             break RunStatus::Escalated;
         }

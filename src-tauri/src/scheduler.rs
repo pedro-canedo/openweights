@@ -18,6 +18,7 @@ use crate::state::AppState;
 use lr_types::agent::{RunEvent, RunEventKind, RunOptions, RunStatus};
 use lr_types::automation::ScheduledTask;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -166,6 +167,9 @@ async fn launch(app: &AppHandle, task: &ScheduledTask) -> Result<String, String>
     let id_tarefa = task.id.clone();
     let app_evento = app.clone();
     let tarefa_evento = task.clone();
+    // A pergunta já foi avisada? O `run.finished` que vem atrás dela não
+    // pode mandar um segundo aviso genérico por cima.
+    let ja_perguntou = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let ouvinte: lr_agent::EventCallback = Arc::new(move |ev: RunEvent| {
         // Só o fim interessa: o resto da trilha já está em `run_events`, e a
         // tela da automação abre a execução por ali.
@@ -174,13 +178,41 @@ async fn launch(app: &AppHandle, task: &ScheduledTask) -> Result<String, String>
                 status, summary, ..
             } => (*status, summary.clone()),
             RunEventKind::RunPaused { .. } => (RunStatus::WaitingApproval, String::new()),
+            // A automação parou numa PERGUNTA: o aviso carrega o texto dela —
+            // é o que leva a pessoa à tela de Atividade, onde a fila
+            // "aguardando resposta" deixa responder e retomar.
+            RunEventKind::QuestionAsked { items, .. } => {
+                let texto = items
+                    .iter()
+                    .map(|q| q.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" / ");
+                let texto = if texto.trim().is_empty() {
+                    "preciso de uma decisão sua".to_string()
+                } else {
+                    texto
+                };
+                crate::desktop_host::notify(
+                    &app_evento,
+                    &tarefa_evento.name,
+                    &format!("Parei para perguntar: {texto}"),
+                );
+                // O `run.finished` vem logo atrás: sem esta marca ele mandaria
+                // um segundo aviso genérico ("parou no meio"), que empurraria
+                // da tela justamente o que traz a pergunta.
+                ja_perguntou.store(true, Ordering::SeqCst);
+                return;
+            }
             _ => return,
         };
         let _ = store.scheduled_task_finished(&id_tarefa, Some(status), &resumo);
         // A pausa também avisa: a automação fica parada esperando um clique
         // de confirmação, e sem o aviso do sistema ninguém sabe que deve dar
-        // esse clique — ela expira em silêncio.
-        notify(&app_evento, &tarefa_evento, Some(status));
+        // esse clique — ela expira em silêncio. Exceção: a pergunta já avisou
+        // com o texto dela, que é mais útil que "parou no meio".
+        if !ja_perguntou.swap(false, Ordering::SeqCst) {
+            notify(&app_evento, &tarefa_evento, Some(status));
+        }
     });
 
     let handle = state

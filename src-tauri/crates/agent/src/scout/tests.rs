@@ -1019,3 +1019,75 @@ async fn the_global_step_ceiling_still_wins() {
     assert_eq!(saved.tasks[1].status, TaskStatus::Pending);
     assert!(outcome.summary.contains("Faltou"), "{}", outcome.summary);
 }
+
+/// Perguntas da decomposição chegam estruturadas ao plano — com `task_index`
+/// vazio (a pausa é ANTES da primeira etapa).
+#[test]
+fn plan_from_value_keeps_pre_work_questions() {
+    let v = json!({
+        "tasks": [{
+            "title": "a", "instruction": "faça", "done_when": "x",
+            "files": [], "check_cmd": ""
+        }],
+        "questions": ["Next ou Vite?", "  ", "Onde salvar?"]
+    });
+    let plan = plan_from_value("obj", &v, 100).expect("plano");
+    let q = plan.pending_question.expect("perguntas presentes");
+    assert_eq!(q.items.len(), 2, "vazio não vira pergunta");
+    assert_eq!(q.items[0].text, "Next ou Vite?");
+    assert_eq!(q.task_index, None);
+}
+
+/// Com perguntas pendentes, NADA executa: o laço para antes da etapa 1, o
+/// desfecho é Escalated e a pausa estruturada sai no resultado — é a régua
+/// de "perguntas sempre pausam", inclusive nas automações.
+#[tokio::test]
+async fn a_pending_question_pauses_before_the_first_task() {
+    let server = loop_server(None);
+    let h = harness();
+    let client = server.client();
+    let plan = crate::plan_tools::shared_plan(TaskPlan {
+        goal: "algo ambíguo".into(),
+        tasks: vec![task("t1", "alfa", "faça")],
+        pending_question: Some(PendingQuestion {
+            items: vec![QuestionItem {
+                text: "Next ou Vite?".into(),
+                options: vec!["Next".into(), "Vite".into()],
+            }],
+            task_index: None,
+            asked_at_ms: 0,
+        }),
+        ..Default::default()
+    });
+    let tools = PlanTools::for_mode(WorkMode::Loop, plan.clone());
+    let mut runner = tool_runner(&h, &tools);
+    let mut steps = StepBudget::new(24);
+    let eng = engine(&h, &client, &h.opts);
+    let ctx = PlanRun {
+        engine: &eng,
+        build_system: &build_system,
+        plan: plan.clone(),
+        workspace: None,
+        goal: "algo ambíguo".into(),
+        context: String::new(),
+        window: budget(),
+        max_tasks: MAX_TASKS as u32,
+        checar_com_terminal: false,
+    };
+    let outcome = run_plan(&ctx, &mut runner, &mut steps).await;
+
+    assert_eq!(outcome.status, RunStatus::Escalated);
+    let pendente = outcome
+        .pending
+        .expect("a pausa estruturada viaja no resultado");
+    assert_eq!(pendente.items[0].options, vec!["Next", "Vite"]);
+    assert!(
+        server.chat_bodies().is_empty(),
+        "nenhuma chamada ao modelo antes da resposta"
+    );
+    assert_eq!(
+        crate::plan_tools::snapshot(&plan).tasks[0].status,
+        TaskStatus::Pending,
+        "a etapa não pode ter começado"
+    );
+}

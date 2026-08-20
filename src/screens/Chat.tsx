@@ -57,6 +57,7 @@ import {
 import AgentToggle from "../components/agent/AgentToggle";
 import LiveStatus from "../components/agent/LiveStatus";
 import ApprovalBar from "../components/agent/ApprovalBar";
+import QuestionCard from "../components/agent/QuestionCard";
 import FocusChip from "../components/agent/FocusChip";
 import ModeSelect from "../components/agent/ModeSelect";
 import RunTimeline, { RunTrail } from "../components/agent/RunTimeline";
@@ -650,6 +651,28 @@ export default function Chat() {
   const traceRunId =
     !run && lastTrace?.chatId === activeChatId ? lastTrace.runId : null;
 
+  // A pergunta que está PAUSANDO esta conversa: do run vivo escalado, ou do
+  // último run persistido — só quando a âncora dele é a última mensagem
+  // (a mesma regra do desvio do composer: uma escalada enterrada no meio do
+  // papo não segura a conversa).
+  const perguntaPendente = (() => {
+    if (run?.status === "escalated" && run.question) return run.question;
+    let ancora: UiMessage | undefined;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant") {
+        ancora = messages[i];
+        break;
+      }
+    }
+    const resumo = ancora?.runId ? runSummaries[ancora.runId] : undefined;
+    return resumo?.status === "escalated" &&
+      resumo.question &&
+      !resumo.answer &&
+      !resumo.resumedBy
+      ? resumo.question
+      : null;
+  })();
+
   // Quadro do plano (Scout Rule): aparece quando há plano e, nos modos que
   // planejam antes de agir, já durante a divisão da tarefa.
   const boardMode: WorkMode = run?.workMode ?? workMode;
@@ -974,7 +997,6 @@ export default function Chat() {
         // posterior o desativa) e a janela pós-dismiss (o banco responde na
         // hora, não o cache de resumos).
         const esperando = await (async () => {
-          if (run && run.status === "escalated") return run.runId;
           let ancora: UiMessage | undefined;
           for (let i = history.length - 1; i >= 0; i--) {
             if (history[i].role === "assistant") {
@@ -982,16 +1004,20 @@ export default function Chat() {
               break;
             }
           }
-          const runDaAncora = ancora?.runId;
+          const runDaAncora = ancora?.runId ?? run?.runId;
           if (!runDaAncora) return null;
-          let resumo: RunSummary | undefined = runSummaries[runDaAncora];
-          if (!resumo) {
-            // O run acabou de escalar e o cache de resumos ainda não o viu
-            // (ou a leitura anterior falhou): pergunta ao banco.
-            const lista = await runsList(chatId).catch(() => []);
-            resumo = lista.find((r) => r.id === runDaAncora);
-          }
-          return resumo?.status === "escalated" ? resumo.id : null;
+          // O BANCO decide, sempre: um run já respondido continua
+          // "escalated" para sempre, e só `answer`/`resumedBy` separam
+          // "esperando você" de "já respondido em outra janela". Sem esta
+          // leitura, a mensagem seguinte virava uma segunda resposta e
+          // nascia um run duplicado sobre o mesmo plano.
+          const lista = await runsList(chatId).catch(() => []);
+          const resumo = lista.find((r) => r.id === runDaAncora);
+          return resumo?.status === "escalated" &&
+            !resumo.answer &&
+            !resumo.resumedBy
+            ? resumo.id
+            : null;
         })();
         if (esperando) {
           const continuou = await runStore
@@ -1293,6 +1319,19 @@ export default function Chat() {
                 <div className="px-6">
                   <LiveStatus run={run} />
                 </div>
+
+                {/* A execução parou numa PERGUNTA: as opções viram botões
+                    (preenchem o compositor; a resposta retoma o plano). */}
+                {perguntaPendente && !runActive && (
+                  <div className="px-6">
+                    <div className="mx-auto mb-2 max-w-3xl">
+                      <QuestionCard
+                        question={perguntaPendente}
+                        onPick={setDraft}
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* Confirmação pendente: Enter permite, Esc nega. */}
                 {pendingCall && run && (

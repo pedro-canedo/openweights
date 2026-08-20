@@ -355,7 +355,8 @@
       "title": "O agente ainda não fez nada nesta máquina.",
       "body": "Quando ele ler um arquivo, rodar um comando ou mexer no seu projeto, tudo aparece aqui: cada execução com o que ela tocou, o tempo e os tokens que custou, e quem autorizou cada ação — inclusive as automações, que rodam sem ninguém olhando.",
       "cta": "Começar uma conversa"
-    }
+    },
+    "waitingAnswer": "Aguardando resposta"
   },
   "server": {
     "title": "Servidor Local",
@@ -832,6 +833,13 @@
       "sourceVector": "significado",
       "sourceBoth": "texto + significado",
       "openFile": "Abrir arquivo"
+    },
+    "question": {
+      "title": "O agente precisa de você",
+      "hint": "Clique numa opção para preencher a resposta, ou escreva a sua — a execução retoma o plano de onde parou.",
+      "answerPlaceholder": "Sua resposta…",
+      "send": "Responder",
+      "failed": "Não deu para responder — talvez esta pergunta já tenha sido respondida em outra janela."
     }
   },
   "plan": {

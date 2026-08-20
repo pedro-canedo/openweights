@@ -114,6 +114,15 @@ export function runCancel(runId: string): Promise<void> {
     : mockRunCancel(runId);
 }
 
+/** Runs pausados numa pergunta e sem resposta — a fila "aguardando resposta". */
+export function runsWaitingAnswer(): Promise<RunSummary[]> {
+  if (!isTauri) return Promise.resolve([]);
+  return invoke<RunSummary[]>("runs_waiting_answer", {}).catch((e) => {
+    console.warn("runs_waiting_answer falhou:", e);
+    return [];
+  });
+}
+
 /** Sem `chatId`, devolve TODAS as execuções (runs de automação não têm conversa). */
 export function runsList(chatId?: number): Promise<RunSummary[]> {
   return isTauri

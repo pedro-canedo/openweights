@@ -36,12 +36,28 @@ export interface Task {
   checkAfter?: number | null;
 }
 
+/** Uma pergunta estruturada à pessoa (as opções viram botões). */
+export interface QuestionItem {
+  text: string;
+  options: string[];
+}
+
+/** Perguntas que pausaram a execução, à espera de resposta. */
+export interface PendingQuestion {
+  items: QuestionItem[];
+  /** Etapa em que a pausa aconteceu (`null` = antes da primeira etapa). */
+  taskIndex: number | null;
+  askedAtMs: number;
+}
+
 export interface TaskPlan {
   goal: string;
   tasks: Task[];
   current: number;
   notes: string;
   approved: boolean;
+  /** Perguntas que pausaram a execução (a resposta as limpa). */
+  pendingQuestion?: PendingQuestion | null;
 }
 
 export type PlanEvent =

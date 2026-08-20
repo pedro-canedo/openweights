@@ -31,7 +31,7 @@ import {
   type RunCallOutput,
   type RunStartOptions,
 } from "./agentApi";
-import type { TaskPlan, WorkMode } from "./scout";
+import type { PendingQuestion, TaskPlan, WorkMode } from "./scout";
 import type {
   ApprovalDecision,
   ApprovalSource,
@@ -181,6 +181,8 @@ export interface RunView {
    * `focus.updated`. `null` = ainda não há plano.
    */
   plan: TaskPlan | null;
+  /** Perguntas que pausaram o run (evento `question.asked`). */
+  question: PendingQuestion | null;
   checkpoints: CheckpointMark[];
   usage: UsageStats | null;
   summary: string;
@@ -236,6 +238,7 @@ function emptyRun(runId: string, chatId: number): RunView {
     pendingCallId: null,
     focusMd: "",
     plan: null,
+    question: null,
     checkpoints: [],
     usage: null,
     summary: "",
@@ -601,6 +604,14 @@ export function reduceEvent(run: RunView, event: RunEvent): RunView {
         event.notes,
         event.tsMs,
       );
+      break;
+
+    case "question.asked":
+      next.question = {
+        items: event.items,
+        taskIndex: event.taskIndex,
+        askedAtMs: event.tsMs,
+      };
       break;
 
     case "run.paused":
@@ -1294,10 +1305,15 @@ export const runStore = {
     const knownId = byChat.get(chatId);
     if (knownId) {
       const known = runs.get(knownId);
-      if (known && isRunActive(known.status) && !known.attached) {
-        await attachTo(known);
+      if (known && isRunActive(known.status)) {
+        if (!known.attached) await attachTo(known);
+        return;
       }
-      return;
+      // O run conhecido já terminou — mas a conversa pode ter SEGUIDO por
+      // fora desta tela: responder uma pergunta pela Atividade abre um run
+      // novo que esta janela nunca viu. Sair aqui deixava o chat preso no
+      // run velho, mostrando uma pergunta já respondida enquanto o novo
+      // trabalhava invisível. Segue para a busca no banco.
     }
     const list = await runsList(chatId).catch(() => [] as RunSummary[]);
     const active = list.find((r) => isRunActive(r.status));

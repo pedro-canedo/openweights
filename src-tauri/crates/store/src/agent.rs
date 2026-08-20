@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS runs (
     plan_json TEXT,
     verify_json TEXT,
     work_mode TEXT,
+    question_json TEXT,
+    answer TEXT,
+    resumed_by TEXT,
     created_at INTEGER NOT NULL,
     finished_at INTEGER
 );
@@ -254,6 +257,53 @@ impl Store {
         Ok(())
     }
 
+    /// Grava as perguntas que pausaram o run (persistidas: a pausa sobrevive
+    /// a reinício e é respondível pela tela de Atividade).
+    pub fn set_run_question(
+        &self,
+        run_id: &str,
+        question: &lr_types::scout::PendingQuestion,
+    ) -> Result<(), StoreError> {
+        let json = serde_json::to_string(question).unwrap_or_else(|_| "{}".into());
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE runs SET question_json = ?2 WHERE id = ?1",
+            params![run_id, json],
+        )?;
+        Ok(())
+    }
+
+    /// Grava a resposta da pessoa e o run que retomou o trabalho — a
+    /// pendência sai da fila de "aguardando resposta".
+    pub fn set_run_answer(
+        &self,
+        run_id: &str,
+        answer: &str,
+        resumed_by: &str,
+    ) -> Result<(), StoreError> {
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE runs SET answer = ?2, resumed_by = ?3 WHERE id = ?1",
+            params![run_id, answer, resumed_by],
+        )?;
+        Ok(())
+    }
+
+    /// Runs pausados numa pergunta e ainda sem resposta — a fila que a tela
+    /// de Atividade mostra em "Aguardando resposta".
+    pub fn runs_waiting_answer(&self) -> Result<Vec<RunSummary>, StoreError> {
+        Ok(self
+            .list_runs(None)?
+            .into_iter()
+            .filter(|r| {
+                r.status == RunStatus::Escalated
+                    && r.question.is_some()
+                    && r.answer.is_none()
+                    && r.resumed_by.is_none()
+            })
+            .collect())
+    }
+
     /// Guarda o veredito da conferência automática do run.
     pub fn set_run_verification(
         &self,
@@ -296,7 +346,8 @@ impl Store {
         let conn = self.conn();
         let sql = "SELECT id, chat_id, model, mode, status, prompt, summary, workspace_dir,
                           created_at, finished_at, usage_json, verify_json,
-                          plan_json IS NOT NULL AND plan_json != '', work_mode
+                          plan_json IS NOT NULL AND plan_json != '', work_mode,
+                          question_json, answer, resumed_by
                    FROM runs {WHERE} ORDER BY created_at DESC LIMIT 200";
         let map = |r: &rusqlite::Row<'_>| -> rusqlite::Result<RunSummary> {
             Ok(RunSummary {
@@ -321,6 +372,11 @@ impl Store {
                     .get::<_, Option<String>>(13)?
                     .and_then(|s| enum_from(&s))
                     .unwrap_or_default(),
+                question: r
+                    .get::<_, Option<String>>(14)?
+                    .and_then(|j| serde_json::from_str(&j).ok()),
+                answer: r.get(15)?,
+                resumed_by: r.get(16)?,
             })
         };
         let rows = match chat_id {

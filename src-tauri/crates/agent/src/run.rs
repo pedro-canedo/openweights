@@ -15,7 +15,7 @@ use crate::codemode;
 use crate::events::EventSink;
 use crate::menu;
 use crate::output_stream::ChunkCoalescer;
-use crate::plan_tools::{PlanTools, SharedPlan, shared_plan, snapshot};
+use crate::plan_tools::{PlanTools, SharedPlan, lock_plan, shared_plan, snapshot};
 use crate::prompt::{PromptContext, build_system_prompt};
 use crate::reliability::{
     ContextBudget, ErrorStreak, ReadLedger, Repeat, RepeatDetector, StepBudget, apply_compaction,
@@ -2605,6 +2605,8 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     let max_tasks = (max_steps / scout::MAX_STEPS_PER_TASK).max(1);
     let mut budget = StepBudget::new(max_steps);
 
+    // Perguntas que pausaram o run: persistidas e emitidas no epílogo.
+    let mut pergunta_pendente: Option<lr_types::scout::PendingQuestion> = None;
     let status = if work_mode == WorkMode::Loop {
         // Divide o objetivo e executa entrega por entrega, cada uma com
         // contexto novo. A decomposição enxerga um resumo curto da conversa:
@@ -2630,6 +2632,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         usage.completion_tokens += outcome.completion_tokens;
         final_text = outcome.summary.clone();
         summary_override = Some(outcome.summary);
+        pergunta_pendente = outcome.pending;
         outcome.status
     } else {
         let mut messages_do_agente = vec![ChatMessage::system(build_prompt(None))];
@@ -2657,15 +2660,43 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         final_text = outcome.text.clone();
         escalation = outcome.escalation;
 
-        // Planejamento entrega o plano, não o trabalho.
-        if work_mode == WorkMode::Plan && outcome.status == RunStatus::Done {
-            let proposal =
-                present_plan(&engine, &plan, &prompt, &outcome.text, window, max_tasks).await;
-            if final_text.trim().is_empty() {
-                final_text = proposal;
+        if work_mode == WorkMode::Plan {
+            // Modo planejamento com pergunta pendente: o run PARA esperando a
+            // resposta, não termina "Done" com a pergunta enterrada no erro
+            // de uma etapa — era assim que ela se perdia. Só não decompomos
+            // agora: planejar sem a decisão que falta é chutar. Mas o plano
+            // (mesmo pela metade) PRECISA ser gravado — sem `plan_json` a
+            // resposta abriria um run de execução sem plano e sem aprovação.
+            if snapshot(&plan).pending_question.is_some() {
+                {
+                    let mut p = lock_plan(&plan);
+                    p.approved = false;
+                    if p.goal.trim().is_empty() {
+                        p.goal = prompt.trim().to_string();
+                    }
+                }
+                scout::publish_plan(&engine, &plan, "perguntas pendentes");
+            } else if outcome.status == RunStatus::Done {
+                // Planejamento entrega o plano, não o trabalho.
+                let proposal =
+                    present_plan(&engine, &plan, &prompt, &outcome.text, window, max_tasks).await;
+                if final_text.trim().is_empty() {
+                    final_text = proposal;
+                }
             }
+            // Reavaliado DEPOIS do `present_plan`: a decomposição que ele faz
+            // (quando o modelo não escreveu o plano) também levanta perguntas,
+            // e elas ficavam enterradas no plano com o run saindo "Done".
+            if let Some(q) = snapshot(&plan).pending_question {
+                summary_override = Some(format!("Parei para perguntar: {}", q.to_text()));
+                pergunta_pendente = Some(q);
+                RunStatus::Escalated
+            } else {
+                outcome.status
+            }
+        } else {
+            outcome.status
         }
-        outcome.status
     };
 
     // O que os ajudantes fizeram é trabalho do run: entra na verificação e
@@ -2842,6 +2873,18 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
             Some(&run_id),
             &summary,
         );
+    }
+    // A pergunta que pausou o run: persistida (a Atividade lista os runs
+    // "aguardando resposta" mesmo depois de reiniciar o app) e emitida em
+    // forma estruturada — as opções viram botões na conversa.
+    if let Some(q) = &pergunta_pendente {
+        if let Err(e) = deps.store.set_run_question(&run_id, q) {
+            log::error!("run {run_id}: não gravou a pergunta pendente: {e}");
+        }
+        sink.emit(RunEventKind::QuestionAsked {
+            items: q.items.clone(),
+            task_index: q.task_index.map(|i| i as u32),
+        });
     }
     sink.emit(RunEventKind::RunFinished {
         status,

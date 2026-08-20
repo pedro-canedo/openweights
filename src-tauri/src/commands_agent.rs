@@ -261,6 +261,10 @@ pub async fn run_plan_approve(
     let mut plan: TaskPlan = serde_json::from_str(&raw).map_err(err_str)?;
 
     plan.approved = true;
+    // Aprovar É a decisão: a pergunta que ficou aberta deixa de segurar o
+    // trabalho. Sem isto, o run novo pausaria de novo na mesma pergunta —
+    // e aprovar viraria um beco sem saída.
+    let pergunta = plan.pending_question.take();
     // Etapas que ficaram pela metade voltam para a fila.
     for task in &mut plan.tasks {
         if task.status == TaskStatus::Running {
@@ -325,6 +329,17 @@ pub async fn run_plan_approve(
             Some(channel_sink(on_event)),
         )
         .map_err(err_str)?;
+    // Havia pergunta aberta e a pessoa aprovou assim mesmo: isso É a
+    // resposta. Registrar tira o run da fila "aguardando resposta" — senão
+    // ele ficaria lá para sempre, pedindo algo que já foi decidido.
+    if pergunta.is_some()
+        && let Err(e) =
+            state
+                .store
+                .set_run_answer(&run_id, "(plano aprovado sem responder)", &handle.id)
+    {
+        log::warn!("run {run_id}: não gravou a aprovação como resposta: {e}");
+    }
     Ok(handle.id.clone())
 }
 
@@ -354,6 +369,15 @@ pub async fn run_answer(
         .get_run(&run_id)
         .map_err(err_str)?
         .ok_or("execução não encontrada")?;
+    // Uma resposta por pergunta. Sem esta guarda, duas janelas (ou a janela
+    // entre responder e a conversa saber disso) abriam DOIS runs retomando o
+    // mesmo plano no mesmo projeto, ao mesmo tempo.
+    if run.answer.is_some() || run.resumed_by.is_some() {
+        return Err("esta pergunta já foi respondida".into());
+    }
+    if run.status != lr_types::agent::RunStatus::Escalated {
+        return Err("esta execução não está esperando resposta".into());
+    }
 
     let plano = state
         .store
@@ -380,6 +404,12 @@ pub async fn run_answer(
     let (prompt, work_mode, plan) = match plano {
         Some(mut plan) => {
             plan.approved = true;
+            // A resposta LIMPA a pausa: sem isso o run retomado renasceria
+            // já pausado na mesma pergunta.
+            let pausa_pre_trabalho = plan
+                .pending_question
+                .take()
+                .is_some_and(|q| q.task_index.is_none());
             // A resposta destrava: bloqueada e falhada voltam para a fila
             // (com o erro limpo — a pessoa acabou de responder o que
             // faltava); uma etapa que ficou correndo volta como pendente.
@@ -393,6 +423,13 @@ pub async fn run_answer(
                     _ => {}
                 }
             }
+            // Pergunta levantada ANTES de trabalhar (pela decomposição): a
+            // resposta pode MUDAR o plano — joga as etapas fora para o run
+            // novo re-decompor com a resposta à vista. Só quando nada
+            // começou: com trabalho feito, o plano vale e segue.
+            if pausa_pre_trabalho && plan.tasks.iter().all(|t| t.status == TaskStatus::Pending) {
+                plan.tasks.clear();
+            }
             if let Ok(json) = serde_json::to_string(&plan) {
                 let _ = state.store.set_run_plan(&run_id, &json);
             }
@@ -403,7 +440,13 @@ pub async fn run_answer(
 Resposta da pessoa: {answer}",
                     run.prompt
                 ),
-                WorkMode::Loop,
+                // O run retomado continua no MODO em que a pessoa
+                // trabalhava — responder uma pergunta do planejamento não
+                // pode virar execução sem aprovação.
+                match run.work_mode {
+                    WorkMode::Plan => WorkMode::Plan,
+                    _ => WorkMode::Loop,
+                },
                 Some(plan),
             )
         }
@@ -447,7 +490,20 @@ Resposta da pessoa: {answer}",
             Some(channel_sink(on_event)),
         )
         .map_err(err_str)?;
+    // A pendência foi respondida: grava a resposta e o run que retomou —
+    // é o que tira este run da fila de "aguardando resposta" da Atividade.
+    if let Err(e) = state.store.set_run_answer(&run_id, &answer, &handle.id) {
+        log::warn!("run {run_id}: não gravou a resposta: {e}");
+    }
     Ok(handle.id.clone())
+}
+
+/// Runs pausados numa pergunta e ainda sem resposta — a fila que a tela de
+/// Atividade mostra em "Aguardando resposta" (inclui automações, que não
+/// têm conversa para responder de dentro).
+#[tauri::command]
+pub fn runs_waiting_answer(state: State<'_, AppState>) -> CmdResult<Vec<RunSummary>> {
+    state.store.runs_waiting_answer().map_err(err_str)
 }
 
 /// Descarta o plano proposto para que a próxima execução divida de novo.

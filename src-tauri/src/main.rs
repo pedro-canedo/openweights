@@ -129,6 +129,7 @@ fn main() {
             commands_agent::runs_list,
             commands_agent::run_events_list,
             commands_agent::run_reap,
+            commands_agent::runs_waiting_answer,
             commands_agent::run_plan_get,
             commands_agent::run_plan_approve,
             commands_agent::run_answer,

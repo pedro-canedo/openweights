@@ -24,6 +24,8 @@ import {
   type ActivityStats,
 } from "../lib/agent/activity";
 import type { RunStatus, RunSummary } from "../lib/agent/types";
+import { runAnswer, runsWaitingAnswer } from "../lib/agent/agentApi";
+import QuestionCard from "../components/agent/QuestionCard";
 import TraceDrawer from "../components/agent/TraceDrawer";
 import { toolLabel } from "../components/agent/toolMeta";
 import { chatStore } from "../lib/chatStore";
@@ -582,6 +584,80 @@ function RunRow({
 
 // ------------------------------------------------------------------- tela ---
 
+/**
+ * Um run pausado numa pergunta, respondível daqui. Os botões de opção enviam
+ * direto (não há compositor nesta tela); o campo livre cobre o resto.
+ */
+function WaitingAnswer({
+  run,
+  onAnswered,
+}: {
+  run: RunSummary;
+  onAnswered: () => void;
+}) {
+  const { t } = useTranslation();
+  const [texto, setTexto] = useState("");
+  const [sending, setSending] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  const enviar = async (resposta: string) => {
+    if (!resposta.trim() || sending) return;
+    setSending(true);
+    setErro(null);
+    try {
+      // Sem ouvinte ao vivo: esta tela não acompanha o run novo — a trilha
+      // persiste e a conversa (quando houver) reata sozinha ao ser aberta.
+      // `runAnswer` nunca rejeita: devolve `null` quando o backend recusou
+      // (pergunta já respondida em outra janela, servidor fora). Sem checar,
+      // o card sumia e voltava sem uma linha de explicação.
+      const novo = await runAnswer(run.id, resposta.trim(), () => {});
+      if (!novo) {
+        setErro(t("agent.question.failed"));
+        return;
+      }
+      onAnswered();
+    } catch (e) {
+      setErro(errorMessage(e));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-accent/40 bg-panel2 px-4 py-3">
+      <p className="mb-2 text-[12px] leading-relaxed text-dim select-text">
+        {run.prompt}
+      </p>
+      {run.question && (
+        <QuestionCard
+          question={run.question}
+          onPick={(op) => void enviar(op)}
+        />
+      )}
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void enviar(texto);
+          }}
+          placeholder={t("agent.question.answerPlaceholder")}
+          className="min-w-0 flex-1 rounded-lg border border-edge bg-panel px-2.5 py-1.5 text-[12px] text-ink outline-none focus:border-accent"
+        />
+        <button
+          type="button"
+          disabled={sending || !texto.trim()}
+          onClick={() => void enviar(texto)}
+          className="rounded-lg border border-edge px-3 py-1.5 text-[12px] text-dim transition-colors hover:text-ink disabled:opacity-50"
+        >
+          {t("agent.question.send")}
+        </button>
+      </div>
+      {erro && <p className="mt-1 text-[11px] text-bad">{erro}</p>}
+    </div>
+  );
+}
+
 export default function Activity() {
   const { t, i18n } = useTranslation();
   const lang = i18n.language;
@@ -589,6 +665,7 @@ export default function Activity() {
 
   // null = ainda carregando; lista vazia é um estado normal e tem tela própria.
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [waiting, setWaiting] = useState<RunSummary[]>([]);
   const [calls, setCalls] = useState<ActivityCall[] | null>(null);
   const [stats, setStats] = useState<ActivityStats | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -600,10 +677,12 @@ export default function Activity() {
 
   const reload = useCallback(async () => {
     try {
-      const [rows, recent] = await Promise.all([
+      const [rows, recent, pendentes] = await Promise.all([
         activityRuns(),
         activityCalls(CALLS_LIMIT),
+        runsWaitingAnswer(),
       ]);
+      setWaiting(pendentes);
       // A ordem vem do banco, mas quem depende dela é a leitura da tela:
       // ordenar aqui custa nada e não deixa a promessa "mais recente
       // primeiro" nas mãos de outra camada.
@@ -691,6 +770,19 @@ export default function Activity() {
             {t("activity.empty.cta")}
           </button>
         </div>
+      )}
+
+      {/* Runs pausados numa pergunta: respondível DAQUI — automações não têm
+          conversa, e sem esta fila a pausa delas ficaria invisível. */}
+      {waiting.length > 0 && (
+        <section className="mt-6 flex flex-col gap-2">
+          <h2 className="text-[12px] font-medium tracking-wide text-accent uppercase">
+            {t("activity.waitingAnswer")}
+          </h2>
+          {waiting.map((r) => (
+            <WaitingAnswer key={r.id} run={r} onAnswered={() => void reload()} />
+          ))}
+        </section>
       )}
 
       {!loading && !nunca && (
