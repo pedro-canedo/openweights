@@ -69,7 +69,8 @@ jobs:
 
   windows-cuda:
     name: Windows CUDA+RPC
-    runs-on: windows-latest
+    # A mesma imagem que o workflow de release do llama.cpp usa para CUDA.
+    runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
@@ -80,26 +81,59 @@ jobs:
           repository: ggml-org/llama.cpp
           ref: ${{ inputs.tag }}
 
+      # Sem action de terceiro: a Jimver/cuda-toolkit morreu duas vezes no
+      # próprio cache, antes de baixar pacote nenhum. O redist da NVIDIA
+      # publica um manifesto por versão com o caminho exato de cada
+      # componente — é dele que sai a lista, em vez de versões chumbadas que
+      # envelhecem a cada CUDA novo.
       - name: CUDA Toolkit
-        uses: Jimver/cuda-toolkit@v0.2.25
-        with:
-          cuda: "${{ matrix.cuda }}.0"
-          method: network
-          # GGML_CUDA=ON linka CUDA::cublas/cublasLt e usa thrust; só nvcc e
-          # cudart fazem o `cmake -B build` falhar no configure. O
-          # visual_studio_integration é o que faz o MSBuild achar os alvos CUDA.
-          sub-packages: '["nvcc","cudart","cublas","cublas_dev","thrust","nvrtc","nvrtc_dev","visual_studio_integration"]'
-          # Os dois caches desligados de propósito: a action tenta salvar um
-          # diretório que ainda não existe e morre com "Path Validation Error"
-          # em dois segundos, antes de baixar pacote nenhum.
-          use-github-cache: false
-          use-local-cache: false
-
-      - name: Build
         shell: pwsh
         run: |
-          cmake -B build -DGGML_CUDA=ON -DGGML_RPC=ON -DGGML_NATIVE=OFF -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release -j --target llama-server ggml-rpc-server
+          $ErrorActionPreference = "Stop"
+          $base = "https://developer.download.nvidia.com/compute/cuda/redist/"
+          $manifest = Invoke-RestMethod "${base}redistrib_${{ matrix.cuda }}.0.json"
+          # Fora: profilers, documentação e as bibliotecas de math que o
+          # ggml-cuda não linka. São gigabytes que não entram em nada.
+          $fora = @(
+            "nsight_compute", "nsight_systems", "nsight_vse", "cuda_documentation",
+            "cuda_sanitizer_api", "cuda_cupti", "cuda_opencl", "cuda_nvml_dev",
+            "libcufft", "libcurand", "libcusolver", "libcusparse", "libnpp", "libnvjpeg"
+          )
+          $bruto = "$env:RUNNER_TEMP\cuda-raw"
+          $cuda  = "$env:RUNNER_TEMP\cuda"
+          New-Item -ItemType Directory -Force $bruto, $cuda | Out-Null
+          foreach ($prop in $manifest.PSObject.Properties) {
+            if ($fora -contains $prop.Name) { continue }
+            $win = $prop.Value."windows-x86_64"
+            if (-not $win) { continue }
+            $zip = "$env:RUNNER_TEMP\$($prop.Name).zip"
+            curl.exe -sL -o $zip ($base + $win.relative_path)
+            Expand-Archive -Path $zip -DestinationPath $bruto -Force
+          }
+          # Cada archive extrai na própria pasta; o toolkit é a união delas.
+          Get-ChildItem $bruto -Directory | ForEach-Object {
+            Copy-Item "$($_.FullName)\*" $cuda -Recurse -Force
+          }
+          if (-not (Test-Path "$cuda\bin\nvcc.exe")) { throw "nvcc não veio no redist" }
+          Add-Content $env:GITHUB_ENV "CUDA_PATH=$cuda"
+          Add-Content $env:GITHUB_ENV "CUDAToolkit_ROOT=$cuda"
+          Add-Content $env:GITHUB_PATH "$cuda\bin"
+
+      # Ninja + vcvarsall em vez do gerador do Visual Studio: os alvos MSBuild
+      # do CUDA moram dentro da instalação do VS, e o redist não os coloca lá.
+      - name: Ninja
+        run: choco install ninja -y
+
+      - name: Build
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          cmake -S . -B build -G "Ninja Multi-Config" ^
+            -DGGML_CUDA=ON ^
+            -DGGML_RPC=ON ^
+            -DGGML_NATIVE=OFF ^
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j %NUMBER_OF_PROCESSORS% --target llama-server ggml-rpc-server
 
       - name: Pack
         shell: pwsh
