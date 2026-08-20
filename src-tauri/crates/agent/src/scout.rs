@@ -131,23 +131,28 @@ fn decompose_request(
     per_task: u32,
 ) -> ChatRequest {
     let mut user = format!(
-        "Objetivo da pessoa:\n{goal}\n\n\
+        "Objetivo da pessoa (recorte — o pedido completo pode ser enorme; use as fases \
+         nomeadas, NÃO copie o spec inteiro numa entrega só):\n{outline}\n\n\
          Divida este objetivo em cerca de {wanted} entregas pequenas, na ordem de execução.\n\
          Regras:\n\
          - cada entrega tem que caber sozinha em {per_task} tokens de contexto;\n\
-         - `instruction` é concreta: diz o que fazer, em quais arquivos, com que resultado;\n\
+         - se o pedido já lista Fase/Phase/Etapa 1..N, CADA fase vira UMA entrega — \
+         nunca junte o spec inteiro na primeira;\n\
+         - `instruction` é concreta e CURTA: diz o que fazer NESTA fase, em quais arquivos, \
+         com que resultado; NÃO cole o pedido original;\n\
          - `done_when` é conferível (um arquivo existe, um comando passa, um texto aparece);\n\
          - `files` lista os caminhos que ESTA entrega cria ou altera, relativos à pasta do \
          projeto; deixe vazio só quando a entrega não mexe em arquivo nenhum;\n\
          - `check_cmd` é um comando de terminal que sai com código 0 quando a entrega está \
          pronta (um teste, um build, um grep no arquivo criado); para entrega de código, \
          escreva o teste PRIMEIRO e use-o aqui; use \"\" quando não houver comando que \
-         confira;\n\
+         confira; NÃO use `node -v`, `ls` nem `pwd` — isso não prova nada;\n\
          - `depends_on` só aponta para entregas ANTERIORES, pelo índice começando em 0;\n\
          - não invente etapas de \"revisar\" ou \"planejar\": só trabalho de verdade;\n\
          - se faltar uma decisão que MUDA o plano (stack, escopo, onde salvar), liste até 4 \
          perguntas em `questions` e NÃO chute — mas nunca pergunte o que dá para descobrir \
-         lendo o projeto; deixe [] quando o pedido está claro.\n"
+         lendo o projeto; deixe [] quando o pedido está claro.\n",
+        outline = goal_outline(goal),
     );
     if !context.trim().is_empty() {
         user.push_str(&format!(
@@ -157,19 +162,20 @@ fn decompose_request(
     }
     user.push_str("\nResponda somente com o JSON pedido.");
 
+    let rails = crate::skills::section(crate::skills::SkillPhase::Plan, None);
+    let mut system = String::from(
+        "Você divide trabalho em entregas pequenas para um agente que roda em um \
+         computador doméstico, com janela de contexto curta. Responda em JSON, no \
+         idioma do pedido.",
+    );
+    system.push_str(&rails);
+
     let mut req = ChatRequest::new(
         model,
-        vec![
-            ChatMessage::system(
-                "Você divide trabalho em entregas pequenas para um agente que roda em um \
-                 computador doméstico, com janela de contexto curta. Responda em JSON, no \
-                 idioma do pedido.",
-            ),
-            ChatMessage::user(user),
-        ],
+        vec![ChatMessage::system(system), ChatMessage::user(user)],
     );
     req.temperature = Some(0.2);
-    req.max_tokens = Some(1_400);
+    req.max_tokens = Some(2_000);
     // O llama-server transforma o schema em gramática: é o que garante um
     // plano parseável mesmo de um modelo pequeno.
     req.with_extra(
@@ -199,7 +205,17 @@ pub async fn decompose(
     // A janela diz quantas etapas cabem em CONTEXTO; `max_tasks` diz quantas
     // cabem no orçamento de PASSOS que a pessoa deu. Planejar oito entregas
     // com passos para duas é prometer o que não vai ser cumprido.
-    let wanted = budget.suggested_tasks(prompt_tokens).min(max_tasks.max(1));
+    let wanted = {
+        let sugeridas = budget.suggested_tasks(prompt_tokens);
+        // Pedido enorme: o teto de PASSOS não pode forçar "1 entrega" — era
+        // isso que colocava o spec inteiro numa etapa só. O run para no
+        // orçamento se faltar passo; o plano continua fatiado.
+        if prompt_tokens > budget.per_task() / 2 || extract_phases(goal).len() >= 2 {
+            sugeridas.min(MAX_TASKS as u32)
+        } else {
+            sugeridas.min(max_tasks.max(1))
+        }
+    };
 
     let request = decompose_request(model, goal, context, wanted, per_task);
     let outcome = client
@@ -211,21 +227,20 @@ pub async fn decompose(
         .and_then(|v| plan_from_value(goal, &v, per_task))
         .unwrap_or_else(|| {
             log::warn!(
-                "o modelo não devolveu um plano utilizável ({} bytes); sigo com uma entrega só",
+                "o modelo não devolveu um plano utilizável ({} bytes); sigo com o plano de fallback",
                 outcome.content.len()
             );
-            single_task_plan(goal, per_task)
+            fallback_plan(goal, per_task)
         });
-    // O teto de passos é o que a pessoa (ou a automação) escolheu, e ponto.
-    // `wanted` é só sugestão no prompt — um modelo que devolve 12 entregas
-    // para um orçamento de 1 estouraria o combinado; corta aqui, não lá.
-    let teto = (max_tasks.max(1) as usize).min(MAX_TASKS);
-    if plan.tasks.len() > teto {
+    plan = prefer_split_plan(goal, plan, per_task);
+    // Teto duro: só o MAX_TASKS. Cortar para 1 porque o orçamento de passos
+    // era curto reintroduzia a entrega-gigante.
+    if plan.tasks.len() > MAX_TASKS {
         log::warn!(
-            "o modelo devolveu {} entregas para um orçamento de {teto}; corto o excesso",
+            "o modelo devolveu {} entregas; corto no teto de {MAX_TASKS}",
             plan.tasks.len()
         );
-        plan.tasks.truncate(teto);
+        plan.tasks.truncate(MAX_TASKS);
     }
     Ok(with_notes(plan, context))
 }
@@ -247,19 +262,222 @@ async fn prompt_size(client: &LlamaClient, model: &str, goal: &str, context: &st
     })
 }
 
-/// Plano de uma entrega só: a saída quando a decomposição não deu certo.
+/// Plano de uma entrega só: a saída quando a decomposição não deu certo
+/// E o pedido é curto. Pedido enorme (ou já fatiado em fases) vai para
+/// [`fallback_plan`].
 pub fn single_task_plan(goal: &str, per_task: u32) -> TaskPlan {
     let goal = goal.trim();
     TaskPlan {
         goal: goal.to_string(),
         tasks: vec![Task {
-            instruction: goal.to_string(),
+            instruction: clip(goal, MAX_INSTRUCTION_CHARS),
             done_when: "O pedido foi atendido e você explicou o que fez.".into(),
             est_tokens: per_task,
             ..Task::new("t1", head_chars(goal, MAX_TITLE_CHARS))
         }],
         ..Default::default()
     }
+}
+
+/// Recorte do pedido para o planejador — nunca o spec inteiro.
+fn goal_outline(goal: &str) -> String {
+    let fases = extract_phases(goal);
+    if fases.len() >= 2 {
+        let mut out = format!(
+            "Pedido longo ({} caracteres). Cada linha abaixo é uma entrega obrigatória:\n",
+            goal.chars().count()
+        );
+        for (i, (title, body)) in fases.iter().enumerate() {
+            out.push_str(&format!(
+                "{}. {title} — {}\n",
+                i + 1,
+                clip(body, 180)
+            ));
+        }
+        return out;
+    }
+    clip(goal, 2_500)
+}
+
+/// Se o modelo (ou o fallback) devolveu 1 entrega-gigante, troca pelas fases
+/// já escritas no pedido.
+fn prefer_split_plan(goal: &str, plan: TaskPlan, per_task: u32) -> TaskPlan {
+    let fatiado = split_goal(goal, per_task);
+    if fatiado.tasks.len() < 2 {
+        return plan;
+    }
+    let unica_gigante = plan.tasks.len() == 1
+        && (plan.tasks[0].instruction.chars().count() > MAX_INSTRUCTION_CHARS / 2
+            || goal.chars().count() > MAX_INSTRUCTION_CHARS * 2);
+    if unica_gigante || plan.tasks.len() < fatiado.tasks.len() {
+        log::info!(
+            "troco o plano de {} entrega(s) pelas {} fases do próprio pedido",
+            plan.tasks.len(),
+            fatiado.tasks.len()
+        );
+        return fatiado;
+    }
+    plan
+}
+
+/// Plano quando o JSON falhou: fases do spec, ou fatias, ou uma entrega curta.
+pub fn fallback_plan(goal: &str, per_task: u32) -> TaskPlan {
+    let fatiado = split_goal(goal, per_task);
+    if fatiado.tasks.len() >= 2 {
+        return fatiado;
+    }
+    single_task_plan(goal, per_task)
+}
+
+/// O pedido já veio fatiado (Fase 1, Phase 2, …) ou é grande demais para
+/// uma janela de 32k.
+pub fn split_goal(goal: &str, per_task: u32) -> TaskPlan {
+    let goal = goal.trim();
+    let mut parts = extract_phases(goal);
+    if parts.len() < 2 {
+        parts = chunk_goal(goal);
+    }
+    if parts.len() < 2 {
+        return TaskPlan {
+            goal: goal.to_string(),
+            ..Default::default()
+        };
+    }
+    let preamble = preamble_of(goal);
+    let mut tasks = Vec::new();
+    for (i, (title, body)) in parts.into_iter().take(MAX_TASKS).enumerate() {
+        let instruction = format!(
+            "Implemente APENAS esta fase agora e grave os arquivos no projeto. \
+             \"Execute só a etapa atual\" significa ESCREVER o código dela, não pular.\n\
+             Recorte do pedido: {}\n\n\
+             Esta fase — {title}:\n{}",
+            clip(&preamble, 280),
+            clip(&body, MAX_INSTRUCTION_CHARS.saturating_sub(350))
+        );
+        tasks.push(Task {
+            instruction,
+            done_when: format!(
+                "Os arquivos desta fase existem no disco e o código da fase \"{title}\" está escrito."
+            ),
+            depends_on: if i == 0 { Vec::new() } else { vec![i - 1] },
+            est_tokens: per_task,
+            ..Task::new(format!("t{}", i + 1), clip(&title, MAX_TITLE_CHARS))
+        });
+    }
+    TaskPlan {
+        goal: goal.to_string(),
+        tasks,
+        ..Default::default()
+    }
+}
+
+/// Cabeçalhos tipo `Fase 1 Fundação`, `## Phase 2`, `Etapa 3:`.
+pub fn extract_phases(goal: &str) -> Vec<(String, String)> {
+    let mut starts: Vec<(usize, String)> = Vec::new();
+    for (offset, line) in line_offsets(goal) {
+        if let Some(title) = phase_header(line) {
+            starts.push((offset, title));
+        }
+    }
+    if starts.len() < 2 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for i in 0..starts.len() {
+        let begin = starts[i].0;
+        let end = starts.get(i + 1).map(|(o, _)| *o).unwrap_or(goal.len());
+        let body = goal[begin..end].trim();
+        if body.is_empty() {
+            continue;
+        }
+        out.push((starts[i].1.clone(), body.to_string()));
+    }
+    out
+}
+
+fn line_offsets(text: &str) -> Vec<(usize, &str)> {
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    for raw in text.split_inclusive('\n') {
+        let line = raw.trim_end_matches(['\r', '\n']);
+        out.push((start, line));
+        start += raw.len();
+    }
+    out
+}
+
+fn phase_header(line: &str) -> Option<String> {
+    let stripped = line
+        .trim()
+        .trim_start_matches('#')
+        .trim()
+        .trim_matches('*')
+        .trim_matches('_')
+        .trim();
+    if stripped.is_empty() {
+        return None;
+    }
+    let lower = stripped.to_lowercase();
+    for prefix in ["fase ", "phase ", "etapa ", "passo ", "step "] {
+        if let Some(rest) = lower.strip_prefix(prefix) {
+            let mut chars = rest.chars();
+            if chars.next().is_some_and(|c| c.is_ascii_digit()) {
+                return Some(clip(stripped, MAX_TITLE_CHARS));
+            }
+        }
+    }
+    None
+}
+
+fn preamble_of(goal: &str) -> String {
+    for (offset, line) in line_offsets(goal) {
+        if phase_header(line).is_some() {
+            return goal[..offset].trim().to_string();
+        }
+    }
+    String::new()
+}
+
+fn chunk_goal(goal: &str) -> Vec<(String, String)> {
+    let total = goal.chars().count();
+    if total <= MAX_INSTRUCTION_CHARS * 2 {
+        return Vec::new();
+    }
+    let n = (total.div_ceil(MAX_INSTRUCTION_CHARS)).clamp(2, MAX_TASKS);
+    let slice = (total / n).max(400);
+    let chars: Vec<char> = goal.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    let mut part = 1usize;
+    while i < chars.len() && out.len() < MAX_TASKS {
+        let end = (i + slice).min(chars.len());
+        let chunk: String = chars[i..end].iter().collect();
+        out.push((format!("Parte {part}"), chunk));
+        i = end;
+        part += 1;
+    }
+    out
+}
+
+/// Pedido de implementação: a etapa não pode fechar só com prosa ou `ls`.
+pub fn expects_implementation(text: &str) -> bool {
+    let l = text.to_lowercase();
+    const KW: [&str; 13] = [
+        "criar",
+        "implement",
+        "next.js",
+        "three.js",
+        "componente",
+        "src/",
+        "app/",
+        "page.tsx",
+        "fundação",
+        "fundacao",
+        "scaffold",
+        "boilerplate",
+        "fs_write",
+    ];
+    KW.iter().any(|k| l.contains(k))
 }
 
 /// Constrói um plano a partir do JSON do modelo (ou de `plan_create`).
@@ -323,13 +541,15 @@ pub fn plan_from_value(goal: &str, value: &Value, per_task: u32) -> Option<TaskP
             ),
             MAX_INSTRUCTION_CHARS,
         );
+        let check_cmd = (!check_cmd.trim().is_empty() && !verify::trivial_check_cmd(&check_cmd))
+            .then(|| check_cmd.trim().to_string());
         tasks.push(Task {
             instruction,
             done_when,
             files: arquivos(item),
             depends_on: dependencies(item, index),
             est_tokens: per_task,
-            check_cmd: (!check_cmd.trim().is_empty()).then(|| check_cmd.trim().to_string()),
+            check_cmd,
             ..Task::new(format!("t{}", index + 1), title)
         });
     }
@@ -613,11 +833,11 @@ pub(crate) async fn run_plan(
                 log::warn!("não consegui dividir o objetivo ({e}); sigo com uma entrega só");
                 ctx.engine.sink.emit(RunEventKind::RunError {
                     message: format!(
-                        "Não consegui dividir a tarefa ({e}); vou tentar em uma entrega só."
+                        "Não consegui dividir a tarefa ({e}); vou tentar com o plano de fallback."
                     ),
                     retryable: true,
                 });
-                single_task_plan(&ctx.goal, ctx.window.per_task())
+                fallback_plan(&ctx.goal, ctx.window.per_task())
             }
         };
         *lock_plan(&ctx.plan) = plan;
@@ -671,10 +891,19 @@ pub(crate) async fn run_plan(
         // ESTA etapa. Nada do histórico anterior entra aqui — é a Scout Rule
         // em quatro linhas.
         runner.reset_task_memory();
+        runner.exige_escrita =
+            !task.files.is_empty() || expects_implementation(&task.instruction);
         runner.focus_md = Some(md.clone());
+        let mut user = task_brief(&ctx.goal, &digest, index, total, &task);
+        if let Some(ws) = ctx.workspace.as_deref()
+            && let Some(prev) = crate::progress::read_progress(ws)
+        {
+            user.push_str("\n\nProgresso persistido (.openweights/progress.md):\n");
+            user.push_str(&clip(&prev, 700));
+        }
         let mut messages = vec![
             ChatMessage::system((ctx.build_system)(Some(&md))),
-            ChatMessage::user(task_brief(&ctx.goal, &digest, index, total, &task)),
+            ChatMessage::user(user),
         ];
 
         let files_before = runner.written.len();
@@ -738,6 +967,11 @@ pub(crate) async fn run_plan(
         // plano e à conferência não precisa repetir.
         let mut vistos = std::collections::HashSet::new();
         files.retain(|f| vistos.insert(f.clone()));
+        for prometido in &task.files {
+            if vistos.insert(prometido.clone()) {
+                files.push(prometido.clone());
+            }
+        }
         let commands = runner.commands[commands_before..].to_vec();
 
         // O modelo chamou `ask_user`: o plano para onde está.
@@ -801,15 +1035,23 @@ pub(crate) async fn run_plan(
             });
         }
 
-        if let Some(reason) = failure_of(&step, report.as_ref(), veredito.as_ref()) {
+        if let Some(reason) = failure_of(
+            &task,
+            &step,
+            report.as_ref(),
+            veredito.as_ref(),
+            files_before,
+            runner.written.len(),
+        ) {
             let tries = attempts.entry(index).and_modify(|n| *n += 1).or_insert(1);
             fail_task(
                 &ctx.plan,
                 index,
                 &reason,
-                files,
+                files.clone(),
                 *tries >= MAX_TASK_ATTEMPTS,
             );
+            persist_task_progress(ctx, &task, index, total, &files, &reason);
             publish(ctx, "etapa falhou");
             continue;
         }
@@ -820,7 +1062,8 @@ pub(crate) async fn run_plan(
             Some(h) => h,
             None => ask_handoff(ctx.engine.client, &ctx.engine.opts.model, &task, &step.text).await,
         };
-        finish_task(&ctx.plan, index, handoff, files);
+        finish_task(&ctx.plan, index, handoff.clone(), files.clone());
+        persist_task_progress(ctx, &task, index, total, &files, "");
         publish(ctx, "etapa concluída");
     };
 
@@ -960,10 +1203,22 @@ fn anota_checks(plan: &SharedPlan, index: usize, before: Option<i32>, after: Opt
 
 /// Por que a etapa não passou — `None` quando passou.
 fn failure_of(
+    task: &Task,
     step: &StepOutcome,
     report: Option<&VerifyReport>,
     veredito: Option<&judge::Veredito>,
+    files_before: usize,
+    files_after: usize,
 ) -> Option<String> {
+    let escreveu = files_after > files_before;
+    let exige = !task.files.is_empty() || expects_implementation(&task.instruction);
+    if exige && !escreveu {
+        return Some(
+            "a etapa não escreveu nenhum arquivo — pensar, listar pastas ou rodar \
+             `node -v` não conta como entrega"
+                .into(),
+        );
+    }
     if let Some(r) = report.filter(|r| !r.passed) {
         return Some(format!("a conferência não passou: {}", r.notes));
     }
@@ -981,6 +1236,48 @@ fn failure_of(
                 .unwrap_or_else(|| "a etapa foi interrompida".into()),
         ),
         _ => Some("o modelo não respondeu nesta etapa".into()),
+    }
+}
+
+fn persist_task_progress(
+    ctx: &PlanRun<'_>,
+    task: &Task,
+    index: usize,
+    total: usize,
+    files: &[String],
+    blockers: &str,
+) {
+    let Some(ws) = ctx.workspace.as_deref() else {
+        return;
+    };
+    let foto = snapshot(&ctx.plan);
+    let next = foto
+        .next_index()
+        .and_then(|i| foto.tasks.get(i))
+        .map(|t| t.title.as_str())
+        .unwrap_or("(plano sem próxima etapa executável)");
+    if let Err(e) = crate::progress::write_progress(
+        ws,
+        &crate::progress::ProgressNote {
+            run_id: &ctx.engine.run_id,
+            goal: &ctx.goal,
+            done: &format!(
+                "Etapa {}/{} — {}: {}",
+                index + 1,
+                total,
+                task.title,
+                if blockers.is_empty() {
+                    "concluída"
+                } else {
+                    "não passou"
+                }
+            ),
+            files,
+            next,
+            blockers,
+        },
+    ) {
+        log::debug!("não gravei .openweights/progress.md: {e}");
     }
 }
 
@@ -1025,7 +1322,15 @@ pub(crate) fn publish_plan(engine: &StepEngine<'_>, plan: &SharedPlan, motivo: &
 /// instrução desta. O modelo não recebe (nem pode receber) o histórico — se
 /// algo importante não estiver no digest, não existe para ele.
 fn task_brief(goal: &str, digest: &str, index: usize, total: usize, task: &Task) -> String {
-    let mut out = format!("Objetivo geral: {goal}\n\n");
+    let recorte = {
+        let pre = preamble_of(goal);
+        if pre.is_empty() {
+            clip(goal, 220)
+        } else {
+            clip(&pre, 220)
+        }
+    };
+    let mut out = format!("Objetivo geral (recorte): {recorte}\n\n");
     if !digest.trim().is_empty() {
         out.push_str("Etapas já concluídas (resumo do que elas deixaram pronto):\n");
         out.push_str(digest);
@@ -1052,10 +1357,14 @@ fn task_brief(goal: &str, digest: &str, index: usize, total: usize, task: &Task)
         ));
     }
     out.push_str(
-        "Faça SÓ esta etapa. Você não tem o histórico das anteriores: o resumo acima é tudo o \
-         que sobrou delas. Ao terminar, chame `task_complete` com um resumo de até 3 linhas do \
-         que a próxima etapa precisa saber. Se faltar uma decisão que só a pessoa pode tomar, \
-         chame `ask_user`.",
+        "Faça SÓ esta etapa: isso quer dizer ESCREVER os arquivos dela agora, com as \
+         ferramentas. Não recopie o spec inteiro. Não encerre em texto sem ter gravado \
+         código. O progresso persistido está em `.openweights/progress.md` — leia se \
+         precisar de contexto, não peça o pedido original de novo.\n\
+         Você não tem o histórico das anteriores: o resumo acima é tudo o que sobrou \
+         delas. Ao terminar, chame `task_complete` com um resumo de até 3 linhas do \
+         que a próxima etapa precisa saber. Se faltar uma decisão que só a pessoa pode \
+         tomar, chame `ask_user`.",
     );
     out
 }

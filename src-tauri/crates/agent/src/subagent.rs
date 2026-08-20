@@ -217,6 +217,8 @@ impl AgentDelegate {
             repeats: RepeatDetector::default(),
             errors: ErrorStreak::default(),
             written: Vec::new(),
+            task_written0: 0,
+            exige_escrita: false,
             reescritas: Default::default(),
             commands: Vec::new(),
             focus_md: None,
@@ -390,6 +392,11 @@ impl Tool for AgentDelegate {
                 user_system: user_system.as_deref(),
                 mode,
                 tools_partial,
+                skill_phase: if role.read_only() {
+                    crate::skills::SkillPhase::None
+                } else {
+                    crate::skills::SkillPhase::Build
+                },
             });
             prompt.push_str(&helper_brief(&mission, role));
             prompt

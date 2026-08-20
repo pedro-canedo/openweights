@@ -19,7 +19,7 @@ use crate::plan_tools::{PlanTools, SharedPlan, lock_plan, shared_plan, snapshot}
 use crate::prompt::{PromptContext, build_system_prompt};
 use crate::reliability::{
     ContextBudget, ErrorStreak, ReadLedger, Repeat, RepeatDetector, StepBudget, apply_compaction,
-    compaction_request, plan_compaction,
+    compaction_request, max_chars_per_message, plan_compaction, shrink_oversized,
 };
 use crate::scout::{self, PlanRun};
 use crate::subagent;
@@ -504,6 +504,10 @@ pub(crate) struct ToolRunner {
     pub errors: ErrorStreak,
     /// Arquivos alterados (alimenta a verificação final).
     pub written: Vec<String>,
+    /// Quantos arquivos já estavam em `written` no começo DESTA etapa.
+    pub task_written0: usize,
+    /// Esta etapa promete código: texto sem escrita não pode encerrar.
+    pub exige_escrita: bool,
     /// Por arquivo: quantas vezes foi escrito neste run e o MAIOR tamanho que
     /// já teve. É o que permite perceber a espiral de reescrita.
     pub reescritas: std::collections::HashMap<String, (u32, u64)>,
@@ -624,6 +628,11 @@ impl ToolRunner {
         // `erros_totais` continua global: teto de dano do run inteiro.
         self.counters.cutucadas = 0;
         self.counters.sem_progresso = 0;
+        self.task_written0 = self.written.len();
+    }
+
+    fn wrote_this_task(&self) -> bool {
+        self.written.len() > self.task_written0
     }
 
     fn tool_context(&self, call_id: &str) -> ToolContext {
@@ -1929,6 +1938,7 @@ impl StepEngine<'_> {
                 index,
             });
             runner.counters.begin_step();
+            persist_step_progress(runner, index);
 
             let api_tools = self.menu.api_tools();
             let mut request = chat_request(self.opts, &self.run_id, messages, &api_tools);
@@ -2538,6 +2548,8 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
         repeats: RepeatDetector::default(),
         errors: ErrorStreak::default(),
         written: Vec::new(),
+        task_written0: 0,
+        exige_escrita: false,
         reescritas: Default::default(),
         commands: Vec::new(),
         focus_md: None,
@@ -2572,6 +2584,7 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
             user_system: opts.system_prompt.as_deref(),
             mode: opts.mode,
             tools_partial,
+            skill_phase: crate::skills::SkillPhase::for_work_mode(work_mode),
             code_signatures: assinaturas.as_deref(),
         })
     };
@@ -2598,12 +2611,11 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
     let mut summary_override: Option<String> = None;
     let mut final_text;
 
-    // O teto é o que a pessoa (ou a automação) escolheu, e ponto. Antes o
-    // laço o multiplicava para caber um plano de doze entregas — uma
-    // automação que pedia doze passos rodava noventa e seis. Agora quem se
-    // ajusta é o PLANO: com pouco orçamento, poucas entregas.
+    // O teto de PASSOS continua o da pessoa; o número de entregas segue a
+    // janela (Scout Rule). Antes, 24 passos / 8 = 3 entregas no máximo, e um
+    // spec de 6 fases virava 1 quando o JSON falhava.
     let max_steps = opts.max_steps;
-    let max_tasks = (max_steps / scout::MAX_STEPS_PER_TASK).max(1);
+    let max_tasks = scout::MAX_TASKS as u32;
     let mut budget = StepBudget::new(max_steps);
 
     // Perguntas que pausaram o run: persistidas e emitidas no epílogo.
@@ -2920,7 +2932,7 @@ async fn present_plan(
         .await
         .unwrap_or_else(|e| {
             log::warn!("não consegui dividir o objetivo ({e}); proponho uma entrega só");
-            scout::single_task_plan(goal, window.per_task())
+            scout::fallback_plan(goal, window.per_task())
         });
         *crate::plan_tools::lock_plan(plan) = built;
     }
@@ -2992,16 +3004,44 @@ fn chat_request(
 /// Compacta o histórico quando ele encosta no teto da janela de contexto.
 /// Estimativa local de tokens (~4 caracteres por token) — o porteiro que
 /// evita perguntar ao servidor a cada passo.
-fn tokens_estimados(messages: &[ChatMessage], tools: &[Value]) -> u32 {
-    let texto: usize = messages.iter().map(|m| m.text().len()).sum();
-    let ferramentas: usize = tools.iter().map(|t| t.to_string().len()).sum();
-    ((texto + ferramentas) / 4) as u32
-}
-
 /// Fração do limite a partir da qual vale PERGUNTAR ao servidor a contagem
 /// exata. Abaixo disso a estimativa local basta — e perguntar custava uma
 /// retokenização do histórico INTEIRO por passo (O(n²) ao longo do run).
-const PORTEIRO_DA_CONTAGEM: f32 = 0.7;
+/// 0.5 (não 0.7): com entrega grande a estimativa chars/4 subestima, e o
+/// porteiro antigo nunca chegava a compactar.
+const PORTEIRO_DA_CONTAGEM: f32 = 0.5;
+
+fn persist_step_progress(runner: &ToolRunner, step: u32) {
+    let Some(ws) = runner.workspace.as_deref() else {
+        return;
+    };
+    let desta = runner.written.len().saturating_sub(runner.task_written0);
+    let next = if runner.exige_escrita && !runner.wrote_this_task() {
+        "escrever os arquivos desta etapa (fs_write / run_code)"
+    } else {
+        "continuar a etapa ou chamar task_complete"
+    };
+    let slice = &runner.written[runner.task_written0.min(runner.written.len())..];
+    if let Err(e) = crate::progress::write_progress(
+        ws,
+        &crate::progress::ProgressNote {
+            run_id: &runner.run_id,
+            goal: runner.focus_md.as_deref().unwrap_or(""),
+            done: &format!("passo {step}; {desta} arquivo(s) nesta etapa"),
+            files: slice,
+            next,
+            blockers: "",
+        },
+    ) {
+        log::debug!("não gravei .openweights/progress.md no passo {step}: {e}");
+    }
+}
+
+fn tokens_estimados(messages: &[ChatMessage], tools: &[Value]) -> u32 {
+    let texto: usize = messages.iter().map(|m| m.text().len()).sum();
+    let ferramentas: usize = tools.iter().map(|t| t.to_string().len()).sum();
+    ((texto + ferramentas) / 3) as u32
+}
 
 #[allow(clippy::too_many_arguments)]
 async fn compact_if_needed(
@@ -3013,62 +3053,60 @@ async fn compact_if_needed(
     tools: &[Value],
     messages: &mut Vec<ChatMessage>,
 ) {
-    // Porteiro barato: só pergunta ao servidor quando a estimativa local diz
-    // que estamos chegando perto do limite.
+    let Some(janela) = context.window() else {
+        return;
+    };
+    let teto_msg = max_chars_per_message(janela);
+    let cortados = shrink_oversized(messages, teto_msg);
+
     let Some(limite) = context.limit() else {
         return;
     };
     let estimado = tokens_estimados(messages, tools);
-    if (estimado as f32) < limite as f32 * PORTEIRO_DA_CONTAGEM {
+    // Compacta também quando uma mensagem enorme já foi cortada: a UI precisa
+    // ver o evento, senão parece que a janela nunca encolhe.
+    let perto = (estimado as f32) >= limite as f32 * PORTEIRO_DA_CONTAGEM || cortados > 0;
+    if !perto {
         return;
     }
 
     let request = chat_request(opts, run_id, messages, tools);
-    // Servidor sem o endpoint de contagem: a estimativa decide sozinha —
-    // melhor compactar por estimativa do que estourar a janela por rigor.
     let before = client.input_tokens(&request).await.unwrap_or(estimado);
-    if !context.needs_compaction(before) {
+    if !context.needs_compaction(before) && cortados == 0 {
         return;
     }
-    let Some(plan) = plan_compaction(messages, KEEP_TAIL_MESSAGES) else {
+    if let Some(plan) = plan_compaction(messages, KEEP_TAIL_MESSAGES) {
+        let mut ask = ChatRequest::new(
+            &opts.model,
+            vec![ChatMessage::user(compaction_request(&plan))],
+        );
+        ask.temperature = Some(0.2);
+        let summary = match client.complete_once(&ask).await {
+            Ok(o) if !o.content.trim().is_empty() => o.content,
+            outro => {
+                if let Err(e) = outro {
+                    log::warn!("não consegui resumir o histórico: {e}");
+                }
+                format!(
+                    "[{} mensagens antigas foram removidas para caber na janela; \
+                     o resumo automático falhou. O que vale é o plano acima e as \
+                     últimas mensagens abaixo.]",
+                    plan.summarized_count()
+                )
+            }
+        };
+        *messages = apply_compaction(&plan, &summary, true);
+    } else if cortados == 0 {
         log::warn!("contexto cheio, mas não há histórico antigo para resumir");
         return;
-    };
+    }
 
-    let mut ask = ChatRequest::new(
-        &opts.model,
-        vec![ChatMessage::user(compaction_request(&plan))],
-    );
-    // Comprimir o histórico é a tarefa mais sensível do laço: o que sair daqui
-    // vira a memória do run. Temperatura alta aqui INVENTA passado.
-    ask.temperature = Some(0.2);
-    // O resumo pelo modelo é o caminho bom; quando ele falha (servidor caiu,
-    // resposta vazia), o plano B determinístico corta o miolo com um
-    // marcador — feio, mas o passo seguinte NÃO estoura a janela. Antes, a
-    // falha era silenciosa e o run seguia direto para o estouro.
-    let summary = match client.complete_once(&ask).await {
-        Ok(o) if !o.content.trim().is_empty() => o.content,
-        outro => {
-            if let Err(e) = outro {
-                log::warn!("não consegui resumir o histórico: {e}");
-            }
-            format!(
-                "[{} mensagens antigas foram removidas para caber na janela; \
-                 o resumo automático falhou. O que vale é o plano acima e as \
-                 últimas mensagens abaixo.]",
-                plan.summarized_count()
-            )
-        }
-    };
-
-    // O cabeçalho já é uma mensagem de sistema, então usá-la de novo é seguro.
-    *messages = apply_compaction(&plan, &summary, true);
     let after = client
         .input_tokens(&chat_request(opts, run_id, messages, tools))
         .await
         .unwrap_or_else(|_| tokens_estimados(messages, tools));
     sink.emit(RunEventKind::ContextCompacted {
-        tokens_before: before,
+        tokens_before: before.max(estimado),
         tokens_after: after,
     });
 }

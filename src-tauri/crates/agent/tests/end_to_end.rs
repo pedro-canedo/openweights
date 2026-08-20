@@ -1884,8 +1884,10 @@ async fn a_reproved_step_gets_one_retry_and_the_green_check_supersedes() {
     assert_eq!(status, RunStatus::Done, "eventos: {:?}", h.kinds());
 
     // O motivo da reprovação abriu a retentativa como instrução de conserto…
-    let recebeu = (0..server.calls.load(Ordering::SeqCst))
-        .any(|i| server.body(i).contains("conferência não passou"));
+    let recebeu = (0..server.calls.load(Ordering::SeqCst)).any(|i| {
+        let b = server.body(i);
+        b.contains("conferência não passou") || b.contains("não escreveu nenhum arquivo")
+    });
     assert!(
         recebeu,
         "a retentativa tinha que saber por que a 1ª reprovou"

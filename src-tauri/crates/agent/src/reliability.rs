@@ -336,9 +336,68 @@ impl ContextBudget {
         self.n_ctx.map(|n| (n as f32 * self.ratio) as u32)
     }
 
+    pub fn window(&self) -> Option<u32> {
+        self.n_ctx
+    }
+
     pub fn needs_compaction(&self, input_tokens: u32) -> bool {
         self.limit().is_some_and(|limit| input_tokens >= limit)
     }
+}
+
+/// Teto em caracteres de UMA mensagem, dado o `n_ctx`.
+///
+/// Uma entrega que come metade da janela impede a compactação (não há
+/// "miolo" para resumir) e deixa o modelo local sem espaço para pensar.
+/// Cortar a mensagem GRANDE cedo é o que a fração 80/90% sozinha não faz.
+pub fn max_chars_per_message(n_ctx: u32) -> usize {
+    ((n_ctx as f32 * 0.20) as usize).saturating_mul(4).max(2_000)
+}
+
+/// Encolhe mensagens de usuário/assistente que sozinhas estouram o teto.
+/// Devolve quantos caracteres foram cortados.
+pub fn shrink_oversized(messages: &mut [ChatMessage], max_chars: usize) -> usize {
+    let mut saved = 0usize;
+    for m in messages.iter_mut() {
+        if m.role != "user" && m.role != "assistant" {
+            continue;
+        }
+        if !m.tool_calls.is_empty() {
+            continue;
+        }
+        let t = m.text();
+        let n = t.chars().count();
+        if n <= max_chars {
+            continue;
+        }
+        let clipped = clip_keep_structure(&t, max_chars);
+        saved += n.saturating_sub(clipped.chars().count());
+        *m = if m.role == "user" {
+            ChatMessage::user(clipped)
+        } else {
+            ChatMessage::assistant(clipped)
+        };
+    }
+    saved
+}
+
+fn clip_keep_structure(text: &str, max: usize) -> String {
+    let n = text.chars().count();
+    if n <= max {
+        return text.to_string();
+    }
+    let head = (max * 7) / 10;
+    let tail = (max * 2) / 10;
+    let start: String = text.chars().take(head).collect();
+    let end: String = text
+        .chars()
+        .skip(n.saturating_sub(tail))
+        .collect();
+    format!(
+        "{start}\n\n[... {omitido} caracteres omitidos para caber na janela; \
+         o recorte vivo está em `.openweights/progress.md` ...]\n\n{end}",
+        omitido = n.saturating_sub(head + tail)
+    )
 }
 
 /// Recorte do histórico para a compactação.
@@ -622,6 +681,19 @@ mod tests {
         assert!(b.needs_compaction(800));
         // Sem `n_ctx` conhecido não há o que orçar (nunca compacta às cegas).
         assert!(!ContextBudget::new(None, 0.8).needs_compaction(999_999));
+    }
+
+    #[test]
+    fn a_giant_user_message_is_clipped_before_it_eats_the_window() {
+        let mut msgs = vec![
+            ChatMessage::system("sys"),
+            ChatMessage::user("X".repeat(20_000)),
+        ];
+        let saved = shrink_oversized(&mut msgs, 4_000);
+        assert!(saved > 10_000);
+        assert!(msgs[1].text().chars().count() < 5_000);
+        assert!(msgs[1].text().contains("omitidos"));
+        assert_eq!(msgs[0].text(), "sys", "o prompt de sistema fica");
     }
 
     fn tool_step(id: &str) -> (ChatMessage, ChatMessage) {

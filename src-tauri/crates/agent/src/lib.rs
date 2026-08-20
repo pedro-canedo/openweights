@@ -11,10 +11,12 @@ mod judge;
 mod menu;
 mod output_stream;
 mod plan_tools;
+mod progress;
 mod prompt;
 mod reliability;
 pub(crate) mod run;
 mod scout;
+mod skills;
 mod subagent;
 mod verify;
 
@@ -37,7 +39,9 @@ pub use menu::group_of;
 pub use plan_tools::{AskUser, PlanCreate, PlanTools, PlanUpdate, SharedPlan, TaskComplete};
 pub use prompt::{PromptContext, build_system_prompt};
 pub use run::{append_prompt, history_from_messages};
-pub use scout::{MAX_STEPS_PER_TASK, MAX_TASKS, decompose, menu_for, single_task_plan};
+pub use scout::{
+    MAX_STEPS_PER_TASK, MAX_TASKS, decompose, fallback_plan, menu_for, single_task_plan, split_goal,
+};
 
 /// Identificador com prefixo, único o bastante para um processo local.
 pub fn new_id(prefix: &str) -> String {
@@ -101,7 +105,7 @@ impl AgentConfig {
             store_dir,
             max_output_bytes: 30_000,
             approval_timeout: Duration::from_secs(15 * 60),
-            context_ratio: 0.85,
+            context_ratio: 0.8,
             first_token_timeout: Duration::from_secs(180),
             idle_timeout: Duration::from_secs(90),
             tool_call_timeout: Duration::from_secs(3_900),

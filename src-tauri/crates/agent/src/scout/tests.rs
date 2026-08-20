@@ -476,6 +476,83 @@ fn a_single_task_plan_keeps_the_goal_intact() {
 }
 
 #[test]
+fn named_phases_in_a_huge_spec_become_many_deliveries() {
+    let spec = "\
+Execute apenas a etapa atual. Não avance automaticamente.\n\
+\n\
+## Fase 1 Fundação\n\
+Criar o app Next.js com Three.js e SSR modular.\n\
+\n\
+## Fase 2 Mundo\n\
+Cena 3D, chão e câmera.\n\
+\n\
+## Fase 3 Personagens\n\
+Modelos e animações.\n\
+\n\
+## Fase 4 Combate\n\
+Habilidades e HUD.\n\
+\n\
+## Fase 5 Rede\n\
+Matchmaking.\n\
+\n\
+## Fase 6 Polimento\n\
+Áudio e menu.\n";
+    let plan = fallback_plan(spec, 8_000);
+    assert!(
+        plan.tasks.len() >= 6,
+        "esperava uma entrega por fase, veio {}",
+        plan.tasks.len()
+    );
+    for t in &plan.tasks {
+        assert!(
+            t.instruction.chars().count() < spec.chars().count(),
+            "instrução não pode ser o spec inteiro"
+        );
+        assert!(
+            t.instruction.contains("Implemente APENAS esta fase"),
+            "{}",
+            t.instruction
+        );
+    }
+    let brief = task_brief(spec, "", 0, plan.tasks.len(), &plan.tasks[0]);
+    assert!(brief.contains("Objetivo geral (recorte)"));
+    assert!(
+        !brief.contains("Fase 6"),
+        "a etapa 1 não pode carregar as fases seguintes: {brief}"
+    );
+    assert!(brief.contains("Fase 1") || brief.contains("Fundação"));
+}
+
+#[test]
+fn a_one_task_model_plan_is_replaced_when_the_spec_already_has_phases() {
+    let spec = format!(
+        "Fase 1 Fundação\ncriar src/app/page.tsx\n\nFase 2 Mundo\ncena three.js\n\n{}",
+        "lorem ".repeat(800)
+    );
+    let gigante = single_task_plan(&spec, 14_746);
+    assert_eq!(gigante.tasks.len(), 1);
+    let plan = prefer_split_plan(&spec, gigante, 14_746);
+    assert!(plan.tasks.len() >= 2, "veio {}", plan.tasks.len());
+}
+
+#[test]
+fn node_v_is_not_kept_as_acceptance_command() {
+    let plan = plan_from_value(
+        "objetivo",
+        &json!({"tasks": [{
+            "title": "app",
+            "instruction": "criar o next app",
+            "done_when": "existe",
+            "files": ["package.json"],
+            "check_cmd": "node -v"
+        }]}),
+        0,
+    )
+    .unwrap();
+    assert!(plan.tasks[0].check_cmd.is_none());
+}
+
+#[test]
 fn the_brief_carries_the_digest_and_not_the_history() {
     let task = Task {
         instruction: "escreva o teste em tests/novo.rs".into(),
@@ -489,7 +566,7 @@ fn the_brief_carries_the_digest_and_not_the_history() {
         3,
         &task,
     );
-    assert!(brief.contains("Objetivo geral: arrumar o projeto"));
+    assert!(brief.contains("Objetivo geral (recorte): arrumar o projeto"));
     assert!(brief.contains("o projeto usa pnpm"), "o handoff atravessa");
     assert!(brief.contains("2 de 3"));
     assert!(brief.contains("tests/novo.rs"));
@@ -497,7 +574,7 @@ fn the_brief_carries_the_digest_and_not_the_history() {
     assert!(brief.contains("task_complete"));
     // Curto o bastante para caber numa janela de modelo pequeno.
     assert!(
-        brief.len() < 1_400,
+        brief.len() < 2_200,
         "brief longo demais: {} bytes",
         brief.len()
     );
@@ -609,6 +686,8 @@ fn tool_runner(h: &Harness, tools: &PlanTools) -> ToolRunner {
         repeats: RepeatDetector::default(),
         errors: ErrorStreak::default(),
         written: Vec::new(),
+        task_written0: 0,
+        exige_escrita: false,
         reescritas: Default::default(),
         commands: Vec::new(),
         focus_md: None,

@@ -114,6 +114,28 @@ pub fn verify(
     })
 }
 
+/// Comando que "passa" em qualquer máquina e não prova a entrega:
+/// `node -v`, `ls`, `pwd`. Aceitá-lo como Definition of Done era o que
+/// deixava a conferência verde com a pasta vazia.
+pub(crate) fn trivial_check_cmd(cmd: &str) -> bool {
+    let t = cmd.trim().to_lowercase();
+    if t.is_empty() {
+        return true;
+    }
+    let first = t.split_whitespace().next().unwrap_or("");
+    matches!(
+        first,
+        "ls" | "dir" | "pwd" | "whoami" | "echo" | "true" | "date" | "clear" | "type"
+    ) || t == "node -v"
+        || t == "node --version"
+        || t == "npm -v"
+        || t == "npm --version"
+        || t == "python --version"
+        || t == "python -v"
+        || t == "python3 --version"
+        || t.starts_with("echo ")
+}
+
 /// Suspeitas baratas de arquivo truncado. São AVISOS: nenhuma reprova
 /// sozinha, porque cada heurística tem exceção legítima — mas um HTML sem
 /// `</html>` depois de um run que quase estourou o JSON merece uma linha.
@@ -254,6 +276,16 @@ mod tests {
         assert!(!report.passed);
         assert!(report.notes.contains("código 101"));
         assert!(report.notes.contains("cargo build"));
+    }
+
+    #[test]
+    fn version_and_listing_commands_are_not_proof() {
+        assert!(trivial_check_cmd("node -v"));
+        assert!(trivial_check_cmd("ls"));
+        assert!(trivial_check_cmd("pwd"));
+        assert!(trivial_check_cmd("echo ok"));
+        assert!(!trivial_check_cmd("npm test"));
+        assert!(!trivial_check_cmd("npx tsc --noEmit"));
     }
 
     /// Rodar de novo o MESMO comando supersede o registro antigo: o ciclo

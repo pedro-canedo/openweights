@@ -52,9 +52,9 @@ pub struct StartOptions {
 fn teto_para(plan: Option<&TaskPlan>) -> u32 {
     match plan {
         Some(p) if !p.tasks.is_empty() => {
-            (p.tasks.len() as u32 * lr_agent::MAX_STEPS_PER_TASK + 4).clamp(24, 100)
+            (p.tasks.len() as u32 * lr_agent::MAX_STEPS_PER_TASK + 4).clamp(24, 120)
         }
-        _ => 24,
+        _ => 48,
     }
 }
 

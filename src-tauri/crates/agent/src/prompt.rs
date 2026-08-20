@@ -7,6 +7,8 @@
 
 use lr_types::agent::RunMode;
 
+use crate::skills::{self, SkillPhase};
+
 /// Tudo que o prompt precisa saber sobre a execução.
 #[derive(Debug, Default, Clone)]
 pub struct PromptContext<'a> {
@@ -25,6 +27,8 @@ pub struct PromptContext<'a> {
     /// Instruções que a pessoa configurou para a conversa.
     pub user_system: Option<&'a str>,
     pub mode: RunMode,
+    /// Skills padrão desta fase (planejar vs executar). Chat = nenhuma.
+    pub skill_phase: SkillPhase,
     /// Code Mode ligado: as assinaturas das ferramentas, como funções.
     ///
     /// Quando existe, a seção de ferramentas muda de "lista o que chamar"
@@ -90,6 +94,7 @@ pub fn build_system_prompt(ctx: &PromptContext<'_>) -> String {
             out.push_str(extra);
             out.push('\n');
         }
+        append_skills(&mut out, ctx);
         return out;
     }
 
@@ -109,6 +114,8 @@ pub fn build_system_prompt(ctx: &PromptContext<'_>) -> String {
              - Se a pessoa recusar uma ação, não insista: proponha outra abordagem.\n\
              - Não anuncie o que vai fazer: faça. Texto sem chamada de ferramenta ENCERRA \
              a execução, então só responda em texto quando a tarefa estiver pronta.\n\
+             - Pedido com várias fases: implemente a fase ATUAL agora (grave arquivos). \
+             \"Não avance automaticamente\" não autoriza pular a escrita desta fase.\n\
              - Não rode servidor nem processo que não termina sozinho (`python -m http.server`, \
              `npm run dev`): o passo fica preso até estourar o tempo.\n",
         );
@@ -140,7 +147,14 @@ pub fn build_system_prompt(ctx: &PromptContext<'_>) -> String {
         out.push('\n');
     }
 
+    append_skills(&mut out, ctx);
+
     out
+}
+
+fn append_skills(out: &mut String, ctx: &PromptContext<'_>) {
+    let ws = ctx.workspace.map(std::path::Path::new);
+    out.push_str(&skills::section(ctx.skill_phase, ws));
 }
 
 #[cfg(test)]
@@ -164,6 +178,7 @@ mod tests {
             user_system: Some("Seja direto."),
             mode: RunMode::Smart,
             tools_partial: false,
+            skill_phase: SkillPhase::None,
         });
 
         for section in [
@@ -185,7 +200,7 @@ mod tests {
         assert!(p.contains("ENCERRA"));
         assert!(p.contains("Não anuncie o que vai fazer"));
         // Orçamento: algumas centenas de tokens (~4 caracteres por token).
-        assert!(p.len() < 2600, "prompt longo demais: {} bytes", p.len());
+        assert!(p.len() < 2_900, "prompt longo demais: {} bytes", p.len());
     }
 
     /// Cardápio recortado: o modelo precisa saber que pode pedir mais, senão
@@ -250,5 +265,32 @@ mod tests {
         assert!(p.contains("- fato 11"));
         assert!(!p.contains("- fato 12"), "corta em {MAX_FACTS} fatos");
         assert!(!p.contains("-  \n"));
+    }
+
+    #[test]
+    fn build_phase_injects_default_skills() {
+        let tools = tools();
+        let p = build_system_prompt(&PromptContext {
+            workspace: Some("/ws"),
+            tools: &tools,
+            skill_phase: SkillPhase::Build,
+            ..Default::default()
+        });
+        assert!(p.contains("## Trilhos desta etapa"));
+        assert!(p.contains("fs_write") || p.contains("disco"));
+        assert!(p.contains(".openweights/progress.md"));
+    }
+
+    #[test]
+    fn chat_phase_skips_skills() {
+        let tools = tools();
+        let p = build_system_prompt(&PromptContext {
+            workspace: Some("/ws"),
+            tools: &tools,
+            mode: RunMode::Chat,
+            skill_phase: SkillPhase::None,
+            ..Default::default()
+        });
+        assert!(!p.contains("## Trilhos desta etapa"));
     }
 }
