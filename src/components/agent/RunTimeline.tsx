@@ -26,7 +26,7 @@ import {
 import type { RunSummary } from "../../lib/agent/types";
 import { plansFirst, type TaskPlan } from "../../lib/agent/scout";
 import { runPlanGet } from "../../lib/agent/agentApi";
-import { formatEta } from "../../lib/format";
+import { formatDuration, formatEta } from "../../lib/format";
 import { errorMessage } from "../../lib/serverSession";
 import Markdown from "../chat/Markdown";
 import ThinkingBlock from "../chat/ThinkingBlock";
@@ -117,7 +117,7 @@ function usageLabel(t: TFunction, run: RunView, now: number): string {
   return t("agent.run.usage", {
     steps: run.usage?.steps ?? countSteps(run.items),
     tools: run.usage?.toolCalls ?? Object.keys(run.tools).length,
-    seconds: (durationMs(run, now) / 1000).toFixed(1),
+    time: formatDuration(durationMs(run, now)),
   });
 }
 

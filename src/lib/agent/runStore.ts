@@ -176,9 +176,9 @@ export interface RunView {
   pendingCallId: string | null;
   focusMd: string;
   /**
-   * Plano estruturado (Scout Rule). O evento só traz o markdown; os campos
-   * que o quadro precisa vêm do `run_plan_get`, buscado com throttle a cada
-   * `focus.updated`. `null` = ainda não há plano.
+   * Plano estruturado (Scout Rule). Chega inteiro no evento `plan`; o
+   * `run_plan_get` continua sendo o caminho da re-hidratação (reabrir a
+   * conversa, painel de run antigo). `null` = ainda não há plano.
    */
   plan: TaskPlan | null;
   /** Perguntas que pausaram o run (evento `question.asked`). */
@@ -604,6 +604,15 @@ export function reduceEvent(run: RunView, event: RunEvent): RunView {
         event.notes,
         event.tsMs,
       );
+      break;
+
+    case "plan":
+      // O plano estruturado agora VIAJA na trilha: a interface deixa de
+      // depender de uma consulta com atraso a cada mudança, e o replay
+      // reconstrói a linha do tempo das etapas sem ir ao banco.
+      if (event.event.kind === "plan.created" || event.event.kind === "plan.updated") {
+        next.plan = event.event.plan;
+      }
       break;
 
     case "question.asked":

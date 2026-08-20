@@ -28,6 +28,7 @@ import {
 } from "../../lib/agent/runStore";
 import { errorMessage } from "../../lib/serverSession";
 import { toolLabel } from "./toolMeta";
+import { formatDuration } from "../../lib/format";
 
 /** Distância do fim, em px, dentro da qual ainda contamos como "no fim". */
 const STICK_THRESHOLD = 24;
@@ -102,7 +103,7 @@ function CommandBlock({ call }: { call: ToolCallView }) {
         <span className={stateClass(call)}>{stateLabel(t, call)}</span>
         {call.durationMs != null && (
           <span className="text-dim tabular-nums">
-            {t("agent.tool.duration", { ms: call.durationMs })}
+            {t("agent.tool.duration", { time: formatDuration(call.durationMs) })}
           </span>
         )}
         {call.outputTruncated && (

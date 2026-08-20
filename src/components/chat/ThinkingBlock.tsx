@@ -4,6 +4,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formatDuration } from "../../lib/format";
 
 export default function ThinkingBlock({
   reasoning,
@@ -27,11 +28,11 @@ export default function ThinkingBlock({
   }, [reasoning, active]);
 
   const expanded = active || open;
-  const seconds = ((thinkingMs ?? 0) / 1000).toFixed(1);
+  const time = formatDuration(thinkingMs ?? 0);
   const label = active
-    ? t("chat.thinkingTimer", { seconds })
+    ? t("chat.thinkingTimer", { time })
     : thinkingMs != null
-      ? t("chat.thought", { seconds })
+      ? t("chat.thought", { time })
       : t("chat.thoughtNoTime");
 
   return (

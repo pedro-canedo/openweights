@@ -251,13 +251,13 @@
     "copyMsg": "Copiar",
     "copied": "Copiado!",
     "thinking": "Pensando...",
-    "thinkingTimer": "Pensando... {{seconds}}s",
-    "thought": "Pensou por {{seconds}}s",
+    "thinkingTimer": "Pensando... {{time}}",
+    "thought": "Pensou por {{time}}",
     "thoughtNoTime": "Raciocínio",
-    "generatingTimer": "Gerando... {{seconds}}s",
-    "answeringTimer": "Respondendo... {{seconds}}s",
-    "statsTime": "{{seconds}}s",
-    "statsTpsTime": "{{tps}} tok/s · {{seconds}}s",
+    "generatingTimer": "Gerando... {{time}}",
+    "answeringTimer": "Respondendo... {{time}}",
+    "statsTime": "{{time}}",
+    "statsTpsTime": "{{tps}} tok/s · {{time}}",
     "attach": "Anexar arquivo ou imagem",
     "voice": {
       "start": "Ditar por voz",
@@ -284,7 +284,7 @@
     "exportMd": "Copiar como Markdown",
     "exported": "Conversa copiada!",
     "deleteMsg": "Apagar mensagem",
-    "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s",
+    "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{time}}",
     "speak": "Ouvir a resposta",
     "speakStop": "Parar de ler",
     "emptyAnswer": "(o modelo não respondeu nada)",
@@ -534,7 +534,7 @@
       "showMore": "ver tudo",
       "showLess": "recolher",
       "truncated": "saída truncada",
-      "duration": "{{ms}} ms",
+      "duration": "{{time}}",
       "category": {
         "read": "leitura",
         "edit": "edição",
@@ -562,7 +562,7 @@
       "verified": "Resultado verificado",
       "verifyFailed": "Verificação apontou problemas",
       "empty": "Nenhuma execução ainda.",
-      "usage": "{{steps}} passos · {{tools}} ferramentas · {{seconds}}s",
+      "usage": "{{steps}} passos · {{tools}} ferramentas · {{time}}",
       "toolsSelected": "{{active}} de {{available}} ferramentas nesta janela",
       "toolsRequested": "O agente pediu mais ferramentas: {{tools}}",
       "subagentStarted": {
@@ -881,7 +881,8 @@
       "planHint": "Investiga e propõe o plano. Não altera nada até você aprovar.",
       "agentHint": "Planeja em etapas e executa cada uma com prova de conclusão.",
       "loopHint": "Executa o plano inteiro, conferindo cada entrega antes de seguir."
-    }
+    },
+    "etaTotal": "Tempo previsto do que falta: ≈ {{time}}"
   },
   "tune": {
     "open": "Ajustar para esta máquina",

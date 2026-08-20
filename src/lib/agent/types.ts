@@ -2,7 +2,12 @@
 // Fonte da verdade: src-tauri/crates/types/src/agent.rs (serde camelCase).
 // Qualquer mudança aqui exige a mudança correspondente lá — e vice-versa.
 
-import type { PendingQuestion, QuestionItem, WorkMode } from "./scout";
+import type {
+  PendingQuestion,
+  PlanEvent,
+  QuestionItem,
+  WorkMode,
+} from "./scout";
 
 export type RunMode = "chat" | "approve" | "smart" | "yolo";
 
@@ -171,6 +176,7 @@ export type RunEvent = RunEventBase &
         items: QuestionItem[];
         taskIndex: number | null;
       }
+    | { kind: "plan"; event: PlanEvent }
     | { kind: "run.paused"; reason: PauseReason }
     | { kind: "run.resumed" }
     | { kind: "run.error"; message: string; retryable: boolean }

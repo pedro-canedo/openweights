@@ -100,6 +100,17 @@ pub struct Task {
     pub check_before: Option<i32>,
     #[serde(default)]
     pub check_after: Option<i32>,
+    /// Quando a etapa começou e terminou (epoch em ms). É o que dá à linha do
+    /// tempo a duração REAL de cada entrega — e o que compara o previsto com
+    /// o gasto.
+    #[serde(default)]
+    pub started_at_ms: Option<i64>,
+    #[serde(default)]
+    pub finished_at_ms: Option<i64>,
+    /// Tempo previsto desta entrega, em segundos (`est_tokens` ÷ tok/s medido
+    /// nesta máquina). `None` = sem medição para estimar.
+    #[serde(default)]
+    pub eta_seconds: Option<u32>,
 }
 
 impl Task {
@@ -118,6 +129,9 @@ impl Task {
             check_cmd: None,
             check_before: None,
             check_after: None,
+            started_at_ms: None,
+            finished_at_ms: None,
+            eta_seconds: None,
         }
     }
 }

@@ -17,6 +17,7 @@ import type { RunSummary } from "../../lib/agent/types";
 import { PastRunTrail } from "../agent/RunTimeline";
 import Markdown from "./Markdown";
 import ThinkingBlock from "./ThinkingBlock";
+import { formatDuration } from "../../lib/format";
 
 export interface UiMessage {
   role: "user" | "assistant";
@@ -96,9 +97,7 @@ const TRASH_ICON = icon(
 const SPEAK_ICON = icon("M11 5L6 9H3v6h3l5 4zM15.5 8.5a5 5 0 010 7");
 const SILENCE_ICON = icon("M11 5L6 9H3v6h3l5 4zM22 9l-6 6M16 9l6 6");
 
-function formatSec(ms: number): string {
-  return (Math.max(0, ms) / 1000).toFixed(1);
-}
+
 
 /** Relógio local (~10 Hz) enquanto a última resposta ainda está em curso. */
 function useNow(active: boolean): number {
@@ -210,20 +209,20 @@ export default function MessageList({
         return t("chat.statsLine", {
           tps: tps.toFixed(1),
           tokens,
-          seconds: formatSec(ms),
+          time: formatDuration(ms),
         });
       }
     }
     if (m.tokensPerSec != null && ms != null) {
       return t("chat.statsTpsTime", {
         tps: m.tokensPerSec.toFixed(1),
-        seconds: formatSec(ms),
+        time: formatDuration(ms),
       });
     }
     if (ms != null) {
       return live
-        ? t("chat.answeringTimer", { seconds: formatSec(ms) })
-        : t("chat.statsTime", { seconds: formatSec(ms) });
+        ? t("chat.answeringTimer", { time: formatDuration(ms) })
+        : t("chat.statsTime", { time: formatDuration(ms) });
     }
     if (m.tokensPerSec != null) {
       return `${m.tokensPerSec.toFixed(1)} ${t("status.tokensPerSec")}`;
@@ -340,7 +339,7 @@ export default function MessageList({
                     : m.startedAt == null
                       ? t("jobs.queued")
                       : t("chat.generatingTimer", {
-                          seconds: formatSec(
+                          time: formatDuration(
                             liveTimes(m, true).thinkingMs ??
                               now - m.startedAt,
                           ),

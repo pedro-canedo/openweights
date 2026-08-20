@@ -13,7 +13,7 @@
 //! se a pessoa voltar atrás.
 
 use crate::{Store, StoreError};
-use rusqlite::{Connection, Row, params};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
 pub(crate) const SCHEMA: &str = r#"
@@ -109,6 +109,26 @@ impl Store {
     ///
     /// Filtra pelo build do llama.cpp: um número medido noutro runtime não
     /// descreve o que a pessoa vai sentir agora.
+    /// Tokens por segundo mais recente deste modelo NESTA máquina, seja qual
+    /// for o perfil ou o build. É a régua para dizer quanto uma entrega vai
+    /// demorar: medição de verdade, não chute.
+    ///
+    /// Medição suspeita (placa quente) entra: para uma estimativa ela ainda
+    /// vale muito mais do que não ter número nenhum.
+    pub fn latest_gen_tps(&self, model_id: &str) -> Result<Option<f64>, StoreError> {
+        let conn = self.conn();
+        let tps: Option<f64> = conn
+            .query_row(
+                "SELECT gen_tps FROM perf_runs
+                 WHERE model_id = ?1 AND gen_tps > 0
+                 ORDER BY measured_at DESC LIMIT 1",
+                params![model_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(tps)
+    }
+
     pub fn perf_runs(
         &self,
         machine_key: &str,

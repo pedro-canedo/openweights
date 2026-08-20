@@ -844,6 +844,11 @@ fn start_task(plan: &SharedPlan, index: usize) -> (Task, String, usize, String) 
     let mut p = lock_plan(plan);
     p.current = index;
     p.tasks[index].status = TaskStatus::Running;
+    // Carimbo do começo: é o que dá duração real à etapa na linha do tempo.
+    // Uma retentativa recomeça o relógio — o que a pessoa quer saber é
+    // quanto durou a tentativa que valeu.
+    p.tasks[index].started_at_ms = Some(crate::events::now_ms() as i64);
+    p.tasks[index].finished_at_ms = None;
     let digest = p.handoff_digest(DIGEST_TASKS);
     let total = p.tasks.len();
     let md = p.to_markdown();
@@ -881,6 +886,11 @@ fn fail_task(plan: &SharedPlan, index: usize, reason: &str, files: Vec<String>, 
     };
     task.error = Some(clip(reason, MAX_HANDOFF_CHARS));
     task.files = files;
+    // Travada de vez também fecha o relógio; reenfileirada não — a próxima
+    // tentativa recomeça a contagem em `start_task`.
+    if give_up {
+        task.finished_at_ms = Some(crate::events::now_ms() as i64);
+    }
 }
 
 fn finish_task(plan: &SharedPlan, index: usize, handoff: String, files: Vec<String>) {
@@ -890,6 +900,7 @@ fn finish_task(plan: &SharedPlan, index: usize, handoff: String, files: Vec<Stri
     task.handoff = Some(handoff);
     task.error = None;
     task.files = files;
+    task.finished_at_ms = Some(crate::events::now_ms() as i64);
 }
 
 /// O que a execução do comando de aceitação produziu.
@@ -982,6 +993,12 @@ fn publish(ctx: &PlanRun<'_>, motivo: &str) {
 /// Grava e emite o plano — o quadro na tela é o que a pessoa usa para saber
 /// em que etapa o run está.
 pub(crate) fn publish_plan(engine: &StepEngine<'_>, plan: &SharedPlan, motivo: &str) {
+    // Quanto falta, em tempo: a estimativa é recalculada a cada publicação
+    // porque o que sobrou do plano muda a cada etapa.
+    {
+        let mut p = lock_plan(plan);
+        crate::eta::estimar(&engine.store, &engine.opts.model, &mut p);
+    }
     let plan = snapshot(plan);
     match serde_json::to_string(&plan) {
         Ok(json) => {
@@ -991,6 +1008,12 @@ pub(crate) fn publish_plan(engine: &StepEngine<'_>, plan: &SharedPlan, motivo: &
         }
         Err(e) => log::warn!("plano não serializou ({motivo}): {e}"),
     }
+    // O plano ESTRUTURADO viaja na trilha: a interface deixa de precisar de
+    // uma consulta extra (com atraso) a cada mudança, e o replay reconstrói
+    // a linha do tempo das etapas sem ir ao banco.
+    engine.sink.emit(RunEventKind::Plan {
+        event: lr_types::scout::PlanEventKind::PlanUpdated { plan: plan.clone() },
+    });
     let md = plan.to_markdown();
     let _ = engine.store.set_run_focus(&engine.run_id, &md);
     engine.sink.emit(RunEventKind::FocusUpdated { todo_md: md });

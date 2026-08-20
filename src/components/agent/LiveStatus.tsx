@@ -23,6 +23,7 @@ import type { RunView } from "../../lib/agent/runStore";
 import { isRunActive } from "../../lib/agent/runStore";
 import { toolTarget } from "./ToolCallCard";
 import { toolLabel } from "./toolMeta";
+import { formatEta } from "../../lib/format";
 
 /** Relógio de 1 Hz, ligado só enquanto há o que contar. */
 function useSeconds(since: number | null): number {
@@ -142,7 +143,7 @@ export default function LiveStatus({ run }: { run: RunView | null | undefined })
 
       <span className="ml-auto shrink-0 tabular-nums">
         {passo?.kind === "step" ? t("agent.live.step", { n: passo.index }) : ""}
-        {segundos > 0 ? ` · ${segundos}s` : ""}
+        {segundos > 0 ? ` · ${formatEta(segundos)}` : ""}
       </span>
     </div>
   );

@@ -251,13 +251,13 @@
     "copyMsg": "Copy",
     "copied": "Copied!",
     "thinking": "Thinking...",
-    "thinkingTimer": "Thinking... {{seconds}}s",
-    "thought": "Thought for {{seconds}}s",
+    "thinkingTimer": "Thinking... {{time}}",
+    "thought": "Thought for {{time}}",
     "thoughtNoTime": "Reasoning",
-    "generatingTimer": "Generating... {{seconds}}s",
-    "answeringTimer": "Answering... {{seconds}}s",
-    "statsTime": "{{seconds}}s",
-    "statsTpsTime": "{{tps}} tok/s · {{seconds}}s",
+    "generatingTimer": "Generating... {{time}}",
+    "answeringTimer": "Answering... {{time}}",
+    "statsTime": "{{time}}",
+    "statsTpsTime": "{{tps}} tok/s · {{time}}",
     "attach": "Attach file or image",
     "voice": {
       "start": "Dictate with voice",
@@ -284,7 +284,7 @@
     "exportMd": "Copy as Markdown",
     "exported": "Chat copied!",
     "deleteMsg": "Delete message",
-    "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{seconds}}s",
+    "statsLine": "{{tps}} tok/s · {{tokens}} tokens · {{time}}",
     "speak": "Read aloud",
     "speakStop": "Stop reading",
     "emptyAnswer": "(the model answered nothing)",
@@ -534,7 +534,7 @@
       "showMore": "show all",
       "showLess": "collapse",
       "truncated": "output truncated",
-      "duration": "{{ms}} ms",
+      "duration": "{{time}}",
       "category": {
         "read": "read",
         "edit": "edit",
@@ -562,7 +562,7 @@
       "verified": "Result verified",
       "verifyFailed": "Verification found problems",
       "empty": "No runs yet.",
-      "usage": "{{steps}} steps · {{tools}} tools · {{seconds}}s",
+      "usage": "{{steps}} steps · {{tools}} tools · {{time}}",
       "toolsSelected": "{{active}} of {{available}} tools in this window",
       "toolsRequested": "The agent asked for more tools: {{tools}}",
       "subagentStarted": {
@@ -881,7 +881,8 @@
       "planHint": "Investigates and proposes the plan. Changes nothing until you approve.",
       "agentHint": "Plans in steps and executes each one with proof of completion.",
       "loopHint": "Runs the whole plan, checking each delivery before moving on."
-    }
+    },
+    "etaTotal": "Estimated time left: ≈ {{time}}"
   },
   "tune": {
     "open": "Tune for this machine",

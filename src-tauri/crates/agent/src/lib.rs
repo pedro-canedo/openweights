@@ -5,6 +5,7 @@
 
 mod checkpoint;
 mod codemode;
+mod eta;
 mod events;
 mod judge;
 mod menu;

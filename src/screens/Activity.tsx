@@ -29,7 +29,7 @@ import QuestionCard from "../components/agent/QuestionCard";
 import TraceDrawer from "../components/agent/TraceDrawer";
 import { toolLabel } from "../components/agent/toolMeta";
 import { chatStore } from "../lib/chatStore";
-import { formatAgo, formatEta } from "../lib/format";
+import { formatAgo, formatDuration } from "../lib/format";
 import { navigate } from "../lib/nav";
 import { errorMessage } from "../lib/serverSession";
 import type { ChatRow } from "../lib/types";
@@ -117,16 +117,16 @@ function fullDate(lang: string, tsMs: number): string {
 }
 
 function durationLabel(ms: number): string {
-  return formatEta(ms / 1000);
+  return formatDuration(ms);
 }
 
 /**
- * Duração de uma ação: quase sempre abaixo de um segundo, e "0s" não diz nada.
- * Milissegundos é o que o card de ferramenta do chat já mostra.
+ * Duração de uma ação: quase sempre abaixo de um segundo, e "0s" não diz
+ * nada — o formatador único já cuida disso (sub-segundo em ms, daí para
+ * cima em minutos e segundos).
  */
-function callDurationLabel(t: TFunction, ms: number): string {
-  if (ms < 1000) return t("agent.tool.duration", { ms });
-  return durationLabel(ms);
+function callDurationLabel(ms: number): string {
+  return formatDuration(ms);
 }
 
 // ------------------------------------------------------------- vocabulário ---
@@ -380,7 +380,7 @@ function CallLine({
       </span>
       {ms != null && (
         <span className="shrink-0 text-[11px] tabular-nums text-dim">
-          {callDurationLabel(t, ms)}
+          {callDurationLabel(ms)}
         </span>
       )}
       {call.startedAt != null && (

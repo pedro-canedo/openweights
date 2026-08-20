@@ -410,6 +410,11 @@ pub enum RunEventKind {
         items: Vec<crate::scout::QuestionItem>,
         task_index: Option<u32>,
     },
+    /// O plano de trabalho mudou (criado, etapa iniciada, etapa concluída).
+    /// Carrega a estrutura inteira: é o que dá à interface a linha do tempo
+    /// das entregas sem uma consulta extra a cada mudança.
+    #[serde(rename = "plan")]
+    Plan { event: crate::scout::PlanEventKind },
     #[serde(rename = "run.paused")]
     RunPaused { reason: PauseReason },
     #[serde(rename = "run.resumed")]
@@ -506,6 +511,7 @@ impl RunEvent {
             RunEventKind::ContextCompacted { .. } => "context.compacted",
             RunEventKind::Verification { .. } => "verification",
             RunEventKind::QuestionAsked { .. } => "question.asked",
+            RunEventKind::Plan { .. } => "plan",
             RunEventKind::RunPaused { .. } => "run.paused",
             RunEventKind::RunResumed => "run.resumed",
             RunEventKind::RunError { .. } => "run.error",
@@ -525,6 +531,11 @@ impl RunEvent {
             RunEventKind::AssistantDelta { .. }
                 | RunEventKind::ReasoningDelta { .. }
                 | RunEventKind::ToolOutput { .. }
+                // O plano inteiro viaja neste evento a cada mudança: gravar
+                // as dezenas de cópias seria encher a trilha com o mesmo
+                // documento. O estado final já mora em `runs.plan_json`, que
+                // é de onde a re-hidratação o lê.
+                | RunEventKind::Plan { .. }
         )
     }
 }

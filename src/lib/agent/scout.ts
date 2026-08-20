@@ -34,6 +34,11 @@ export interface Task {
   /** Código de saída do comando de aceitação antes/depois da etapa (TDD). */
   checkBefore?: number | null;
   checkAfter?: number | null;
+  /** Quando a etapa começou e terminou (epoch ms) — duração real na timeline. */
+  startedAtMs?: number | null;
+  finishedAtMs?: number | null;
+  /** Tempo previsto da entrega, em segundos (`null` = sem medição). */
+  etaSeconds?: number | null;
 }
 
 /** Uma pergunta estruturada à pessoa (as opções viram botões). */

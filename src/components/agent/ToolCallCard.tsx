@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import type { ToolCallView } from "../../lib/agent/runStore";
 import DiffView from "./DiffView";
 import { ToolIcon, categoryClass, prettyArgs, tierClass, toolLabel } from "./toolMeta";
+import { formatDuration } from "../../lib/format";
 
 /** Uma linha curta que resume o alvo da ferramenta (caminho, comando...). */
 export function toolTarget(call: ToolCallView): string {
@@ -123,7 +124,7 @@ export default function ToolCallCard({
         <span className="ml-auto flex shrink-0 items-center gap-2">
           {call.durationMs != null && (
             <span className="text-[11px] tabular-nums text-dim">
-              {t("agent.tool.duration", { ms: call.durationMs })}
+              {t("agent.tool.duration", { time: formatDuration(call.durationMs) })}
             </span>
           )}
           <StatusPill call={call} stale={stale} />

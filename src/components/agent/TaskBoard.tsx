@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { getServerProps } from "../../lib/api";
+import { formatDuration, formatEta } from "../../lib/format";
 import { describesModel } from "../../lib/agent/types";
 import {
   isTaskFinished,
@@ -131,6 +132,16 @@ function TaskRow({
   const { t } = useTranslation();
   const style = STATUS_STYLE[task.status];
   const finished = isTaskFinished(task.status);
+  // Quanto DUROU quando já acabou; quanto deve durar quando ainda não —
+  // previsão marcada com "≈" porque é estimativa (tokens ÷ tok/s medido).
+  const tempo = (() => {
+    const { startedAtMs, finishedAtMs, etaSeconds } = task;
+    if (startedAtMs && finishedAtMs && finishedAtMs > startedAtMs) {
+      return formatDuration(finishedAtMs - startedAtMs);
+    }
+    if (etaSeconds) return `≈ ${formatEta(etaSeconds)}`;
+    return null;
+  })();
   const blocked = task.status === "blocked" || task.status === "failed";
 
   return (
@@ -167,6 +178,14 @@ function TaskRow({
           </span>
           <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px]">
             <span className={style.text}>{t(`plan.status.${task.status}`)}</span>
+            {tempo && (
+              <>
+                <span className="text-dim" aria-hidden>
+                  ·
+                </span>
+                <span className="tabular-nums text-dim">{tempo}</span>
+              </>
+            )}
             {current && (
               <>
                 <span className="text-dim" aria-hidden>
@@ -270,6 +289,14 @@ export default function TaskBoard({
   // por você: em laço/agente ele já nasce liberado.
   const [wasPending, setWasPending] = useState(false);
   const nCtx = useWindowTokens(model);
+  // O que ainda falta, somado: é a resposta para "quanto tempo isso leva".
+  const etaTotal = (() => {
+    if (!plan) return null;
+    const s = plan.tasks
+      .filter((t) => !isTaskFinished(t.status))
+      .reduce((soma, t) => soma + (t.etaSeconds ?? 0), 0);
+    return s > 0 ? s : null;
+  })();
 
   const pending = plan != null && canApprove && !plan.approved;
   useEffect(() => {
@@ -378,6 +405,11 @@ export default function TaskBoard({
         </div>
       )}
 
+      {etaTotal != null && (
+        <p className="text-[10.5px] text-dim">
+          {t("plan.etaTotal", { time: formatEta(etaTotal) })}
+        </p>
+      )}
       {nCtx != null && nCtx > 0 && (
         <p className="text-[10.5px] text-dim">
           {t("plan.windowHint", {

@@ -18,7 +18,7 @@ import {
   type ProviderEvent,
 } from "../../lib/providers";
 import { errorMessage } from "../../lib/serverSession";
-import { formatBytes } from "../../lib/format";
+import { formatBytes, formatEta } from "../../lib/format";
 
 const botao =
   "rounded-lg border border-edge px-3 py-2 text-sm text-dim hover:text-ink disabled:opacity-50";
@@ -183,7 +183,7 @@ export default function NineRouterCard({
               : progresso?.kind === "extracting"
                 ? t("providers.nineRouter.phase.extracting")
                 : t("providers.nineRouter.working")}{" "}
-            · {segundos}s
+            · {formatEta(segundos)}
           </div>
         </div>
       )}

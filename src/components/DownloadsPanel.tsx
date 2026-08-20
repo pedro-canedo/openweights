@@ -12,19 +12,9 @@ import {
   pauseDownload,
   resumeDownload,
 } from "../lib/api";
-import { formatBytes } from "../lib/format";
+import { formatBytes, formatEta } from "../lib/format";
 
 const ACTIVE_STATES = new Set(["queued", "running", "paused"]);
-
-/** Tempo restante estimado em formato compacto (ex.: "3min 20s"). */
-function formatEta(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return "—";
-  const s = Math.round(seconds);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}min ${s % 60}s`;
-  return `${Math.floor(m / 60)}h ${m % 60}min`;
-}
 
 function percentOf(d: DownloadStatus): number {
   if (d.totalBytes <= 0) return 0;

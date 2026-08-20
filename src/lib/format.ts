@@ -44,3 +44,17 @@ export function formatEta(seconds: number): string {
   if (m < 60) return `${m}min ${s % 60}s`;
   return `${Math.floor(m / 60)}h ${m % 60}min`;
 }
+
+/**
+ * Duração em milissegundos, como uma pessoa a lê.
+ *
+ * Formatador ÚNICO de duração da interface: abaixo de um segundo mostra o
+ * sub-segundo (uma ferramenta que respondeu em 90 ms), abaixo de um minuto
+ * mostra segundos inteiros, e daí para cima entra em minutos — "Pensou por
+ * 173.9s" não responde a pergunta que a pessoa tem, "2min 54s" responde.
+ */
+export function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "—";
+  if (ms < 1_000) return `${Math.round(ms)}ms`;
+  return formatEta(ms / 1000);
+}
