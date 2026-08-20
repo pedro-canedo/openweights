@@ -2688,3 +2688,58 @@ async fn a_run_with_no_text_still_anchors_itself_in_the_chat() {
         "a âncora precisa dizer alguma coisa (o resumo do desfecho)"
     );
 }
+
+/// O laço do agente NÃO herda o sampling da conversa.
+///
+/// Decidir qual ferramenta chamar não é escrever prosa: com a temperatura
+/// 0.8 que a tela de chat usa por padrão, o mesmo pedido escolhia caminhos
+/// diferentes a cada tentativa. O laço fixa a sua (baixa) e manda uma semente
+/// estável — dois passos do mesmo run sorteiam igual.
+#[tokio::test]
+async fn the_agent_loop_pins_its_own_sampling() {
+    let h = Harness::new();
+    let server = FakeLlama::spawn(vec![vec![text_chunk("pronto"), done()]]);
+
+    let mut opts = h.options(RunMode::Yolo);
+    // A conversa pediu 0.8/0.95: o laço tem que ignorar os dois.
+    opts.temperature = Some(0.8);
+    opts.top_p = Some(0.95);
+    opts.top_k = Some(40);
+    let sink = h.events.clone();
+    h.host
+        .start(
+            StartRun {
+                prompt: "responda".into(),
+                history: Vec::new(),
+                memory: Vec::new(),
+                options: opts,
+                endpoint: server.endpoint(),
+                work_mode: WorkMode::Chat,
+                plan: None,
+            },
+            Some(Arc::new(move |ev: RunEvent| {
+                sink.lock().unwrap().push(ev);
+            })),
+        )
+        .expect("run começou");
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while !h.has("run.finished") {
+        assert!(Instant::now() < deadline, "o run não encerrou");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let corpo = server.body(0);
+    let pedido: serde_json::Value = serde_json::from_str(&corpo).expect("corpo é JSON");
+    assert_eq!(
+        pedido["temperature"].as_f64(),
+        Some(0.1),
+        "o laço fixa a própria temperatura: {corpo}"
+    );
+    assert_eq!(pedido["top_p"].as_f64(), Some(1.0), "{corpo}");
+    assert!(pedido.get("top_k").is_none(), "top_k não vai no laço");
+    assert!(
+        pedido["seed"].as_u64().is_some(),
+        "a semente precisa viajar: {corpo}"
+    );
+}

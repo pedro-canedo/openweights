@@ -1931,18 +1931,19 @@ impl StepEngine<'_> {
             runner.counters.begin_step();
 
             let api_tools = self.menu.api_tools();
-            let mut request = chat_request(self.opts, messages, &api_tools);
+            let mut request = chat_request(self.opts, &self.run_id, messages, &api_tools);
             if self.context.limit().is_some() {
                 compact_if_needed(
                     self.client,
                     &self.sink,
                     &self.context,
                     self.opts,
+                    &self.run_id,
                     &api_tools,
                     messages,
                 )
                 .await;
-                request = chat_request(self.opts, messages, &api_tools);
+                request = chat_request(self.opts, &self.run_id, messages, &api_tools);
             }
 
             // O que o modelo já falou neste passo. Cancelar no meio da fala
@@ -2030,7 +2031,7 @@ impl StepEngine<'_> {
                                 && !api_tools.is_empty() =>
                         {
                             log::warn!("o servidor recusou as ferramentas: {e}");
-                            let sem_tools = chat_request(self.opts, messages, &[]);
+                            let sem_tools = chat_request(self.opts, &self.run_id, messages, &[]);
                             let retomada = tokio::select! {
                                 biased;
                                 _ = self.handle.cancelled() => {
@@ -2943,18 +2944,49 @@ async fn present_plan(
     md
 }
 
-fn chat_request(opts: &RunOptions, messages: &[ChatMessage], tools: &[Value]) -> ChatRequest {
+/// Temperatura do laço de DECISÃO. Baixa de propósito e independente do que
+/// a conversa escolheu: aqui o modelo não está escrevendo prosa, está
+/// decidindo qual ferramenta chamar e com que argumentos. O padrão da tela de
+/// chat (0.8) transformava essa decisão em sorteio — o mesmo pedido escolhia
+/// caminhos diferentes a cada tentativa, e nenhum teste dizia nada.
+const TEMPERATURA_DO_LACO: f32 = 0.1;
+/// Com temperatura baixa, cortar a cauda é redundante e só atrapalha quando o
+/// modelo precisa de um nome de arquivo incomum.
+const TOP_P_DO_LACO: f32 = 1.0;
+
+/// Semente estável a partir do id do run: os passos de um MESMO run sorteiam
+/// igual, e dois runs diferentes não ficam presos ao mesmo caminho. Um
+/// número fixo global faria todo run repetir o mesmo erro.
+fn semente_de(run_id: &str) -> u32 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325; // FNV-1a
+    for b in run_id.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x1000_0000_01b3);
+    }
+    (h % u64::from(u32::MAX)) as u32
+}
+
+fn chat_request(
+    opts: &RunOptions,
+    run_id: &str,
+    messages: &[ChatMessage],
+    tools: &[Value],
+) -> ChatRequest {
     let mut req = ChatRequest::new(&opts.model, messages.to_vec());
     if !tools.is_empty() {
         req = req.with_tools(tools.to_vec());
     }
-    req.temperature = opts.temperature;
-    req.top_p = opts.top_p;
-    req.top_k = opts.top_k;
+    // O sampling do laço é do LAÇO, não da conversa: `opts.temperature` e
+    // companhia continuam valendo para o chat comum (que nem passa por aqui
+    // — ele fala direto com o servidor).
+    req.temperature = Some(TEMPERATURA_DO_LACO);
+    req.top_p = Some(TOP_P_DO_LACO);
+    req.top_k = None;
     req.max_tokens = opts.max_tokens;
     // Reaproveita o KV do prefixo entre passos: é o que torna um laço de 10
     // passos viável numa máquina doméstica.
     req.with_extra("cache_prompt", json!(true))
+        .with_extra("seed", json!(semente_de(run_id)))
 }
 
 /// Compacta o histórico quando ele encosta no teto da janela de contexto.
@@ -2971,11 +3003,13 @@ fn tokens_estimados(messages: &[ChatMessage], tools: &[Value]) -> u32 {
 /// retokenização do histórico INTEIRO por passo (O(n²) ao longo do run).
 const PORTEIRO_DA_CONTAGEM: f32 = 0.7;
 
+#[allow(clippy::too_many_arguments)]
 async fn compact_if_needed(
     client: &LlamaClient,
     sink: &Arc<EventSink>,
     context: &ContextBudget,
     opts: &lr_types::agent::RunOptions,
+    run_id: &str,
     tools: &[Value],
     messages: &mut Vec<ChatMessage>,
 ) {
@@ -2989,7 +3023,7 @@ async fn compact_if_needed(
         return;
     }
 
-    let request = chat_request(opts, messages, tools);
+    let request = chat_request(opts, run_id, messages, tools);
     // Servidor sem o endpoint de contagem: a estimativa decide sozinha —
     // melhor compactar por estimativa do que estourar a janela por rigor.
     let before = client.input_tokens(&request).await.unwrap_or(estimado);
@@ -3001,10 +3035,13 @@ async fn compact_if_needed(
         return;
     };
 
-    let ask = ChatRequest::new(
+    let mut ask = ChatRequest::new(
         &opts.model,
         vec![ChatMessage::user(compaction_request(&plan))],
     );
+    // Comprimir o histórico é a tarefa mais sensível do laço: o que sair daqui
+    // vira a memória do run. Temperatura alta aqui INVENTA passado.
+    ask.temperature = Some(0.2);
     // O resumo pelo modelo é o caminho bom; quando ele falha (servidor caiu,
     // resposta vazia), o plano B determinístico corta o miolo com um
     // marcador — feio, mas o passo seguinte NÃO estoura a janela. Antes, a
@@ -3027,7 +3064,7 @@ async fn compact_if_needed(
     // O cabeçalho já é uma mensagem de sistema, então usá-la de novo é seguro.
     *messages = apply_compaction(&plan, &summary, true);
     let after = client
-        .input_tokens(&chat_request(opts, messages, tools))
+        .input_tokens(&chat_request(opts, run_id, messages, tools))
         .await
         .unwrap_or_else(|_| tokens_estimados(messages, tools));
     sink.emit(RunEventKind::ContextCompacted {
