@@ -44,14 +44,15 @@ precise de rede. Em ordem de importância:
 | **Repetição** | A mesma chamada três vezes é laço, não progresso. |
 | **Releitura** | Entregar ao modelo um arquivo que ele já tem só gasta contexto. |
 | **Orçamento de contexto** | Em torno de 80% da janela o histórico é resumido para a execução continuar. A trilha mostra *"Contexto resumido para continuar."* |
-| **Conferência de entrega** | *(modo Agente)* No fim, os arquivos que o plano prometeu são procurados no disco. Enquanto faltar algum e houver orçamento de passos, a execução é avisada de quais são e continua, em vez de fechar como concluída. |
+| **Prova por entrega** | Nenhuma etapa fecha na palavra do modelo: o comando de aceitação precisa sair com código 0, os arquivos prometidos precisam existir, e o que não tem prova mecânica passa por um juiz do critério. Reprovada, a etapa volta para a fila com o motivo. |
+| **Passo que só fala** | Anunciar trabalho sem executar nada conta como parado. Três desses ganham a cutucada; no quinto a execução para e devolve a decisão para você. |
 
 Há ainda dois relógios em volta do modelo: um generoso para o primeiro token —
 processar um prompt de 8k na CPU leva minutos e isso não é travamento — e um
 mais apertado entre pedaços, porque silêncio depois que a geração começou é
 servidor pendurado.
 
-## Verificação e conferência de entrega
+## Verificação e prova de entrega
 
 Quando a execução termina, uma checagem barata roda sobre o que ela afirma ter
 feito. Sem modelo envolvido: os arquivos que ela escreveu existem? algum comando
@@ -61,50 +62,35 @@ O objetivo não é auditar o trabalho — é pegar a mentira fácil, a que model
 pequeno mais conta: anunciar um arquivo que a ferramenta nunca criou. A trilha
 mostra **Resultado verificado** ou **A verificação achou problemas**.
 
-Essa checagem tinha um buraco, e era o pior possível: ela não devolve nada
-quando nada foi escrito e nada foi executado — ou seja, a única execução que
-precisava ser conferida era justamente a que escapava. Uma execução que pensava
-por um minuto, escrevia um parágrafo e fechava como *Concluído* passava batido.
-Os guard-rails acima também não a pegam: todos pressupõem chamada de
-ferramenta, e quem nunca age não dispara nenhum.
+Essa checagem sozinha tinha um buraco, e era o pior possível: ela não devolve
+nada quando nada foi escrito e nada foi executado — ou seja, a única execução
+que precisava ser conferida era justamente a que escapava. Uma execução que
+pensava por um minuto, escrevia um parágrafo e fechava como *Concluído* passava
+batido. Os guard-rails acima também não a pegavam: quase todos pressupõem
+chamada de ferramenta, e quem nunca age não dispara nenhum.
 
-As duas checagens respondem a perguntas diferentes, e vale não confundir: a
-verificação pergunta *"o que você diz que fez está de pé?"* — e roda nos dois
-modos, em qualquer desfecho que teve efeito colateral. A conferência de entrega
-pergunta *"entregou tudo?"*, contra o que o **plano** prometeu.
+A resposta foi mover a prova para **dentro de cada entrega**, em vez de deixá-la
+para o fim. O pedido é quebrado em etapas antes de qualquer trabalho, e nenhuma
+delas fecha sem passar por três camadas — comando de aceitação, arquivos em
+disco e, só quando as duas primeiras não têm o que olhar, um juiz do critério
+escrito. A regra inteira, com o que cada camada pode e não pode decidir, está em
+[modos de trabalho e planos](/pt/agente/planos).
 
-Então o pedido agora é quebrado em entregas antes de o laço começar, **também no
-modo Agente** (o modo Laço já fazia), e cada entrega declara os arquivos que vai
-produzir. No fim, quem responde *"acabou?"* é o disco: ou os arquivos estão lá,
-ou não estão. Enquanto faltar algum, e enquanto houver orçamento de passos, os
-nomes que faltam voltam para a conversa e o trabalho continua de onde parou. Se
-o orçamento acabar antes, o resultado diz o que ficou faltando, com nome de
-arquivo.
-
-A cobrança é **exclusiva do modo Agente**, e as duas exclusões são o ponto. No
-modo Laço quem reenfileira a etapa reprovada já é o executor do plano —
-empilhar as duas cobraria a mesma entrega em dobro. E o modo Planejamento é
-justamente aquele cujo contrato é não mexer em nada antes de você aprovar: ele
-termina com o plano escrito e nenhuma entrega feita, que é exatamente o estado
-que dispara a cobrança. Sem a restrição, o modo que promete não executar passava
-a executar.
-
-Duas recusas deliberadas impedem isto de virar um moedor de tokens: entrega que
-não declara arquivo nunca é cobrada — sem evidência, cobrar é chutar, e o preço
-do chute é mandar refazer trabalho pronto — e a mesma entrega nunca é cobrada
-duas vezes, porque girar em falso queima o orçamento que você paga.
+Duas consequências que valem dizer em voz alta. A primeira: passo que só fala
+agora **conta como parado** — antes, um modelo que pensava três minutos e não
+agia não disparava guard-rail nenhum, porque nenhuma ferramenta havia rodado. A
+segunda: quando o orçamento de passos acaba com trabalho pendente, o resultado
+nomeia as entregas que ficaram, em vez de dizer só *"parei no limite"*.
 
 Nada disso substitui a cutucada imediata para o modelo que anuncia trabalho que
 não fez — essa é lexical, barata, e age no meio do laço. Ela só pega a
 *promessa* ("vou criar os três arquivos"), nunca a afirmação falsa ("pronto,
-criei os três arquivos"). A conferência de entrega é a camada factual embaixo
-dela, e age no fim, contra o disco.
+criei os três arquivos"). As três camadas são a parte factual embaixo dela, e
+agem contra o disco.
 
-Quando o pedido foi dividido e há pasta de projeto aberta, o quadro do plano
-aparece também no modo Agente — que é o que responde "em que etapa ele está" sem
-obrigar ninguém a interpretar *Pensou por 60,6s*. Sem pasta de projeto não há
-contra o que conferir, então a conferência de entrega não roda. A mecânica está
-em [modos de trabalho e planos](/pt/agente/planos).
+O quadro do plano aparece em toda execução, e é o que responde "em que etapa ele
+está" sem obrigar ninguém a interpretar *Pensou por 60,6s* — com o tempo que
+cada entrega levou, e o previsto para as que faltam.
 
 ## Delegação
 

@@ -5,17 +5,21 @@ loses the thread, and it starts making things up. The answer the harness uses is
 always the same: **cut the goal into small deliveries and run one at a time,
 each with a fresh context.**
 
-## The four work modes
+## The three work modes
 
 | Mode | What it does |
 |---|---|
 | **Chat** | Answers only, no tools. |
-| **Planning** | Investigates and proposes the plan. Changes nothing until you approve. |
-| **Agent** | Runs the requested task, one step at a time. |
-| **Loop** | Runs the whole plan, checking each delivery before moving on. |
+| **Plan** | Investigates and proposes the plan. Changes nothing until you approve. |
+| **Execute** | Cuts the request up and runs delivery by delivery, proving each one. |
 
-Planning mode is the honest one for unfamiliar work: you see what it intends to
-do — and the files it expects to touch — before anything is written.
+Plan mode is the honest one for unfamiliar work: you see what it intends to do —
+and the files it expects to touch — before anything is written.
+
+There used to be a fourth mode, **Loop**, doing what Execute does today. The
+split did not hold up: Agent mode built a plan and then ignored it — running
+loose and only checking at the end — so "with a plan" and "without a plan" were
+two grades of run, and the worse one was the default. There is one path now.
 
 ## How a plan is built
 
@@ -23,12 +27,16 @@ The model is asked for the plan with a **forced JSON schema**. llama-server
 turns the schema into a grammar, and that is what makes an 8B model return
 something parseable at all.
 
-The schema asks for the **files** each delivery will produce, and the prompt
-explains what to put there. So does `plan_create`, the tool Planning mode uses
-to register its plan — which means a plan you approve there reaches Loop mode
-already saying what each step will create. That field is not decoration: it is
-what makes the end of a run verifiable, and without it the delivery check has
-nothing to look at.
+The schema asks three things of every delivery: the **files** it will produce, an
+**acceptance command** that exits 0 once it is done, and the *done when*
+criterion in plain words. None of them is decoration — they are the three layers
+of proof in the next section. `plan_create`, the tool Plan mode uses to register
+its plan, asks for the same: a plan you approve there already says how each step
+will be checked.
+
+The schema also asks for **up to four questions**, for the decisions that change
+the plan and that only you can make. When they show up, nothing runs: see
+[questions](#questions-before-any-work).
 
 Even so the result is validated with suspicion: a plan that does not survive
 validation becomes a single-delivery plan. Decomposition never takes the run
@@ -41,22 +49,41 @@ Ceilings: **12 deliveries** per plan, **8 steps** per delivery, **2 attempts**
 before a delivery is considered stuck. The run's global step budget still
 applies on top.
 
-## Deliveries in Agent mode
+## How a delivery proves it is done
 
-Cutting the request into deliveries is no longer exclusive to Loop mode. In
-**Agent** mode the request is cut too, and the board shows there as well — so
-"which step is it on" has an answer that is not *Thought for 60.6s*.
+"Done" stopped being the model's word. Every step goes through three layers, in
+this order — and the first two are mechanical, with no model judging anything:
 
-The reason is the delivery check: when the loop stops, the declared files are
-looked for on disk, and while any are missing the run is told which ones and
-carries on from where it stopped instead of closing as done.
+1. **The acceptance command.** It runs *before* the step (where it is expected
+   to fail — that is the red test) and *after* it. A non-zero exit at the end
+   fails the delivery. It goes through the same authorization policy as any
+   command: turn the terminal family off and it does not run.
+2. **The files.** What the step said it would write has to be on disk.
+3. **The criterion judge.** It only steps in when the first two decided nothing
+   — a step with no files and no checkable command — and it **never** overturns
+   a mechanical failure: it breaks ties over emptiness, it does not veto disk.
 
-It is deliberately **Agent mode only**. Loop mode does not need it — the plan
-runner already re-queues a step that fails its check, and stacking both would
-bill the same delivery twice. Planning mode must not have it: that mode ends
-with the plan written and nothing done, which is exactly the state a chase reads
-as unfinished work. See [how a run works](/agent/) for the full rule, including
-the two cases the harness deliberately refuses to chase.
+A failed step goes back to the queue with the reason written down, and the next
+attempt receives it. On the second failure it gets stuck, and the run moves on
+to whatever does not depend on it. When the step budget runs out with work
+pending, the result **names** the deliveries left over — running out of budget
+is no excuse for not saying what is missing.
+
+## Questions before any work
+
+If cutting up the request runs into a decision that changes the plan — which
+stack, how far the scope goes, where to save —, the run **stops before the first
+step** and asks. Up to four questions, with clickable options when they are few
+and known.
+
+The pause is durable: the question is stored with the plan and survives closing
+the app. It holds in every mode, including automatic runs and scheduled ones —
+which have no conversation to answer in, so they show up in the **Waiting for an
+answer** queue on the Activity screen, with a system notification.
+
+Answering resumes the plan where it stopped. When the question came before any
+work, the plan is rebuilt with the answer in view — it changed the plan, which
+is why it was asked.
 
 ## What crosses between steps
 

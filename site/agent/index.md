@@ -45,14 +45,15 @@ needs the network. In order of importance:
 | **Repetition** | The same call three times over is a loop, not progress. |
 | **Re-read ledger** | Handing the model a file it already has only burns context. |
 | **Context budget** | At ~80% of the window the history is summarized so the run can keep going. The trail says *"Context summarized to keep going."* |
-| **Delivery check** | *(Agent mode)* At the end, the files the plan promised are looked for on disk. While any are missing and the step budget holds, the run is told which ones and carries on instead of closing as done. |
+| **Proof per delivery** | No step closes on the model's word: the acceptance command has to exit 0, the promised files have to exist, and whatever has no mechanical proof goes through a criterion judge. Failed, the step goes back to the queue with the reason. |
+| **A step that only talks** | Announcing work without running anything counts as stalled. Three of those earn the nudge; on the fifth the run stops and hands the decision back to you. |
 
 There are also two clocks around the model itself: a generous one for the first
 token — processing an 8k prompt on CPU takes minutes and that is not a hang —
 and a tighter one between chunks, because silence after generation started
 means a stuck server.
 
-## Verification and the delivery check
+## Verification and proof of delivery
 
 When the run finishes, a cheap check runs over what it claims to have done. No
 model involved: do the files it wrote exist? did any command exit with an error?
@@ -61,50 +62,35 @@ The goal is not to audit the work — it is to catch the easy lie, the one small
 models tell most: announcing a file that the tool never created. The trail shows
 **Result verified** or **Verification found problems**.
 
-That check had a hole, and it was the worst one available: it returns nothing
-when nothing was written and nothing was run — so the only run that needed
-checking was exactly the one that escaped. A run that thought for a minute,
-wrote a paragraph and closed as *Done* went straight through. The guard-rails
-above miss it too: every one of them assumes a tool call, and whoever never acts
-trips none of them.
+That check on its own had a hole, and it was the worst one available: it returns
+nothing when nothing was written and nothing was run — so the only run that
+needed checking was exactly the one that escaped. A run that thought for a
+minute, wrote a paragraph and closed as *Done* went straight through. The
+guard-rails above missed it too: nearly all of them assume a tool call, and
+whoever never acts trips none of them.
 
-The two checks answer different questions, and it is worth keeping them apart:
-verification asks *"is what you say you did standing up?"* — it runs in either
-mode, on any outcome that had a side effect. The delivery check asks *"did you
-deliver everything?"*, against what the **plan** promised.
+The answer was to move the proof **inside each delivery** instead of leaving it
+to the end. The request is cut into steps before any work, and none of them
+closes without passing three layers — acceptance command, files on disk, and,
+only when the first two have nothing to look at, a judge of the written
+criterion. The full rule, with what each layer may and may not decide, is in
+[work modes and plans](/agent/plans).
 
-So the request is now cut into deliveries before the loop starts, in **Agent
-mode as well** (Loop mode already did it), and each delivery declares the files
-it will produce. At the end, the answer to *"is it finished?"* comes from the
-disk: either those files are there or they are not. While any are missing, and
-while the step budget holds, the missing names go back into the conversation and
-the work continues from where it stopped. If the budget runs out first, the
-result says what is still missing, by filename.
-
-The chasing belongs to **Agent mode only**, and the two exclusions are the
-point. In Loop mode the plan runner already re-queues a delivery that fails its
-check — stacking both would bill the same delivery twice. And Planning mode is
-the one whose whole contract is to touch nothing before you approve: it ends
-with the plan written and no delivery made, which is precisely the state that
-triggers a chase. Left unrestricted, the mode that promises not to execute would
-start executing.
-
-Two deliberate refusals keep this from becoming a token grinder: a delivery that
-declares no file is never chased — without evidence, chasing is guessing, and
-the price of a wrong guess is redoing finished work — and the same delivery is
-never chased twice, because spinning burns the budget you pay for.
+Two consequences worth saying out loud. First: a step that only talks now
+**counts as stalled** — before, a model that thought for three minutes without
+acting tripped no guard-rail at all, because no tool had run. Second: when the
+step budget runs out with work pending, the result names the deliveries left
+over, instead of only saying *"stopped at the limit"*.
 
 None of this replaces the immediate nudge for a model that announces work it did
 not do — that one is lexical, cheap, and fires mid-loop. It only catches the
 *promise* ("I'll create the three files"), never the false claim ("done, I
-created the three files"). The delivery check is the factual layer underneath
-it, and it acts at the end, against the disk.
+created the three files"). The three layers are the factual part underneath it,
+and they act against the disk.
 
-When the request was split and a project folder is open, the plan board shows in
-Agent mode too — which is what answers "which step is it on" without anyone
-having to interpret *Thought for 60.6s*. With no project folder there is nothing
-to check against, so the delivery check does not run. The mechanics are in
-[work modes and plans](/agent/plans).
+The plan board shows on every run, and it is what answers "which step is it on"
+without anyone having to interpret *Thought for 60.6s* — with how long each
+delivery took, and the estimate for the ones still ahead.
 
 ## Delegation
 

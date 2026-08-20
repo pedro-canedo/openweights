@@ -5,29 +5,37 @@ perde o fio e passa a inventar. A resposta do harness é sempre a mesma:
 **quebrar o objetivo em entregas pequenas e executar uma de cada vez, com
 contexto novo.**
 
-## Os quatro modos
+## Os três modos
 
 | Modo | O que faz |
 |---|---|
 | **Chat** | Só responde, sem ferramentas. |
-| **Planejamento** | Investiga e propõe o plano. Não muda nada até você aprovar. |
-| **Agente** | Executa a tarefa pedida, um passo por vez. |
-| **Laço** | Executa o plano inteiro, verificando cada entrega antes de seguir. |
+| **Planejar** | Investiga e propõe o plano. Não muda nada até você aprovar. |
+| **Executar** | Divide o pedido e executa entrega por entrega, provando cada uma. |
 
-O modo Planejamento é o honesto para trabalho desconhecido: você vê o que ele
+O modo Planejar é o honesto para trabalho desconhecido: você vê o que ele
 pretende fazer — e os arquivos que espera tocar — antes de qualquer escrita.
+
+Havia um quarto modo, **Laço**, que fazia o que Executar faz hoje. A separação
+não se sustentava: o modo Agente criava um plano e o ignorava — executava solto
+e só conferia no fim —, então "com plano" e "sem plano" eram duas qualidades de
+execução, e a pior era a padrão. Agora há um caminho só.
 
 ## Como o plano é montado
 
 O plano é pedido ao modelo com **JSON Schema forçado**. O llama-server converte
 o schema em gramática, e é isso que faz um modelo de 8B devolver algo parseável.
 
-O schema pede os **arquivos** que cada entrega vai produzir, e o pedido explica o
-que preencher ali. O `plan_create` — a ferramenta por onde o modo Planejamento
-registra o plano — também pede, o que significa que um plano aprovado ali chega
-ao modo Laço já dizendo o que cada etapa vai criar. Esse campo não é enfeite: é
-o que torna o fim da execução verificável, e sem ele a conferência de entrega
-não tem o que olhar.
+O schema pede três coisas de cada entrega: os **arquivos** que ela vai produzir,
+um **comando de aceitação** que sai com código 0 quando ela está pronta, e o
+critério de *pronto quando* em texto. Nenhum é enfeite — são as três camadas de
+prova da seção seguinte. O `plan_create`, ferramenta por onde o modo Planejar
+registra o plano, pede o mesmo: um plano aprovado ali já chega dizendo como cada
+etapa será conferida.
+
+O schema também pede **até quatro perguntas**, para as decisões que mudam o
+plano e que só você pode tomar. Quando elas aparecem, nada executa: veja
+[perguntas](#perguntas-antes-de-trabalhar).
 
 Mesmo assim o resultado é validado com desconfiança: um plano que não sobrevive
 à validação vira um plano de uma entrega só. A decomposição nunca derruba a
@@ -39,23 +47,41 @@ Tetos: **12 entregas** por plano, **8 passos** por entrega, **2 tentativas**
 antes de considerar uma entrega travada. O teto global de passos da execução
 continua valendo por cima.
 
-## Entregas no modo Agente
+## Como uma entrega prova que terminou
 
-Quebrar o pedido em entregas deixou de ser exclusividade do modo Laço. No modo
-**Agente** o pedido também é quebrado, e o quadro aparece lá também — então "em
-que etapa ele está" passa a ter resposta, em vez de *Pensou por 60,6s*.
+"Concluído" deixou de ser palavra do modelo. Cada etapa passa por três camadas,
+nesta ordem — e as duas primeiras são mecânicas, sem modelo nenhum julgando:
 
-O motivo é a conferência de entrega: quando o laço para, os arquivos declarados
-são procurados no disco, e enquanto faltar algum a execução é avisada de quais
-são e continua de onde parou, em vez de fechar como concluída.
+1. **O comando de aceitação.** Ele roda *antes* da etapa (onde se espera que
+   falhe — é o teste vermelho) e *depois* dela. Sair com código diferente de
+   zero no fim reprova a entrega. É a mesma política de autorização de qualquer
+   comando: se você desligou a família de terminal, ele não roda.
+2. **Os arquivos.** O que a etapa disse que ia escrever precisa estar no disco.
+3. **O juiz do critério.** Só entra quando as duas primeiras não decidiram nada
+   — etapa sem arquivo e sem comando conferível — e **nunca** reverte uma
+   reprovação mecânica: é desempate sobre o vazio, não veto sobre o disco.
 
-Ela é deliberadamente **exclusiva do modo Agente**. O modo Laço não precisa — o
-executor do plano já reenfileira a etapa que não passa na verificação, e
-empilhar as duas cobraria a mesma entrega em dobro. E o modo Planejamento não
-pode ter: ele termina com o plano escrito e nada feito, que é exatamente o
-estado que uma cobrança leria como trabalho inacabado. Veja
-[como uma execução funciona](/pt/agente/) para a regra inteira, incluindo os
-dois casos que o harness se recusa deliberadamente a cobrar.
+Etapa reprovada volta para a fila com o motivo escrito, e a tentativa seguinte
+o recebe. Na segunda reprovação ela trava, e a execução segue para o que não
+depende dela. Quando o orçamento de passos acaba com trabalho pendente, o
+resultado **nomeia** as entregas que ficaram — acabar o orçamento não é desculpa
+para não dizer o que faltou.
+
+## Perguntas antes de trabalhar
+
+Se a divisão do pedido esbarrar numa decisão que muda o plano — qual stack, até
+onde vai o escopo, onde salvar —, a execução **para antes da primeira etapa** e
+pergunta. Até quatro perguntas, com opções clicáveis quando elas são poucas e
+conhecidas.
+
+A pausa é durável: a pergunta fica gravada com o plano e sobrevive a fechar o
+app. Ela vale em todo modo, inclusive no automático e nas automações — que não
+têm conversa onde responder, então aparecem na fila **Aguardando resposta** da
+tela de Atividade, com aviso do sistema.
+
+Responder retoma o plano de onde parou. Quando a pergunta veio antes de qualquer
+trabalho, o plano é refeito com a resposta à vista — ela mudava o plano, que era
+o motivo de perguntar.
 
 ## O que atravessa entre etapas
 
@@ -71,9 +97,14 @@ Com um plano rodando, o chat mostra: objetivo, entregas com status (na fila, em
 andamento, concluída, travada, falhou, pulada), do que cada uma depende, os
 arquivos que espera tocar e a condição de *pronto quando*.
 
-No modo Planejamento o quadro tem **Aprovar plano** e **Refazer plano** — nada
-roda antes de você aprovar. Uma entrega que trava é marcada como bloqueada com o
+No modo Planejar o quadro tem **Aprovar plano** e **Refazer plano** — nada roda
+antes de você aprovar. Uma entrega que trava é marcada como bloqueada com o
 motivo, e a execução segue para o que não depende dela em vez de morrer.
+
+Cada entrega mostra também o **tempo**: quanto durou quando já acabou, quanto
+deve durar quando ainda não. A previsão sai da velocidade medida da sua máquina
+com o modelo carregado — sem medição, não há previsão, porque um número
+inventado é pior que nenhum.
 
 ## Orçamento de janela
 
