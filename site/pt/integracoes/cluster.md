@@ -22,18 +22,13 @@ sistema e arrastariam a geração.
 | | |
 |---|---|
 | **A mesma tag do llama.cpp** | O formato do fio RPC muda entre builds. Tag diferente, e o emparelhamento é recusado com *tag diferente — atualize* |
-| **O motor com RPC** | Os pacotes oficiais do llama.cpp são compilados sem RPC. O app baixa um overlay da mesma tag quando você liga o recurso |
 | **GPU nos dois lados** | Máquina sem placa aparece na lista marcada como *sem GPU* e não pode ser emparelhada |
 | **A mesma rede** | A descoberta é mDNS; o canal de controle é uma porta TCP na sua LAN |
 
-O download é automático e de acordo com a sua máquina, igual ao runtime do
-llama.cpp que o app busca na primeira execução: ele olha a sua placa, escolhe o
-build que serve e instala ao lado do motor. Não há nada para colocar na mão.
-
-Há build para **Windows com CUDA**, **Windows com Vulkan** (AMD e Intel) e
-**macOS em Apple Silicon**. Máquina sem placa não tem o que emprestar nem o que
-dividir, então não há build para ela — o painel diz isso em vez de baixar algo
-inútil.
+Não há nada a mais para baixar. O pacote do llama.cpp que o app já instala na
+primeira execução é compilado com suporte a RPC e traz o worker
+(`ggml-rpc-server`) ao lado do servidor — então, com o motor de IA instalado e
+atualizado, o cluster já tem tudo de que precisa.
 
 ## Ligando
 
@@ -110,5 +105,5 @@ errado não derruba um par vivo.
 |---|---|
 | *Nenhum outro OpenWeights visível nesta rede* | A outra máquina está com o recurso desligado, está em outra rede, ou o mDNS está bloqueado no firewall |
 | *tag diferente — atualize* | Os dois apps trazem builds diferentes do llama.cpp. Atualize os dois |
-| *Este motor ainda não traz RPC* | O overlay desta tag não foi baixado — ou não foi publicado para a sua placa |
+| *O motor instalado não traz o worker RPC* | O motor veio de um pacote antigo. Atualize em **Ajustes → Motor de IA** |
 | *o servidor local está rodando nesta máquina* | Pare o servidor local no ajudante antes de emprestar a placa |

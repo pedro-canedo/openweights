@@ -458,7 +458,7 @@ impl ClusterHost {
             .clone()
             .ok_or("esta máquina não tem GPU para emprestar")?;
         let exe = (self.rpc_exe)().ok_or(
-            "o motor instalado não traz o ggml-rpc-server — instale o pacote RPC da mesma tag",
+            "o motor instalado não traz o ggml-rpc-server — atualize o motor de IA",
         )?;
         let port = {
             let prefer = DEFAULT_RPC_PORT;

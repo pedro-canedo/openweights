@@ -87,7 +87,7 @@ pub async fn cluster_request_pair(
 ) -> CmdResult<lr_cluster::ClusterSnapshot> {
     if !ensure_rpc_binaries(&app, &state).await? {
         return Err(
-            "o motor instalado não traz RPC. Os dois apps precisam do overlay da mesma tag.".into(),
+            "o motor instalado não traz o worker RPC. Atualize o motor de IA em Ajustes.".into(),
         );
     }
     state.cluster.request_pair(&peer_id).await?;
@@ -104,7 +104,7 @@ pub async fn cluster_accept(
     }
     if !ensure_rpc_binaries(&app, &state).await? {
         return Err(
-            "o motor instalado não traz RPC. Os dois apps precisam do overlay da mesma tag.".into(),
+            "o motor instalado não traz o worker RPC. Atualize o motor de IA em Ajustes.".into(),
         );
     }
     state.cluster.accept_incoming().await?;

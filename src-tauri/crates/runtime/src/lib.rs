@@ -129,35 +129,17 @@ pub fn asset_url(tag: &str, asset: &str) -> String {
     format!("https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{asset}")
 }
 
-/// Overlay RPC publicado no OpenWeights (mesma tag do llama.cpp).
-///
-/// Os zips oficiais não compilam `GGML_RPC`. Quando o cluster é ligado,
-/// tentamos este pacote; 404 é esperado até o workflow `llama-rpc` publicar.
-pub const RPC_OVERLAY_REPO: &str = "pedro-canedo/openweights";
-
-pub fn rpc_overlay_asset(tag: &str, variant: BackendVariant) -> Option<String> {
-    match variant {
-        BackendVariant::Cuda13 => Some(format!("llama-{tag}-rpc-win-cuda-13.3-x64.zip")),
-        BackendVariant::Cuda12 => Some(format!("llama-{tag}-rpc-win-cuda-12.4-x64.zip")),
-        BackendVariant::Vulkan => Some(format!("llama-{tag}-rpc-win-vulkan-x64.zip")),
-        BackendVariant::MacosArm64 => Some(format!("llama-{tag}-rpc-macos-arm64.tar.gz")),
-        // Sem GPU não há o que emprestar, e o host precisa de placa para o
-        // split: `plan_split` recusa orçamento local zerado.
-        BackendVariant::Cpu | BackendVariant::MacosX64 => None,
-    }
-}
-
-pub fn rpc_overlay_url(tag: &str, asset: &str) -> String {
-    format!("https://github.com/{RPC_OVERLAY_REPO}/releases/download/llama-rpc-{tag}/{asset}")
-}
-
 /// Nome do executável do servidor dentro do pacote extraído.
 pub fn server_exe_name() -> &'static str {
     exe_name("llama-server")
 }
 
-/// Worker RPC. Só existe nos builds com `GGML_RPC=ON` — os zips oficiais
-/// em geral não o trazem; o overlay do OpenWeights, sim.
+/// Worker RPC, irmão do servidor dentro do mesmo pacote.
+///
+/// O release do llama.cpp compila com `GGML_RPC=ON` (está no `CMAKE_ARGS` do
+/// workflow deles), então `ggml-rpc-server` vem junto — conferido no índice
+/// dos pacotes de b10441, nas três variantes que interessam. Não há nada a
+/// baixar à parte: se este arquivo existe, o cluster tem motor.
 pub fn rpc_exe_name() -> &'static str {
     exe_name("ggml-rpc-server")
 }
@@ -189,16 +171,6 @@ pub fn runtime_dir(data_dir: &std::path::Path, tag: &str, variant: BackendVarian
         BackendVariant::MacosX64 => "macos-x64",
     };
     data_dir.join("runtimes").join(tag).join(v)
-}
-
-/// Overlay RPC: pasta própria, não por cima do zip oficial.
-pub fn rpc_runtime_dir(data_dir: &std::path::Path, tag: &str, variant: BackendVariant) -> PathBuf {
-    let base = runtime_dir(data_dir, tag, variant);
-    let name = base
-        .file_name()
-        .map(|s| format!("{}-rpc", s.to_string_lossy()))
-        .unwrap_or_else(|| "rpc".into());
-    base.parent().unwrap_or(&base).join(name)
 }
 
 #[cfg(test)]
@@ -297,35 +269,6 @@ mod tests {
             Some("cudart-llama-bin-win-cuda-12.4-x64.zip")
         );
         assert_eq!(cudart_asset_name("b10441", BackendVariant::Vulkan), None);
-    }
-
-    #[test]
-    fn rpc_overlay_names_follow_the_variant() {
-        assert_eq!(
-            rpc_overlay_asset("b10441", BackendVariant::Cuda13).as_deref(),
-            Some("llama-b10441-rpc-win-cuda-13.3-x64.zip")
-        );
-        assert_eq!(
-            rpc_overlay_asset("b10441", BackendVariant::MacosArm64).as_deref(),
-            Some("llama-b10441-rpc-macos-arm64.tar.gz")
-        );
-        assert_eq!(
-            rpc_overlay_asset("b10441", BackendVariant::Vulkan).as_deref(),
-            Some("llama-b10441-rpc-win-vulkan-x64.zip")
-        );
-        // CPU puro e Mac Intel não têm placa para emprestar nem para dividir.
-        assert_eq!(rpc_overlay_asset("b10441", BackendVariant::Cpu), None);
-        assert_eq!(rpc_overlay_asset("b10441", BackendVariant::MacosX64), None);
-        let dir = rpc_runtime_dir(
-            std::path::Path::new("/data"),
-            "b10441",
-            BackendVariant::Cuda13,
-        );
-        assert!(dir.ends_with("cuda-13.3-rpc"));
-        assert_eq!(
-            rpc_overlay_url("b10441", "llama-b10441-rpc-win-cuda-13.3-x64.zip"),
-            "https://github.com/pedro-canedo/openweights/releases/download/llama-rpc-b10441/llama-b10441-rpc-win-cuda-13.3-x64.zip"
-        );
     }
 
     #[test]

@@ -390,7 +390,7 @@
       "title": "Extra GPU on the network",
       "subtitle": "Another OpenWeights on this LAN can lend its GPU. Together they load a model that neither machine can hold alone.",
       "security": "The RPC channel has no password, and the pairing secret travels unencrypted on this network — good against a stranger who only knows the public name, not against someone capturing traffic. Only accept machines you recognise, never expose the port to the internet, and do not chat on this machine while lending the GPU.",
-      "noRpc": "This engine build does not include RPC yet. Both apps need the same llama.cpp tag with the RPC overlay.",
+      "noRpc": "The installed engine does not include the RPC worker. Update the AI engine in Settings — both machines need the same llama.cpp version.",
       "empty": "No other OpenWeights visible on this network. Open the app on the other machine.",
       "useExtra": "Use as extra GPU",
       "accept": "Accept",

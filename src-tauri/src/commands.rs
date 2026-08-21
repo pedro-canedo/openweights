@@ -535,12 +535,9 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         state.runtime_mgr.state(variant)
     };
     let extra = state.cluster.host_extra_args().await;
-    let exe = if extra.is_empty() {
-        runtime.server_exe
-    } else {
-        runtime.rpc_server_exe.or(runtime.server_exe)
-    }
-    .ok_or("runtime do llama.cpp ainda não instalado")?;
+    let exe = runtime
+        .server_exe
+        .ok_or("runtime do llama.cpp ainda não instalado")?;
 
     let ServerPrefs {
         port,

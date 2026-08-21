@@ -67,7 +67,6 @@ export interface RuntimeState {
   serverExe: string | null;
   dir?: string | null;
   rpcExe?: string | null;
-  rpcServerExe?: string | null;
   rpcReady?: boolean;
 }
 

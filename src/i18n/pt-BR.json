@@ -390,7 +390,7 @@
       "title": "GPU extra na rede",
       "subtitle": "Outro OpenWeights na mesma rede pode emprestar a placa. Os dois juntos carregam um modelo que nenhuma máquina segura sozinha.",
       "security": "O canal RPC não tem senha, e o segredo do emparelhamento viaja sem criptografia nesta rede — protege de quem só sabe o nome público, não de quem captura o tráfego. Só aceite máquinas que você reconhece, nunca exponha a porta na internet e não use o chat nesta máquina ao mesmo tempo em que empresta a GPU.",
-      "noRpc": "Este motor ainda não traz RPC. Os dois apps precisam da mesma tag do llama.cpp com o overlay RPC.",
+      "noRpc": "O motor instalado não traz o worker RPC. Atualize o motor de IA em Ajustes — as duas máquinas precisam da mesma versão do llama.cpp.",
       "empty": "Nenhum outro OpenWeights visível nesta rede. Abra o app na outra máquina.",
       "useExtra": "Usar como GPU extra",
       "accept": "Aceitar",

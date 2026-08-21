@@ -21,19 +21,13 @@ that would otherwise spill into system RAM and crawl.
 | | |
 |---|---|
 | **Same llama.cpp tag** | The RPC wire format changes between builds. Different tag, and the pairing is refused with *different tag — update* |
-| **The RPC engine** | The official llama.cpp packages are built without RPC. The app downloads an overlay build for the same tag when you turn the feature on |
 | **A GPU on both sides** | A machine with no GPU appears in the list marked *no GPU* and cannot be paired |
 | **Same network** | Discovery is mDNS; the control channel is a TCP port on your LAN |
 
-The download is automatic and matched to your machine, exactly like the
-llama.cpp runtime the app fetches on first run: it looks at your GPU, picks the
-build that fits and installs it beside the engine. There is nothing to place by
-hand.
-
-Builds exist for **Windows with CUDA**, **Windows with Vulkan** (AMD and Intel)
-and **macOS on Apple Silicon**. A machine with no GPU has nothing to lend and
-nothing to split, so there is no build for it — the panel says so instead of
-downloading something useless.
+There is nothing extra to download. The llama.cpp package the app already
+installs on first run is built with RPC support and ships the worker
+(`ggml-rpc-server`) next to the server — so if the AI engine is installed and
+up to date, the cluster has everything it needs.
 
 ## Turning it on
 
@@ -110,5 +104,5 @@ carrying the wrong secret cannot displace a live pair.
 |---|---|
 | *No other OpenWeights visible on this network* | The other machine has the feature off, is on another network, or mDNS is blocked by the firewall |
 | *different tag — update* | The two apps ship different llama.cpp builds. Update both |
-| *This engine build does not include RPC yet* | The overlay for this tag hasn't been downloaded — or hasn't been published for your GPU |
+| *The installed engine does not include the RPC worker* | The engine is from an older package. Update it in **Settings → AI engine** |
 | *the local server is running on this machine* | Stop the local server on the helper before lending its GPU |

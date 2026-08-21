@@ -180,7 +180,7 @@ impl AppState {
         let profile_rpc = profile.clone();
         let rpc_exe: lr_cluster::RpcExeFn = std::sync::Arc::new(move || {
             let variant = lr_runtime::select_variant(&profile_rpc);
-            let dir = lr_runtime::rpc_runtime_dir(&data_rpc, lr_runtime::PINNED_TAG, variant);
+            let dir = lr_runtime::runtime_dir(&data_rpc, lr_runtime::PINNED_TAG, variant);
             let exe = dir.join(lr_runtime::rpc_exe_name());
             exe.is_file().then_some(exe)
         });
