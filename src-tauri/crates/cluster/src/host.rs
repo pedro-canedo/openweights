@@ -457,9 +457,8 @@ impl ClusterHost {
             .device_id
             .clone()
             .ok_or("esta máquina não tem GPU para emprestar")?;
-        let exe = (self.rpc_exe)().ok_or(
-            "o motor instalado não traz o ggml-rpc-server — atualize o motor de IA",
-        )?;
+        let exe = (self.rpc_exe)()
+            .ok_or("o motor instalado não traz o ggml-rpc-server — atualize o motor de IA")?;
         let port = {
             let prefer = DEFAULT_RPC_PORT;
             if std::net::TcpListener::bind(("0.0.0.0", prefer)).is_ok() {
