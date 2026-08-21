@@ -126,13 +126,21 @@ pub fn parse_report(stdout: &str) -> Result<ProbeReport, ProbeError> {
 /// São os mesmos nomes do llama.cpp, com um detalhe: aqui vão como argumentos
 /// de linha de comando, e não como chaves de INI. Só entram os botões que
 /// mexem em memória — threads e especulação não mudam o que cabe.
-pub fn probe_args(model_path: &Path, profile: &ModelProfile) -> Vec<String> {
+pub fn probe_args(
+    model_path: &Path,
+    profile: &ModelProfile,
+    cluster: Option<&crate::devices::ClusterArgs>,
+) -> Vec<String> {
     let mut args = vec![
         "-m".to_string(),
         model_path.to_string_lossy().into_owned(),
         "-fitp".to_string(),
         "on".to_string(),
     ];
+    // Antes de tudo: com o par ligado, a pergunta é sobre os DOIS dispositivos.
+    if let Some(c) = cluster {
+        args.extend(c.to_args());
+    }
     let mut push = |k: &str, v: String| {
         args.push(k.to_string());
         args.push(v);
@@ -184,9 +192,10 @@ pub async fn probe(
     runtime_dir: &Path,
     model_path: &Path,
     profile: &ModelProfile,
+    cluster: Option<&crate::devices::ClusterArgs>,
 ) -> Result<ProbeReport, ProbeError> {
     let exe = probe_exe(runtime_dir)?;
-    let args = probe_args(model_path, profile);
+    let args = probe_args(model_path, profile, cluster);
 
     let mut cmd = tokio::process::Command::new(&exe);
     cmd.args(&args)
@@ -228,6 +237,20 @@ mod tests {
         assert_eq!(r.host_bytes(), (545 + 32) * 1024 * 1024);
     }
 
+    #[test]
+    fn com_o_par_ligado_a_sonda_pergunta_pelos_dois() {
+        let c = crate::devices::ClusterArgs {
+            rpc_addr: "192.168.1.8:50052".into(),
+            devices: "CUDA0,RPC0".into(),
+            tensor_split: "4,3".into(),
+        };
+        let args = probe_args(Path::new("/m/a.gguf"), &ModelProfile::default(), Some(&c));
+        let joined = args.join(" ");
+        assert!(joined.contains("--rpc 192.168.1.8:50052"));
+        assert!(joined.contains("-dev CUDA0,RPC0"));
+        assert!(joined.contains("-ts 4,3"));
+    }
+
     /// Um aviso novo do backend não pode derrubar a leitura.
     #[test]
     fn noise_around_the_numbers_is_ignored() {
@@ -257,7 +280,7 @@ mod tests {
             spec: Some(lr_types::tuning::SpecType::Ngram),
             ..Default::default()
         };
-        let args = probe_args(Path::new("/m/a.gguf"), &p).join(" ");
+        let args = probe_args(Path::new("/m/a.gguf"), &p, None).join(" ");
         assert!(args.contains("-m /m/a.gguf"));
         assert!(args.contains("-fitp on"));
         assert!(args.contains("-c 16384"));

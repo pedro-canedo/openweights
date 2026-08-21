@@ -124,7 +124,11 @@ fn head(s: &str) -> String {
 /// Só entram os botões que o bench conhece: ele mede o motor por baixo, não o
 /// servidor, então especulação e visão não têm lugar aqui — quem mede esses é
 /// uma geração real, com o servidor de pé.
-pub fn bench_args(model_path: &Path, profile: &ModelProfile) -> Vec<String> {
+pub fn bench_args(
+    model_path: &Path,
+    profile: &ModelProfile,
+    cluster: Option<&crate::devices::ClusterArgs>,
+) -> Vec<String> {
     let mut args = vec![
         "-m".to_string(),
         model_path.to_string_lossy().into_owned(),
@@ -165,6 +169,11 @@ pub fn bench_args(model_path: &Path, profile: &ModelProfile) -> Vec<String> {
     if let Some(t) = profile.threads {
         push("-t", t.to_string());
     }
+    // Medir sem o par é medir outra máquina. O `llama-bench` aceita os mesmos
+    // três flags do servidor.
+    if let Some(c) = cluster {
+        args.extend(c.to_args());
+    }
     args
 }
 
@@ -193,6 +202,7 @@ pub async fn bench(
     runtime_dir: &Path,
     model_path: &Path,
     profile: &ModelProfile,
+    cluster: Option<&crate::devices::ClusterArgs>,
     cancel: &std::sync::atomic::AtomicBool,
 ) -> Result<BenchResult, BenchError> {
     use std::sync::atomic::Ordering;
@@ -202,7 +212,7 @@ pub async fn bench(
     let exe = bench_exe(runtime_dir)?;
 
     let mut cmd = tokio::process::Command::new(&exe);
-    cmd.args(bench_args(model_path, profile))
+    cmd.args(bench_args(model_path, profile, cluster))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
@@ -282,7 +292,7 @@ mod tests {
             mmproj: Some("/m/mmproj.gguf".into()),
             ..Default::default()
         };
-        let args = bench_args(Path::new("/m/a.gguf"), &p).join(" ");
+        let args = bench_args(Path::new("/m/a.gguf"), &p, None).join(" ");
         assert!(args.contains("-ngl 30"));
         assert!(args.contains("-ctk q8_0"));
         assert!(args.contains("-fa on"));
@@ -299,6 +309,20 @@ mod tests {
         assert!(!drifted(0.0, 30.0));
     }
 
+    #[test]
+    fn com_o_par_ligado_o_bench_mede_os_dois() {
+        let c = crate::devices::ClusterArgs {
+            rpc_addr: "192.168.1.8:50052".into(),
+            devices: "CUDA0,RPC0".into(),
+            tensor_split: "4,3".into(),
+        };
+        let args = bench_args(Path::new("/m/a.gguf"), &ModelProfile::default(), Some(&c));
+        let joined = args.join(" ");
+        assert!(joined.contains("--rpc 192.168.1.8:50052"));
+        assert!(joined.contains("-dev CUDA0,RPC0"));
+        assert!(joined.contains("-ts 4,3"));
+    }
+
     #[tokio::test]
     async fn a_cancelled_run_never_starts_the_process() {
         let cancel = std::sync::atomic::AtomicBool::new(true);
@@ -306,6 +330,7 @@ mod tests {
             Path::new("/nao/existe"),
             Path::new("/m/a.gguf"),
             &ModelProfile::default(),
+            None,
             &cancel,
         )
         .await

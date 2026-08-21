@@ -67,6 +67,9 @@ struct LiveHost {
     rpc_addr: String,
     plan: SplitPlan,
     token: String,
+    /// Memória do peer que entra no orçamento. Medida pelo motor quando ele
+    /// respondeu; o número anunciado pelo mDNS quando não.
+    remote_free: u64,
 }
 
 struct LiveWorker {
@@ -82,6 +85,8 @@ struct SplitCache {
     tensor_split: String,
     remote_vram: u64,
     extra_args: Vec<String>,
+    rpc_addr: String,
+    devices: String,
 }
 
 struct State {
@@ -308,6 +313,20 @@ impl ClusterHost {
             .ok()
             .and_then(|c| c.as_ref().map(|s| s.extra_args.clone()))
             .unwrap_or_default()
+    }
+
+    /// `(rpc_addr, devices, tensor_split)` — o que a sonda e o bench precisam
+    /// para medir a MESMA configuração que o servidor vai rodar.
+    pub fn measure_args_now(&self) -> Option<(String, String, String)> {
+        self.split_cache.read().ok().and_then(|c| {
+            c.as_ref().map(|s| {
+                (
+                    s.rpc_addr.clone(),
+                    s.devices.clone(),
+                    s.tensor_split.clone(),
+                )
+            })
+        })
     }
 
     pub async fn worker_pid(&self) -> u32 {
@@ -577,11 +596,19 @@ impl ClusterHost {
                 )
             })
             .ok_or("não deu para calcular o split das GPUs")?;
+        // O orçamento passa a ser o medido: `advertised_bytes` é 75% de um
+        // total, o motor responde o que está livre agora.
+        let remote_free = medidos
+            .iter()
+            .find(|(nome, _)| nome.starts_with("RPC"))
+            .map(|(_, livre)| *livre)
+            .unwrap_or(accept.advertised_bytes);
         let live = LiveHost {
             peer: peer.clone(),
             rpc_addr,
             plan,
             token: accept.token.clone(),
+            remote_free,
         };
         self.publish_split(Some(&live));
         {
@@ -1033,8 +1060,10 @@ impl ClusterHost {
     fn publish_split(&self, live: Option<&LiveHost>) {
         let cache = live.map(|h| SplitCache {
             tensor_split: h.plan.tensor_split.clone(),
-            remote_vram: h.peer.advertised_bytes,
+            remote_vram: h.remote_free,
             extra_args: split::llama_rpc_args(&h.rpc_addr, &h.plan),
+            rpc_addr: h.rpc_addr.clone(),
+            devices: h.plan.devices.clone(),
         });
         if let Ok(mut g) = self.split_cache.write() {
             *g = cache;

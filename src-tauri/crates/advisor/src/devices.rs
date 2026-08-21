@@ -107,6 +107,36 @@ fn mib(s: &str) -> Option<u64> {
     s.split_whitespace().next()?.parse().ok()
 }
 
+/// O par ligado, do ponto de vista de quem vai MEDIR.
+///
+/// Sem isto a sonda e o bench respondem sobre a máquina sozinha, enquanto o
+/// servidor roda repartido — dois números para duas configurações diferentes,
+/// e o painel mostrando o errado.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClusterArgs {
+    /// `ip:porta` do worker.
+    pub rpc_addr: String,
+    /// `-dev`, ex. `CUDA0,RPC0`.
+    pub devices: String,
+    /// `-ts`, ex. `4,3`.
+    pub tensor_split: String,
+}
+
+impl ClusterArgs {
+    /// Os argumentos na ordem que importa: `--rpc` ANTES de `-dev`, senão os
+    /// dispositivos do peer ainda não existem quando o `-dev` é resolvido.
+    pub fn to_args(&self) -> Vec<String> {
+        vec![
+            "--rpc".into(),
+            self.rpc_addr.clone(),
+            "-dev".into(),
+            self.devices.clone(),
+            "-ts".into(),
+            self.tensor_split.clone(),
+        ]
+    }
+}
+
 /// Caminho do executável que sabe listar (o próprio servidor).
 pub fn list_exe(runtime_dir: &Path) -> Result<PathBuf, DeviceError> {
     let nome = lr_runtime::server_exe_name();
@@ -199,6 +229,24 @@ Available devices:
             "  RPC0: peer (16384 MiB, 15000 MiB free)\n  CUDA0: local (16311 MiB, 9000 MiB free)\n",
         ));
         assert_eq!(invertido[0].name, "RPC0");
+    }
+
+    #[test]
+    fn o_rpc_vem_antes_do_dev_tambem_na_medicao() {
+        let c = ClusterArgs {
+            rpc_addr: "192.168.1.8:50052".into(),
+            devices: "CUDA0,RPC0".into(),
+            tensor_split: "4,3".into(),
+        };
+        let a = c.to_args();
+        assert_eq!(a[0], "--rpc");
+        let rpc = a.iter().position(|x| x == "--rpc").unwrap();
+        let dev = a.iter().position(|x| x == "-dev").unwrap();
+        assert!(
+            rpc < dev,
+            "o -dev não resolve RPC0 antes de o --rpc registrar"
+        );
+        assert!(a.contains(&"4,3".to_string()));
     }
 
     #[test]

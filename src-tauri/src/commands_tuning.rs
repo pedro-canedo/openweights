@@ -38,6 +38,20 @@ fn err_str<E: std::fmt::Display>(e: E) -> String {
 /// é tocado: este caminho só preenche o vazio, onde antes o `fit` decidia
 /// sozinho e numa placa apertada entregava 8k — que mata o modo agente em
 /// silêncio.
+/// O par ligado, traduzido para os flags que a sonda e o bench entendem.
+///
+/// Sem isto os dois medem a máquina sozinha enquanto o servidor roda
+/// repartido: dois números para duas configurações diferentes, e a tela
+/// mostrando o que não vai acontecer.
+pub(crate) fn cluster_args(state: &AppState) -> Option<lr_advisor::devices::ClusterArgs> {
+    let (rpc_addr, devices, tensor_split) = state.cluster.measure_args_now()?;
+    Some(lr_advisor::devices::ClusterArgs {
+        rpc_addr,
+        devices,
+        tensor_split,
+    })
+}
+
 pub(crate) fn ensure_agent_profiles(state: &AppState) {
     let budget = lr_advisor::MemoryBudget::from_profile(&state.profile)
         .with_extra_vram(state.cluster.remote_vram_now());
@@ -119,6 +133,7 @@ pub async fn tune_advise(state: State<'_, AppState>, model: String) -> CmdResult
         .dir
         .ok_or("o runtime do llama.cpp ainda não está instalado")?;
 
+    let cluster = cluster_args(&state);
     let budget = lr_advisor::MemoryBudget::from_profile(&state.profile)
         .with_extra_vram(state.cluster.remote_vram_now());
     // Sem cabeçalho GGUF lido, a geometria vem do tamanho do arquivo: é
@@ -140,7 +155,7 @@ pub async fn tune_advise(state: State<'_, AppState>, model: String) -> CmdResult
 
     let mut medidos: Vec<Measured> = Vec::new();
     for c in candidatos {
-        match probe(&dir, &artefato.primary_path, &c.profile).await {
+        match probe(&dir, &artefato.primary_path, &c.profile, cluster.as_ref()).await {
             Ok(report) => {
                 let fits_gpu = budget.vram_bytes > 0 && report.gpu_bytes() <= teto_gpu;
                 medidos.push(Measured {
@@ -357,6 +372,7 @@ pub async fn tune_bench(
     if !ocupado.is_empty() && !force.unwrap_or(false) {
         return Err(format!("engine-busy:{}", ocupado.join(",")));
     }
+    let cluster = cluster_args(&state);
     if MEDINDO.swap(true, Ordering::SeqCst) {
         return Err("já existe uma medição em andamento".into());
     }
@@ -380,7 +396,14 @@ pub async fn tune_bench(
     let mut primeiro_tps = 0.0_f64;
 
     for (i, perfil) in profiles.iter().enumerate() {
-        let r = bench::bench(&dir, &artefato.primary_path, perfil, &CANCELAR).await;
+        let r = bench::bench(
+            &dir,
+            &artefato.primary_path,
+            perfil,
+            cluster.as_ref(),
+            &CANCELAR,
+        )
+        .await;
         match r {
             Ok(res) => {
                 if i == 0 {
@@ -408,8 +431,14 @@ pub async fn tune_bench(
     // inteira está enviesada em favor de quem foi medido primeiro.
     let mut suspect = false;
     if results.len() > 1
-        && let Ok(repetido) =
-            bench::bench(&dir, &artefato.primary_path, &profiles[0], &CANCELAR).await
+        && let Ok(repetido) = bench::bench(
+            &dir,
+            &artefato.primary_path,
+            &profiles[0],
+            cluster.as_ref(),
+            &CANCELAR,
+        )
+        .await
     {
         suspect = bench::drifted(primeiro_tps, repetido.gen_tps);
     }
