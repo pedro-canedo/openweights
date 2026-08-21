@@ -199,14 +199,39 @@ impl AppState {
         let server_pid_cb = Arc::clone(&server_pid);
         let engine_busy: lr_cluster::EngineBusyFn =
             std::sync::Arc::new(move || server_pid_cb.load(Ordering::SeqCst) != 0);
+        // Quem responde "quais dispositivos existem e quanto sobra em cada um"
+        // é o próprio motor, com o peer já no ar. Nossa tabela de pinos e a
+        // fração de 75% ficam só para o anúncio no mDNS, que acontece antes de
+        // existir conexão para perguntar.
+        let data_dev = data_dir.clone();
+        let profile_dev = profile.clone();
+        let list_devices: lr_cluster::DeviceListFn = std::sync::Arc::new(move |rpc_addr| {
+            let variant = lr_runtime::select_variant(&profile_dev);
+            let dir = lr_runtime::runtime_dir(&data_dev, lr_runtime::PINNED_TAG, variant);
+            Box::pin(async move {
+                match lr_advisor::devices::list_devices(&dir, Some(&rpc_addr)).await {
+                    Ok(ds) => ds
+                        .into_iter()
+                        .map(|d| (d.name, d.free_bytes))
+                        .collect::<Vec<_>>(),
+                    Err(e) => {
+                        log::warn!("não consegui listar os dispositivos: {e}");
+                        Vec::new()
+                    }
+                }
+            })
+        });
         let cluster = lr_cluster::ClusterHost::new(
             identity,
             persist,
-            save,
-            rpc_exe,
-            on_notify,
-            on_pid,
-            engine_busy,
+            lr_cluster::ClusterHooks {
+                save,
+                rpc_exe,
+                on_notify,
+                on_pid,
+                engine_busy,
+                list_devices,
+            },
         );
 
         Ok(Self {

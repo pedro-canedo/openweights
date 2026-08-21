@@ -13,8 +13,12 @@ mod types;
 mod worker;
 
 pub use budget::{advertised_bytes, device_pin, gpu_label};
-pub use host::{ClusterHost, EngineBusyFn, NotifyFn, PidFn, RpcExeFn, SaveFn};
+pub use host::{
+    ClusterHooks, ClusterHost, DeviceListFn, EngineBusyFn, NotifyFn, PidFn, RpcExeFn, SaveFn,
+};
 pub use persist::{ClusterPersist, LastRole, SETTING_KEY, new_instance_id};
-pub use split::{SplitPlan, llama_rpc_args, plan_split, tags_compatible};
+pub use split::{
+    SplitPlan, llama_rpc_args, plan_from_devices, plan_split, ratio_pequena, tags_compatible,
+};
 pub use types::{ClusterRole, ClusterSnapshot, ConnectedView, NodeIdentity, PeerView};
 pub use worker::{DEFAULT_RPC_PORT, RpcWorker, WorkerError, worker_args};

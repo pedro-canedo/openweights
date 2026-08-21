@@ -1,8 +1,10 @@
 //! Orquestrador: mDNS + HTTP de controle + um par host/worker.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -37,6 +39,11 @@ pub type PidFn = Arc<dyn Fn(u32) + Send + Sync>;
 /// `true` quando o llama-server local está no ar. Emprestar a GPU nesse
 /// momento reserva a mesma VRAM duas vezes.
 pub type EngineBusyFn = Arc<dyn Fn() -> bool + Send + Sync>;
+/// Pergunta ao motor quais dispositivos existem, já com o peer conectado, e
+/// quanto cada um tem livre. Devolve `(nome, bytes livres)` na ordem do
+/// llama.cpp. Vazio quando o motor não respondeu.
+pub type DeviceListFn =
+    Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = Vec<(String, u64)>> + Send>> + Send + Sync>;
 
 struct PendingIn {
     req: PairRequest,
@@ -89,6 +96,21 @@ struct State {
     rpc_ready: bool,
 }
 
+/// Tudo que o cluster precisa pedir ao app: gravar, achar o executável,
+/// avisar a pessoa, publicar o PID, saber se o motor está no ar e perguntar
+/// os dispositivos ao llama.cpp.
+///
+/// Existe como struct, e não como seis parâmetros, porque seis parâmetros do
+/// mesmo tipo (`Arc<dyn Fn…>`) trocam de lugar sem o compilador reclamar.
+pub struct ClusterHooks {
+    pub save: SaveFn,
+    pub rpc_exe: RpcExeFn,
+    pub on_notify: NotifyFn,
+    pub on_pid: PidFn,
+    pub engine_busy: EngineBusyFn,
+    pub list_devices: DeviceListFn,
+}
+
 pub struct ClusterHost {
     identity: NodeIdentity,
     control_port: Mutex<u16>,
@@ -99,6 +121,7 @@ pub struct ClusterHost {
     on_notify: NotifyFn,
     on_pid: PidFn,
     engine_busy: EngineBusyFn,
+    list_devices: DeviceListFn,
     cancel: Mutex<Option<Arc<Notify>>>,
     hb_cancel: Mutex<Option<Arc<Notify>>>,
     worker: std::sync::Mutex<Option<RpcWorker>>,
@@ -107,15 +130,15 @@ pub struct ClusterHost {
 }
 
 impl ClusterHost {
-    pub fn new(
-        identity: NodeIdentity,
-        persist: ClusterPersist,
-        save: SaveFn,
-        rpc_exe: RpcExeFn,
-        on_notify: NotifyFn,
-        on_pid: PidFn,
-        engine_busy: EngineBusyFn,
-    ) -> Arc<Self> {
+    pub fn new(identity: NodeIdentity, persist: ClusterPersist, hooks: ClusterHooks) -> Arc<Self> {
+        let ClusterHooks {
+            save,
+            rpc_exe,
+            on_notify,
+            on_pid,
+            engine_busy,
+            list_devices,
+        } = hooks;
         Arc::new(Self {
             identity,
             control_port: Mutex::new(CONTROL_PORT),
@@ -136,6 +159,7 @@ impl ClusterHost {
             on_notify,
             on_pid,
             engine_busy,
+            list_devices,
             cancel: Mutex::new(None),
             hb_cancel: Mutex::new(None),
             worker: std::sync::Mutex::new(None),
@@ -530,13 +554,29 @@ impl ClusterHost {
             .device_id
             .clone()
             .ok_or("esta máquina não tem GPU")?;
-        let plan = split::plan_split(
-            &local_dev,
-            self.identity.advertised_bytes,
-            accept.advertised_bytes,
-        )
-        .ok_or("não deu para calcular o split das GPUs")?;
         let rpc_addr = format!("{}:{}", peer.ip, accept.rpc_port);
+        // Preferido: perguntar ao motor, já com o peer no ar — nomes e memória
+        // livre reais dos dois lados. O anunciado pelo mDNS é a estimativa que
+        // existia antes de haver conexão, e vira rede de segurança quando a
+        // listagem não responde (motor ausente, peer que caiu no meio).
+        let medidos = (self.list_devices)(rpc_addr.clone()).await;
+        let plan = split::plan_from_devices(&medidos)
+            .inspect(|p| {
+                log::info!(
+                    "split medido pelo motor: -dev {} -ts {}",
+                    p.devices,
+                    p.tensor_split
+                )
+            })
+            .or_else(|| {
+                log::warn!("o motor não listou dois dispositivos; usando o anunciado");
+                split::plan_split(
+                    &local_dev,
+                    self.identity.advertised_bytes,
+                    accept.advertised_bytes,
+                )
+            })
+            .ok_or("não deu para calcular o split das GPUs")?;
         let live = LiveHost {
             peer: peer.clone(),
             rpc_addr,
