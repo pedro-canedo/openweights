@@ -263,6 +263,40 @@ fn plan_json(count: usize) -> String {
     json!({ "tasks": tasks }).to_string()
 }
 
+async fn triagem(reply: &str) -> bool {
+    let server = one_shot(reply.to_string());
+    needs_plan(&server.client(), "m", "Bom dia", "", &mut |_| {}).await
+}
+
+#[tokio::test]
+async fn a_greeting_does_not_become_a_work_plan() {
+    let nao = json!({ "precisa_plano": false, "porque": "é uma saudação" }).to_string();
+    assert!(!triagem(&nao).await);
+}
+
+#[tokio::test]
+async fn real_work_still_gets_a_plan() {
+    let sim = json!({ "precisa_plano": true, "porque": "pede para criar arquivos" }).to_string();
+    assert!(triagem(&sim).await);
+}
+
+/// Na dúvida, planeja: recusar plano a um pedido real devolveria a pessoa ao
+/// laço solto, sem gate por entrega.
+#[tokio::test]
+async fn an_unreadable_triage_keeps_planning() {
+    assert!(triagem("não sei dizer").await);
+    assert!(triagem(&json!({ "porque": "faltou o booleano" }).to_string()).await);
+}
+
+#[tokio::test]
+async fn a_server_that_does_not_answer_keeps_planning() {
+    let server = FakeServer::spawn(|r| match r.path.as_str() {
+        "/props" => FakeResponse::json(props_body()),
+        _ => FakeResponse::error(500, "{}"),
+    });
+    assert!(needs_plan(&server.client(), "m", "qualquer coisa", "", &mut |_| {}).await);
+}
+
 #[tokio::test]
 async fn decompose_reads_a_valid_plan() {
     let (plan, _server) = decompose_with(plan_json(3)).await;

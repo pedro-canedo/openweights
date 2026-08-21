@@ -21,6 +21,23 @@ não se sustentava: o modo Agente criava um plano e o ignorava — executava sol
 e só conferia no fim —, então "com plano" e "sem plano" eram duas qualidades de
 execução, e a pior era a padrão. Agora há um caminho só.
 
+## Antes de tudo: isto precisa mesmo de plano?
+
+Nem tudo que se diz ao agente é um projeto. Antes de existir plano, o modelo
+recebe uma pergunta curta: este pedido exige um **plano de trabalho** — uma
+sequência de entregas executadas por algo que mexe em arquivos e roda comandos —
+ou se resolve numa resposta?
+
+Uma saudação, um agradecimento, uma pergunta sobre o que acabou de ser feito, um
+pedido de opinião: esses são respondidos. Construir, alterar, investigar ou
+corrigir algo no computador ganha plano.
+
+A triagem é de propósito barata — prompt curto e booleano forçado — e economiza
+a decomposição inteira quando a resposta é "conversa". **Na dúvida, ela
+planeja.** Um plano desnecessário é chato; recusar plano a um pedido real
+devolveria você ao laço solto, sem gate por entrega — que é justamente o que o
+modo agente existe para substituir.
+
 ## Como o plano é montado
 
 O plano é pedido ao modelo com **JSON Schema forçado**. O llama-server converte

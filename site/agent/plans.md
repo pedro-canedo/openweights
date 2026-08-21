@@ -21,6 +21,23 @@ split did not hold up: Agent mode built a plan and then ignored it — running
 loose and only checking at the end — so "with a plan" and "without a plan" were
 two grades of run, and the worse one was the default. There is one path now.
 
+## First: does this even need a plan?
+
+Not everything said to the agent is a project. Before any plan exists, the model
+is asked one short question: does this request need a **work plan** — a sequence
+of deliveries carried out by something that edits files and runs commands — or
+does it resolve in an answer?
+
+A greeting, a thank-you, a question about what was just done, a request for an
+opinion: those get answered. Building, changing, investigating or fixing
+something on the computer gets a plan.
+
+The triage is deliberately cheap — a short prompt and a forced boolean — and it
+saves the whole decomposition when the answer is "conversation". **When it is
+unsure, it plans.** An unnecessary plan is annoying; refusing one to a real
+request would drop you back into a loose loop with no gate per delivery, which
+is the thing the agent mode exists to replace.
+
 ## How a plan is built
 
 The model is asked for the plan with a **forced JSON schema**. llama-server

@@ -187,6 +187,115 @@ fn decompose_request(
     )
 }
 
+/// Isto aqui é trabalho, ou é conversa?
+///
+/// Antes desta pergunta, "Bom dia" virava um PLANO DE TRABALHO com uma entrega
+/// chamada "Bom dia", contexto reiniciado e um passo de execução — trinta
+/// segundos de maquinário para uma saudação. Planejar não é de graça: é uma
+/// chamada com prompt grande, e depois um laço com gate por entrega.
+///
+/// A triagem é deliberadamente barata: o pedido, uma régua curta e um booleano
+/// de saída com gramática forçada. Custa uma fração do que a decomposição
+/// custaria, e no caso conversa economiza a decomposição inteira.
+///
+/// Na dúvida, PLANEJA. Um plano desnecessário é chato; recusar plano a um
+/// pedido real devolve a pessoa ao laço solto, sem gate por entrega — que é o
+/// comportamento que o modo agente existe para substituir.
+pub async fn needs_plan(
+    client: &LlamaClient,
+    model: &str,
+    goal: &str,
+    context: &str,
+    on_reasoning: &mut (dyn FnMut(&str) + Send),
+) -> bool {
+    let mut user = format!(
+        "Pedido da pessoa:\n{}\n\n\
+         Responda se ele exige um PLANO DE TRABALHO — uma sequência de entregas \
+         executadas por um agente que mexe em arquivos e roda comandos.\n\n\
+         Exige plano quando o pedido pede que algo seja CONSTRUÍDO, ALTERADO, \
+         INVESTIGADO ou CORRIGIDO no computador: escrever ou editar arquivos, \
+         rodar comandos, procurar uma causa, migrar, testar.\n\n\
+         NÃO exige plano quando o pedido se resolve numa resposta: saudação, \
+         agradecimento, conversa, pergunta de conhecimento, pedido de opinião ou \
+         de explicação, ou dúvida sobre o que foi feito antes.",
+        head_chars(goal.trim(), 2_000)
+    );
+    if !context.trim().is_empty() {
+        user.push_str(&format!(
+            "\n\nO que veio antes na conversa:\n{}",
+            head_chars(context.trim(), 600)
+        ));
+    }
+
+    let mut req = ChatRequest::new(
+        model,
+        vec![
+            ChatMessage::system(
+                "Você classifica pedidos. Responda somente com o JSON pedido, no \
+                 idioma do pedido.",
+            ),
+            ChatMessage::user(user),
+        ],
+    );
+    req.temperature = Some(0.0);
+    req.max_tokens = Some(200);
+    let req = req.with_extra(
+        "response_format",
+        json!({
+            "type": "json_schema",
+            "json_schema": {
+                "name": "triagem",
+                "strict": true,
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "precisa_plano": { "type": "boolean" },
+                        "porque": { "type": "string" }
+                    },
+                    "required": ["precisa_plano", "porque"]
+                }
+            }
+        }),
+    );
+
+    let mut on_delta = |d: lr_engine::ChatDelta| {
+        if let lr_engine::ChatDelta::Reasoning(t) = d {
+            on_reasoning(&t);
+        }
+    };
+    let out = match client.chat_stream(&req, &mut on_delta).await {
+        Ok(out) => out,
+        Err(e) => {
+            log::warn!("a triagem não respondeu ({e}); sigo planejando");
+            return true;
+        }
+    };
+    match json_from_text(&out.content).and_then(|v| {
+        let precisa = v.get("precisa_plano")?.as_bool()?;
+        let porque = v
+            .get("porque")
+            .and_then(|p| p.as_str())
+            .unwrap_or("")
+            .to_string();
+        Some((precisa, porque))
+    }) {
+        Some((precisa, porque)) => {
+            log::info!(
+                "triagem: {} ({porque})",
+                if precisa { "planejar" } else { "responder" }
+            );
+            precisa
+        }
+        None => {
+            log::warn!(
+                "a triagem devolveu {} bytes ilegíveis; sigo planejando",
+                out.content.len()
+            );
+            true
+        }
+    }
+}
+
 /// Pede ao modelo a divisão do objetivo em entregas.
 ///
 /// `context` são as observações da investigação (modo planejamento) ou vazio.

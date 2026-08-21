@@ -2620,7 +2620,32 @@ pub(crate) async fn execute_run(req: StartRun, handle: Arc<RunHandle>, deps: Run
 
     // Perguntas que pausaram o run: persistidas e emitidas no epílogo.
     let mut pergunta_pendente: Option<lr_types::scout::PendingQuestion> = None;
-    let status = if work_mode == WorkMode::Loop {
+    // "Bom dia" não é um projeto. Antes desta pergunta, qualquer coisa dita no
+    // modo agente virava PLANO DE TRABALHO com uma entrega — e o custo disso é
+    // uma decomposição inteira mais um laço com gate por entrega. A triagem é
+    // uma chamada curta com booleano forçado; quando ela diz "conversa", o run
+    // cai no laço normal, que continua tendo ferramentas se precisar.
+    let precisa_plano = if work_mode == WorkMode::Loop {
+        let sink_t = sink.clone();
+        let mut on_triagem = |t: &str| {
+            sink_t.emit(RunEventKind::ReasoningDelta {
+                step_id: "triage".into(),
+                text: t.to_string(),
+            });
+        };
+        scout::needs_plan(
+            engine.client,
+            &engine.opts.model,
+            &prompt,
+            &resumo_do_historico(&history),
+            &mut on_triagem,
+        )
+        .await
+    } else {
+        false
+    };
+
+    let status = if work_mode == WorkMode::Loop && precisa_plano {
         // Divide o objetivo e executa entrega por entrega, cada uma com
         // contexto novo. A decomposição enxerga um resumo curto da conversa:
         // "agora adicione X" precisa saber o que veio antes.
