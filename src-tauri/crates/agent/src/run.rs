@@ -2921,6 +2921,13 @@ async fn present_plan(
 ) -> String {
     // O modelo pode ter escrito o plano sozinho com `plan_create`.
     if snapshot(plan).tasks.is_empty() {
+        let sink = engine.sink.clone();
+        let mut on_reasoning = |t: &str| {
+            sink.emit(RunEventKind::ReasoningDelta {
+                step_id: "plan".into(),
+                text: t.to_string(),
+            });
+        };
         let built = scout::decompose(
             engine.client,
             &engine.opts.model,
@@ -2928,6 +2935,7 @@ async fn present_plan(
             window,
             notes,
             max_tasks,
+            &mut on_reasoning,
         )
         .await
         .unwrap_or_else(|e| {

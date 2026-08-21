@@ -79,6 +79,23 @@ impl FakeLlama {
             "choices": [{ "message": { "content": sem_stream } }]
         })
         .to_string();
+        // A decomposição do plano virou streaming (é o que faz o raciocínio
+        // aparecer enquanto o plano é montado), mas continua FORA do roteiro:
+        // o roteiro é dos passos do agente. Ela se distingue pelo esquema no
+        // `response_format`.
+        let plano_sse = {
+            let corpo = sem_stream.to_string();
+            move || {
+                vec![
+                    sse(&serde_json::json!({"choices":[{"delta":{"content": corpo}}]}).to_string()),
+                    sse(
+                        &serde_json::json!({"choices":[{"delta":{},"finish_reason":"stop"}]})
+                            .to_string(),
+                    ),
+                    sse("[DONE]"),
+                ]
+            }
+        };
 
         std::thread::spawn(move || {
             while !flag.load(Ordering::SeqCst) {
@@ -94,6 +111,10 @@ impl FakeLlama {
                             // roteiro é dos passos do agente.
                             if body.contains("\"stream\":false") {
                                 write_json(&mut stream, &sem_stream_json);
+                                continue;
+                            }
+                            if body.contains("response_format") {
+                                write_sse(&mut stream, &plano_sse());
                                 continue;
                             }
                             vistos.lock().unwrap().push(body);

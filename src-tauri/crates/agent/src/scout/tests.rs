@@ -219,6 +219,12 @@ fn props_body() -> String {
 fn one_shot(reply: String) -> FakeServer {
     FakeServer::spawn(move |r| match r.path.as_str() {
         "/props" => FakeResponse::json(props_body()),
+        // A decomposição passou a pedir stream (é o que faz o raciocínio do
+        // modelo aparecer enquanto o plano é montado); o corpo continua sendo
+        // o mesmo JSON, agora em pedaços.
+        "/v1/chat/completions" if r.body.contains("\"stream\":true") => {
+            FakeResponse::sse(stream_text(&reply))
+        }
         "/v1/chat/completions" => FakeResponse::json(completion(&reply)),
         _ => FakeResponse::error(404, "{}"),
     })
@@ -237,6 +243,7 @@ async fn decompose_with(reply: String) -> (TaskPlan, FakeServer) {
         budget(),
         "",
         MAX_TASKS as u32,
+        &mut |_| {},
     )
     .await
     .expect("o servidor respondeu");
@@ -349,6 +356,7 @@ async fn decompose_reports_a_server_that_did_not_answer() {
         budget(),
         "",
         MAX_TASKS as u32,
+        &mut |_| {},
     )
     .await
     .unwrap_err();
@@ -360,9 +368,17 @@ async fn decompose_reports_a_server_that_did_not_answer() {
 #[tokio::test]
 async fn a_small_step_budget_asks_for_a_small_plan() {
     let server = one_shot(plan_json(2));
-    let _ = decompose(&server.client(), "m", "arrumar", budget(), "", 1)
-        .await
-        .unwrap();
+    let _ = decompose(
+        &server.client(),
+        "m",
+        "arrumar",
+        budget(),
+        "",
+        1,
+        &mut |_| {},
+    )
+    .await
+    .unwrap();
 
     let corpos = server.chat_bodies();
     let pedido = corpos.last().cloned().unwrap_or_default();
@@ -382,6 +398,7 @@ async fn decompose_keeps_the_investigation_notes() {
         budget(),
         "o projeto usa pnpm e vitest",
         MAX_TASKS as u32,
+        &mut |_| {},
     )
     .await
     .unwrap();
@@ -1020,14 +1037,14 @@ async fn an_empty_plan_is_decomposed_before_the_loop_starts() {
         "/v1/chat/completions/input_tokens" => {
             FakeResponse::json(json!({ "prompt_tokens": 100 }).to_string())
         }
+        // A decomposição também é stream agora; o que a distingue do passo
+        // normal é o `response_format` com o esquema do plano.
+        "/v1/chat/completions" if r.body.contains("response_format") => FakeResponse::sse(
+            stream_text(&json!({"tasks": [{"title": "única", "instruction": "faça tudo", "done_when": "pronto"}]}).to_string()),
+        ),
         "/v1/chat/completions" if r.body.contains("\"stream\":true") => {
             FakeResponse::sse(stream_text("feito"))
         }
-        // Decomposição e handoff usam o mesmo endpoint sem stream; o schema
-        // só aparece no pedido de decomposição.
-        "/v1/chat/completions" if r.body.contains("response_format") => FakeResponse::json(
-            completion(&json!({"tasks": [{"title": "única", "instruction": "faça tudo", "done_when": "pronto"}]}).to_string()),
-        ),
         "/v1/chat/completions" => FakeResponse::json(completion("resumo curto")),
         _ => FakeResponse::error(404, "{}"),
     }

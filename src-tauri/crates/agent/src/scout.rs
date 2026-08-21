@@ -199,6 +199,10 @@ pub async fn decompose(
     budget: WindowBudget,
     context: &str,
     max_tasks: u32,
+    // Raciocínio do modelo, pedaço a pedaço. Sem isto a montagem do plano é
+    // um spinner mudo: num modelo pensante repartido pela rede, nove minutos
+    // sem uma linha na tela são indistinguíveis de travamento.
+    on_reasoning: &mut (dyn FnMut(&str) + Send),
 ) -> Result<TaskPlan, String> {
     let per_task = budget.per_task();
     let prompt_tokens = prompt_size(client, model, goal, context).await;
@@ -218,8 +222,16 @@ pub async fn decompose(
     };
 
     let request = decompose_request(model, goal, context, wanted, per_task);
+    // Streaming aqui não é para "ver o texto chegando": o corpo é o JSON do
+    // esquema, e ele continua sendo parseado inteiro no fim. É para o canal
+    // de raciocínio sair na hora em que é produzido.
+    let mut on_delta = |d: lr_engine::ChatDelta| {
+        if let lr_engine::ChatDelta::Reasoning(t) = d {
+            on_reasoning(&t);
+        }
+    };
     let outcome = client
-        .complete_once(&request)
+        .chat_stream(&request, &mut on_delta)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -814,6 +826,13 @@ pub(crate) async fn run_plan(
 
     // 1. O plano. Se ninguém escreveu um ainda, o modelo divide agora.
     if snapshot(&ctx.plan).tasks.is_empty() {
+        let sink = ctx.engine.sink.clone();
+        let mut on_reasoning = |t: &str| {
+            sink.emit(RunEventKind::ReasoningDelta {
+                step_id: "plan".into(),
+                text: t.to_string(),
+            });
+        };
         let plan = match decompose(
             ctx.engine.client,
             &ctx.engine.opts.model,
@@ -821,6 +840,7 @@ pub(crate) async fn run_plan(
             ctx.window,
             &ctx.context,
             ctx.max_tasks,
+            &mut on_reasoning,
         )
         .await
         {
@@ -1009,15 +1029,26 @@ pub(crate) async fn run_plan(
             && report.as_ref().is_none_or(|r| r.passed)
             && (sem_evidencia || teste_ja_passava)
         {
+            let sink_j = ctx.engine.sink.clone();
+            let id_j = task.id.clone();
+            let mut on_j = move |t: &str| {
+                sink_j.emit(RunEventKind::ReasoningDelta {
+                    step_id: id_j.clone(),
+                    text: t.to_string(),
+                });
+            };
             judge::julgar(
                 ctx.engine.client,
                 &ctx.engine.opts.model,
                 &task,
-                &step.text,
-                &files,
-                &commands,
-                teste_ja_passava
-                    .then_some("o comando de aceitação JÁ passava antes desta etapa começar"),
+                judge::Evidencia {
+                    resposta: &step.text,
+                    files: &files,
+                    commands: &commands,
+                    aviso: teste_ja_passava
+                        .then_some("o comando de aceitação JÁ passava antes desta etapa começar"),
+                },
+                &mut on_j,
             )
             .await
         } else {

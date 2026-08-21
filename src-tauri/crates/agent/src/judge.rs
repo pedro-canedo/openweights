@@ -27,15 +27,28 @@ pub(crate) struct Veredito {
 /// Julga se a etapa cumpriu o próprio `done_when`, com base no que ela
 /// respondeu e no que ficou registrado. Abstém-se (`None`) quando o servidor
 /// não respondeu ou a resposta não deu para ler.
+/// O que a etapa deixou para trás, e que o juiz precisa ver.
+pub(crate) struct Evidencia<'a> {
+    pub resposta: &'a str,
+    pub files: &'a [String],
+    pub commands: &'a [CommandRecord],
+    /// Ressalva que muda o peso da evidência (ex.: o teste já passava antes).
+    pub aviso: Option<&'a str>,
+}
+
 pub(crate) async fn julgar(
     client: &LlamaClient,
     model: &str,
     task: &Task,
-    resposta: &str,
-    files: &[String],
-    commands: &[CommandRecord],
-    aviso: Option<&str>,
+    ev: Evidencia<'_>,
+    on_reasoning: &mut (dyn FnMut(&str) + Send),
 ) -> Option<Veredito> {
+    let Evidencia {
+        resposta,
+        files,
+        commands,
+        aviso,
+    } = ev;
     let mut user = format!(
         "Critério de pronto da etapa (done_when):\n{}\n\n\
          O que o agente respondeu ao fim da etapa:\n{}\n",
@@ -107,7 +120,14 @@ pub(crate) async fn julgar(
         }),
     );
 
-    let out = match client.complete_once(&req).await {
+    // Mesmo motivo do plano: o corpo é JSON de esquema, mas o raciocínio
+    // sai na hora — a conferência de um modelo pensante leva minutos.
+    let mut on_delta = |d: lr_engine::ChatDelta| {
+        if let lr_engine::ChatDelta::Reasoning(t) = d {
+            on_reasoning(&t);
+        }
+    };
+    let out = match client.chat_stream(&req, &mut on_delta).await {
         Ok(out) => out,
         Err(e) => {
             log::warn!("o juiz do done_when não respondeu ({e}); sigo sem ele");
