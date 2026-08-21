@@ -58,15 +58,21 @@ asks again.
 
 ## How the split is decided
 
-Each machine announces a budget, not its whole card: **75% of VRAM** on NVIDIA,
-or **75% of 75% of system RAM** on Apple Silicon (macOS itself refuses to give
-Metal much more than three quarters of unified memory). The rest is the KV cache
-and compute buffers — announcing everything is the classic way to run out of
-memory on the first prompt.
+Before there is a connection, each machine announces an estimate — 75% of VRAM,
+or 75% of 75% of system RAM on Apple Silicon, because macOS itself refuses to
+give Metal much more than three quarters of unified memory. That number exists
+only so the peer list can tell you whether it is worth trying.
 
-The device with more memory takes the first layers. An 18 GB helper next to a
-12 GB local card becomes `--device RPC0,CUDA0 --tensor-split 3,2`. The panel
-shows the ratio it chose.
+**Once the pair is up, nothing is estimated.** The engine is asked directly:
+`llama-server --rpc … --list-devices` lists the real devices on both sides, with
+the names llama.cpp uses and how much each has free right now. The split comes
+from that — the device with more room takes the first layers, and the ratio is
+reduced to small integers so `--tensor-split 4,3` is what you read instead of
+`12233,9216`.
+
+The same answer feeds the [automatic tuning](/guide/models#tuning-without-you-tuning-anything):
+with a pair up, the memory probe measures *both* machines, because measuring one
+while the server runs on two is measuring the wrong thing.
 
 ## What to expect while it runs
 

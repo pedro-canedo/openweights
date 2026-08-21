@@ -31,11 +31,13 @@ Windows, macOS and Linux.
   browses the web and analyses data. Every action goes through your approval (or
   not, if you prefer), and a snapshot of the project is taken before the first
   change: you can always go back.
-- 🎛️ **Tune for this machine** — the app asks llama.cpp itself how much memory
-  each configuration costs on *your* card, recommends one (with the numbers
-  behind it), applies it and rolls back on its own if the model fails to load.
-  Then, if you want, it measures real tokens/s and replaces the estimate with
-  what your machine actually delivered.
+- 🎛️ **Tunes itself for your machine** — no one has to learn what `-ts`, `-ub`
+  or `-ctk` mean. The app asks the engine which devices exist and how much is
+  free on each, reads the real layer count from the file, and asks llama.cpp
+  itself how much memory each configuration costs — then converges on one, in
+  the background, and re-does it when the hardware picture changes. What you
+  set by hand is never touched. If you want the numbers, the panel shows every
+  candidate and can measure real tokens/s instead of trusting the estimate.
 - ⚡ **Code Mode** — instead of asking for one tool at a time, the agent writes a
   program that uses them all at once: a whole task becomes a single step, and
   only the result comes back to the conversation. It spends far less context,

@@ -46,3 +46,48 @@ passar pelo Descobrir — aparecem marcados como tal.
 
 Downloads que pararam no meio ficam listados à parte, com **Retomar** e
 **Descartar**. Retomar sobrevive a fechar o app e reiniciar a máquina.
+
+
+## Ajuste, sem você ajustar nada
+
+Cada botão que o llama.cpp expõe — tamanho da janela, tipo do KV cache, flash
+attention, quantas camadas vão para a GPU, como a carga se divide entre duas
+máquinas — tem uma resposta certa para o *seu* hardware e para aquele modelo. O
+app chega nela sozinho.
+
+Ele não chuta. Três coisas são perguntadas em vez de estimadas:
+
+| A pergunta | Quem responde |
+|---|---|
+| Quais dispositivos existem e quanto sobra em cada um | `llama-server --list-devices`, com a GPU emprestada dentro quando há par |
+| Quantas camadas o modelo tem de verdade | o cabeçalho do GGUF (`block_count`) |
+| Quanto uma configuração custa de memória | o `llama-fit-params`, em cerca de um segundo e meio, sem carregar o modelo |
+
+Com essas três, uma busca dirigida converge numa configuração: a maior janela
+que ainda mantém os pesos na placa, comprimindo o KV cache só quando a janela
+exige, flash attention onde ajuda, e a razão do split tirada da memória livre
+real.
+
+Ela roda sozinha em segundo plano assim que o motor sobe, e de novo quando o
+conjunto de dispositivos muda — parear com outra máquina muda o que cabe tanto
+quanto trocar de placa. Cada modelo guarda a impressão digital da situação em
+que foi ajustado (máquina, versão do motor, dispositivos), então nada é medido
+duas vezes.
+
+**O que você escolheu na mão nunca é tocado.** A passada automática só preenche
+o que ela mesma deixou, ou o que nunca teve nada. E como o preset do Router é
+lido no boot, uma configuração encontrada com o motor rodando vale no próximo
+start — a tela avisa.
+
+### Quando você quiser ver os números
+
+**Meus Modelos → Ajustar para esta máquina** abre o painel: cada candidato com
+a memória que custa por dispositivo, qual foi escolhido e por quê, e a opção de
+medir tokens/s de verdade com o `llama-bench` em vez de confiar na estimativa.
+Está lá para quando você quiser olhar, não porque o app precise de você.
+
+::: tip Uma coisa que não dá para fazer por você
+No Apple Silicon, o macOS limita o Metal a cerca de 75% da memória unificada.
+Levantar isso exige terminal e a sua senha, então o app mostra o comando em vez
+de executá-lo.
+:::

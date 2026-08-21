@@ -59,15 +59,21 @@ pergunta de novo.
 
 ## Como o split é decidido
 
-Cada máquina anuncia um orçamento, não a placa inteira: **75% da VRAM** em
-NVIDIA, ou **75% de 75% da RAM** no Apple Silicon (o próprio macOS recusa dar ao
-Metal muito mais que três quartos da memória unificada). O resto é cache KV e
-buffers de cálculo — anunciar tudo é o jeito clássico de estourar a memória no
-primeiro prompt.
+Antes de existir conexão, cada máquina anuncia uma estimativa — 75% da VRAM, ou
+75% de 75% da RAM no Apple Silicon, porque o próprio macOS recusa dar ao Metal
+muito mais que três quartos da memória unificada. Esse número existe só para a
+lista de peers dizer se vale a pena tentar.
 
-Quem tem mais memória fica com as primeiras camadas. Um ajudante de 18 GB ao
-lado de uma placa local de 12 GB vira `--device RPC0,CUDA0 --tensor-split 3,2`.
-O painel mostra a razão escolhida.
+**Com o par de pé, nada é estimado.** A pergunta vai ao motor:
+`llama-server --rpc … --list-devices` lista os dispositivos reais dos dois
+lados, com os nomes que o llama.cpp usa e quanto cada um tem livre agora. O
+split sai daí — quem tem mais espaço fica com as primeiras camadas, e a razão é
+reduzida a inteiros pequenos, então você lê `--tensor-split 4,3` em vez de
+`12233,9216`.
+
+A mesma resposta alimenta o [ajuste automático](/pt/guia/modelos#ajuste-sem-voce-ajustar-nada):
+com o par ligado, a sonda de memória mede as DUAS máquinas — medir uma enquanto
+o servidor roda em duas é medir a coisa errada.
 
 ## O que esperar durante o uso
 
