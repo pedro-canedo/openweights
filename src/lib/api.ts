@@ -196,6 +196,10 @@ export const clusterApplyEngine = () =>
 export const onCluster = (h: (s: ClusterSnapshot) => void) =>
   listen<ClusterSnapshot>("cluster", h);
 
+/** A varredura automática reconfigurou N modelos. */
+export const onTuneAuto = (h: (changed: number) => void) =>
+  listen<number>("tune-auto", h);
+
 // ----------------------------------------------------------------- chat ---
 
 export const listChats = () =>

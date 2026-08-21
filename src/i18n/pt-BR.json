@@ -410,7 +410,9 @@
       "enableHint": "Desligado por padrão. Ligar anuncia este app na LAN e abre a porta de controle — só em redes em que você confia.",
       "off": "Ligue para ver outros OpenWeights nesta rede.",
       "noGpuPeer": "sem GPU",
-      "preparing": "preparando o motor RPC…"
+      "preparing": "preparando o motor RPC…",
+      "measured": "O split foi medido pelo próprio motor: ele lista os dispositivos reais dos dois lados e quanto cada um tem livre, em vez de estimar por porcentagem.",
+      "metalCap": "O macOS limita o Metal a cerca de 75% da memória unificada, e é por isso que esta máquina oferece menos que o total. Levantar exige terminal e a sua senha:"
     }
   },
   "settings": {

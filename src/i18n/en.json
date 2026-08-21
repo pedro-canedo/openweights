@@ -410,7 +410,9 @@
       "enableHint": "Off by default. Turning it on announces this app on the LAN and opens the control port — only on networks you trust.",
       "off": "Turn it on to see other OpenWeights on this network.",
       "noGpuPeer": "no GPU",
-      "preparing": "preparing the RPC engine…"
+      "preparing": "preparing the RPC engine…",
+      "measured": "The split was measured by the engine itself: it lists the real devices on both sides and how much each has free, instead of guessing from a percentage.",
+      "metalCap": "macOS caps Metal at about 75% of unified memory, which is why this machine offers less than its total. Raising it takes a terminal and your password:"
     }
   },
   "settings": {

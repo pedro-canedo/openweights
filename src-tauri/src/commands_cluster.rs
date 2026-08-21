@@ -38,6 +38,9 @@ async fn engine_is_running(state: &AppState) -> bool {
 /// servidor sozinho.
 async fn restart_if_running(app: &AppHandle, state: &AppState) -> CmdResult<()> {
     if !engine_is_running(state).await {
+        // Sem motor no ar não há o que reiniciar, mas o conjunto de
+        // dispositivos mudou: a varredura precisa remedir mesmo assim.
+        crate::commands_tuning::spawn_auto_tune(app, state);
         return Ok(());
     }
     restart_engine(app, state, false).await.map(|_| ())

@@ -19,7 +19,7 @@ use lr_store::perf::PerfRun;
 use lr_types::tuning::{ModelProfile, ProfileSource};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 type CmdResult<T> = Result<T, String>;
 
@@ -541,4 +541,152 @@ pub async fn tune_spec_bench(
     let _ = restart_engine(&app, &state, true).await;
 
     resultado
+}
+
+// ---------------------------------------------------------------------------
+// Ajuste automático
+// ---------------------------------------------------------------------------
+
+/// Uma varredura por vez. O `llama-fit-params` é barato, mas dez modelos em
+/// paralelo disputariam a mesma placa e devolveriam memória livre errada.
+static AUTO_RODANDO: AtomicBool = AtomicBool::new(false);
+
+/// Chave de "já ajustei este modelo NESTA situação".
+///
+/// Entra tudo que muda a resposta: a máquina (placa, driver, RAM), a versão do
+/// motor e o conjunto de dispositivos — parear com outro PC muda o que cabe
+/// tanto quanto trocar de placa. Se a chave bate, não há o que remedir.
+fn auto_key(state: &AppState) -> String {
+    let par = state
+        .cluster
+        .measure_args_now()
+        .map(|(addr, dev, ts)| format!("{addr}|{dev}|{ts}"))
+        .unwrap_or_else(|| "solo".into());
+    format!(
+        "{}|{}|{}",
+        state.profile.machine_key(),
+        lr_runtime::PINNED_TAG,
+        par
+    )
+}
+
+fn auto_setting(model: &str) -> String {
+    format!("tune.auto.{}", model.trim())
+}
+
+/// A busca dirigida para UM modelo: candidatos pela aritmética, memória pela
+/// sonda, escolha pelo mesmo `pick` que a tela usa.
+///
+/// Devolve `None` quando nenhuma sonda respondeu — melhor manter o que estava
+/// do que gravar um palpite.
+async fn auto_profile_for(
+    state: &AppState,
+    dir: &std::path::Path,
+    artefato: &lr_models::LocalArtifact,
+    cluster: Option<&lr_advisor::devices::ClusterArgs>,
+) -> Option<ModelProfile> {
+    let budget = lr_advisor::MemoryBudget::from_profile(&state.profile)
+        .with_extra_vram(state.cluster.remote_vram_now());
+    let meta = lr_advisor::ModelMeta::estimate_from_params(
+        artefato.total_bytes.saturating_mul(2),
+        tune::AGENT_MIN_CTX,
+    );
+    let cabecalho = lr_models::read_local_meta(&artefato.primary_path);
+    let candidatos = tune::candidates(&budget, &meta, artefato.total_bytes, cabecalho.n_layers);
+    let teto = budget
+        .vram_bytes
+        .saturating_sub(lr_advisor::tune::MARGEM_VRAM_BYTES);
+
+    let mut medidos: Vec<Measured> = Vec::new();
+    for c in candidatos {
+        match probe(dir, &artefato.primary_path, &c.profile, cluster).await {
+            Ok(report) => {
+                let fits_gpu = budget.vram_bytes > 0 && report.gpu_bytes() <= teto;
+                medidos.push(Measured {
+                    profile: c.profile,
+                    intent: c.intent,
+                    report,
+                    fits_gpu,
+                });
+            }
+            Err(e) => log::warn!("sonda automática falhou para {}: {e}", artefato.name),
+        }
+    }
+    tune::pick(&medidos).map(|m| m.profile.clone())
+}
+
+/// Ajusta sozinho o que ainda não foi ajustado nesta máquina.
+///
+/// Roda em segundo plano: a garantia barata do boot (janela agêntica, sem
+/// `ngl`) continua valendo desde o primeiro segundo, e esta passada a
+/// substitui por uma configuração medida assim que os números chegam. O INI do
+/// Router é lido no boot, então o que muda aqui vale no próximo start — a
+/// interface é avisada pelo evento `tune-auto`.
+pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
+    if AUTO_RODANDO.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let chave = auto_key(state);
+    let cluster = cluster_args(state);
+    let dir = {
+        let variant = lr_runtime::select_variant(&state.profile);
+        state.runtime_mgr.state(variant).dir
+    };
+    let Some(dir) = dir else {
+        AUTO_RODANDO.store(false, Ordering::SeqCst);
+        return;
+    };
+
+    let mut mudou = 0usize;
+    for a in lr_models::scan_local(&state.models_dir) {
+        // Escolha da pessoa é lei: o automático só preenche o que ele mesmo
+        // deixou, ou o que ainda não tem nada.
+        if let Some(p) = crate::commands::profile_for(state, &a.name)
+            && p.source == ProfileSource::Manual
+        {
+            continue;
+        }
+        let setting = auto_setting(&a.name);
+        if state
+            .store
+            .get_setting(&setting)
+            .ok()
+            .flatten()
+            .is_some_and(|v| v == chave)
+        {
+            continue;
+        }
+        if let Some(perfil) = auto_profile_for(state, &dir, &a, cluster.as_ref()).await {
+            let anterior = crate::commands::profile_for(state, &a.name);
+            if anterior.as_ref() != Some(&perfil) {
+                mudou += 1;
+            }
+            if let Err(e) = state.store.set_model_profile(a.name.trim(), &perfil) {
+                log::warn!("não gravei o perfil automático de {}: {e}", a.name);
+                continue;
+            }
+            log::info!(
+                "perfil automático de {}: janela {:?}, kv {:?}, ngl {:?}",
+                a.name,
+                perfil.ctx,
+                perfil.kv_k,
+                perfil.ngl
+            );
+        }
+        let _ = state.store.set_setting(&setting, &chave);
+    }
+
+    AUTO_RODANDO.store(false, Ordering::SeqCst);
+    if mudou > 0 {
+        let _ = app.emit("tune-auto", mudou);
+    }
+}
+
+/// Dispara a varredura sem segurar quem chamou.
+pub(crate) fn spawn_auto_tune(app: &AppHandle, _state: &AppState) {
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app2.state::<AppState>();
+        auto_tune_pending(app2.clone(), &state).await;
+    });
 }

@@ -187,11 +187,25 @@ export default function ClusterPanel() {
               : ""}
           </p>
           {snap.role === "host" && (
-            <p className="mt-2 text-[11px] leading-relaxed text-dim">
-              {t("server.cluster.firstLoad")}
-            </p>
+            <>
+              <p className="mt-2 text-[11px] leading-relaxed text-dim">
+                {t("server.cluster.measured")}
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-dim">
+                {t("server.cluster.firstLoad")}
+              </p>
+            </>
           )}
         </div>
+      )}
+
+      {snap.deviceId === "MTL0" && (
+        <p className="mt-3 text-[11px] leading-relaxed text-dim">
+          {t("server.cluster.metalCap")}
+          <code className="ml-1 rounded bg-panel px-1 py-0.5 font-mono text-[10px]">
+            sudo sysctl iogpu.wired_limit_mb=12288
+          </code>
+        </p>
       )}
 
       <p className="mt-4 text-[11px] text-dim">

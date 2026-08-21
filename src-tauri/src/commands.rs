@@ -657,6 +657,10 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
     }
 
     let _ = app.emit("server-status", &view);
+    // Com o motor de pé, a varredura automática pode perguntar quanto cada
+    // configuração custa. Vai em segundo plano: a garantia barata do boot já
+    // valeu, e o INI só é relido no próximo start de qualquer jeito.
+    crate::commands_tuning::spawn_auto_tune(app, state);
     Ok(view)
 }
 

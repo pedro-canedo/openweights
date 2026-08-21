@@ -143,6 +143,22 @@ export default function TunePanel({
     };
   }, [model]);
 
+  // A varredura automática pode ter trocado o perfil por baixo do painel —
+  // parear com outra máquina muda o que cabe tanto quanto trocar de placa.
+  useEffect(() => {
+    const parar = listen<number>("tune-auto", () => {
+      tuneAdvise(model)
+        .then((a) => {
+          setAdvice(a);
+          setEscolhido(a.recommended);
+        })
+        .catch(() => {});
+    });
+    return () => {
+      void parar.then((f) => f());
+    };
+  }, [model]);
+
   // O progresso vem por evento: uma medição leva minutos, e um spinner mudo
   // durante minutos é indistinguível de travamento.
   useEffect(() => {
