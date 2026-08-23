@@ -119,6 +119,23 @@ pub struct ModelProfile {
     pub ubatch: Option<u32>,
     pub threads: Option<u32>,
     pub spec: Option<SpecType>,
+    /// Quantos tokens a especulação rascunha por passada
+    /// (`spec-draft-n-max`; 3 é o padrão do llama.cpp, 2–4 é o equilíbrio —
+    /// acima disso a taxa de rejeição e a VRAM cobram o ganho).
+    #[serde(default)]
+    pub spec_draft_n_max: Option<u32>,
+    /// Mínimo de tokens rascunhados (`spec-draft-n-min`).
+    #[serde(default)]
+    pub spec_draft_n_min: Option<u32>,
+    /// Probabilidade mínima para aceitar um rascunho (`spec-draft-p-min`) —
+    /// 0.75 corta os ciclos desperdiçados em contexto longo.
+    #[serde(default)]
+    pub spec_draft_p_min: Option<f32>,
+    /// Modelo de rascunho externo (`spec-draft-model`, caminho GGUF). Com um
+    /// caminho aqui e nenhum outro tipo escolhido, a especulação vira
+    /// `draft-simple` — o tipo clássico de segundo modelo.
+    #[serde(default)]
+    pub spec_draft_model: Option<String>,
     /// Projetor de visão a carregar junto (caminho absoluto).
     pub mmproj: Option<String>,
     /// Quando carregar o projetor. Ausente = o padrão (sob demanda).
@@ -131,6 +148,13 @@ pub struct ModelProfile {
     pub mlock: Option<bool>,
     /// Slots paralelos no llama-server (`parallel`).
     pub parallel: Option<u32>,
+    /// Qualquer outra flag do catálogo (`lr_types::flags`) que não tem campo
+    /// tipado: pares `chave = valor` que seguem para a seção do modelo no
+    /// INI. A validação acontece antes de chegar aqui; na emissão, campo
+    /// tipado vence extra de mesma chave e a denylist é filtrada de novo por
+    /// segurança.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extras: Vec<(String, String)>,
     pub source: ProfileSource,
 }
 
@@ -212,10 +236,35 @@ impl ModelProfile {
         if let Some(true) = self.mlock {
             push("mlock", "1".to_string());
         }
-        if let Some(s) = self.spec
-            && s != SpecType::None
-        {
-            push("spec-type", s.as_str().to_string());
+        // A especulação liga por escolha explícita OU pela presença de um
+        // modelo de rascunho (que sozinho significa o tipo clássico
+        // `draft-simple`). `spec: Some(None)` é "sem especulação" dito com
+        // todas as letras — aí nem o rascunho liga nada.
+        let spec_ativa = match self.spec {
+            Some(SpecType::None) => false,
+            Some(s) => {
+                push("spec-type", s.as_str().to_string());
+                true
+            }
+            None if self.spec_draft_model.is_some() => {
+                push("spec-type", "draft-simple".to_string());
+                true
+            }
+            None => false,
+        };
+        if spec_ativa {
+            if let Some(p) = &self.spec_draft_model {
+                push("spec-draft-model", p.replace('\\', "/"));
+            }
+            if let Some(n) = self.spec_draft_n_max {
+                push("spec-draft-n-max", n.to_string());
+            }
+            if let Some(n) = self.spec_draft_n_min {
+                push("spec-draft-n-min", n.to_string());
+            }
+            if let Some(p) = self.spec_draft_p_min {
+                push("spec-draft-p-min", p.to_string());
+            }
         }
         // Só a entrada que carrega o projetor recebe a chave. Sob demanda,
         // quem a recebe é a entrada companheira, montada por quem escreve o
@@ -226,13 +275,46 @@ impl ModelProfile {
             push("mmproj", p.replace('\\', "/"));
         }
 
+        // Extras entram depois dos campos tipados e antes do `fit`, com duas
+        // guardas de profundidade: campo tipado vence extra de mesma chave, e
+        // chave gerenciada pelo app não passa nem se a validação da borda
+        // falhou.
+        for (k, v) in &self.extras {
+            let chave = crate::flags::normalize_key(k);
+            if out.iter().any(|(existente, _)| *existente == chave) {
+                continue;
+            }
+            if crate::flags::managed_keys().contains(&chave.as_str()) {
+                continue;
+            }
+            out.push((chave, v.clone()));
+        }
+
         // O `--fit` reparte a memória sozinho. Ele só sai de cena quando já
         // dissemos quanto de janela e quantas camadas queremos; caso
-        // contrário, fixar só um dos dois deixaria o outro no escuro.
-        if self.ctx.is_some() && self.ngl.is_some() {
-            push("fit", "off".to_string());
+        // contrário, fixar só um dos dois deixaria o outro no escuro. Um
+        // extra explícito de `fit` (ligar de volta, por exemplo) tem a
+        // palavra final.
+        if self.ctx.is_some() && self.ngl.is_some() && !out.iter().any(|(k, _)| k == "fit") {
+            out.push(("fit".to_string(), "off".to_string()));
         }
         out
+    }
+
+    /// As chaves de INI que os campos tipados deste perfil emitem — o que a
+    /// validação de extras precisa saber para acusar duplicata e enxergar
+    /// dependências satisfeitas (ex.: `spec-type` vindo do campo `spec`).
+    pub fn typed_ini_keys(&self) -> Vec<String> {
+        let extras: Vec<String> = self
+            .extras
+            .iter()
+            .map(|(k, _)| crate::flags::normalize_key(k))
+            .collect();
+        self.to_ini_extras()
+            .into_iter()
+            .map(|(k, _)| k)
+            .filter(|k| !extras.contains(k))
+            .collect()
     }
 }
 
@@ -267,6 +349,7 @@ mod tests {
             mlock: Some(true),
             parallel: Some(4),
             source: ProfileSource::Recommended,
+            ..Default::default()
         };
         let m: std::collections::HashMap<_, _> = p.to_ini_extras().into_iter().collect();
         assert_eq!(m["ctx-size"], "16384");
@@ -344,6 +427,135 @@ mod tests {
             ..Default::default()
         };
         assert!(p.to_ini_extras().is_empty());
+    }
+
+    /// As sub-flags da especulação só saem quando há especulação — soltas,
+    /// seriam ruído que o llama.cpp ignoraria hoje e recusaria amanhã.
+    #[test]
+    fn draft_knobs_only_leave_with_speculation_on() {
+        let sozinhas = ModelProfile {
+            spec_draft_n_max: Some(4),
+            spec_draft_p_min: Some(0.75),
+            ..Default::default()
+        };
+        assert!(sozinhas.to_ini_extras().is_empty());
+
+        let com_mtp = ModelProfile {
+            spec: Some(SpecType::Mtp),
+            ..sozinhas.clone()
+        };
+        let m: std::collections::HashMap<_, _> = com_mtp.to_ini_extras().into_iter().collect();
+        assert_eq!(m["spec-type"], "draft-mtp");
+        assert_eq!(m["spec-draft-n-max"], "4");
+        assert_eq!(m["spec-draft-p-min"], "0.75");
+
+        // "Sem especulação" dito com todas as letras desliga até o rascunho.
+        let desligada = ModelProfile {
+            spec: Some(SpecType::None),
+            spec_draft_model: Some("/m/draft.gguf".into()),
+            ..sozinhas
+        };
+        assert!(desligada.to_ini_extras().is_empty());
+    }
+
+    /// Um modelo de rascunho sozinho significa o tipo clássico de segundo
+    /// modelo — ninguém deveria precisar saber que ele se chama
+    /// `draft-simple`.
+    #[test]
+    fn a_draft_model_alone_means_classic_speculation() {
+        let p = ModelProfile {
+            spec_draft_model: Some(r"C:\m\draft.gguf".into()),
+            spec_draft_n_max: Some(3),
+            ..Default::default()
+        };
+        let m: std::collections::HashMap<_, _> = p.to_ini_extras().into_iter().collect();
+        assert_eq!(m["spec-type"], "draft-simple");
+        assert_eq!(m["spec-draft-model"], "C:/m/draft.gguf");
+        assert_eq!(m["spec-draft-n-max"], "3");
+    }
+
+    /// Extras seguem para o INI — mas campo tipado vence a mesma chave e a
+    /// denylist não passa nem por aqui.
+    #[test]
+    fn extras_flow_but_never_overrule_typed_fields() {
+        let p = ModelProfile {
+            ctx: Some(8192),
+            extras: vec![
+                ("cache-reuse".into(), "256".into()),
+                ("--jinja".into(), "true".into()),
+                ("ctx-size".into(), "999".into()),
+                ("port".into(), "6666".into()),
+            ],
+            ..Default::default()
+        };
+        let pares = p.to_ini_extras();
+        let m: std::collections::HashMap<_, _> = pares.clone().into_iter().collect();
+        assert_eq!(m["ctx-size"], "8192", "o campo tipado vence o extra");
+        assert_eq!(m["cache-reuse"], "256");
+        assert_eq!(m["jinja"], "true", "traços do prefixo caem na emissão");
+        assert!(!m.contains_key("port"), "chave gerenciada não passa");
+        // E a chave de desempenho enxerga os extras: mudou extra, mudou key.
+        let sem_extras = ModelProfile {
+            ctx: Some(8192),
+            ..Default::default()
+        };
+        assert_ne!(p.key(), sem_extras.key());
+    }
+
+    /// `fit = off` é derivado — mas um extra explícito tem a palavra final.
+    #[test]
+    fn an_explicit_fit_extra_wins_over_the_derived_one() {
+        let p = ModelProfile {
+            ctx: Some(8192),
+            ngl: Some(36),
+            extras: vec![("fit".into(), "on".into())],
+            ..Default::default()
+        };
+        let m: std::collections::HashMap<_, _> = p.to_ini_extras().into_iter().collect();
+        assert_eq!(m["fit"], "on");
+    }
+
+    /// Perfis gravados antes dos campos novos continuam legíveis.
+    #[test]
+    fn an_old_profile_json_still_deserializes() {
+        let antigo = r#"{"ctx":32768,"ngl":null,"ncmoe":null,"kvK":"q8_0","kvV":"q8_0",
+            "flashAttn":true,"batch":null,"ubatch":null,"threads":null,"spec":"mtp",
+            "mmproj":null,"vision":null,"kvOffload":null,"mmap":null,"mlock":null,
+            "parallel":null,"source":"tested"}"#;
+        let p: ModelProfile = serde_json::from_str(antigo).unwrap();
+        assert_eq!(p.ctx, Some(32768));
+        assert_eq!(p.spec, Some(SpecType::Mtp));
+        assert!(p.extras.is_empty());
+        assert!(p.spec_draft_n_max.is_none());
+        // E sem escolhas novas, o INI é o mesmo de antes — byte a byte.
+        assert_eq!(
+            p.to_ini_extras(),
+            vec![
+                ("ctx-size".to_string(), "32768".to_string()),
+                ("cache-type-k".to_string(), "q8_0".to_string()),
+                ("cache-type-v".to_string(), "q8_0".to_string()),
+                ("flash-attn".to_string(), "on".to_string()),
+                ("spec-type".to_string(), "draft-mtp".to_string()),
+            ]
+        );
+    }
+
+    /// A validação de extras precisa saber o que o perfil tipado já emite.
+    #[test]
+    fn typed_keys_tell_the_validator_what_is_taken() {
+        let p = ModelProfile {
+            ctx: Some(8192),
+            spec: Some(SpecType::Mtp),
+            extras: vec![("cache-reuse".into(), "256".into())],
+            ..Default::default()
+        };
+        let typed = p.typed_ini_keys();
+        assert!(typed.contains(&"ctx-size".to_string()));
+        assert!(typed.contains(&"spec-type".to_string()));
+        assert!(
+            !typed.contains(&"cache-reuse".to_string()),
+            "extra não é campo tipado"
+        );
     }
 
     #[test]

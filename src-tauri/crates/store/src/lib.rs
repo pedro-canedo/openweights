@@ -12,6 +12,7 @@ use std::sync::Mutex;
 pub mod activity;
 pub mod agent;
 pub mod automation;
+pub mod engine_presets;
 pub mod mcp;
 pub mod memory;
 pub mod perf;
@@ -216,6 +217,7 @@ impl Store {
         // Depois das outras: a migração da janela por modelo lê `settings`.
         tuning::init(&conn)?;
         perf::init(&conn)?;
+        engine_presets::init(&conn)?;
         // Respostas gravadas antes de a coluna passar a ser preenchida:
         // reata cada uma à execução que estava rodando quando ela nasceu.
         backfill_message_runs(&conn)?;

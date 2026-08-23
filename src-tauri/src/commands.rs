@@ -343,6 +343,11 @@ struct ServerPrefs {
     api_key: Option<String>,
     models_max: u32,
     parallel: u32,
+    /// Flags globais escolhidas na tela de configuração avançada. O destino
+    /// de cada uma (argumento de CLI ou seção `[*]` do INI) foi decidido e
+    /// gravado no salvamento; aqui só se reproduz — com a denylist filtrada
+    /// de novo, porque setting é um lugar editável por fora do app.
+    extra_flags: Vec<lr_types::flags::GlobalFlag>,
 }
 
 fn server_prefs(state: &AppState) -> ServerPrefs {
@@ -367,7 +372,47 @@ fn server_prefs(state: &AppState) -> ServerPrefs {
             .and_then(|v| v.parse().ok())
             .filter(|n| *n >= 1)
             .unwrap_or(1),
+        extra_flags: get("server_extra_flags")
+            .and_then(|v| serde_json::from_str::<Vec<lr_types::flags::GlobalFlag>>(&v).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|f| {
+                let chave = lr_types::flags::normalize_key(&f.key);
+                !lr_types::flags::managed_keys().contains(&chave.as_str())
+            })
+            .collect(),
     }
+}
+
+/// Reparte as flags globais entre a linha de comando e a seção `[*]` do INI.
+///
+/// Booleans na CLI não levam valor: `true` vira só `--chave`, `false` não
+/// vira nada (guardar um "desligado" que é o próprio padrão seria ruído).
+fn split_global_flags(
+    flags: &[lr_types::flags::GlobalFlag],
+) -> (Vec<String>, Vec<(String, String)>) {
+    use lr_types::flags::FlagPlacement;
+    let mut args = Vec::new();
+    let mut star = Vec::new();
+    for f in flags {
+        let chave = lr_types::flags::normalize_key(&f.key);
+        match f.place {
+            FlagPlacement::Ini => star.push((chave, f.value.clone())),
+            FlagPlacement::Args if f.switch => {
+                if matches!(
+                    f.value.to_ascii_lowercase().as_str(),
+                    "true" | "1" | "on" | ""
+                ) {
+                    args.push(format!("--{chave}"));
+                }
+            }
+            FlagPlacement::Args => {
+                args.push(format!("--{chave}"));
+                args.push(f.value.clone());
+            }
+        }
+    }
+    (args, star)
 }
 
 const CTX_MIN: u32 = 512;
@@ -406,11 +451,13 @@ pub(crate) fn profile_for(state: &AppState, name: &str) -> Option<lr_types::tuni
 /// que ele já faz ao trocar de modelo.
 pub(crate) const VISION_SUFFIX: &str = " (visão)";
 
-/// Reescreve `router-models.ini` com o perfil gravado de cada modelo.
-fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
+/// As entradas do `router-models.ini`: uma por GGUF local, com o perfil
+/// gravado traduzido em chaves, mais a companheira "(visão)" quando o modo é
+/// sob demanda. É a MESMA função para gravar e para o preview — divergência
+/// entre o que a tela mostra e o que o motor lê seria um bug de mentira.
+pub(crate) fn router_preset_entries(state: &AppState) -> Vec<lr_engine::PresetEntry> {
     use lr_types::tuning::VisionMode;
 
-    let preset_path = state.data_dir.join("router-models.ini");
     let mut preset_models: Vec<lr_engine::PresetEntry> = Vec::new();
 
     for a in lr_models::scan_local(&state.models_dir) {
@@ -464,8 +511,21 @@ fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
             preset_models.push(visao);
         }
     }
+    preset_models
+}
 
-    lr_engine::write_models_preset(&preset_path, &preset_models).map_err(err_str)?;
+/// A seção `[*]` do INI: as flags globais herdáveis. Qualquer chave igual na
+/// seção do modelo vence — que é o contrato de "padrão do usuário".
+pub(crate) fn router_star_section(state: &AppState) -> Vec<(String, String)> {
+    split_global_flags(&server_prefs(state).extra_flags).1
+}
+
+/// Reescreve `router-models.ini` com o perfil gravado de cada modelo.
+fn write_router_preset(state: &AppState) -> Result<std::path::PathBuf, String> {
+    let preset_path = state.data_dir.join("router-models.ini");
+    let preset_models = router_preset_entries(state);
+    let star = router_star_section(state);
+    lr_engine::write_models_preset(&preset_path, &star, &preset_models).map_err(err_str)?;
     Ok(preset_path)
 }
 
@@ -500,10 +560,16 @@ fn params_from_bytes(total_bytes: u64) -> u64 {
 
 #[tauri::command]
 pub async fn server_status(state: State<'_, AppState>) -> CmdResult<ServerStatusView> {
-    let prefs = server_prefs(&state);
+    Ok(current_status_view(&state).await)
+}
+
+/// A visão de status que o `server_status` devolve, alcançável de dentro do
+/// processo (a tela de carga de modelo também precisa dela).
+pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
+    let prefs = server_prefs(state);
     let (port, lan) = (prefs.port, prefs.lan);
     let guard = state.server.lock().await;
-    Ok(match guard.as_ref() {
+    match guard.as_ref() {
         // connect_url, não base_url: em modo LAN o bind é 0.0.0.0, que não é
         // conectável pela própria UI (e é bloqueado pelo CSP).
         Some(srv) if srv.is_spawned() => ServerStatusView {
@@ -518,7 +584,35 @@ pub async fn server_status(state: State<'_, AppState>) -> CmdResult<ServerStatus
             port,
             lan,
         },
-    })
+    }
+}
+
+/// A configuração que o próximo boot usaria — para o preview da tela.
+///
+/// Duas diferenças deliberadas para o boot de verdade: o executável pode não
+/// existir ainda (o preview não spawna nada), e a chave de API sai mascarada
+/// — o bloco copiável da tela não pode virar vazamento de segredo.
+pub(crate) async fn preview_server_config(state: &AppState) -> lr_engine::ServerConfig {
+    let prefs = server_prefs(state);
+    let variant = lr_runtime::select_variant(&state.profile);
+    let exe = state
+        .runtime_mgr
+        .state(variant)
+        .server_exe
+        .unwrap_or_else(|| std::path::PathBuf::from("llama-server"));
+    let mut cfg = lr_engine::ServerConfig::new(exe, state.models_dir.clone(), prefs.port);
+    if prefs.lan {
+        cfg.host = "0.0.0.0".to_string();
+    }
+    cfg.api_key = prefs.api_key.map(|_| "•••".to_string());
+    cfg.models_max = prefs.models_max;
+    cfg.parallel = prefs.parallel;
+    cfg.models_preset = Some(state.data_dir.join("router-models.ini"));
+    let (flags_de_processo, star) = split_global_flags(&prefs.extra_flags);
+    cfg.global_ini_extras = star;
+    cfg.extra_args = flags_de_processo;
+    cfg.extra_args.extend(state.cluster.host_extra_args().await);
+    cfg
 }
 
 #[tauri::command]
@@ -545,6 +639,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         api_key,
         models_max,
         parallel,
+        extra_flags,
     } = server_prefs(state);
 
     // Spawn + instalação no slot acontecem sob o lock; a espera do /health
@@ -578,7 +673,13 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         // momento em que a garantia pode entrar.
         crate::commands_tuning::ensure_agent_profiles(state);
         cfg.models_preset = Some(write_router_preset(state)?);
-        cfg.extra_args = extra;
+        // Flags de processo do usuário primeiro; as do cluster por último —
+        // no llama.cpp a última ocorrência vence, e a ordem `--rpc` antes de
+        // `-dev` é contrato do próprio arg.cpp.
+        let (flags_de_processo, star) = split_global_flags(&extra_flags);
+        cfg.global_ini_extras = star;
+        cfg.extra_args = flags_de_processo;
+        cfg.extra_args.extend(extra);
 
         let mut srv = lr_engine::LlamaServer::new(cfg);
         srv.spawn().map_err(err_str)?;
@@ -814,7 +915,7 @@ pub async fn server_props(
 /// Grava o perfil de carga e reescreve o INI. Campo a campo, ausente = o
 /// llama.cpp decide. A etiqueta vira `manual`: editar na mão deixa de ser
 /// "recomendado" mesmo que o resto tenha vindo do ajuste automático.
-fn save_profile(
+pub(crate) fn save_profile(
     state: &AppState,
     model: &str,
     mut perfil: lr_types::tuning::ModelProfile,
@@ -824,6 +925,15 @@ fn save_profile(
     }
     if let Some(n) = perfil.parallel {
         perfil.parallel = Some(n.clamp(1, 64));
+    }
+    if let Some(n) = perfil.spec_draft_n_max {
+        perfil.spec_draft_n_max = Some(n.clamp(1, 16));
+    }
+    if let Some(n) = perfil.spec_draft_n_min {
+        perfil.spec_draft_n_min = Some(n.min(16));
+    }
+    if let Some(p) = perfil.spec_draft_p_min {
+        perfil.spec_draft_p_min = Some(p.clamp(0.0, 1.0));
     }
     perfil.source = lr_types::tuning::ProfileSource::Manual;
     state

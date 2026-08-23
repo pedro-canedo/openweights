@@ -6,6 +6,8 @@ mod commands_activity;
 mod commands_agent;
 mod commands_automation;
 mod commands_cluster;
+mod commands_flags;
+mod commands_harness;
 mod commands_mcp;
 mod commands_memory;
 mod commands_providers;
@@ -117,6 +119,21 @@ fn main() {
             commands::model_set_ctx,
             commands::model_get_profile,
             commands::model_set_profile,
+            // Configuração avançada do llama.cpp (catálogo de flags).
+            commands_flags::flags_catalog,
+            commands_flags::flags_validate,
+            commands_flags::engine_preview,
+            commands_flags::router_models,
+            commands_flags::router_load_model,
+            commands_flags::router_unload_model,
+            commands_flags::model_capabilities,
+            commands_flags::engine_presets_list,
+            commands_flags::engine_preset_save,
+            commands_flags::engine_preset_delete,
+            commands_flags::engine_preset_apply,
+            // Abrir o modelo carregado num harness externo.
+            commands_harness::harness_list,
+            commands_harness::harness_launch,
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,

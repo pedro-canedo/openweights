@@ -240,7 +240,8 @@
         "auto": "Automático",
         "on": "Ligado",
         "off": "Desligado"
-      }
+      },
+      "configureLink": "Configurar motor no Servidor Local"
     },
     "preset": "Preset",
     "presetSave": "Salvar como preset",
@@ -413,6 +414,74 @@
       "preparing": "preparando o motor RPC…",
       "measured": "O split foi medido pelo próprio motor: ele lista os dispositivos reais dos dois lados e quanto cada um tem livre, em vez de estimar por porcentagem.",
       "metalCap": "O macOS limita o Metal a cerca de 75% da memória unificada, e é por isso que esta máquina oferece menos que o total. Levantar exige terminal e a sua senha:"
+    },
+    "engineConfig": {
+      "title": "Configurar llama.cpp",
+      "subtitle": "Configuração por modelo: recomendada para o seu hardware, refinável flag a flag, aplicada no próximo carregamento.",
+      "noModels": "Nenhum modelo na biblioteca ainda — baixe um em Descobrir.",
+      "state": {
+        "loaded": "carregado",
+        "loading": "carregando…",
+        "unloaded": "descarregado",
+        "unknown": "—"
+      },
+      "load": "Carregar",
+      "loadRestart": "Aplicar e carregar",
+      "loading": "Carregando…",
+      "unload": "Descarregar",
+      "visionBadge": "visão",
+      "trainCtx": "treinado até {{n}}",
+      "mtpMissing": "O cabeçalho deste arquivo não declara cabeça MTP — se o modelo não tiver, o servidor avisa nos logs.",
+      "specNMax": "Tokens por rascunho",
+      "specNMaxHint": "3 é o padrão; 2–4 é o equilíbrio. Acima disso pode instabilizar e gastar VRAM.",
+      "specPMin": "Confiança mínima",
+      "specPMinHint": "0.75 evita ciclos desperdiçados em contexto longo.",
+      "specNMin": "Mínimo por rascunho",
+      "draftModel": "Modelo de rascunho externo (GGUF)",
+      "draftModelHint": "Um modelo pequeno que rascunha para o grande — sozinho, liga a especulação clássica.",
+      "allFlags": "Todas as flags",
+      "flagCount": "{{n}} flags · llama.cpp {{tag}}",
+      "degraded": "Não consegui ler o --help do binário — mostrando só as flags curadas. Instale/atualize o runtime para ver todas.",
+      "active": "Ativas:",
+      "remove": "Remover",
+      "searchPlaceholder": "Buscar flag (ex.: mtp, rope, cache-reuse, jinja…)",
+      "noMatches": "Nenhuma flag com esse nome nesta build.",
+      "default": "padrão: {{v}}",
+      "managed": "Gerenciada pelo app — configure no cartão do servidor ou do cluster.",
+      "typedNote": "Coberta pelos controles acima — use-os para mudar este valor.",
+      "globalNote": "Flag do processo — configure no cartão \"Flags globais\" abaixo.",
+      "preview": "Prévia do comando e do INI",
+      "needsRestart": "Mudanças gravadas — valem no próximo reinício do servidor.",
+      "recommend": "Recomendar para esta máquina",
+      "recommending": "Medindo…"
+    },
+    "enginePresets": {
+      "title": "Presets",
+      "applyHint": "Aplicar este preset sobre a configuração atual",
+      "delete": "Excluir preset",
+      "namePlaceholder": "Salvar como…",
+      "saveAs": "Salvar preset",
+      "builtin": {
+        "default": "Padrão (automático)",
+        "mtpTurbo": "MTP turbo",
+        "vramSaver": "Economia de VRAM",
+        "longContext": "Contexto longo"
+      }
+    },
+    "globalFlags": {
+      "title": "Flags globais do servidor",
+      "hint": "Valem para todos os modelos. Flags de processo viram argumentos do llama-server; as demais entram na seção [*] do INI — e a configuração própria de um modelo vence a global."
+    },
+    "harness": {
+      "title": "Abrir em um harness",
+      "subtitle": "Entregue o modelo carregado a um agente de código externo, apontado para a API local.",
+      "needLoaded": "Carregue um modelo para habilitar o botão Abrir.",
+      "installed": "instalado",
+      "viaNpx": "via npx",
+      "notInstalled": "não instalado",
+      "docs": "docs",
+      "open": "Abrir",
+      "installHint": "Para instalar de vez: {{cmd}}"
     }
   },
   "settings": {
@@ -970,7 +1039,8 @@
         "code": "código",
         "prose": "prosa"
       }
-    }
+    },
+    "fullConfig": "Configuração completa"
   },
   "update": {
     "available": "Atualizar para {{version}}",
@@ -1045,6 +1115,320 @@
       "lanWarning": "Com isto ligado, qualquer aparelho da sua rede alcança seus modelos sem senha. Ligue só em rede de confiança.",
       "routesTitle": "Endereços ativos",
       "noRoutes": "Nenhum provedor no ar. Inicie o servidor local ou o 9router."
+    }
+  },
+  "flags": {
+    "control": {
+      "auto": "auto",
+      "on": "ligado",
+      "off": "desligado",
+      "pathPlaceholder": "C:/caminho/arquivo"
+    },
+    "requirements": {
+      "gpu": "precisa de GPU",
+      "multiGpu": "várias GPUs",
+      "moeModel": "modelo MoE",
+      "mtpModel": "cabeça MTP",
+      "mmprojPresent": "projetor de visão",
+      "specEnabled": "com especulação",
+      "ropeYarn": "rope-scaling = yarn",
+      "flashAttnOn": "flash attention ligada"
+    },
+    "issues": {
+      "unknown": "flag desconhecida nesta build ({{detail}})",
+      "managed": "gerenciada pelo app — use o controle próprio",
+      "wrongScope": "não vale neste escopo",
+      "badValue": "valor inválido: {{detail}}",
+      "duplicateOfTyped": "já coberta pelo controle \"{{detail}}\" acima",
+      "conflict": "conflita com {{detail}}",
+      "missingDependency": "precisa de {{detail}} configurada",
+      "duplicate": "repetida na lista"
+    },
+    "catalog": {
+      "n-gpu-layers": {
+        "label": "Camadas na GPU",
+        "hint": "Quantas camadas do modelo ficam na placa de vídeo. Vazio = o llama.cpp reparte sozinho (--fit)."
+      },
+      "n-cpu-moe": {
+        "label": "Especialistas na CPU",
+        "hint": "Em modelos MoE, mantém os pesos de especialistas das primeiras N camadas na RAM — faz um modelo grande caber numa placa pequena."
+      },
+      "split-mode": {
+        "label": "Divisão entre GPUs",
+        "hint": "Como repartir o modelo entre várias placas: por camada (layer) é o padrão."
+      },
+      "main-gpu": {
+        "label": "GPU principal",
+        "hint": "Índice da placa que concentra resultados intermediários e KV."
+      },
+      "no-kv-offload": {
+        "label": "KV fora da GPU",
+        "hint": "Mantém o cache de contexto na RAM em vez da VRAM. Libera memória de vídeo ao custo de velocidade."
+      },
+      "no-mmap": {
+        "label": "Sem mapeamento de arquivo",
+        "hint": "Carrega o modelo copiando em vez de mapear. Início mais lento; pode reduzir paginação."
+      },
+      "mlock": {
+        "label": "Travar na RAM",
+        "hint": "Impede o sistema de mandar o modelo para o swap. Exige RAM suficiente para o arquivo inteiro."
+      },
+      "fit": {
+        "label": "Ajuste automático de memória",
+        "hint": "O llama.cpp ajusta janela e camadas ao que cabe na placa. Desligar sem fixar ctx e ngl tira a rede de segurança."
+      },
+      "load-mode": {
+        "label": "Modo de carga",
+        "hint": "Como o arquivo entra na memória: auto, mmap, mlock, mmap+mlock ou DirectIO. Substitui os antigos --no-mmap/--mlock."
+      },
+      "ctx-size": {
+        "label": "Janela de contexto",
+        "hint": "Tokens que o modelo enxerga por conversa. Maior = mais memória para o cache KV."
+      },
+      "batch-size": {
+        "label": "Lote lógico",
+        "hint": "Máximo de tokens processados por passada lógica."
+      },
+      "ubatch-size": {
+        "label": "Lote físico",
+        "hint": "Máximo de tokens por passada física na GPU. Menor economiza VRAM de compute."
+      },
+      "keep": {
+        "label": "Tokens preservados",
+        "hint": "Quantos tokens do início do prompt sobrevivem quando o contexto enche (-1 = todos)."
+      },
+      "context-shift": {
+        "label": "Deslocamento de contexto",
+        "hint": "Em geração infinita, descarta o começo em vez de parar quando o contexto enche."
+      },
+      "cache-reuse": {
+        "label": "Reaproveitar cache",
+        "hint": "Tamanho mínimo de trecho reaproveitado do cache via deslocamento de KV. 256 ajuda em prompts que repetem prefixos."
+      },
+      "cache-type-k": {
+        "label": "Tipo do cache K",
+        "hint": "Quantização do cache de chaves: q8_0 corta quase metade da memória com perda mínima."
+      },
+      "cache-type-v": {
+        "label": "Tipo do cache V",
+        "hint": "Quantização do cache de valores — exige flash attention ligada."
+      },
+      "flash-attn": {
+        "label": "Flash attention",
+        "hint": "Atenção otimizada: menos VRAM e mais velocidade nas placas que suportam."
+      },
+      "rope-scaling": {
+        "label": "Escala RoPE",
+        "hint": "Método de extensão de contexto além do treino: linear ou YaRN."
+      },
+      "rope-freq-base": {
+        "label": "Base de frequência RoPE",
+        "hint": "Frequência base usada pela escala NTK. Padrão vem do modelo."
+      },
+      "rope-freq-scale": {
+        "label": "Fator de frequência RoPE",
+        "hint": "Expande o contexto por um fator de 1/N."
+      },
+      "yarn-orig-ctx": {
+        "label": "YaRN: contexto original",
+        "hint": "Janela de treino original do modelo (0 = a do próprio modelo)."
+      },
+      "yarn-ext-factor": {
+        "label": "YaRN: extrapolação",
+        "hint": "Mistura de extrapolação (-1 = padrão do modelo)."
+      },
+      "yarn-attn-factor": {
+        "label": "YaRN: fator de atenção",
+        "hint": "Escala do sqrt(t) na atenção."
+      },
+      "yarn-beta-fast": {
+        "label": "YaRN: beta rápido",
+        "hint": "Correção de dimensão baixa."
+      },
+      "yarn-beta-slow": {
+        "label": "YaRN: beta lento",
+        "hint": "Correção de dimensão alta."
+      },
+      "spec-type": {
+        "label": "Tipo de especulação",
+        "hint": "Como prever tokens à frente: draft-mtp usa a cabeça MTP do próprio arquivo; ngram-mod repete padrões do texto; draft-simple usa um segundo modelo."
+      },
+      "spec-draft-n-max": {
+        "label": "Rascunho: máximo de tokens",
+        "hint": "Tokens previstos por passada. 3 é o padrão; 2–4 é o equilíbrio — acima disso a rejeição e a VRAM comem o ganho."
+      },
+      "spec-draft-n-min": {
+        "label": "Rascunho: mínimo de tokens",
+        "hint": "Mínimo de tokens rascunhados por passada."
+      },
+      "spec-draft-p-min": {
+        "label": "Rascunho: probabilidade mínima",
+        "hint": "Só aceita rascunho acima desta confiança. 0.75 evita ciclos desperdiçados em contexto longo."
+      },
+      "spec-draft-model": {
+        "label": "Modelo de rascunho",
+        "hint": "Caminho de um GGUF pequeno que rascunha para o grande (especulação clássica)."
+      },
+      "spec-draft-p-split": {
+        "label": "Rascunho: p-split",
+        "hint": "Limiar de divisão da especulação por segundo modelo."
+      },
+      "spec-ngram-mod-n-max": {
+        "label": "N-grama: máximo",
+        "hint": "Máximo de tokens de n-grama usados na especulação."
+      },
+      "spec-ngram-mod-n-min": {
+        "label": "N-grama: mínimo",
+        "hint": "Mínimo de tokens de n-grama usados na especulação."
+      },
+      "no-mmproj-offload": {
+        "label": "Projetor na CPU",
+        "hint": "Mantém o projetor de visão fora da GPU — economiza perto de 1 GB de VRAM."
+      },
+      "image-min-tokens": {
+        "label": "Imagem: tokens mínimos",
+        "hint": "Piso de tokens por imagem em modelos de visão."
+      },
+      "image-max-tokens": {
+        "label": "Imagem: tokens máximos",
+        "hint": "Teto de tokens por imagem — menor processa mais rápido, com menos detalhe."
+      },
+      "lora": {
+        "label": "Adaptador LoRA",
+        "hint": "Caminho de um adaptador LoRA (vírgulas para vários)."
+      },
+      "lora-scaled": {
+        "label": "LoRA com escala",
+        "hint": "Adaptador com peso próprio, no formato caminho:escala."
+      },
+      "control-vector": {
+        "label": "Vetor de controle",
+        "hint": "Arquivo de vetor de controle a somar na geração."
+      },
+      "control-vector-scaled": {
+        "label": "Vetor de controle com escala",
+        "hint": "Vetor de controle com peso, no formato caminho:escala."
+      },
+      "threads": {
+        "label": "Threads de geração",
+        "hint": "Threads de CPU durante a geração. Vazio = o llama.cpp decide."
+      },
+      "threads-batch": {
+        "label": "Threads de lote",
+        "hint": "Threads durante o processamento do prompt (padrão: as mesmas da geração)."
+      },
+      "numa": {
+        "label": "Otimização NUMA",
+        "hint": "Estratégias para máquinas com vários nós de memória."
+      },
+      "prio": {
+        "label": "Prioridade do processo",
+        "hint": "-1 baixa, 0 normal, 2 alta, 3 tempo-real."
+      },
+      "parallel": {
+        "label": "Conversas simultâneas",
+        "hint": "Slots atendidos ao mesmo tempo — cada um leva uma fatia da janela de contexto."
+      },
+      "no-cont-batching": {
+        "label": "Sem batching contínuo",
+        "hint": "Desliga o processamento dinâmico de várias requisições juntas."
+      },
+      "metrics": {
+        "label": "Métricas Prometheus",
+        "hint": "Expõe /metrics para monitoramento."
+      },
+      "slots": {
+        "label": "Endpoint de slots",
+        "hint": "Expõe o monitoramento de slots do servidor."
+      },
+      "timeout": {
+        "label": "Timeout do servidor",
+        "hint": "Prazo de leitura/escrita das conexões, em segundos."
+      },
+      "ssl-cert-file": {
+        "label": "Certificado SSL",
+        "hint": "Certificado PEM para servir em HTTPS."
+      },
+      "ssl-key-file": {
+        "label": "Chave SSL",
+        "hint": "Chave privada PEM para servir em HTTPS."
+      },
+      "no-webui": {
+        "label": "Sem interface web",
+        "hint": "Desliga a UI web embutida do llama-server."
+      },
+      "load-on-startup": {
+        "label": "Carregar no boot",
+        "hint": "Este modelo sobe junto com o servidor, sem esperar a primeira requisição."
+      },
+      "stop-timeout": {
+        "label": "Prazo de parada",
+        "hint": "Segundos de tolerância antes de encerrar a instância do modelo à força."
+      },
+      "dedup-cache-models": {
+        "label": "Ocultar duplicatas do cache",
+        "hint": "Esconde da listagem modelos duplicados no cache."
+      },
+      "jinja": {
+        "label": "Templates Jinja",
+        "hint": "Usa o motor Jinja para o template de chat (necessário para ferramentas em muitos modelos)."
+      },
+      "chat-template": {
+        "label": "Template de chat",
+        "hint": "Nome de um template embutido (chatml, llama3…) para substituir o do arquivo."
+      },
+      "chat-template-file": {
+        "label": "Arquivo de template",
+        "hint": "Template Jinja customizado em arquivo."
+      },
+      "reasoning-format": {
+        "label": "Formato do raciocínio",
+        "hint": "Onde o pensamento do modelo aparece na resposta: separado (deepseek) ou no texto."
+      },
+      "reasoning": {
+        "label": "Raciocínio",
+        "hint": "Liga/desliga o modo de pensar do modelo (auto detecta pelo template)."
+      },
+      "reasoning-effort": {
+        "label": "Esforço de raciocínio",
+        "hint": "Nível pedido ao template: minimal a max."
+      },
+      "reasoning-budget": {
+        "label": "Orçamento de raciocínio",
+        "hint": "Teto de tokens para pensar: -1 livre, 0 desliga, N limita."
+      },
+      "pooling": {
+        "label": "Pooling de embeddings",
+        "hint": "Como agregar os vetores em modelos de embedding."
+      },
+      "embeddings": {
+        "label": "Modo embedding",
+        "hint": "Restringe o modelo ao caso de uso de embeddings."
+      },
+      "reranking": {
+        "label": "Reranking",
+        "hint": "Liga o endpoint de reordenação de documentos."
+      },
+      "seed": {
+        "label": "Semente",
+        "hint": "Semente do gerador aleatório (-1 = aleatória)."
+      },
+      "override-kv": {
+        "label": "Sobrescrever metadados",
+        "hint": "Avançado: muda metadados do modelo na carga (CHAVE=TIPO:VALOR). Valor errado pode corromper a carga."
+      },
+      "override-tensor": {
+        "label": "Sobrescrever tensores",
+        "hint": "Avançado: força o buffer de tensores por padrão de nome."
+      },
+      "no-op-offload": {
+        "label": "Sem offload de operações",
+        "hint": "Desliga o envio de operações do host para o dispositivo."
+      },
+      "check-tensors": {
+        "label": "Checar tensores",
+        "hint": "Valida os dados do modelo na carga (mais lento; útil para arquivo suspeito)."
+      }
     }
   }
 }

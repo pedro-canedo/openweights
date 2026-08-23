@@ -23,6 +23,14 @@ pub struct LocalGgufMeta {
     /// Janela de treino (`{arch}.context_length`): pedir além disso degrada a
     /// resposta em silêncio.
     pub context_length: Option<u32>,
+    /// Especialistas MoE (`{arch}.expert_count`) — presente e > 0 quer dizer
+    /// "Mixture of Experts", que é o que habilita `n-cpu-moe`.
+    pub n_experts: Option<u32>,
+    /// Camadas de previsão multi-token (`{arch}.nextn_predict_layers`) — a
+    /// cabeça MTP dos GGUF que suportam `--spec-type draft-mtp`. Ausente é
+    /// "não sei", não "não tem": arquiteturas novas podem usar outra chave, e
+    /// a interface nunca deve bloquear por isso.
+    pub nextn_layers: Option<u32>,
 }
 
 /// Teto de pares chave/valor lidos. Um GGUF normal tem dezenas; um arquivo
@@ -106,12 +114,18 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
     Some(LocalGgufMeta {
         n_layers: acha("block_count"),
         context_length: acha("context_length"),
+        n_experts: acha("expert_count"),
+        nextn_layers: acha("nextn_predict_layers"),
     })
 }
 
 /// Só guarda o que pode vir a interessar — o resto nem aloca.
 fn guarda(valores: &mut Vec<(String, u64)>, key: &str, v: u64) {
-    if key.ends_with(".block_count") || key.ends_with(".context_length") {
+    if key.ends_with(".block_count")
+        || key.ends_with(".context_length")
+        || key.ends_with(".expert_count")
+        || key.ends_with(".nextn_predict_layers")
+    {
         valores.push((key.to_string(), v));
     }
 }
@@ -239,6 +253,23 @@ mod tests {
         let meta = read_local_meta(f.path());
         assert_eq!(meta.n_layers, Some(65));
         assert_eq!(meta.context_length, Some(262_144));
+        assert_eq!(meta.n_experts, None, "denso: sem especialistas");
+        assert_eq!(meta.nextn_layers, None, "sem cabeça MTP declarada");
+    }
+
+    /// MoE e cabeça MTP saem do mesmo cabeçalho — são os fatos que ligam os
+    /// badges de `n-cpu-moe` e `draft-mtp` na tela de configuração.
+    #[test]
+    fn moe_and_mtp_head_are_read_when_declared() {
+        let f = escreve(&gguf(&[
+            ("general.architecture", KV::Str("qwen36moe")),
+            ("qwen36moe.block_count", KV::U32(48)),
+            ("qwen36moe.expert_count", KV::U32(128)),
+            ("qwen36moe.nextn_predict_layers", KV::U32(1)),
+        ]));
+        let meta = read_local_meta(f.path());
+        assert_eq!(meta.n_experts, Some(128));
+        assert_eq!(meta.nextn_layers, Some(1));
     }
 
     /// Lixo, arquivo vazio e magic errado devolvem "não sei" — nunca pânico.

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod bench;
 pub mod devices;
+pub mod help;
 pub mod probe;
 pub mod quant;
 pub mod tune;

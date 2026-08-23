@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { deletePreset, listPresets, savePreset } from "../../lib/api";
 import type { ChatParams, PresetRow } from "../../lib/types";
 import { DEFAULT_CHAT_PARAMS } from "../../lib/types";
-import EngineLoadSettings from "./EngineLoadSettings";
+import { navigate } from "../../lib/nav";
 
 function Slider({
   label,
@@ -50,11 +50,11 @@ export default function ParamsPanel({
   params,
   onChange,
   model,
-  generating = false,
 }: {
   params: ChatParams;
   onChange: (p: ChatParams) => void;
   model: string;
+  /** Aceito e ignorado: a configuração de carga mudou para a tela Servidor. */
   generating?: boolean;
 }) {
   const { t } = useTranslation();
@@ -195,7 +195,18 @@ export default function ParamsPanel({
         )}
       </div>
 
-      <EngineLoadSettings model={model} generating={generating} />
+      {/* A configuração de carga (janela, KV, MTP…) mudou de casa: mora na
+          tela Servidor Local, com o catálogo completo de flags, recomendação
+          por hardware e o preview do INI. Aqui fica só o atalho. */}
+      {model && (
+        <button
+          type="button"
+          onClick={() => navigate("server", { serverModel: model })}
+          className="self-start rounded-lg border border-edge px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-accent hover:text-ink"
+        >
+          {t("chat.engine.configureLink")} →
+        </button>
+      )}
 
       <div className="flex flex-col gap-1.5">
         <label className="text-xs text-dim">{t("chat.systemPrompt")}</label>

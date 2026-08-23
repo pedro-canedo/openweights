@@ -240,7 +240,8 @@
         "auto": "Automatic",
         "on": "On",
         "off": "Off"
-      }
+      },
+      "configureLink": "Configure engine in Local Server"
     },
     "preset": "Preset",
     "presetSave": "Save as preset",
@@ -413,6 +414,74 @@
       "preparing": "preparing the RPC engine…",
       "measured": "The split was measured by the engine itself: it lists the real devices on both sides and how much each has free, instead of guessing from a percentage.",
       "metalCap": "macOS caps Metal at about 75% of unified memory, which is why this machine offers less than its total. Raising it takes a terminal and your password:"
+    },
+    "engineConfig": {
+      "title": "Configure llama.cpp",
+      "subtitle": "Per-model configuration: recommended for your hardware, refinable flag by flag, applied on the next load.",
+      "noModels": "No models in the library yet — grab one in Discover.",
+      "state": {
+        "loaded": "loaded",
+        "loading": "loading…",
+        "unloaded": "unloaded",
+        "unknown": "—"
+      },
+      "load": "Load",
+      "loadRestart": "Apply & load",
+      "loading": "Loading…",
+      "unload": "Unload",
+      "visionBadge": "vision",
+      "trainCtx": "trained up to {{n}}",
+      "mtpMissing": "This file's header doesn't declare an MTP head — if the model lacks one, the server will say so in the logs.",
+      "specNMax": "Tokens per draft",
+      "specNMaxHint": "3 is the default; 2–4 is the sweet spot. Beyond that it may destabilize and burn VRAM.",
+      "specPMin": "Minimum confidence",
+      "specPMinHint": "0.75 avoids wasted cycles on long context.",
+      "specNMin": "Minimum per draft",
+      "draftModel": "External draft model (GGUF)",
+      "draftModelHint": "A small model that drafts for the big one — on its own, enables classic speculation.",
+      "allFlags": "All flags",
+      "flagCount": "{{n}} flags · llama.cpp {{tag}}",
+      "degraded": "Couldn't read the binary's --help — showing curated flags only. Install/update the runtime to see them all.",
+      "active": "Active:",
+      "remove": "Remove",
+      "searchPlaceholder": "Search flags (e.g. mtp, rope, cache-reuse, jinja…)",
+      "noMatches": "No flag by that name in this build.",
+      "default": "default: {{v}}",
+      "managed": "Managed by the app — configure it in the server or cluster card.",
+      "typedNote": "Covered by the controls above — use them to change this value.",
+      "globalNote": "Process flag — configure it in the \"Global flags\" card below.",
+      "preview": "Command & INI preview",
+      "needsRestart": "Changes saved — they take effect on the next server restart.",
+      "recommend": "Recommend for this machine",
+      "recommending": "Measuring…"
+    },
+    "enginePresets": {
+      "title": "Presets",
+      "applyHint": "Apply this preset over the current configuration",
+      "delete": "Delete preset",
+      "namePlaceholder": "Save as…",
+      "saveAs": "Save preset",
+      "builtin": {
+        "default": "Default (automatic)",
+        "mtpTurbo": "MTP turbo",
+        "vramSaver": "VRAM saver",
+        "longContext": "Long context"
+      }
+    },
+    "globalFlags": {
+      "title": "Global server flags",
+      "hint": "Apply to every model. Process flags become llama-server arguments; the rest goes into the INI's [*] section — and a model's own setting wins over the global one."
+    },
+    "harness": {
+      "title": "Open in a harness",
+      "subtitle": "Hand the loaded model to an external coding agent pointed at the local API.",
+      "needLoaded": "Load a model to enable the Open button.",
+      "installed": "installed",
+      "viaNpx": "via npx",
+      "notInstalled": "not installed",
+      "docs": "docs",
+      "open": "Open",
+      "installHint": "To install for good: {{cmd}}"
     }
   },
   "settings": {
@@ -970,7 +1039,8 @@
         "code": "code",
         "prose": "prose"
       }
-    }
+    },
+    "fullConfig": "Full configuration"
   },
   "update": {
     "available": "Update to {{version}}",
@@ -1045,6 +1115,320 @@
       "lanWarning": "With this on, any device on your network reaches your models without a password. Only enable on a trusted network.",
       "routesTitle": "Active addresses",
       "noRoutes": "No provider running. Start the local server or 9router."
+    }
+  },
+  "flags": {
+    "control": {
+      "auto": "auto",
+      "on": "on",
+      "off": "off",
+      "pathPlaceholder": "C:/path/file"
+    },
+    "requirements": {
+      "gpu": "needs a GPU",
+      "multiGpu": "multiple GPUs",
+      "moeModel": "MoE model",
+      "mtpModel": "MTP head",
+      "mmprojPresent": "vision projector",
+      "specEnabled": "with speculation",
+      "ropeYarn": "rope-scaling = yarn",
+      "flashAttnOn": "flash attention on"
+    },
+    "issues": {
+      "unknown": "unknown flag in this build ({{detail}})",
+      "managed": "managed by the app — use its own control",
+      "wrongScope": "doesn't apply in this scope",
+      "badValue": "invalid value: {{detail}}",
+      "duplicateOfTyped": "already covered by the \"{{detail}}\" control above",
+      "conflict": "conflicts with {{detail}}",
+      "missingDependency": "requires {{detail}} to be set",
+      "duplicate": "repeated in the list"
+    },
+    "catalog": {
+      "n-gpu-layers": {
+        "label": "GPU layers",
+        "hint": "How many model layers live on the GPU. Empty = llama.cpp splits on its own (--fit)."
+      },
+      "n-cpu-moe": {
+        "label": "Experts on CPU",
+        "hint": "For MoE models, keeps expert weights of the first N layers in RAM — makes a big model fit a small card."
+      },
+      "split-mode": {
+        "label": "Multi-GPU split",
+        "hint": "How to split the model across GPUs: by layer is the default."
+      },
+      "main-gpu": {
+        "label": "Main GPU",
+        "hint": "Index of the card holding intermediate results and KV."
+      },
+      "no-kv-offload": {
+        "label": "KV off the GPU",
+        "hint": "Keeps the context cache in RAM instead of VRAM. Frees video memory at a speed cost."
+      },
+      "no-mmap": {
+        "label": "No file mapping",
+        "hint": "Copies the model instead of mapping it. Slower start; may reduce pageouts."
+      },
+      "mlock": {
+        "label": "Lock in RAM",
+        "hint": "Prevents the OS from swapping the model out. Needs enough RAM for the whole file."
+      },
+      "fit": {
+        "label": "Automatic memory fit",
+        "hint": "llama.cpp adjusts window and layers to what fits. Turning it off without fixing ctx and ngl removes the safety net."
+      },
+      "load-mode": {
+        "label": "Load mode",
+        "hint": "How the file enters memory: auto, mmap, mlock, mmap+mlock or DirectIO. Replaces the old --no-mmap/--mlock."
+      },
+      "ctx-size": {
+        "label": "Context window",
+        "hint": "Tokens the model sees per conversation. Bigger = more memory for the KV cache."
+      },
+      "batch-size": {
+        "label": "Logical batch",
+        "hint": "Maximum tokens per logical pass."
+      },
+      "ubatch-size": {
+        "label": "Physical batch",
+        "hint": "Maximum tokens per physical GPU pass. Smaller saves compute VRAM."
+      },
+      "keep": {
+        "label": "Kept tokens",
+        "hint": "How many prompt tokens survive when the context fills (-1 = all)."
+      },
+      "context-shift": {
+        "label": "Context shift",
+        "hint": "On endless generation, drops the beginning instead of stopping when full."
+      },
+      "cache-reuse": {
+        "label": "Cache reuse",
+        "hint": "Minimum chunk reused from cache via KV shifting. 256 helps prompts sharing prefixes."
+      },
+      "cache-type-k": {
+        "label": "K cache type",
+        "hint": "Key-cache quantization: q8_0 halves memory with minimal loss."
+      },
+      "cache-type-v": {
+        "label": "V cache type",
+        "hint": "Value-cache quantization — requires flash attention on."
+      },
+      "flash-attn": {
+        "label": "Flash attention",
+        "hint": "Optimized attention: less VRAM and more speed on supported cards."
+      },
+      "rope-scaling": {
+        "label": "RoPE scaling",
+        "hint": "Context-extension method beyond training: linear or YaRN."
+      },
+      "rope-freq-base": {
+        "label": "RoPE frequency base",
+        "hint": "Base frequency used by NTK-aware scaling. Default comes from the model."
+      },
+      "rope-freq-scale": {
+        "label": "RoPE frequency scale",
+        "hint": "Expands context by a factor of 1/N."
+      },
+      "yarn-orig-ctx": {
+        "label": "YaRN: original context",
+        "hint": "Model's original training window (0 = model's own)."
+      },
+      "yarn-ext-factor": {
+        "label": "YaRN: extrapolation",
+        "hint": "Extrapolation mix (-1 = model default)."
+      },
+      "yarn-attn-factor": {
+        "label": "YaRN: attention factor",
+        "hint": "Scale for sqrt(t) in attention."
+      },
+      "yarn-beta-fast": {
+        "label": "YaRN: beta fast",
+        "hint": "Low-dimension correction."
+      },
+      "yarn-beta-slow": {
+        "label": "YaRN: beta slow",
+        "hint": "High-dimension correction."
+      },
+      "spec-type": {
+        "label": "Speculation type",
+        "hint": "How to predict tokens ahead: draft-mtp uses the file's own MTP head; ngram-mod repeats text patterns; draft-simple uses a second model."
+      },
+      "spec-draft-n-max": {
+        "label": "Draft: max tokens",
+        "hint": "Tokens drafted per pass. 3 is the default; 2–4 is the sweet spot — beyond that rejection and VRAM eat the gain."
+      },
+      "spec-draft-n-min": {
+        "label": "Draft: min tokens",
+        "hint": "Minimum drafted tokens per pass."
+      },
+      "spec-draft-p-min": {
+        "label": "Draft: min probability",
+        "hint": "Only accepts drafts above this confidence. 0.75 avoids wasted cycles on long context."
+      },
+      "spec-draft-model": {
+        "label": "Draft model",
+        "hint": "Path to a small GGUF that drafts for the big one (classic speculation)."
+      },
+      "spec-draft-p-split": {
+        "label": "Draft: p-split",
+        "hint": "Split threshold for second-model speculation."
+      },
+      "spec-ngram-mod-n-max": {
+        "label": "N-gram: max",
+        "hint": "Maximum n-gram tokens used for speculation."
+      },
+      "spec-ngram-mod-n-min": {
+        "label": "N-gram: min",
+        "hint": "Minimum n-gram tokens used for speculation."
+      },
+      "no-mmproj-offload": {
+        "label": "Projector on CPU",
+        "hint": "Keeps the vision projector off the GPU — saves about 1 GB of VRAM."
+      },
+      "image-min-tokens": {
+        "label": "Image: min tokens",
+        "hint": "Floor of tokens per image on vision models."
+      },
+      "image-max-tokens": {
+        "label": "Image: max tokens",
+        "hint": "Cap of tokens per image — lower is faster, less detail."
+      },
+      "lora": {
+        "label": "LoRA adapter",
+        "hint": "Path to a LoRA adapter (commas for several)."
+      },
+      "lora-scaled": {
+        "label": "Scaled LoRA",
+        "hint": "Adapter with its own weight, as path:scale."
+      },
+      "control-vector": {
+        "label": "Control vector",
+        "hint": "Control-vector file added to generation."
+      },
+      "control-vector-scaled": {
+        "label": "Scaled control vector",
+        "hint": "Control vector with weight, as path:scale."
+      },
+      "threads": {
+        "label": "Generation threads",
+        "hint": "CPU threads during generation. Empty = llama.cpp decides."
+      },
+      "threads-batch": {
+        "label": "Batch threads",
+        "hint": "Threads during prompt processing (default: same as generation)."
+      },
+      "numa": {
+        "label": "NUMA optimization",
+        "hint": "Strategies for machines with several memory nodes."
+      },
+      "prio": {
+        "label": "Process priority",
+        "hint": "-1 low, 0 normal, 2 high, 3 realtime."
+      },
+      "parallel": {
+        "label": "Simultaneous conversations",
+        "hint": "Slots served at once — each takes a slice of the context window."
+      },
+      "no-cont-batching": {
+        "label": "No continuous batching",
+        "hint": "Turns off dynamic batching of concurrent requests."
+      },
+      "metrics": {
+        "label": "Prometheus metrics",
+        "hint": "Exposes /metrics for monitoring."
+      },
+      "slots": {
+        "label": "Slots endpoint",
+        "hint": "Exposes the server's slot monitoring."
+      },
+      "timeout": {
+        "label": "Server timeout",
+        "hint": "Read/write deadline for connections, in seconds."
+      },
+      "ssl-cert-file": {
+        "label": "SSL certificate",
+        "hint": "PEM certificate to serve HTTPS."
+      },
+      "ssl-key-file": {
+        "label": "SSL key",
+        "hint": "PEM private key to serve HTTPS."
+      },
+      "no-webui": {
+        "label": "No web UI",
+        "hint": "Disables llama-server's built-in web UI."
+      },
+      "load-on-startup": {
+        "label": "Load on startup",
+        "hint": "This model comes up with the server, without waiting for the first request."
+      },
+      "stop-timeout": {
+        "label": "Stop timeout",
+        "hint": "Grace seconds before force-stopping the model instance."
+      },
+      "dedup-cache-models": {
+        "label": "Hide cache duplicates",
+        "hint": "Hides duplicated cached models from listings."
+      },
+      "jinja": {
+        "label": "Jinja templates",
+        "hint": "Uses the Jinja engine for the chat template (needed for tools on many models)."
+      },
+      "chat-template": {
+        "label": "Chat template",
+        "hint": "Name of a built-in template (chatml, llama3…) replacing the file's."
+      },
+      "chat-template-file": {
+        "label": "Template file",
+        "hint": "Custom Jinja template from a file."
+      },
+      "reasoning-format": {
+        "label": "Reasoning format",
+        "hint": "Where the model's thinking appears: separate (deepseek) or inline."
+      },
+      "reasoning": {
+        "label": "Reasoning",
+        "hint": "Enables the model's thinking mode (auto detects from template)."
+      },
+      "reasoning-effort": {
+        "label": "Reasoning effort",
+        "hint": "Level asked of the template: minimal to max."
+      },
+      "reasoning-budget": {
+        "label": "Reasoning budget",
+        "hint": "Token cap for thinking: -1 free, 0 off, N limits."
+      },
+      "pooling": {
+        "label": "Embeddings pooling",
+        "hint": "How to aggregate vectors on embedding models."
+      },
+      "embeddings": {
+        "label": "Embedding mode",
+        "hint": "Restricts the model to the embeddings use case."
+      },
+      "reranking": {
+        "label": "Reranking",
+        "hint": "Enables the document reranking endpoint."
+      },
+      "seed": {
+        "label": "Seed",
+        "hint": "Random generator seed (-1 = random)."
+      },
+      "override-kv": {
+        "label": "Override metadata",
+        "hint": "Advanced: changes model metadata at load (KEY=TYPE:VALUE). Wrong values can corrupt the load."
+      },
+      "override-tensor": {
+        "label": "Override tensors",
+        "hint": "Advanced: forces the tensor buffer by name pattern."
+      },
+      "no-op-offload": {
+        "label": "No op offload",
+        "hint": "Disables sending host tensor operations to the device."
+      },
+      "check-tensors": {
+        "label": "Check tensors",
+        "hint": "Validates model data at load (slower; useful for a suspicious file)."
+      }
     }
   }
 }

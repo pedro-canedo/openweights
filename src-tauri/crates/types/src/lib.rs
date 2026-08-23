@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod agent;
 pub mod automation;
+pub mod flags;
 pub mod scout;
 pub mod tuning;
 

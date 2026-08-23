@@ -13,6 +13,8 @@ export type Screen =
 export interface NavPayload {
   /** Nome do modelo (artifact name) a pré-selecionar no Chat. */
   chatModel?: string;
+  /** Modelo a pré-selecionar na configuração da tela Servidor Local. */
+  serverModel?: string;
 }
 
 /** Payload pendente da última navegação; a tela de destino consome e limpa. */
@@ -35,5 +37,11 @@ export function navigate(screen: Screen, payload?: NavPayload): void {
 export function takePendingChatModel(): string | undefined {
   const m = pendingNav.chatModel;
   delete pendingNav.chatModel;
+  return m;
+}
+
+export function takePendingServerModel(): string | undefined {
+  const m = pendingNav.serverModel;
+  delete pendingNav.serverModel;
   return m;
 }

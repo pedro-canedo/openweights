@@ -167,6 +167,12 @@ pub struct ServerConfig {
     /// INI do `--models-preset` (modelos em subpastas; `--models-dir` não recorre).
     #[serde(default)]
     pub models_preset: Option<PathBuf>,
+    /// Flags globais escolhidas pelo usuário que valem para TODO modelo — vão
+    /// para a seção `[*]` do INI, nunca para a linha de comando: a precedência
+    /// do Router é CLI > seção do modelo > `[*]`, e na CLI elas atropelariam a
+    /// configuração por modelo em vez de servir de padrão herdável.
+    #[serde(default)]
+    pub global_ini_extras: Vec<(String, String)>,
 }
 
 impl ServerConfig {
@@ -182,6 +188,7 @@ impl ServerConfig {
             sleep_idle_seconds: 0,
             extra_args: Vec::new(),
             models_preset: None,
+            global_ini_extras: Vec::new(),
         }
     }
 
@@ -274,10 +281,33 @@ impl From<(String, PathBuf)> for PresetEntry {
 ///
 /// Cada entrada vira uma seção: o `id` é o valor de `"model"` nas
 /// requisições OpenAI. Caminhos usam `/` para o parser do llama.cpp não
-/// tratar `\` do Windows como escape.
-pub fn write_models_preset(path: &Path, entries: &[PresetEntry]) -> std::io::Result<()> {
+/// tratar `\` do Windows como escape. `global` vira a seção `[*]`, herdada
+/// por todos os modelos e vencida por qualquer chave igual na seção deles —
+/// exatamente o comportamento de "padrão do usuário".
+pub fn write_models_preset(
+    path: &Path,
+    global: &[(String, String)],
+    entries: &[PresetEntry],
+) -> std::io::Result<()> {
+    let body = render_models_preset(global, entries);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, body)
+}
+
+/// O conteúdo do INI, sem tocar o disco — é o que o preview da interface
+/// mostra, e por construção é EXATAMENTE o que [`write_models_preset`] grava.
+pub fn render_models_preset(global: &[(String, String)], entries: &[PresetEntry]) -> String {
     let mut used = HashSet::new();
     let mut body = String::from("; gerado automaticamente — não edite\nversion = 1\n\n");
+    if !global.is_empty() {
+        body.push_str("[*]\n");
+        for (key, value) in global {
+            body.push_str(&format!("{key} = {value}\n"));
+        }
+        body.push('\n');
+    }
     for entry in entries {
         let id = unique_preset_id(&entry.id, &mut used);
         let abs = path_for_ini(&entry.path);
@@ -287,10 +317,7 @@ pub fn write_models_preset(path: &Path, entries: &[PresetEntry]) -> std::io::Res
         }
         body.push('\n');
     }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(path, body)
+    body
 }
 
 fn unique_preset_id(name: &str, used: &mut HashSet<String>) -> String {
@@ -314,6 +341,36 @@ fn unique_preset_id(name: &str, used: &mut HashSet<String>) -> String {
 
 fn path_for_ini(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
+}
+
+/// Um modelo como o Router o lista em `GET /models`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouterModel {
+    pub id: String,
+    /// `unloaded`, `loading` ou `loaded` — o `status.value` do Router.
+    pub state: String,
+}
+
+/// Lê o corpo do `GET /models` do Router (formato verificado no b10441):
+/// `{"data":[{"id":"…","status":{"value":"unloaded",…},…}],"object":"list"}`.
+pub fn parse_models_status(v: &serde_json::Value) -> Option<Vec<RouterModel>> {
+    let data = v.get("data")?.as_array()?;
+    Some(
+        data.iter()
+            .filter_map(|m| {
+                Some(RouterModel {
+                    id: m.get("id")?.as_str()?.to_string(),
+                    state: m
+                        .get("status")
+                        .and_then(|s| s.get("value"))
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("unknown")
+                        .to_string(),
+                })
+            })
+            .collect(),
+    )
 }
 
 /// Processo llama-server gerenciado.
@@ -405,6 +462,67 @@ impl LlamaServer {
             Ok(r) if r.status().as_u16() == 503 => Health::Loading,
             _ => Health::Down,
         }
+    }
+
+    /// Pede ao Router para carregar um modelo agora (`POST /models/load`).
+    ///
+    /// A API não aceita argumentos por requisição — a configuração vem toda
+    /// do INI, lido no boot. Quem mudou config precisa reiniciar ANTES de
+    /// carregar, e é a interface que garante essa ordem.
+    pub async fn load_model(&self, id: &str) -> Result<(), EngineError> {
+        self.model_op("load", id).await
+    }
+
+    /// Descarrega um modelo (`POST /models/unload`) — VRAM de volta na hora.
+    pub async fn unload_model(&self, id: &str) -> Result<(), EngineError> {
+        self.model_op("unload", id).await
+    }
+
+    async fn model_op(&self, op: &str, id: &str) -> Result<(), EngineError> {
+        let url = format!("{}/models/{op}", self.config.connect_url());
+        let mut req = self
+            .http
+            .post(&url)
+            .json(&serde_json::json!({ "model": id }));
+        if let Some(key) = &self.config.api_key {
+            req = req.bearer_auth(key);
+        }
+        let resp = req.send().await?;
+        let status = resp.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let body = resp.text().await.unwrap_or_default();
+        if op == "load" {
+            // Carga recusada é quase sempre memória — a variante certa já
+            // existe e a UI sabe explicá-la.
+            return Err(EngineError::ModelLoad { model: id.into() });
+        }
+        Err(EngineError::Http {
+            status: status.as_u16(),
+            body: body.chars().take(300).collect(),
+        })
+    }
+
+    /// Estado de cada modelo registrado no Router (`GET /models`).
+    pub async fn models_status(&self) -> Result<Vec<RouterModel>, EngineError> {
+        let url = format!("{}/models", self.config.connect_url());
+        let mut req = self.http.get(&url);
+        if let Some(key) = &self.config.api_key {
+            req = req.bearer_auth(key);
+        }
+        let resp = req.send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(EngineError::Http {
+                status: status.as_u16(),
+                body: body.chars().take(300).collect(),
+            });
+        }
+        let bruto: serde_json::Value = resp.json().await?;
+        parse_models_status(&bruto)
+            .ok_or_else(|| EngineError::Protocol("GET /models sem a lista `data`".into()))
     }
 
     /// Espera o servidor ficar pronto, com timeout.
@@ -559,6 +677,7 @@ mod tests {
         let ini = dir.join("router-models.ini");
         write_models_preset(
             &ini,
+            &[],
             &[
                 PresetEntry::new(
                     "Qwen3.8-27B-UD-Q2_K_XL.gguf",
@@ -587,6 +706,7 @@ mod tests {
         let ini = dir.join("router-models.ini");
         write_models_preset(
             &ini,
+            &[],
             &[
                 PresetEntry::new("chat.gguf", "/m/chat.gguf"),
                 PresetEntry::new("bge-m3.gguf", "/m/bge-m3.gguf")
@@ -612,6 +732,7 @@ mod tests {
         let ini = dir.join("router-models.ini");
         write_models_preset(
             &ini,
+            &[],
             &[PresetEntry::new("qwen.gguf", "/m/qwen.gguf")
                 .with_extra("ctx-size", "32768")
                 .with_extra("fit", "off")],
@@ -620,6 +741,63 @@ mod tests {
         let text = std::fs::read_to_string(&ini).unwrap();
         assert!(text.contains("ctx-size = 32768"));
         assert!(text.contains("fit = off"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Corpo real do `GET /models` do b10441 (capturado do binário oficial,
+    /// resumido aos campos que importam).
+    #[test]
+    fn the_router_model_list_is_read_from_status_value() {
+        let corpo: serde_json::Value = serde_json::from_str(
+            r#"{"data":[
+                {"id":"dummy","object":"model","owned_by":"llamacpp",
+                 "status":{"value":"unloaded","args":["…"],"preset":"[dummy]\n"}},
+                {"id":"qwen","object":"model","status":{"value":"loaded"}}
+            ],"object":"list"}"#,
+        )
+        .unwrap();
+        let modelos = parse_models_status(&corpo).unwrap();
+        assert_eq!(
+            modelos,
+            vec![
+                RouterModel {
+                    id: "dummy".into(),
+                    state: "unloaded".into()
+                },
+                RouterModel {
+                    id: "qwen".into(),
+                    state: "loaded".into()
+                },
+            ]
+        );
+        assert!(parse_models_status(&serde_json::json!({"objeto": "nada"})).is_none());
+    }
+
+    /// Extras globais vão para a seção `[*]`, antes das seções de modelo —
+    /// e a precedência do Router faz o resto (seção do modelo vence `[*]`).
+    #[test]
+    fn global_extras_become_the_star_section() {
+        let dir = temp_dir("star");
+        let ini = dir.join("router-models.ini");
+        write_models_preset(
+            &ini,
+            &[
+                ("jinja".to_string(), "true".to_string()),
+                ("cache-reuse".to_string(), "256".to_string()),
+            ],
+            &[PresetEntry::new("chat.gguf", "/m/chat.gguf").with_extra("cache-reuse", "0")],
+        )
+        .unwrap();
+        let text = std::fs::read_to_string(&ini).unwrap();
+        assert_eq!(
+            text,
+            "; gerado automaticamente — não edite\nversion = 1\n\n\
+             [*]\njinja = true\ncache-reuse = 256\n\n\
+             [chat.gguf]\nmodel = /m/chat.gguf\ncache-reuse = 0\n\n"
+        );
+        let star = text.find("[*]").unwrap();
+        let modelo = text.find("[chat.gguf]").unwrap();
+        assert!(star < modelo);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

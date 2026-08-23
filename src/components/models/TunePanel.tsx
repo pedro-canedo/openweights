@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { navigate } from "../../lib/nav";
 import type { TFunction } from "i18next";
 import { engineBusyReason } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
@@ -251,6 +252,14 @@ export default function TunePanel({
         <span className="min-w-0 flex-1 truncate text-[11px] text-dim" title={model}>
           {model}
         </span>
+        <button
+          type="button"
+          onClick={() => navigate("server", { serverModel: model })}
+          className="rounded px-1 text-[11px] text-dim hover:text-ink"
+          title={t("chat.engine.configureLink")}
+        >
+          {t("tune.fullConfig")} →
+        </button>
         <button
           type="button"
           onClick={onClose}

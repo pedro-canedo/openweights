@@ -32,12 +32,21 @@ export interface ModelProfile {
   ubatch?: number | null;
   threads?: number | null;
   spec?: SpecType | null;
+  /** Tokens rascunhados por passada (`spec-draft-n-max`; 2–4 é o equilíbrio). */
+  specDraftNMax?: number | null;
+  specDraftNMin?: number | null;
+  /** Probabilidade mínima para aceitar rascunho (0.75 ajuda em contexto longo). */
+  specDraftPMin?: number | null;
+  /** Modelo de rascunho externo (caminho GGUF) — sozinho vira `draft-simple`. */
+  specDraftModel?: string | null;
   mmproj?: string | null;
   vision?: VisionMode | null;
   kvOffload?: boolean | null;
   mmap?: boolean | null;
   mlock?: boolean | null;
   parallel?: number | null;
+  /** Qualquer outra flag do catálogo, como pares [chave, valor] do INI. */
+  extras?: [string, string][];
   source: ProfileSource;
 }
 

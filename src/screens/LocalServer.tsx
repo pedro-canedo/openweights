@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  getHardwareProfile,
   getServerStatus,
   getSetting,
   onServerLog,
@@ -11,6 +12,8 @@ import {
 } from "../lib/api";
 import type { ServerStatus } from "../lib/types";
 import ClusterPanel from "../components/server/ClusterPanel";
+import EngineConfigSection from "../components/server/EngineConfigSection";
+import GlobalFlagsCard from "../components/server/GlobalFlagsCard";
 
 const MAX_LOG_LINES = 500;
 
@@ -19,11 +22,15 @@ export default function LocalServer() {
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasGpu, setHasGpu] = useState(false);
 
   useEffect(() => {
     let un: (() => void) | undefined;
     let cancelled = false;
     getServerStatus().then(setStatus).catch(() => {});
+    getHardwareProfile()
+      .then((p) => setHasGpu(p.gpus.length > 0))
+      .catch(() => {});
     onServerStatus(setStatus).then((f) => {
       // Se o cleanup rodou antes de o listen() resolver (StrictMode),
       // desregistra imediatamente para não vazar o listener.
@@ -83,10 +90,9 @@ export default function LocalServer() {
       {error && <div className="mt-2 text-[12px] text-bad">{error}</div>}
 
       <ServerConfig running={!!status?.running} />
+      <EngineConfigSection running={!!status?.running} hasGpu={hasGpu} />
+      <GlobalFlagsCard running={!!status?.running} />
       <ClusterPanel />
-      {status?.running && status.baseUrl && (
-        <LoadedModels baseUrl={status.baseUrl} />
-      )}
       {status?.baseUrl && <Examples baseUrl={status.baseUrl} />}
       <Logs />
     </div>
@@ -223,45 +229,6 @@ function ServerConfig({ running }: { running: boolean }) {
           <span className="text-[11px] text-warn">{t("server.applyHint")}</span>
         )}
       </div>
-    </div>
-  );
-}
-
-function LoadedModels({ baseUrl }: { baseUrl: string }) {
-  const { t } = useTranslation();
-  const [models, setModels] = useState<string[]>([]);
-
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      fetch(`${baseUrl}/v1/models`)
-        .then((r) => r.json())
-        .then((j: { data?: { id: string }[] }) => {
-          if (alive) setModels((j.data ?? []).map((m) => m.id));
-        })
-        .catch(() => {});
-    load();
-    const timer = setInterval(load, 5000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [baseUrl]);
-
-  return (
-    <div className="mt-4 rounded-xl border border-edge bg-panel p-5">
-      <div className="text-sm font-medium">{t("server.modelsLoaded")}</div>
-      {models.length ? (
-        <ul className="mt-2 flex flex-col gap-1">
-          {models.map((m) => (
-            <li key={m} className="font-mono text-[12px] text-dim">
-              {m}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <div className="mt-2 text-[12px] text-dim">—</div>
-      )}
     </div>
   );
 }
