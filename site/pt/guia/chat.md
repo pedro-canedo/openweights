@@ -46,18 +46,15 @@ O painel da direita tem duas metades, e a divisão é o ponto:
 | Limite de tokens da resposta | Teto duro da resposta |
 | Esforço | Respostas mais completas, mais lentas e mais pesadas |
 
-**Na carga** — precisam do modelo recarregado:
-
-| Ajuste | O que faz |
-|---|---|
-| Janela de contexto | Quanto o modelo lembra nesta carga |
-| Cache KV | Memória da conversa na GPU; comprimir cabe uma janela maior na mesma VRAM |
-| Flash attention | Geração mais rápida com a mesma memória |
-| Especulação | Prevê tokens à frente — MTP quando o arquivo traz, n-grama ajuda em código |
-| Visão | Se o projetor carrega sempre, sob demanda ou nunca |
-| Camadas na GPU, experts na CPU, batch, threads, mmap, mlock | Os botões do llama.cpp, com explicação em português |
-
 Presets salvam um conjunto de parâmetros com um nome.
+
+**Na carga** — janela de contexto, cache KV, flash attention, especulação
+(MTP), visão e o resto dos botões do llama.cpp — mudaram de casa: agora moram
+em **Servidor Local**, junto do modelo que os usa. O atalho no painel leva
+direto para lá, com o modelo da conversa já selecionado. A razão é que carga é
+propriedade do modelo, não da conversa: é a mesma configuração para o chat, o
+agente e qualquer app que consuma a API. Veja
+[configurar o llama.cpp](/pt/integracoes/api-local#configurar-o-llama-cpp).
 
 ## Chat ou agente
 

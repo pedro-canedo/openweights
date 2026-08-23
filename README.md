@@ -53,6 +53,16 @@ Windows, macOS and Linux.
   per server.
 - 🔌 **OpenAI-compatible API** — other apps point at `localhost` and use the same
   model.
+- 🎚️ **Every llama.cpp knob, visually** — MTP speculation, RoPE/YaRN, KV cache,
+  cache reuse and the rest: the flags that matter carry a label and a hint, and
+  **every other flag is read from your installed binary**, so an engine update
+  never leaves the interface behind. Named presets (*MTP turbo*, *VRAM saver*),
+  a live preview of the exact command and INI, and loading the model from the
+  same screen.
+- 🧰 **Open in a harness** — hand the loaded model to an external coding agent —
+  [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), Aider,
+  OpenCode — pointed at your local API, in one click. No endpoint to configure by
+  hand; your API key travels by environment variable, never on the command line.
 - 🖧 **Extra GPU on the network** — two machines on the same network load one
   model together: the file stays on one, the other only lends its card, and a
   12 GB PC next to an 18 GB Mac becomes 30 GB. Off by default, it announces

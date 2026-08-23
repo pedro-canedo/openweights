@@ -46,18 +46,15 @@ The panel on the right has two halves, and the split is the point:
 | Response token limit | Hard cap on the answer |
 | Effort | More complete answers, slower and heavier |
 
-**At load time** — need the model reloaded:
-
-| Setting | What it does |
-|---|---|
-| Context window | How much the model can remember in this load |
-| KV cache | Conversation memory on the GPU; compressing fits a larger window in the same VRAM |
-| Flash attention | Faster generation at the same memory |
-| Speculation | Predicts tokens ahead — MTP when the file ships it, n-gram helps on code |
-| Vision | Whether the projector is loaded always, on demand, or never |
-| GPU layers, experts on CPU, batch, threads, mmap, mlock | The llama.cpp knobs, with plain-language hints |
-
 Presets save a set of parameters under a name.
+
+**Load-time settings** — context window, KV cache, flash attention, speculation
+(MTP), vision and the rest of the llama.cpp knobs — moved house: they now live
+in **Local Server**, next to the model that uses them. The shortcut in the panel
+takes you straight there with the conversation's model already selected. The
+reason: how a model loads is a property of the model, not of the conversation —
+it is the same configuration for chat, for the agent, and for any app consuming
+the API. See [configuring llama.cpp](/integrations/local-api#configuring-llama-cpp).
 
 ## Chat or agent
 

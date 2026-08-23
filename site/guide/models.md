@@ -82,6 +82,11 @@ memory it costs per device, which one was picked and why, and the option to
 measure real tokens/s with `llama-bench` instead of trusting the estimate. It
 is there for when you want to look, not because the app needs you to.
 
+From there, **Full configuration** takes you to the Local Server screen, where
+the same configuration is editable flag by flag — including the ones this panel
+never proposes. See
+[configuring llama.cpp](/integrations/local-api#configuring-llama-cpp).
+
 ::: tip One thing we cannot do for you
 On Apple Silicon, macOS caps Metal at about 75% of unified memory. Raising it
 needs a terminal and your password, so the app shows the command instead of

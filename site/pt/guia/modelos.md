@@ -86,6 +86,11 @@ a memória que custa por dispositivo, qual foi escolhido e por quê, e a opção
 medir tokens/s de verdade com o `llama-bench` em vez de confiar na estimativa.
 Está lá para quando você quiser olhar, não porque o app precise de você.
 
+Daí em diante, **Configuração completa** leva à tela Servidor Local, onde a
+mesma configuração é editável flag a flag — inclusive as que este painel não
+propõe. Veja
+[configurar o llama.cpp](/pt/integracoes/api-local#configurar-o-llama-cpp).
+
 ::: tip Uma coisa que não dá para fazer por você
 No Apple Silicon, o macOS limita o Metal a cerca de 75% da memória unificada.
 Levantar isso exige terminal e a sua senha, então o app mostra o comando em vez
