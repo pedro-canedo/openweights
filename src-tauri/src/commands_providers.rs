@@ -70,17 +70,36 @@ pub fn providers_config_set(state: State<'_, AppState>, json: String) -> CmdResu
 
 // ---------------------------------------------------------------- estado ---
 
+/// URL conectável e chave ATIVA do servidor local, se ele está no ar.
+///
+/// A chave sai do processo em execução (`srv.config()`), não do setting: uma
+/// chave recém-gerada e ainda não aplicada num reinício NÃO autentica nada —
+/// anexá-la aqui produziria 401 no chat com a chave "certa" na mão.
+async fn local_ativo(state: &AppState) -> (Option<String>, Option<String>) {
+    let guard = state.server.lock().await;
+    let ativo = guard.as_ref().filter(|s| s.is_spawned());
+    (
+        ativo.map(|s| s.config().connect_url()),
+        ativo.and_then(|s| s.config().api_key.clone()),
+    )
+}
+
+/// Anexa a chave ativa ao endpoint local resolvido.
+///
+/// `resolve()` é função pura da configuração de provedores e fixa
+/// `api_key: None` para o local — quem conhece o processo é este módulo.
+fn anexa_chave_local(mut ep: ResolvedEndpoint, chave: Option<&str>) -> ResolvedEndpoint {
+    if ep.provider == ProviderId::Local {
+        ep.api_key = chave.map(str::to_string);
+    }
+    ep
+}
+
 /// Estado dos três provedores, para a tela desenhar sem adivinhar.
 #[tauri::command]
 pub async fn providers_list(state: State<'_, AppState>) -> CmdResult<Vec<ProviderView>> {
     let cfg = load_config(&state);
-    let local_base = {
-        let guard = state.server.lock().await;
-        guard
-            .as_ref()
-            .filter(|s| s.is_spawned())
-            .map(|s| s.config().connect_url())
-    };
+    let (local_base, local_key) = local_ativo(&state).await;
 
     Ok([
         ProviderId::Local,
@@ -89,12 +108,15 @@ pub async fn providers_list(state: State<'_, AppState>) -> CmdResult<Vec<Provide
     ]
     .into_iter()
     .map(|id| match cfg.resolve(id, local_base.as_deref()) {
-        Ok(ep) => ProviderView {
-            id: id.as_str(),
-            ready: true,
-            reason: None,
-            base_url: Some(ep.base_url),
-        },
+        Ok(ep) => {
+            let ep = anexa_chave_local(ep, local_key.as_deref());
+            ProviderView {
+                id: id.as_str(),
+                ready: true,
+                reason: None,
+                base_url: Some(ep.base_url),
+            }
+        }
         Err(e) => ProviderView {
             id: id.as_str(),
             ready: false,
@@ -137,14 +159,9 @@ pub async fn provider_endpoint(
         }
     }
 
-    let local_base = {
-        let guard = state.server.lock().await;
-        guard
-            .as_ref()
-            .filter(|s| s.is_spawned())
-            .map(|s| s.config().connect_url())
-    };
+    let (local_base, local_key) = local_ativo(&state).await;
     cfg.resolve(referencia.provider, local_base.as_deref())
+        .map(|ep| anexa_chave_local(ep, local_key.as_deref()))
         .map_err(err_str)
 }
 

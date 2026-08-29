@@ -332,6 +332,10 @@ pub struct ServerStatusView {
     pub base_url: Option<String>,
     pub port: u16,
     pub lan: bool,
+    /// O processo está de pé com uma chave de API DIFERENTE da gravada nos
+    /// settings — a tela mostra "reinicie para aplicar" a partir daqui, e não
+    /// de estado local que se perde ao trocar de aba.
+    pub key_stale: bool,
 }
 
 const DEFAULT_PORT: u16 = 11711;
@@ -577,12 +581,14 @@ pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
             base_url: Some(srv.config().connect_url()),
             port: srv.config().port,
             lan: srv.config().host != "127.0.0.1",
+            key_stale: srv.config().api_key != prefs.api_key,
         },
         _ => ServerStatusView {
             running: false,
             base_url: None,
             port,
             lan,
+            key_stale: false,
         },
     }
 }
@@ -654,6 +660,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                 base_url: Some(srv.config().connect_url()),
                 port: srv.config().port,
                 lan: srv.config().host != "127.0.0.1",
+                key_stale: srv.config().api_key != api_key,
             });
         }
 
@@ -715,6 +722,8 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             base_url: Some(srv.config().connect_url()),
             port: srv.config().port,
             lan,
+            // Acabou de subir com as prefs de agora: nada pendente.
+            key_stale: false,
         };
         *guard = Some(srv);
         view
@@ -750,6 +759,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                     base_url: None,
                     port,
                     lan,
+                    key_stale: false,
                 },
             );
             return Err("llama-server não respondeu ao /health em 30s".to_string());
@@ -792,6 +802,7 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
             base_url: None,
             port,
             lan,
+            key_stale: false,
         },
     );
     Ok(())
@@ -846,6 +857,26 @@ pub async fn server_restart(
     force: Option<bool>,
 ) -> CmdResult<ServerStatusView> {
     restart_engine(&app, &state, force.unwrap_or(false)).await
+}
+
+/// Gera uma chave de API nova para o servidor local e a grava.
+///
+/// `sk-local-` + 40 hex do CSPRNG do sistema — o prefixo diz de onde a chave
+/// veio quando ela aparecer na configuração de outro app. NÃO reinicia o
+/// servidor: a chave gravada só entra em vigor no próximo boot do processo, e
+/// é a tela que oferece o "reiniciar agora" dizendo o que será interrompido.
+#[tauri::command]
+pub fn server_generate_api_key(state: State<'_, AppState>) -> CmdResult<String> {
+    let mut bytes = [0u8; 20];
+    getrandom::fill(&mut bytes)
+        .map_err(|e| format!("sem fonte de aleatoriedade do sistema: {e}"))?;
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    let chave = format!("sk-local-{hex}");
+    state
+        .store
+        .set_setting("server_api_key", &chave)
+        .map_err(err_str)?;
+    Ok(chave)
 }
 
 /// O reinício de verdade, alcançável de dentro do processo.

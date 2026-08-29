@@ -217,6 +217,11 @@ impl Store {
         // Depois das outras: a migração da janela por modelo lê `settings`.
         tuning::init(&conn)?;
         perf::init(&conn)?;
+        // Histórico de bench por GPU: de que placa veio o número e com que
+        // configuração legível ele foi medido. Bancos novos já as trazem no
+        // SCHEMA de perf_runs (no-op aqui).
+        ensure_column(&conn, "perf_runs", "gpu_name", "TEXT")?;
+        ensure_column(&conn, "perf_runs", "profile_json", "TEXT")?;
         engine_presets::init(&conn)?;
         // Respostas gravadas antes de a coluna passar a ser preenchida:
         // reata cada uma à execução que estava rodando quando ela nasceu.

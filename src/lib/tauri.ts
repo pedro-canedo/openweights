@@ -57,6 +57,15 @@ async function mockInvoke(cmd: string, _args?: Record<string, unknown>) {
       return mockProfile;
     case "app_version":
       return "0.1.0-dev";
+    case "provider_endpoint":
+      // Endpoint local simulado, sem chave — defesa em profundidade para
+      // qualquer chamador que chegue aqui fora do Tauri.
+      return {
+        provider: "local",
+        baseUrl: "http://127.0.0.1:11711",
+        apiKey: null,
+        headers: [],
+      };
     default:
       throw new Error(`comando não simulado no navegador: ${cmd}`);
   }

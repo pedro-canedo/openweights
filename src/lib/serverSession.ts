@@ -9,6 +9,7 @@
 
 import { getServerStatus, getSetting, startServer } from "./api";
 import { providerEndpoint, splitModelRef, type ProviderId } from "./providers";
+import { isTauri } from "./tauri";
 
 export interface ServerSession {
   /** URL conectável pela UI (nunca 0.0.0.0, mesmo em modo LAN). */
@@ -62,8 +63,17 @@ export async function ensureServer(): Promise<ServerSession> {
 export async function ensureEndpoint(modelRef: string): Promise<EndpointSession> {
   const { provider } = splitModelRef(modelRef);
   if (provider === "local") {
+    // O auto-start vem PRIMEIRO — subir o llama-server se preciso é o
+    // comportamento de sempre, e a chave só existe com o processo de pé.
     const { baseUrl } = await ensureServer();
-    return { provider, baseUrl, headers: {} };
+    const headers: Record<string, string> = {};
+    if (isTauri) {
+      // A chave ATIVA do processo vem do backend junto do endpoint; sem
+      // chave configurada o servidor aceita tudo e o cabeçalho fica vazio.
+      const ep = await providerEndpoint("local").catch(() => null);
+      if (ep?.apiKey) headers.Authorization = `Bearer ${ep.apiKey}`;
+    }
+    return { provider, baseUrl, headers };
   }
 
   const ep = await providerEndpoint(modelRef).catch((e) => {

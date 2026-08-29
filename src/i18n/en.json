@@ -387,6 +387,35 @@
     },
     "parallel": "Conversations at once",
     "parallelHint": "Each simultaneous conversation takes a slice of the context window. With 1, the window you ask for is the window you get.",
+    "connect": {
+      "title": "Connect",
+      "baseUrl": "API address",
+      "key": "API key",
+      "keySet": "Key set",
+      "noKey": "No key",
+      "noKeyWarning": "any application with access to this machine can use the server.",
+      "noKeyLanWarning": "With network access on, any device on your network can too.",
+      "generate": "Generate key",
+      "regenerate": "Regenerate",
+      "remove": "Remove",
+      "copy": "Copy",
+      "test": "Test connection",
+      "testOk": "Connected — {{n}} model(s) available.",
+      "testAuthStale": "The key active on the server is a different one — restart to apply the new key.",
+      "testDown": "Server stopped — start it above.",
+      "envBlock": "Environment variables",
+      "model": "Loaded model",
+      "noModel": "No model loaded — load one under Configure llama.cpp, right below.",
+      "restartHint": "The key change only takes effect after restarting the server.",
+      "restartNow": "Restart now",
+      "portHint": "1234 is LM Studio's port and 11434 is Ollama's — apps already configured for them connect without changing anything."
+    },
+    "fields": {
+      "auto": "auto",
+      "other": "other…",
+      "lanOn": "On",
+      "lanOff": "Off"
+    },
     "cluster": {
       "title": "Extra GPU on the network",
       "subtitle": "Another OpenWeights on this LAN can lend its GPU. Together they load a model that neither machine can hold alone.",
@@ -564,7 +593,8 @@
     "error": "Something went wrong",
     "retry": "Retry",
     "saved": "Saved",
-    "copy": "Copy"
+    "copy": "Copy",
+    "currentValue": "current: {{v}}"
   },
   "agent": {
     "toggle": "Agent",
@@ -1040,7 +1070,29 @@
         "prose": "prose"
       }
     },
-    "fullConfig": "Full configuration"
+    "fullConfig": "Full configuration",
+    "history": {
+      "title": "Performance history",
+      "measureNow": "Measure now",
+      "benchWarning": "Measuring takes the server down for a few minutes while the test runs.",
+      "benchFailed": "The measurement failed — check the server logs.",
+      "date": "Date",
+      "config": "Configuration",
+      "tps": "gen tokens/s",
+      "delta": "Δ%",
+      "best": "Best measurement in this series",
+      "current": "current",
+      "suspect": "⚠ thermal",
+      "build": "b{{n}}",
+      "usage": "Real usage",
+      "usageSamples_one": "average of {{count}} chat response",
+      "usageSamples_other": "average of {{count}} chat responses",
+      "usageNote": "Real usage is not sliced per GPU: chat responses don't record which card they ran on.",
+      "empty": "No measurements yet. “Measure now” runs a real test with this model's current configuration and records the result in this series.",
+      "gpuSeries": "The series is per GPU and driver: switching cards or updating the driver starts a new series.",
+      "engineUpdated": "engine updated — not comparable",
+      "noBaseline": "no baseline to compare against"
+    }
   },
   "update": {
     "available": "Update to {{version}}",

@@ -264,6 +264,129 @@ function mockBench(model: string, profiles: ModelProfile[]): BenchOutcome {
   };
 }
 
+// ---------------------------------------------------------- histórico ---
+
+/**
+ * Uma medição gravada — espelho do `PerfRowDto` do backend (serde camelCase).
+ */
+export interface PerfRowDto {
+  /** Como gravado no banco (epoch em milissegundos). */
+  measuredAt: number;
+  genTps: number;
+  promptTps: number | null;
+  genStddev: number | null;
+  suspect: boolean;
+  source: string;
+  buildNumber: number;
+  gpuName: string | null;
+  profileKey: string;
+  /**
+   * Pares do INI da configuração medida; `null` em linhas antigas (antes da
+   * migração) — exibir o profileKey encurtado ou "—", NUNCA rotular de "uso".
+   */
+  profileSummary: Record<string, string> | null;
+  deltaPct: number | null;
+  deltaReason: "ok" | "first" | "buildChange" | "suspect";
+}
+
+/** Uso real: média de tokens/s das respostas do chat, por configuração. */
+export interface UsageRowDto {
+  profileKey: string;
+  avgTps: number;
+  samples: number;
+}
+
+export interface PerfHistoryDto {
+  /** `best_gpu().name` do hardware atual; `null` => "CPU". */
+  gpuName: string | null;
+  /** `""` para perfil vazio (normalização ""≡None é do backend). */
+  currentProfileKey: string;
+  bestProfileKey: string | null;
+  rows: PerfRowDto[];
+  usage: UsageRowDto[];
+}
+
+/**
+ * Histórico de medições desta máquina para um modelo, mais novo primeiro.
+ *
+ * A série é recortada pelo machine_key atual: trocar de GPU ou de driver
+ * "aposenta" as medições antigas por design — elas não são comparáveis.
+ */
+export function perfHistory(modelId: string): Promise<PerfHistoryDto> {
+  if (!isTauri) return Promise.resolve(mockPerfHistory());
+  return invoke<PerfHistoryDto>("perf_history", { modelId });
+}
+
+function mockPerfHistory(): PerfHistoryDto {
+  // measuredAt em milissegundos, como o backend grava (scheduler::now_ms()).
+  const agora = Date.now();
+  const dia = 24 * 60 * 60 * 1000;
+  const chave = "a1b2c3d4e5f60718";
+  const resumo: Record<string, string> = {
+    "gpu-layers": "99",
+    "ctx-size": "16384",
+    "flash-attn": "on",
+    "batch-size": "1024",
+  };
+  const base = {
+    promptTps: 812,
+    genStddev: 0.4,
+    source: "tune_bench",
+    gpuName: "GPU simulada 16 GB",
+    profileKey: chave,
+    profileSummary: resumo,
+  };
+  return {
+    gpuName: "GPU simulada 16 GB",
+    currentProfileKey: chave,
+    bestProfileKey: chave,
+    rows: [
+      {
+        ...base,
+        measuredAt: agora - dia,
+        genTps: 54.2,
+        suspect: false,
+        buildNumber: 10441,
+        deltaPct: 3.1,
+        deltaReason: "ok",
+      },
+      {
+        ...base,
+        measuredAt: agora - 3 * dia,
+        genTps: 52.6,
+        suspect: false,
+        buildNumber: 10441,
+        deltaPct: null,
+        deltaReason: "buildChange",
+      },
+      {
+        ...base,
+        measuredAt: agora - 9 * dia,
+        genTps: 49.8,
+        suspect: true,
+        buildNumber: 10380,
+        deltaPct: null,
+        deltaReason: "suspect",
+      },
+      {
+        ...base,
+        measuredAt: agora - 15 * dia,
+        genTps: 50.8,
+        suspect: false,
+        buildNumber: 10380,
+        profileKey: "",
+        profileSummary: null,
+        deltaPct: null,
+        deltaReason: "first",
+      },
+    ],
+    usage: [
+      { profileKey: chave, avgTps: 48.7, samples: 132 },
+      { profileKey: "9f8e7d6c5b4a3921", avgTps: 44.1, samples: 18 },
+    ],
+  };
+}
+
 // ---------------------------------------------------------- especulação ---
 
 /** O que um braço da medição de especulação rendeu. */

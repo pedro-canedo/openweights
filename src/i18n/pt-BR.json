@@ -387,6 +387,35 @@
     },
     "parallel": "Conversas ao mesmo tempo",
     "parallelHint": "Cada conversa simultânea leva uma fatia da janela de contexto. Com 1, a janela que você pede é a janela que você recebe.",
+    "connect": {
+      "title": "Conectar",
+      "baseUrl": "Endereço da API",
+      "key": "Chave de API",
+      "keySet": "Chave definida",
+      "noKey": "Sem chave",
+      "noKeyWarning": "qualquer aplicativo com acesso a esta máquina pode usar o servidor.",
+      "noKeyLanWarning": "Com o acesso pela rede ligado, qualquer dispositivo da sua rede também.",
+      "generate": "Gerar chave",
+      "regenerate": "Regenerar",
+      "remove": "Remover",
+      "copy": "Copiar",
+      "test": "Testar conexão",
+      "testOk": "Conectado — {{n}} modelo(s) no ar.",
+      "testAuthStale": "A chave ativa no servidor é outra — reinicie para aplicar a nova.",
+      "testDown": "Servidor parado — inicie-o acima.",
+      "envBlock": "Variáveis de ambiente",
+      "model": "Modelo carregado",
+      "noModel": "Nenhum modelo carregado — carregue um em Configurar llama.cpp, logo abaixo.",
+      "restartHint": "A mudança de chave só vale depois de reiniciar o servidor.",
+      "restartNow": "Reiniciar agora",
+      "portHint": "1234 é a porta do LM Studio e 11434 a do Ollama — apps já configurados para eles conectam sem mudar nada."
+    },
+    "fields": {
+      "auto": "auto",
+      "other": "outro…",
+      "lanOn": "Ligado",
+      "lanOff": "Desligado"
+    },
     "cluster": {
       "title": "GPU extra na rede",
       "subtitle": "Outro OpenWeights na mesma rede pode emprestar a placa. Os dois juntos carregam um modelo que nenhuma máquina segura sozinha.",
@@ -564,7 +593,8 @@
     "error": "Algo deu errado",
     "retry": "Tentar de novo",
     "saved": "Salvo",
-    "copy": "Copiar"
+    "copy": "Copiar",
+    "currentValue": "atual: {{v}}"
   },
   "agent": {
     "toggle": "Agente",
@@ -1040,7 +1070,29 @@
         "prose": "prosa"
       }
     },
-    "fullConfig": "Configuração completa"
+    "fullConfig": "Configuração completa",
+    "history": {
+      "title": "Histórico de desempenho",
+      "measureNow": "Medir agora",
+      "benchWarning": "Medir derruba o servidor por alguns minutos enquanto o teste roda.",
+      "benchFailed": "A medição falhou — veja os logs do servidor.",
+      "date": "Data",
+      "config": "Configuração",
+      "tps": "tokens/s ger.",
+      "delta": "Δ%",
+      "best": "Melhor medição desta série",
+      "current": "atual",
+      "suspect": "⚠ térmico",
+      "build": "b{{n}}",
+      "usage": "Uso real",
+      "usageSamples_one": "média de {{count}} resposta do chat",
+      "usageSamples_other": "média de {{count}} respostas do chat",
+      "usageNote": "O uso real não é recortado por placa: as respostas do chat não guardam em qual GPU rodaram.",
+      "empty": "Nenhuma medição ainda. “Medir agora” roda um teste de verdade com a configuração vigente deste modelo e grava o resultado nesta série.",
+      "gpuSeries": "A série é por GPU e driver: trocar de placa ou atualizar o driver começa uma série nova.",
+      "engineUpdated": "engine atualizado — não comparável",
+      "noBaseline": "sem base de comparação"
+    }
   },
   "update": {
     "available": "Atualizar para {{version}}",

@@ -428,9 +428,12 @@ pub async fn tune_bench(
     }
 
     // Repete o primeiro braço no fim: se a placa esquentou, a comparação
-    // inteira está enviesada em favor de quem foi medido primeiro.
+    // inteira está enviesada em favor de quem foi medido primeiro. Com um
+    // braço só a re-medição também vale — é ela que permite ao "Medir agora"
+    // do histórico marcar um número de placa quente como suspeito (custo:
+    // dobra o tempo do bench de 1 perfil).
     let mut suspect = false;
-    if results.len() > 1
+    if !results.is_empty()
         && let Ok(repetido) = bench::bench(
             &dir,
             &artefato.primary_path,
@@ -445,6 +448,9 @@ pub async fn tune_bench(
 
     let machine = state.profile.machine_key();
     let agora = crate::scheduler::now_ms();
+    // A série é uma por machine_key, nomeada pela placa principal — None
+    // significa "rodou na CPU" e a tela mostra exatamente isso.
+    let gpu = state.profile.best_gpu().map(|g| g.name.clone());
     for (perfil, res) in &results {
         let _ = state.store.add_perf_run(&PerfRun {
             machine_key: machine.clone(),
@@ -458,6 +464,10 @@ pub async fn tune_bench(
             source: "bench".into(),
             suspect,
             measured_at: agora,
+            gpu_name: gpu.clone(),
+            // Os pares INI legíveis do perfil: é o que deixa o histórico
+            // mostrar "ngl=99 · ctx=16k" em vez de um hash.
+            profile_json: serde_json::to_string(&perfil.to_ini_extras()).ok(),
         });
     }
 
@@ -541,6 +551,113 @@ pub async fn tune_spec_bench(
     let _ = restart_engine(&app, &state, true).await;
 
     resultado
+}
+
+// ----------------------------------------------------------- histórico ---
+
+/// Quantas medições o histórico devolve, da mais recente para a mais antiga.
+const HISTORICO_LIMITE: usize = 50;
+
+/// Uma linha do histórico de bench, pronta para a tabela da tela.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerfRowDto {
+    /// Como gravado no banco.
+    pub measured_at: i64,
+    pub gen_tps: f64,
+    pub prompt_tps: Option<f64>,
+    pub gen_stddev: Option<f64>,
+    pub suspect: bool,
+    pub source: String,
+    pub build_number: u64,
+    pub gpu_name: Option<String>,
+    pub profile_key: String,
+    /// Pares INI legíveis da configuração medida; `None` em linhas gravadas
+    /// antes de `profile_json` existir (a tela cai no profileKey encurtado).
+    pub profile_summary: Option<std::collections::BTreeMap<String, String>>,
+    pub delta_pct: Option<f64>,
+    /// `"ok"` | `"first"` | `"buildChange"` | `"suspect"`.
+    pub delta_reason: &'static str,
+}
+
+/// O que o card de histórico desenha de uma vez.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerfHistoryDto {
+    /// Placa principal do hardware ATUAL (`None` = CPU).
+    pub gpu_name: Option<String>,
+    /// `""` quando o perfil vigente é vazio — a MESMA normalização que o
+    /// bench usa ao gravar (`key().unwrap_or_default()`).
+    pub current_profile_key: String,
+    pub best_profile_key: Option<String>,
+    pub rows: Vec<PerfRowDto>,
+    pub usage: Vec<lr_store::perf::UsageRow>,
+}
+
+/// Os pares INI gravados em `profile_json`, como mapa para a tela.
+fn resumo_do_perfil(json: Option<&str>) -> Option<std::collections::BTreeMap<String, String>> {
+    let pares: Vec<(String, String)> = serde_json::from_str(json?).ok()?;
+    Some(pares.into_iter().collect())
+}
+
+/// Histórico de medições deste modelo NESTA máquina.
+///
+/// A série é recortada pela `machine_key` atual: medições feitas com outra
+/// placa ou outro driver ficam de fora por design — a série antiga
+/// "aposenta-se" sem ser apagada, e volta se a pessoa voltar atrás.
+#[tauri::command]
+pub fn perf_history(state: State<'_, AppState>, model_id: String) -> CmdResult<PerfHistoryDto> {
+    let machine = state.profile.machine_key();
+    // LIMIT+1: a linha extra existe só para ser a antecessora do delta da
+    // última linha visível; ela não aparece na resposta.
+    let mut runs = state
+        .store
+        .perf_history_rows(&machine, &model_id, HISTORICO_LIMITE + 1)
+        .map_err(err_str)?;
+    let anotacoes = lr_store::perf::annotate_deltas(&runs);
+    runs.truncate(HISTORICO_LIMITE);
+
+    // Build atual = o da linha mais recente (data-driven, sem perguntar ao
+    // runtime): é dentro dele que a melhor configuração é eleita.
+    let build_atual = runs.first().map(|r| r.build_number);
+    let best_profile_key = runs
+        .iter()
+        .filter(|r| !r.suspect && Some(r.build_number) == build_atual)
+        .max_by(|a, b| a.gen_tps.total_cmp(&b.gen_tps))
+        .map(|r| r.profile_key.clone());
+
+    let rows = runs
+        .into_iter()
+        .zip(anotacoes)
+        .map(|(r, (delta_pct, delta_reason))| PerfRowDto {
+            measured_at: r.measured_at,
+            gen_tps: r.gen_tps,
+            prompt_tps: Some(r.prompt_tps),
+            gen_stddev: Some(r.gen_stddev),
+            suspect: r.suspect,
+            source: r.source,
+            build_number: r.build_number,
+            gpu_name: r.gpu_name,
+            profile_key: r.profile_key,
+            profile_summary: resumo_do_perfil(r.profile_json.as_deref()),
+            delta_pct,
+            delta_reason,
+        })
+        .collect();
+
+    // Nota: o uso real NÃO é recortado por GPU/driver — `messages` não tem
+    // machine_key. A tela avisa disso ao lado do bloco.
+    let usage = state.store.perf_usage_rows(&model_id).map_err(err_str)?;
+
+    Ok(PerfHistoryDto {
+        gpu_name: state.profile.best_gpu().map(|g| g.name.clone()),
+        current_profile_key: profile_for(&state, &model_id)
+            .and_then(|p| p.key())
+            .unwrap_or_default(),
+        best_profile_key,
+        rows,
+        usage,
+    })
 }
 
 // ---------------------------------------------------------------------------

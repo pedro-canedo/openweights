@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS perf_runs (
     gpu_bytes INTEGER,
     source TEXT NOT NULL,
     suspect INTEGER NOT NULL DEFAULT 0,
-    measured_at INTEGER NOT NULL
+    measured_at INTEGER NOT NULL,
+    gpu_name TEXT,
+    profile_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_perf_lookup
     ON perf_runs(machine_key, model_id, profile_key);
@@ -57,6 +59,12 @@ pub struct PerfRun {
     /// A placa esquentou durante a corrida: o número serve, mas com ressalva.
     pub suspect: bool,
     pub measured_at: i64,
+    /// Nome da placa principal na hora da medição (`None` = CPU, ou linha
+    /// gravada antes desta coluna existir).
+    pub gpu_name: Option<String>,
+    /// Os pares INI legíveis do perfil medido, em JSON — é o que permite à
+    /// tela mostrar a configuração sem decifrar o hash de `profile_key`.
+    pub profile_json: Option<String>,
 }
 
 fn run_from(r: &Row<'_>) -> rusqlite::Result<PerfRun> {
@@ -72,11 +80,14 @@ fn run_from(r: &Row<'_>) -> rusqlite::Result<PerfRun> {
         source: r.get(8)?,
         suspect: r.get::<_, i64>(9)? != 0,
         measured_at: r.get(10)?,
+        gpu_name: r.get(11)?,
+        profile_json: r.get(12)?,
     })
 }
 
 const COLUNAS: &str = "machine_key, model_id, profile_key, build_number, gen_tps, prompt_tps, \
-                       gen_stddev, gpu_bytes, source, suspect, measured_at";
+                       gen_stddev, gpu_bytes, source, suspect, measured_at, gpu_name, \
+                       profile_json";
 
 impl Store {
     #[allow(clippy::too_many_arguments)]
@@ -85,8 +96,8 @@ impl Store {
         conn.execute(
             "INSERT INTO perf_runs (machine_key, model_id, profile_key, build_number,
                                     gen_tps, prompt_tps, gen_stddev, gpu_bytes, source,
-                                    suspect, measured_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                                    suspect, measured_at, gpu_name, profile_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 run.machine_key,
                 run.model_id,
@@ -99,6 +110,8 @@ impl Store {
                 run.source,
                 run.suspect as i64,
                 run.measured_at,
+                run.gpu_name,
+                run.profile_json,
             ],
         )?;
         Ok(())
@@ -176,6 +189,107 @@ impl Store {
             None => None,
         })
     }
+
+    /// O histórico de medições desta máquina para um modelo, da mais recente
+    /// para a mais antiga, SEM filtro de build: a tela mostra a série inteira
+    /// e marca onde o motor mudou. Medições de outra placa/driver ficam de
+    /// fora por construção — a `machine_key` delas é outra, e a série antiga
+    /// simplesmente se "aposenta" sem ser apagada.
+    pub fn perf_history_rows(
+        &self,
+        machine_key: &str,
+        model_id: &str,
+        limit: usize,
+    ) -> Result<Vec<PerfRun>, StoreError> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(&format!(
+            // `id DESC` desempata medições do mesmo instante (um bench de
+            // vários perfis grava todas com o mesmo carimbo).
+            "SELECT {COLUNAS} FROM perf_runs
+             WHERE machine_key = ?1 AND model_id = ?2
+             ORDER BY measured_at DESC, id DESC LIMIT ?3"
+        ))?;
+        let rows = stmt
+            .query_map(params![machine_key, model_id, limit as i64], run_from)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Uso real por configuração: média de tokens/s das respostas do chat,
+    /// colhida passivamente a cada mensagem.
+    ///
+    /// Nota: `messages` NÃO tem `machine_key` — este agregado não é recortado
+    /// por GPU/driver, ao contrário do histórico de bench.
+    pub fn perf_usage_rows(&self, model_id: &str) -> Result<Vec<UsageRow>, StoreError> {
+        // O chat grava o id como o Router o expõe — às vezes sem ".gguf".
+        // Casar pelo nome E pelo stem evita que o agregado suma por causa do
+        // sufixo (a tela sempre pergunta pelo nome de arquivo).
+        let stem = model_id.trim_end_matches(".gguf");
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT profile_key, AVG(tokens_per_sec), COUNT(*) FROM messages
+             WHERE model_id IN (?1, ?2) AND tokens_per_sec IS NOT NULL
+               AND profile_key IS NOT NULL
+             GROUP BY profile_key
+             ORDER BY COUNT(*) DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![model_id, stem], |r| {
+                Ok(UsageRow {
+                    profile_key: r.get(0)?,
+                    avg_tps: r.get(1)?,
+                    samples: r.get(2)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+}
+
+/// Uso real agregado de uma configuração (respostas do chat).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageRow {
+    pub profile_key: String,
+    pub avg_tps: f64,
+    pub samples: i64,
+}
+
+/// Delta de cada linha do histórico sobre a antecessora imediata.
+///
+/// `rows` vem da mais recente para a mais antiga (como devolve
+/// [`Store::perf_history_rows`]); a antecessora de `rows[i]` é `rows[i+1]`.
+/// Devolve, na mesma ordem, `(delta_pct, reason)`:
+/// - `Some(pct)` com `"ok"` só quando linha e antecessora existem, são do
+///   MESMO build e nenhuma das duas é suspeita — fora disso o percentual
+///   compararia coisas que não se comparam;
+/// - `None` com `"first"` (sem antecessora na janela buscada),
+///   `"buildChange"` (o motor mudou entre as duas) ou `"suspect"` (a própria
+///   linha ou a antecessora foi medida com a placa quente).
+pub fn annotate_deltas(rows: &[PerfRun]) -> Vec<(Option<f64>, &'static str)> {
+    rows.iter()
+        .enumerate()
+        .map(|(i, atual)| {
+            let Some(anterior) = rows.get(i + 1) else {
+                return (None, "first");
+            };
+            if anterior.build_number != atual.build_number {
+                return (None, "buildChange");
+            }
+            if atual.suspect || anterior.suspect {
+                return (None, "suspect");
+            }
+            if anterior.gen_tps <= 0.0 {
+                // Sem base positiva não existe percentual honesto — e um
+                // infinito aqui viraria `null` no JSON com razão "ok".
+                return (None, "first");
+            }
+            (
+                Some((atual.gen_tps - anterior.gen_tps) / anterior.gen_tps * 100.0),
+                "ok",
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -195,6 +309,16 @@ mod tests {
             source: "bench".into(),
             suspect: false,
             measured_at: 1_000,
+            gpu_name: Some("RTX de Teste".into()),
+            profile_json: None,
+        }
+    }
+
+    /// Como `run`, mas com o instante escolhido — o histórico ordena por ele.
+    fn run_at(profile: &str, tps: f64, build: u64, at: i64) -> PerfRun {
+        PerfRun {
+            measured_at: at,
+            ..run(profile, tps, build)
         }
     }
 
@@ -251,5 +375,209 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    /// Banco criado antes de `gpu_name`/`profile_json`: a migração aditiva
+    /// tem de acrescentá-las sem tocar as linhas antigas — e reaplicar a
+    /// migração num banco já migrado é no-op seguro.
+    #[test]
+    fn migration_adds_gpu_and_profile_columns_to_an_old_db() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Esquema ANTIGO de perf_runs, à mão; as demais tabelas o init cria.
+        conn.execute_batch(
+            r#"
+            CREATE TABLE perf_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                machine_key TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                profile_key TEXT NOT NULL,
+                build_number INTEGER NOT NULL,
+                gen_tps REAL NOT NULL,
+                prompt_tps REAL NOT NULL,
+                gen_stddev REAL NOT NULL,
+                gpu_bytes INTEGER,
+                source TEXT NOT NULL,
+                suspect INTEGER NOT NULL DEFAULT 0,
+                measured_at INTEGER NOT NULL
+            );
+            "#,
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO perf_runs (machine_key, model_id, profile_key, build_number,
+                                    gen_tps, prompt_tps, gen_stddev, gpu_bytes, source,
+                                    suspect, measured_at)
+             VALUES ('maquina-a', 'm.gguf', 'perfil-a', 10441,
+                     41.0, 410.0, 0.3, NULL, 'bench', 0, 500)",
+            [],
+        )
+        .unwrap();
+
+        let s = crate::Store::init(conn).unwrap();
+
+        // A linha antiga continua legível, com as colunas novas em NULL.
+        let rows = s.perf_history_rows("maquina-a", "m.gguf", 10).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].gpu_name, None);
+        assert_eq!(rows[0].profile_json, None);
+
+        // Gravação nova preenche as colunas novas.
+        let mut novo = run_at("perfil-a", 43.0, 10441, 900);
+        novo.profile_json = Some(r#"[["ctx-size","16384"]]"#.into());
+        s.add_perf_run(&novo).unwrap();
+        let rows = s.perf_history_rows("maquina-a", "m.gguf", 10).unwrap();
+        assert_eq!(rows[0].gpu_name.as_deref(), Some("RTX de Teste"));
+        assert_eq!(
+            rows[0].profile_json.as_deref(),
+            Some(r#"[["ctx-size","16384"]]"#)
+        );
+
+        // Idempotência: reaplicar a migração não muda nada.
+        {
+            let conn = s.conn();
+            crate::ensure_column(&conn, "perf_runs", "gpu_name", "TEXT").unwrap();
+            crate::ensure_column(&conn, "perf_runs", "profile_json", "TEXT").unwrap();
+        }
+        assert_eq!(
+            s.perf_history_rows("maquina-a", "m.gguf", 10)
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    /// O histórico não filtra por build (a série inteira aparece), ordena da
+    /// mais recente para a mais antiga e respeita o LIMIT — é o LIMIT+1 do
+    /// chamador que dá a antecessora da borda.
+    #[test]
+    fn history_crosses_builds_orders_desc_and_limits() {
+        let s = Store::open_in_memory().unwrap();
+        s.add_perf_run(&run_at("a", 40.0, 10441, 100)).unwrap();
+        s.add_perf_run(&run_at("a", 42.0, 10441, 200)).unwrap();
+        s.add_perf_run(&run_at("a", 50.0, 10500, 300)).unwrap();
+        // De outra máquina: fora da série.
+        let mut outra = run_at("a", 99.0, 10500, 400);
+        outra.machine_key = "outra-maquina".into();
+        s.add_perf_run(&outra).unwrap();
+
+        let rows = s.perf_history_rows("maquina-a", "m.gguf", 10).unwrap();
+        assert_eq!(rows.len(), 3, "builds diferentes convivem na mesma série");
+        assert_eq!(rows[0].measured_at, 300);
+        assert_eq!(rows[2].measured_at, 100);
+
+        let rows = s.perf_history_rows("maquina-a", "m.gguf", 2).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].measured_at, 300);
+    }
+
+    /// Mesmo build, ninguém suspeito: o delta existe e é o percentual sobre a
+    /// antecessora; a linha mais antiga da janela fica sem base ("first").
+    #[test]
+    fn delta_exists_within_the_same_build() {
+        let rows = vec![run_at("a", 44.0, 10441, 200), run_at("a", 40.0, 10441, 100)];
+        let annos = annotate_deltas(&rows);
+        let (pct, reason) = &annos[0];
+        assert_eq!(*reason, "ok");
+        assert!((pct.unwrap() - 10.0).abs() < 1e-9);
+        assert_eq!(annos[1], (None, "first"));
+    }
+
+    /// Motor atualizado entre as duas medições: números de builds diferentes
+    /// não se comparam.
+    #[test]
+    fn delta_is_absent_across_a_build_change() {
+        let rows = vec![run_at("a", 50.0, 10500, 200), run_at("a", 40.0, 10441, 100)];
+        let annos = annotate_deltas(&rows);
+        assert_eq!(annos[0], (None, "buildChange"));
+    }
+
+    /// Uma medição suspeita no meio contamina os dois deltas que a tocam: o
+    /// dela (a própria linha) e o da linha seguinte (a antecessora).
+    #[test]
+    fn a_suspect_row_blocks_both_neighboring_deltas() {
+        let mut quente = run_at("a", 22.0, 10441, 200);
+        quente.suspect = true;
+        let rows = vec![
+            run_at("a", 41.0, 10441, 300),
+            quente,
+            run_at("a", 40.0, 10441, 100),
+        ];
+        let annos = annotate_deltas(&rows);
+        assert_eq!(annos[0], (None, "suspect"), "antecessora suspeita");
+        assert_eq!(annos[1], (None, "suspect"), "a própria linha é suspeita");
+        assert_eq!(annos[2], (None, "first"));
+    }
+
+    /// Série de uma linha só: sem antecessora, sem delta.
+    #[test]
+    fn a_single_row_has_no_delta() {
+        let rows = vec![run_at("a", 40.0, 10441, 100)];
+        assert_eq!(annotate_deltas(&rows), vec![(None, "first")]);
+    }
+
+    /// Perfil vazio não tem chave (`key()` = None), mas o bench grava `""`:
+    /// a normalização dos dois lados tem de cair na mesma string vazia.
+    #[test]
+    fn the_empty_profile_key_normalizes_to_the_recorded_empty_string() {
+        use lr_types::tuning::ModelProfile;
+        let chave_vigente = ModelProfile::default().key().unwrap_or_default();
+        assert_eq!(chave_vigente, "");
+
+        let s = Store::open_in_memory().unwrap();
+        s.add_perf_run(&run_at("", 40.0, 10441, 100)).unwrap();
+        let rows = s.perf_history_rows("maquina-a", "m.gguf", 10).unwrap();
+        assert_eq!(rows[0].profile_key, chave_vigente);
+    }
+
+    /// A média de uso vem das respostas do chat, agrupada por configuração,
+    /// ignorando mensagens sem tokens/s ou sem chave de perfil.
+    #[test]
+    fn usage_aggregates_chat_messages_by_profile() {
+        let s = Store::open_in_memory().unwrap();
+        let chat = s.create_chat("Conversa", None).unwrap();
+        let msg = |tps: Option<f64>, profile: Option<&str>| {
+            s.add_message(
+                chat,
+                "assistant",
+                "ok",
+                tps,
+                Some(10),
+                Some(1000),
+                Some("m.gguf"),
+                profile,
+                None,
+            )
+            .unwrap();
+        };
+        msg(Some(40.0), Some("perfil-a"));
+        msg(Some(44.0), Some("perfil-a"));
+        msg(Some(30.0), Some("perfil-b"));
+        msg(Some(99.0), None); // sem perfil: fora do agregado
+        msg(None, Some("perfil-a")); // sem medição: fora do agregado
+        // O Router às vezes expõe o id sem o sufixo — a mensagem gravada
+        // assim precisa entrar no MESMO agregado do arquivo.
+        s.add_message(
+            chat,
+            "assistant",
+            "ok",
+            Some(44.0),
+            Some(10),
+            Some(1000),
+            Some("m"),
+            Some("perfil-b"),
+            None,
+        )
+        .unwrap();
+
+        let uso = s.perf_usage_rows("m.gguf").unwrap();
+        assert_eq!(uso.len(), 2);
+        let a = uso.iter().find(|u| u.profile_key == "perfil-a").unwrap();
+        assert_eq!(a.samples, 2);
+        assert!((a.avg_tps - 42.0).abs() < 1e-9);
+        let b = uso.iter().find(|u| u.profile_key == "perfil-b").unwrap();
+        assert_eq!(b.samples, 2, "o id sem .gguf cai no mesmo agregado");
+        assert!((b.avg_tps - 37.0).abs() < 1e-9);
+
+        assert!(s.perf_usage_rows("outro.gguf").unwrap().is_empty());
     }
 }

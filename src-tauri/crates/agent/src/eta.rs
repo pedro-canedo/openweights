@@ -104,6 +104,8 @@ mod tests {
                 source: "bench".into(),
                 suspect: false,
                 measured_at: 1,
+                gpu_name: None,
+                profile_json: None,
             })
             .unwrap();
         let mut p = plano();

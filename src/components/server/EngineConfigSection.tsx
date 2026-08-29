@@ -45,7 +45,15 @@ import {
   type SpecType,
   type VisionMode,
 } from "../../lib/tuning";
-import { Chips, OptionalNum, chipClass, triFrom, triTo } from "../form/controls";
+import {
+  Chips,
+  NumChips,
+  OptionalNum,
+  Select,
+  chipClass,
+  triFrom,
+  triTo,
+} from "../form/controls";
 import FlagControl, { RequirementBadges } from "../form/FlagControl";
 import HarnessLauncher from "./HarnessLauncher";
 
@@ -63,13 +71,23 @@ type KvChoice = "auto" | KvType;
 export default function EngineConfigSection({
   running,
   hasGpu,
+  selected: selectedProp,
+  onSelect,
 }: {
   running: boolean;
   hasGpu: boolean;
+  /** Seleção elevada: com o par `selected`/`onSelect`, o pai é o dono do
+   *  modelo escolhido (o histórico de benchmark precisa saber qual é).
+   *  Sem o par, o componente se comporta como antes (estado interno). */
+  selected?: string;
+  onSelect?: (model: string) => void;
 }) {
   const { t } = useTranslation();
   const [models, setModels] = useState<string[]>([]);
-  const [selected, setSelected] = useState<string>("");
+  const [selectedState, setSelectedState] = useState<string>("");
+  const controlled = selectedProp !== undefined && onSelect !== undefined;
+  const selected = controlled ? selectedProp : selectedState;
+  const setSelected = controlled ? onSelect : setSelectedState;
   const [draft, setDraft] = useState<ModelProfile>(emptyProfile());
   const [caps, setCaps] = useState<ModelCaps | null>(null);
   const [catalog, setCatalog] = useState<FlagCatalog | null>(null);
@@ -595,16 +613,33 @@ export default function EngineConfigSection({
           />
           {specOn && (
             <div className="mt-1 flex flex-wrap gap-4">
-              <OptionalNum
-                label={t("server.engineConfig.specNMax")}
-                hint={t("server.engineConfig.specNMaxHint")}
-                value={draft.specDraftNMax}
-                min={1}
-                max={16}
-                placeholder="3"
-                disabled={disabled}
-                onCommit={(n) => patch({ specDraftNMax: n })}
-              />
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-dim">
+                  {t("server.engineConfig.specNMax")}
+                </span>
+                <span className="text-[11px] leading-relaxed text-dim">
+                  {t("server.engineConfig.specNMaxHint")}
+                </span>
+                <Select
+                  value={
+                    draft.specDraftNMax == null
+                      ? "auto"
+                      : String(draft.specDraftNMax)
+                  }
+                  disabled={disabled}
+                  onChange={(v) =>
+                    patch({ specDraftNMax: v === "auto" ? null : Number(v) })
+                  }
+                  options={[
+                    { value: "auto", label: t("server.fields.auto") },
+                    ...Array.from({ length: 16 }, (_, i) => ({
+                      value: String(i + 1),
+                      label: String(i + 1),
+                    })),
+                  ]}
+                  className="self-start"
+                />
+              </label>
               <OptionalNum
                 label={t("server.engineConfig.specPMin")}
                 hint={t("server.engineConfig.specPMinHint")}
@@ -702,36 +737,48 @@ export default function EngineConfigSection({
             disabled={disabled}
             onCommit={(n) => patch({ threads: n })}
           />
-          <OptionalNum
-            label={t("chat.engine.batch")}
-            value={draft.batch}
-            min={1}
-            max={8192}
-            step={32}
-            placeholder={t("chat.engine.autoPlaceholder")}
-            disabled={disabled}
-            onCommit={(n) => patch({ batch: n })}
-          />
-          <OptionalNum
-            label={t("chat.engine.ubatch")}
-            value={draft.ubatch}
-            min={1}
-            max={8192}
-            step={32}
-            placeholder={t("chat.engine.autoPlaceholder")}
-            disabled={disabled}
-            onCommit={(n) => patch({ ubatch: n })}
-          />
-          <OptionalNum
-            label={t("chat.engine.parallel")}
-            hint={t("chat.engine.parallelHint")}
-            value={draft.parallel}
-            min={1}
-            max={64}
-            placeholder={t("chat.engine.autoPlaceholder")}
-            disabled={disabled}
-            onCommit={(n) => patch({ parallel: n })}
-          />
+          <div className="flex flex-col gap-2">
+            <span className={label}>{t("chat.engine.batch")}</span>
+            <NumChips
+              value={draft.batch ?? null}
+              suggestions={[256, 512, 1024, 2048]}
+              min={1}
+              max={8192}
+              step={32}
+              allowAuto
+              disabled={disabled}
+              placeholder={t("chat.engine.autoPlaceholder")}
+              onCommit={(n) => patch({ batch: n })}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className={label}>{t("chat.engine.ubatch")}</span>
+            <NumChips
+              value={draft.ubatch ?? null}
+              suggestions={[128, 256, 512, 1024]}
+              min={1}
+              max={8192}
+              step={32}
+              allowAuto
+              disabled={disabled}
+              placeholder={t("chat.engine.autoPlaceholder")}
+              onCommit={(n) => patch({ ubatch: n })}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className={label}>{t("chat.engine.parallel")}</span>
+            <p className={hintCls}>{t("chat.engine.parallelHint")}</p>
+            <NumChips
+              value={draft.parallel ?? null}
+              suggestions={[1, 2, 4, 8]}
+              min={1}
+              max={64}
+              allowAuto
+              disabled={disabled}
+              placeholder={t("chat.engine.autoPlaceholder")}
+              onCommit={(n) => patch({ parallel: n })}
+            />
+          </div>
           <div className="flex flex-col gap-2">
             <span className={label}>{t("chat.engine.mmap.label")}</span>
             <Chips

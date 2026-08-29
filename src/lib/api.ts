@@ -121,6 +121,26 @@ export async function restartServer(force = false): Promise<ServerStatus> {
   return invoke<ServerStatus>("server_restart", { force });
 }
 
+/**
+ * Gera uma chave de API nova (`sk-local-…`), grava no setting
+ * `server_api_key` e a devolve. Não reinicia o servidor: a chave só passa a
+ * valer no próximo boot do processo — quem chama mostra o aviso.
+ */
+export const serverGenerateApiKey = (): Promise<string> =>
+  isTauri
+    ? invoke<string>("server_generate_api_key")
+    : (async () => {
+        // Pseudo-chave no navegador, gravada no mesmo mock de settings que o
+        // `getSetting` lê — o card se comporta igual ao app de verdade.
+        const bytes = crypto.getRandomValues(new Uint8Array(20));
+        const hex = Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+        const key = `sk-local-${hex}`;
+        localStorage.setItem("mock:server_api_key", key);
+        return key;
+      })();
+
 /** `true` quando a recusa veio da guarda de ocupação (e diz quem está usando). */
 export function engineBusyReason(e: unknown): string[] | null {
   const msg = e instanceof Error ? e.message : String(e ?? "");

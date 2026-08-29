@@ -185,6 +185,7 @@ let mockServer: ServerStatus = {
   baseUrl: null,
   port: 11711,
   lan: false,
+  keyStale: false,
 };
 
 export async function serverStatus(): Promise<ServerStatus> {
@@ -229,12 +230,19 @@ export async function startServer(): Promise<ServerStatus> {
     baseUrl: "http://127.0.0.1:11711",
     port: 11711,
     lan: false,
+    keyStale: false,
   };
   return mockServer;
 }
 
 export async function stopServer(): Promise<void> {
-  mockServer = { running: false, baseUrl: null, port: 11711, lan: false };
+  mockServer = {
+    running: false,
+    baseUrl: null,
+    port: 11711,
+    lan: false,
+    keyStale: false,
+  };
 }
 
 /** No navegador o modelo "suporta ferramentas": não trava a UI de dev. */

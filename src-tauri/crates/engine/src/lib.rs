@@ -207,6 +207,12 @@ impl ServerConfig {
             // pedida é dividida entre eles.
             "--parallel".into(),
             self.parallel.max(1).to_string(),
+            // O padrão do servidor responde `Access-Control-Allow-Headers: *`,
+            // e pela spec Fetch o wildcard NÃO cobre `Authorization` — sem
+            // isto o preflight do webview quebra ao mandar Bearer. Inócuo
+            // quando não há chave, então vai sempre.
+            "--cors-headers".into(),
+            "Content-Type, Authorization".into(),
         ];
         if let Some(preset) = &self.models_preset {
             args.push("--models-preset".into());
@@ -216,12 +222,20 @@ impl ServerConfig {
             args.push("--sleep-idle-seconds".into());
             args.push(self.sleep_idle_seconds.to_string());
         }
-        if let Some(key) = &self.api_key {
-            args.push("--api-key".into());
-            args.push(key.clone());
-        }
         args.extend(self.extra_args.iter().cloned());
         args
+    }
+
+    /// Variáveis de ambiente do processo. A chave de API vai por aqui —
+    /// binding `LLAMA_API_KEY` do `--api-key` no b10441 (nome EXATO; não é o
+    /// padrão `LLAMA_ARG_*` dos outros args) — e nunca pelo argv: argumento
+    /// aparece no process list e no log do spawn.
+    pub fn env_vars(&self) -> Vec<(String, String)> {
+        let mut envs = Vec::new();
+        if let Some(key) = &self.api_key {
+            envs.push(("LLAMA_API_KEY".to_string(), key.clone()));
+        }
+        envs
     }
 
     /// URL de BIND (pode ser 0.0.0.0 em modo LAN) — para logs/exibição.
@@ -423,6 +437,9 @@ impl LlamaServer {
         }
         let mut cmd = Command::new(&self.config.exe_path);
         cmd.args(self.config.to_args())
+            // A chave de API entra por ambiente, nunca por argv (vazaria no
+            // process list e no `log::info!` logo abaixo).
+            .envs(self.config.env_vars())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         lr_proc::prepare(&mut cmd);
@@ -597,6 +614,9 @@ mod tests {
         assert!(joined.contains("--models-max 1"));
         // Uma conversa por vez: a janela pedida chega inteira a ela.
         assert!(joined.contains("--parallel 1"));
+        // CORS liberando `Authorization` vai SEMPRE: sem ele o webview não
+        // consegue mandar Bearer quando a chave existir.
+        assert!(joined.contains("--cors-headers Content-Type, Authorization"));
         // Router mode = SEM -m.
         assert!(!joined.contains(" -m "));
         assert!(!args.contains(&"-m".to_string()));
@@ -605,11 +625,33 @@ mod tests {
     #[test]
     fn optional_args_appear_when_set() {
         let mut cfg = ServerConfig::new(PathBuf::from("srv"), PathBuf::from("models"), 9000);
-        cfg.api_key = Some("secreta".into());
         cfg.sleep_idle_seconds = 300;
         let joined = cfg.to_args().join(" ");
-        assert!(joined.contains("--api-key secreta"));
         assert!(joined.contains("--sleep-idle-seconds 300"));
+    }
+
+    /// A chave de API nunca pode aparecer no argv: ele vaza no process list e
+    /// no log do spawn. Ela viaja por ambiente (`LLAMA_API_KEY`, o binding do
+    /// `--api-key` no b10441).
+    #[test]
+    fn the_api_key_never_reaches_the_argv() {
+        let mut cfg = ServerConfig::new(PathBuf::from("srv"), PathBuf::from("models"), 9000);
+        cfg.api_key = Some("secreta".into());
+        let joined = cfg.to_args().join(" ");
+        assert!(!joined.contains("--api-key"));
+        assert!(!joined.contains("secreta"));
+        assert_eq!(
+            cfg.env_vars(),
+            vec![("LLAMA_API_KEY".to_string(), "secreta".to_string())]
+        );
+    }
+
+    /// Sem chave configurada, o ambiente do processo fica limpo — exportar
+    /// `LLAMA_API_KEY` vazio ligaria autenticação com chave "".
+    #[test]
+    fn no_api_key_means_no_env_var() {
+        let cfg = ServerConfig::new(PathBuf::from("srv"), PathBuf::from("models"), 9000);
+        assert!(cfg.env_vars().is_empty());
     }
 
     /// A janela pedida é dividida entre as conversas simultâneas: é por isso

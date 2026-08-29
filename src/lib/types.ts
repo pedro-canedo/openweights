@@ -165,6 +165,9 @@ export interface ServerStatus {
   baseUrl: string | null;
   port: number;
   lan: boolean;
+  /** Processo de pé com chave de API diferente da gravada no setting —
+   *  "reinicie para aplicar" (serde `key_stale`). Sempre `false` parado. */
+  keyStale: boolean;
 }
 
 // ----------------------------------------------------------------- chat ---
