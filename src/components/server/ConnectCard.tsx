@@ -16,6 +16,7 @@ import {
   getServerStatus,
   restartServer,
   serverGenerateApiKey,
+  serverLanUrls,
   setSetting,
 } from "../../lib/api";
 import { routerModels } from "../../lib/flags";
@@ -32,6 +33,10 @@ function maskKey(key: string): string {
   const prefixo = key.startsWith("sk-local-") ? "sk-local-" : key.slice(0, 3);
   return `${prefixo}…${key.slice(-4)}`;
 }
+
+// O hint "WSL/containers não alcançam 127.0.0.1" só faz sentido no Windows —
+// no Linux/macOS o localhost é o mesmo para todo mundo.
+const isWindows = navigator.userAgent.includes("Windows");
 
 export default function ConnectCard({
   status,
@@ -60,6 +65,28 @@ export default function ConnectCard({
   useEffect(() => {
     setKeyStale(!!status?.keyStale);
   }, [status?.keyStale]);
+
+  // URLs alternativas quando o acesso pela rede está ligado (bind 0.0.0.0):
+  // é por elas que WSL, containers e outros aparelhos chegam ao servidor.
+  const lan = !!status?.lan;
+  const [lanUrls, setLanUrls] = useState<string[]>([]);
+  useEffect(() => {
+    if (!lan) {
+      setLanUrls([]);
+      return;
+    }
+    let alive = true;
+    serverLanUrls()
+      .then((urls) => {
+        if (alive) setLanUrls(urls);
+      })
+      .catch(() => {
+        if (alive) setLanUrls([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [lan, running]);
 
   /** Re-lê o status para pegar o `keyStale` recalculado no backend. */
   async function refreshKeyStale() {
@@ -198,6 +225,10 @@ export default function ConnectCard({
   }
 
   const envBlock = `OPENAI_BASE_URL=${base}/v1\nOPENAI_API_KEY=${apiKey || "local"}`;
+  // Variante Anthropic: BASE_URL é a raiz (o cliente anexa /v1/messages) e o
+  // AUTH_TOKEN vira Authorization Bearer — o servidor aceita Bearer e
+  // X-Api-Key; "local" é o dummy quando não há chave.
+  const envBlockAnthropic = `ANTHROPIC_BASE_URL=${base}\nANTHROPIC_AUTH_TOKEN=${apiKey || "local"}`;
 
   const label = "text-[12px] text-dim";
   const btn =
@@ -214,6 +245,40 @@ export default function ConnectCard({
           <CopyChip value={`${base}/v1`} />
         </div>
       </div>
+
+      {/* API Claude: a RAIZ, não /v1 — o cliente Anthropic (Claude Code,
+          SDKs) anexa /v1/messages sozinho ao que estiver em
+          ANTHROPIC_BASE_URL. */}
+      <div className="mt-4">
+        <div className={label}>{t("server.connect.anthropicUrl")}</div>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <CopyChip value={base} />
+        </div>
+        <p className="mt-1 text-[11px] leading-relaxed text-dim">
+          {t("server.connect.anthropicHint")}
+        </p>
+      </div>
+
+      {/* Endereços na rede: 127.0.0.1 não sai desta máquina — WSL, containers
+          e outros aparelhos precisam de um IP de verdade. */}
+      {lan && lanUrls.length > 0 && (
+        <div className="mt-4">
+          <div className={label}>{t("server.connect.lanUrlsTitle")}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {lanUrls.map((u) => (
+              <CopyChip key={u} value={u} />
+            ))}
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-dim">
+            {t("server.connect.lanUrlsHint")}
+          </p>
+        </div>
+      )}
+      {!lan && isWindows && (
+        <p className="mt-2 text-[11px] leading-relaxed text-dim">
+          {t("server.connect.lanUrlsOffHint")}
+        </p>
+      )}
 
       {/* chave */}
       <div className="mt-4">
@@ -315,6 +380,20 @@ export default function ConnectCard({
           </pre>
           <div className="absolute right-2 top-2">
             <CopyButton text={envBlock} label={t("server.connect.copy")} />
+          </div>
+        </div>
+        <div className={`mt-3 ${label}`}>
+          {t("server.connect.envBlockAnthropic")}
+        </div>
+        <div className="relative mt-1">
+          <pre className="overflow-x-auto rounded-lg border border-edge bg-panel2 p-3 font-mono text-[11.5px] leading-relaxed text-dim">
+            {envBlockAnthropic}
+          </pre>
+          <div className="absolute right-2 top-2">
+            <CopyButton
+              text={envBlockAnthropic}
+              label={t("server.connect.copy")}
+            />
           </div>
         </div>
       </div>

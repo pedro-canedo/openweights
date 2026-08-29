@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.8.0"
+version = "0.9.0"
 edition = "2024"
 license = "MIT"
 
@@ -65,6 +65,9 @@ env_logger = "0.11"
 # Chave de API do servidor local: o CSPRNG do sistema, sem arrastar um
 # framework de random inteiro para gerar 20 bytes.
 getrandom = "0.3"
+# URLs alternativas com LAN ligada (bind 0.0.0.0): enumerar os IPv4 locais.
+# O mdns-sd do cluster já traz este crate na árvore — custo zero de lockfile.
+if-addrs = "0.13"
 lr_types.workspace = true
 lr_hw = { path = "crates/hw" }
 lr_runtime = { path = "crates/runtime" }

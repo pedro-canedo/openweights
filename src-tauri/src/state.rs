@@ -33,6 +33,9 @@ pub struct AppState {
     pub server: tokio::sync::Mutex<Option<lr_engine::LlamaServer>>,
     /// PID do llama-server (0 = nenhum). Sobrevive a um mutex ocupado no exit.
     pub server_pid: Arc<AtomicU32>,
+    /// Coletor das estatísticas de serviço (counters do /metrics): tracker de
+    /// deltas + acumulado da sessão. O laço periódico nasce em `main.rs`.
+    pub serve_stats: crate::serve_stats::ServeStatsCollector,
     /// Catálogo do OpenRouter já buscado, com o instante da busca.
     ///
     /// São 400+ modelos e a tela consulta a cada abertura; sem isto cada
@@ -241,6 +244,7 @@ impl AppState {
             downloads: lr_models::DownloadManager::new(models_dir.clone()),
             server: tokio::sync::Mutex::new(None),
             server_pid,
+            serve_stats: crate::serve_stats::ServeStatsCollector::new(),
             openrouter_cache: tokio::sync::Mutex::new(None),
             node: lr_nodejs::NodeManager::new(data_dir.join("providers"), os, arch),
             ninerouter: tokio::sync::Mutex::new(None),

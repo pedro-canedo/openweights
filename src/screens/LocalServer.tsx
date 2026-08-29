@@ -17,6 +17,7 @@ import ClusterPanel from "../components/server/ClusterPanel";
 import ConnectCard from "../components/server/ConnectCard";
 import EngineConfigSection from "../components/server/EngineConfigSection";
 import GlobalFlagsCard from "../components/server/GlobalFlagsCard";
+import ServeStatsCard from "../components/server/ServeStatsCard";
 
 const MAX_LOG_LINES = 500;
 
@@ -102,6 +103,7 @@ export default function LocalServer() {
       {error && <div className="mt-2 text-[12px] text-bad">{error}</div>}
 
       <ConnectCard status={status} apiKey={apiKey} onApiKeyChange={setApiKey} />
+      <ServeStatsCard running={!!status?.running} />
       <ServerConfig running={!!status?.running} />
       <EngineConfigSection
         running={!!status?.running}
@@ -263,6 +265,13 @@ function Examples({ baseUrl, apiKey }: { baseUrl: string; apiKey: string }) {
   -H "Content-Type: application/json" \\${apiKey ? `\n  -H "Authorization: Bearer ${apiKey}" \\` : ""}
   -d '{"model": "SEU-MODELO", "messages": [{"role": "user", "content": "Olá!"}]}'`;
 
+  // API Anthropic nativa do llama-server: a raiz + /v1/messages, body mínimo
+  // (model, max_tokens, messages). O header de auth do lado Anthropic é o
+  // x-api-key — o servidor aceita este e o Bearer.
+  const curlClaude = `curl ${baseUrl}/v1/messages \\
+  -H "Content-Type: application/json" \\${apiKey ? `\n  -H "x-api-key: ${apiKey}" \\` : ""}
+  -d '{"model": "SEU-MODELO", "max_tokens": 512, "messages": [{"role": "user", "content": "Olá!"}]}'`;
+
   const python = `from openai import OpenAI
 
 client = OpenAI(base_url="${baseUrl}/v1", api_key="${apiKey || "local"}")
@@ -295,6 +304,7 @@ print(resp.choices[0].message.content)`;
     <div className="mt-4 rounded-xl border border-edge bg-panel p-5">
       <div className="text-sm font-medium">{t("server.exampleTitle")}</div>
       {block("curl", curl)}
+      {block("claude", curlClaude)}
       {block("python", python)}
     </div>
   );

@@ -16,6 +16,7 @@ import type {
   RuntimeEvent,
   RuntimeState,
   ServerStatus,
+  ServeStatsDto,
   Telemetry,
   WorkspaceFile,
   ClusterSnapshot,
@@ -164,6 +165,28 @@ export const getServerProps = (model?: string | null) =>
   isTauri
     ? invoke<ServerProps>("server_props", { model: model ?? null })
     : mocks.serverProps();
+
+/**
+ * Estatísticas de serviço do servidor local. Com `model`, agrega só aquele
+ * modelo; sem, agrega tudo. A chamada também dispara uma coleta imediata no
+ * backend — os números ficam frescos com a tela aberta.
+ */
+export const serveStats = (model?: string | null) =>
+  isTauri
+    ? invoke<ServeStatsDto>("serve_stats", { model: model ?? null })
+    : mocks.serveStats(model ?? null);
+
+/** Zera sessão E desde-sempre — o "Limpar" do card de estatísticas. */
+export const serveStatsClear = () =>
+  isTauri ? invoke<void>("serve_stats_clear") : mocks.serveStatsClear();
+
+/**
+ * URLs `http://<ip>:<porta>` alternativas quando o servidor escuta em
+ * 0.0.0.0 — o caminho para WSL, containers e outros aparelhos da rede,
+ * que não alcançam o 127.0.0.1 desta máquina.
+ */
+export const serverLanUrls = () =>
+  isTauri ? invoke<string[]>("server_lan_urls") : mocks.serverLanUrls();
 
 export const onServerStatus = (h: (s: ServerStatus) => void) =>
   listen<ServerStatus>("server-status", h);

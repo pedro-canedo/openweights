@@ -15,6 +15,7 @@ mod commands_rag;
 mod commands_tuning;
 mod desktop_host;
 mod scheduler;
+mod serve_stats;
 mod spec_bench;
 mod state;
 mod telemetry;
@@ -70,6 +71,9 @@ fn main() {
             app.manage(state);
             // O relógio das automações precisa do estado já publicado.
             scheduler::spawn_loop(app.handle().clone());
+            // O coletor das estatísticas de serviço também: cada tick pega o
+            // estado pelo handle, então só pode nascer DEPOIS do manage.
+            serve_stats::spawn_loop(app.handle().clone());
 
             let cluster = app.state::<state::AppState>().cluster.clone();
             let handle = app.handle().clone();
@@ -108,6 +112,10 @@ fn main() {
             commands::server_busy,
             commands::server_props,
             commands::server_generate_api_key,
+            commands::server_lan_urls,
+            // Estatísticas de serviço (tokens servidos a todos os clientes).
+            serve_stats::serve_stats,
+            serve_stats::serve_stats_clear,
             commands_cluster::cluster_status,
             commands_cluster::cluster_set_enabled,
             commands_cluster::cluster_ensure_rpc,

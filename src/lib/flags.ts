@@ -243,6 +243,18 @@ export function harnessList(model: string): Promise<HarnessStatus[]> {
         commandPreview: `OPENAI_API_KEY=local aider --openai-api-base http://127.0.0.1:11711/v1 --model openai/${model}`,
         docsUrl: "https://aider.chat/docs/llms/openai-compat.html",
       },
+      // Espelho do registro real do backend: ANTHROPIC_BASE_URL leva a RAIZ
+      // (sem /v1) — o cliente Anthropic anexa /v1/messages sozinho.
+      {
+        id: "claude-code",
+        name: "Claude Code",
+        installed: false,
+        path: null,
+        launchable: true,
+        installCmd: "npm install -g @anthropic-ai/claude-code",
+        commandPreview: `ANTHROPIC_BASE_URL=http://127.0.0.1:11711 ANTHROPIC_AUTH_TOKEN=local ANTHROPIC_DEFAULT_MODEL=${model} claude`,
+        docsUrl: "https://code.claude.com/docs",
+      },
     ]);
   }
   return invoke<HarnessStatus[]>("harness_list", { model });

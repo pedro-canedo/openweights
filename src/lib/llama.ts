@@ -48,6 +48,13 @@ export interface StreamChatResult {
   genMs: number | null;
   /** Tempo entre o primeiro e o último delta de raciocínio, em ms. */
   thinkingMs: number | null;
+  /** Tokens do prompt processados de fato (timings do servidor; sem
+   *  estimativa — `null` quando o servidor não informou). */
+  promptTokens: number | null;
+  /** Tokens do prompt reaproveitados do KV cache (timings do servidor). */
+  cachedTokens: number | null;
+  /** Velocidade de processamento do prompt em tok/s (timings do servidor). */
+  promptTps: number | null;
 }
 
 // ------------------------------------------------- mini-store de geração ---
@@ -154,6 +161,11 @@ interface SseChunk {
     predicted_n?: number;
     predicted_ms?: number;
     predicted_per_second?: number;
+    /** Tokens do prompt reaproveitados do KV cache. */
+    cache_n?: number;
+    /** Tokens do prompt processados de fato (exclui o cache). */
+    prompt_n?: number;
+    prompt_per_second?: number;
   };
 }
 
@@ -250,6 +262,11 @@ async function streamReal({
   let serverTps: number | null = null;
   let serverTokens: number | null = null;
   let serverMs: number | null = null;
+  // Lado do prompt: só existe quando o servidor informa (chunk final com
+  // timings) — nunca estimamos estes três.
+  let serverPromptTokens: number | null = null;
+  let serverCachedTokens: number | null = null;
+  let serverPromptTps: number | null = null;
   let done = false;
 
   const emitText = (t: string) => {
@@ -281,11 +298,23 @@ async function streamReal({
     }
     const timings = chunk.timings;
     if (timings) {
-      const { predicted_per_second: tps, predicted_n: n, predicted_ms: ms } =
-        timings;
+      const {
+        predicted_per_second: tps,
+        predicted_n: n,
+        predicted_ms: ms,
+        cache_n: cacheN,
+        prompt_n: promptN,
+        prompt_per_second: promptTps,
+      } = timings;
       if (typeof tps === "number" && Number.isFinite(tps)) serverTps = tps;
       if (typeof n === "number" && Number.isFinite(n)) serverTokens = n;
       if (typeof ms === "number" && Number.isFinite(ms)) serverMs = ms;
+      if (typeof cacheN === "number" && Number.isFinite(cacheN))
+        serverCachedTokens = cacheN;
+      if (typeof promptN === "number" && Number.isFinite(promptN))
+        serverPromptTokens = promptN;
+      if (typeof promptTps === "number" && Number.isFinite(promptTps))
+        serverPromptTps = promptTps;
     }
     const delta = chunk.choices?.[0]?.delta;
     // Modelos thinking com --jinja: raciocínio chega em campo separado.
@@ -354,7 +383,17 @@ async function streamReal({
     firstReasonAt > 0 ? Math.max(0, Math.round(lastReasonAt - firstReasonAt)) : null;
 
   setGen({ tokensPerSec });
-  return { content, reasoning, tokensPerSec, genTokens, genMs, thinkingMs };
+  return {
+    content,
+    reasoning,
+    tokensPerSec,
+    genTokens,
+    genMs,
+    thinkingMs,
+    promptTokens: serverPromptTokens,
+    cachedTokens: serverCachedTokens,
+    promptTps: serverPromptTps,
+  };
 }
 
 // ------------------------------------------------------ resposta única ---
@@ -516,5 +555,9 @@ async function streamMock({
     genTokens: emitted,
     genMs,
     thinkingMs,
+    // Timings de prompt plausíveis, como o chunk final do servidor traria.
+    promptTokens: 24,
+    cachedTokens: 8,
+    promptTps: 640,
   };
 }

@@ -16,6 +16,7 @@ pub mod engine_presets;
 pub mod mcp;
 pub mod memory;
 pub mod perf;
+pub mod serve;
 pub mod tuning;
 
 #[derive(Debug, thiserror::Error)]
@@ -223,6 +224,8 @@ impl Store {
         ensure_column(&conn, "perf_runs", "gpu_name", "TEXT")?;
         ensure_column(&conn, "perf_runs", "profile_json", "TEXT")?;
         engine_presets::init(&conn)?;
+        // Totais "desde sempre" das estatísticas de serviço (por modelo).
+        serve::init(&conn)?;
         // Respostas gravadas antes de a coluna passar a ser preenchida:
         // reata cada uma à execução que estava rodando quando ela nasceu.
         backfill_message_runs(&conn)?;

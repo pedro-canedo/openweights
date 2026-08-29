@@ -12,7 +12,9 @@ import type {
   QuantsView,
   QuantView,
   RuntimeState,
+  ServeAgg,
   ServerStatus,
+  ServeStatsDto,
   ClusterSnapshot,
 } from "./types";
 
@@ -243,6 +245,133 @@ export async function stopServer(): Promise<void> {
     lan: false,
     keyStale: false,
   };
+}
+
+// ------------------------------------------------ estatísticas de serviço ---
+
+/** Counters crus por modelo — o mock deriva o ServeAgg como o backend faz. */
+type ServeCounters = {
+  promptTokens: number;
+  cachedTokens: number;
+  predictedTokens: number;
+  promptSeconds: number;
+  predictedSeconds: number;
+};
+
+const zeroCounters = (): ServeCounters => ({
+  promptTokens: 0,
+  cachedTokens: 0,
+  predictedTokens: 0,
+  promptSeconds: 0,
+  predictedSeconds: 0,
+});
+
+const serveSession = new Map<string, ServeCounters>();
+const serveAllTime = new Map<string, ServeCounters>();
+let serveSeeded = false;
+
+/** Sessão menor que o desde-sempre, como numa máquina usada há semanas. */
+function seedServe(): void {
+  serveSeeded = true;
+  serveAllTime.set("Qwen3.6-27B-MTP-Q4_K_M.gguf", {
+    promptTokens: 182_400,
+    cachedTokens: 96_800,
+    predictedTokens: 74_300,
+    promptSeconds: 228.4,
+    predictedSeconds: 1_486.2,
+  });
+  serveAllTime.set("gemma-3-4b-it-Q4_K_M.gguf", {
+    promptTokens: 22_100,
+    cachedTokens: 4_800,
+    predictedTokens: 9_650,
+    promptSeconds: 18.9,
+    predictedSeconds: 120.5,
+  });
+  serveSession.set("Qwen3.6-27B-MTP-Q4_K_M.gguf", {
+    promptTokens: 12_300,
+    cachedTokens: 8_400,
+    predictedTokens: 5_120,
+    promptSeconds: 15.2,
+    predictedSeconds: 102.7,
+  });
+}
+
+/** Um pouco de tráfego novo a cada consulta, para a tela "viver" no dev. */
+function growServe(): void {
+  if (!mockServer.running) return;
+  const id = "Qwen3.6-27B-MTP-Q4_K_M.gguf";
+  for (const map of [serveSession, serveAllTime]) {
+    const c = map.get(id) ?? zeroCounters();
+    c.promptTokens += 220;
+    c.cachedTokens += 340;
+    c.predictedTokens += 180;
+    c.promptSeconds += 0.3;
+    c.predictedSeconds += 3.4;
+    map.set(id, c);
+  }
+}
+
+function aggServe(
+  map: Map<string, ServeCounters>,
+  model: string | null,
+): ServeAgg {
+  const total = zeroCounters();
+  for (const [id, c] of map) {
+    if (model && id !== model) continue;
+    total.promptTokens += c.promptTokens;
+    total.cachedTokens += c.cachedTokens;
+    total.predictedTokens += c.predictedTokens;
+    total.promptSeconds += c.promptSeconds;
+    total.predictedSeconds += c.predictedSeconds;
+  }
+  const promptEntrada = total.promptTokens + total.cachedTokens;
+  return {
+    promptTokens: total.promptTokens,
+    cachedTokens: total.cachedTokens,
+    predictedTokens: total.predictedTokens,
+    totalTokens: promptEntrada + total.predictedTokens,
+    cacheEfficiency:
+      promptEntrada > 0 ? total.cachedTokens / promptEntrada : null,
+    avgPromptTps:
+      total.promptSeconds > 0
+        ? total.promptTokens / total.promptSeconds
+        : null,
+    avgGenTps:
+      total.predictedSeconds > 0
+        ? total.predictedTokens / total.predictedSeconds
+        : null,
+  };
+}
+
+export async function serveStats(
+  model: string | null,
+): Promise<ServeStatsDto> {
+  if (!serveSeeded) seedServe();
+  growServe();
+  const models = [
+    ...new Set([...serveSession.keys(), ...serveAllTime.keys()]),
+  ].sort();
+  return {
+    running: mockServer.running,
+    models,
+    session: aggServe(serveSession, model),
+    allTime: aggServe(serveAllTime, model),
+  };
+}
+
+export async function serveStatsClear(): Promise<void> {
+  // Limpo é limpo: marcar como semeado impede a re-semeadura no próximo poll.
+  serveSeeded = true;
+  serveSession.clear();
+  serveAllTime.clear();
+}
+
+/** IPs plausíveis de uma máquina Windows com WSL (o card gera o resto). */
+export async function serverLanUrls(): Promise<string[]> {
+  return [
+    `http://192.168.1.7:${mockServer.port}`,
+    `http://172.20.32.1:${mockServer.port}`,
+  ];
 }
 
 /** No navegador o modelo "suporta ferramentas": não trava a UI de dev. */

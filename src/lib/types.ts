@@ -170,6 +170,40 @@ export interface ServerStatus {
   keyStale: boolean;
 }
 
+/**
+ * Agregado de tráfego servido pelo motor (espelho de `ServeAgg` do backend,
+ * serde camelCase). Vem dos counters do próprio llama-server (/metrics),
+ * então cobre TODOS os clientes: chat interno, agente e apps externos.
+ */
+export interface ServeAgg {
+  /** Tokens de prompt processados de fato (exclui os vindos do cache). */
+  promptTokens: number;
+  /** Tokens de prompt reaproveitados do KV cache. */
+  cachedTokens: number;
+  /** Tokens gerados. */
+  predictedTokens: number;
+  /** prompt + cached + predicted. */
+  totalTokens: number;
+  /** cached / (prompt + cached); `null` sem dados. */
+  cacheEfficiency: number | null;
+  /** promptTokens / promptSeconds — média do recorte, não instantânea. */
+  avgPromptTps: number | null;
+  /** predictedTokens / predictedSeconds — média do recorte. */
+  avgGenTps: number | null;
+}
+
+/** Estatísticas de serviço (espelho de `ServeStatsDto` do backend). */
+export interface ServeStatsDto {
+  /** Servidor de pé — senão os números são só históricos. */
+  running: boolean;
+  /** Modelos com dados (união sessão ∪ desde-sempre). */
+  models: string[];
+  /** Desde que o app abriu (não desde o boot do servidor). */
+  session: ServeAgg;
+  /** Acumulado no banco, sobrevive a reinícios. */
+  allTime: ServeAgg;
+}
+
 // ----------------------------------------------------------------- chat ---
 
 export interface ChatRow {

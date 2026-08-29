@@ -781,6 +781,11 @@ pub async fn server_stop(app: AppHandle, state: State<'_, AppState>) -> CmdResul
 }
 
 pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<()> {
+    // Scrape final best-effort das estatísticas de serviço: os counters do
+    // /metrics morrem com o processo, e sem isto até ~30 s de tráfego não
+    // coletado se perderiam. Erros são ignorados (o cliente do coletor tem
+    // timeout curto) — parar o servidor é o que importa.
+    state.serve_stats.scrape_now(state).await;
     // Um único guard para parar E limpar o slot: dois lock() sequenciais
     // abririam janela para um server_start intercalado ser morto em seguida.
     {
@@ -806,6 +811,51 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
         },
     );
     Ok(())
+}
+
+/// URLs alternativas quando o acesso pela rede está ligado (bind 0.0.0.0):
+/// `http://<ip>:<porta>` para cada IPv4 local de verdade da máquina.
+///
+/// Existe por um caso real: ferramenta rodando no WSL (ou num container) não
+/// alcança o `127.0.0.1` do Windows — precisa do IP da máquina na rede. Com o
+/// bind em loopback a lista é vazia: não há o que anunciar.
+#[tauri::command]
+pub async fn server_lan_urls(state: State<'_, AppState>) -> CmdResult<Vec<String>> {
+    let port = {
+        let guard = state.server.lock().await;
+        match guard.as_ref() {
+            Some(srv)
+                if srv.is_spawned()
+                    && (srv.config().host == "0.0.0.0" || srv.config().host == "::") =>
+            {
+                srv.config().port
+            }
+            _ => return Ok(Vec::new()),
+        }
+    };
+    Ok(lan_urls(port))
+}
+
+/// Enumera os IPv4 locais não-loopback e monta as URLs.
+///
+/// O crate do cluster não expõe enumeração de interfaces (o mDNS dele faz
+/// isso por dentro); o `if-addrs` — que o mdns-sd já traz na árvore — é o
+/// helper mínimo. Link-local (169.254.x, o APIPA) fica de fora: é sinal de
+/// rede sem DHCP, não um endereço que outro aparelho alcance de propósito.
+fn lan_urls(port: u16) -> Vec<String> {
+    let mut ips: Vec<std::net::Ipv4Addr> = if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|iface| match iface.addr.ip() {
+            std::net::IpAddr::V4(v4) if !v4.is_loopback() && !v4.is_link_local() => Some(v4),
+            _ => None,
+        })
+        .collect();
+    ips.sort_unstable();
+    ips.dedup();
+    ips.into_iter()
+        .map(|ip| format!("http://{ip}:{port}"))
+        .collect()
 }
 
 /// Quem está usando o motor agora — vazio quer dizer "pode derrubar".

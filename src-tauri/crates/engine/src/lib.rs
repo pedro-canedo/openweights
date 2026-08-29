@@ -20,6 +20,7 @@
 //!   num crash; `taskkill /T` é o cinto se o job não puder ser criado.
 
 pub mod client;
+pub mod metrics;
 pub mod props;
 
 pub use client::{
@@ -213,6 +214,10 @@ impl ServerConfig {
             // quando não há chave, então vai sempre.
             "--cors-headers".into(),
             "Content-Type, Authorization".into(),
+            // `GET /metrics` (Prometheus): é de onde saem as estatísticas de
+            // serviço do app. Não é endpoint público — respeita a chave de
+            // API como o resto; sem chave fica aberto como os demais.
+            "--metrics".into(),
         ];
         if let Some(preset) = &self.models_preset {
             args.push("--models-preset".into());
@@ -617,6 +622,8 @@ mod tests {
         // CORS liberando `Authorization` vai SEMPRE: sem ele o webview não
         // consegue mandar Bearer quando a chave existir.
         assert!(joined.contains("--cors-headers Content-Type, Authorization"));
+        // `/metrics` sempre ligado: as estatísticas de serviço dependem dele.
+        assert!(joined.contains("--metrics"));
         // Router mode = SEM -m.
         assert!(!joined.contains(" -m "));
         assert!(!args.contains(&"-m".to_string()));

@@ -284,6 +284,9 @@ export default function BenchHistoryCard({
                         {t("tune.history.tps")}
                       </th>
                       <th className="py-1.5 pr-3 font-normal">
+                        {t("tune.history.promptTps")}
+                      </th>
+                      <th className="py-1.5 pr-3 font-normal">
                         {t("tune.history.delta")}
                       </th>
                       <th className="py-1.5 font-normal" />
@@ -309,6 +312,13 @@ export default function BenchHistoryCard({
                           </td>
                           <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums">
                             {r.genTps.toFixed(1)}
+                          </td>
+                          <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums">
+                            {/* Linha antiga pode carregar 0.0 gravado —
+                                exibir "0.0" mentiria; null e <= 0 viram —. */}
+                            {r.promptTps != null && r.promptTps > 0
+                              ? r.promptTps.toFixed(1)
+                              : "—"}
                           </td>
                           <td className="whitespace-nowrap py-1.5 pr-3">
                             {deltaCell(r)}

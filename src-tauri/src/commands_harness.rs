@@ -84,6 +84,38 @@ fn registry() -> &'static [HarnessSpec] {
             docs_url: "https://opencode.ai/docs",
             npx_package: Some("opencode-ai"),
         },
+        // Claude Code fala a API Anthropic nativa do llama-server (b10441 tem
+        // /v1/messages). ANTHROPIC_BASE_URL é a RAIZ — o cliente Anthropic
+        // anexa /v1/messages sozinho (verificado no binário 2.1.251) — por
+        // isso o {baseRootUrl}, e não o {baseUrl} com /v1. O AUTH_TOKEN vira
+        // header Authorization Bearer, que o servidor aceita (além do
+        // X-Api-Key). Todos os tiers apontam para o MESMO modelo escolhido;
+        // dropdowns por tier ficam para depois (registrado no design).
+        HarnessSpec {
+            id: "claude-code",
+            name: "Claude Code",
+            probe_bin: "claude",
+            install_cmd: "npm install -g @anthropic-ai/claude-code",
+            launch: &["{bin}"],
+            env: &[
+                ("ANTHROPIC_BASE_URL", "{baseRootUrl}"),
+                ("ANTHROPIC_AUTH_TOKEN", "{apiKeyOrDummy}"),
+                // Tier default + fallback geral.
+                ("ANTHROPIC_DEFAULT_MODEL", "{model}"),
+                // Tier novo do Claude Code 2.1.x.
+                ("ANTHROPIC_DEFAULT_FABLE_MODEL", "{model}"),
+                ("ANTHROPIC_DEFAULT_OPUS_MODEL", "{model}"),
+                ("ANTHROPIC_DEFAULT_SONNET_MODEL", "{model}"),
+                ("ANTHROPIC_DEFAULT_HAIKU_MODEL", "{model}"),
+                // Tarefas rápidas de fundo.
+                ("ANTHROPIC_SMALL_FAST_MODEL", "{model}"),
+                ("API_TIMEOUT_MS", "3000000"),
+                ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
+            ],
+            docs_url: "https://code.claude.com/docs",
+            // `claude` não roda bem via `npx -y`; instalação global é o caminho.
+            npx_package: None,
+        },
     ]
 }
 
@@ -134,6 +166,9 @@ async fn probe(bin: &str) -> Option<String> {
 /// Contexto de substituição dos placeholders.
 struct Fill {
     base_url: String,
+    /// A RAIZ do servidor (sem `/v1`): clientes Anthropic anexam /v1/messages
+    /// à ANTHROPIC_BASE_URL sozinhos, então dar a base OpenAI dobraria o /v1.
+    base_root_url: String,
     model: String,
     api_key: Option<String>,
     dsh_home: String,
@@ -148,6 +183,7 @@ fn fill(template: &str, f: &Fill, mask_secret: bool) -> String {
     };
     template
         .replace("{baseUrl}", &f.base_url)
+        .replace("{baseRootUrl}", &f.base_root_url)
         .replace("{model}", &f.model)
         .replace("{apiKey}", key.as_deref().unwrap_or(""))
         // Clientes OpenAI recusam chave vazia mesmo quando o servidor não
@@ -168,6 +204,7 @@ async fn server_fill(state: &AppState, model: &str) -> CmdResult<Fill> {
         }
     };
     Ok(Fill {
+        base_root_url: base_url.clone(),
         base_url: format!("{base_url}/v1"),
         model: model.to_string(),
         api_key,
@@ -180,22 +217,36 @@ async fn server_fill(state: &AppState, model: &str) -> CmdResult<Fill> {
     })
 }
 
+/// O Fill de FALLBACK do `harness_list`, para o preview com o servidor
+/// parado. A raiz é derivada aqui TAMBÉM — sem ela o cartão do claude-code
+/// mostraria `{baseRootUrl}` literal enquanto o servidor não sobe.
+fn fallback_fill(model: &str, dsh_home: String) -> Fill {
+    Fill {
+        base_url: "http://127.0.0.1:11711/v1".into(),
+        base_root_url: "http://127.0.0.1:11711".into(),
+        model: model.to_string(),
+        api_key: None,
+        dsh_home,
+        bin: String::new(),
+    }
+}
+
 #[tauri::command]
 pub async fn harness_list(
     state: State<'_, AppState>,
     model: String,
 ) -> CmdResult<Vec<HarnessStatus>> {
-    let mut f = server_fill(&state, model.trim()).await.unwrap_or(Fill {
-        base_url: "http://127.0.0.1:11711/v1".into(),
-        model: model.trim().to_string(),
-        api_key: None,
-        dsh_home: state
-            .data_dir
-            .join("dsh-home")
-            .to_string_lossy()
-            .into_owned(),
-        bin: String::new(),
-    });
+    let mut f = match server_fill(&state, model.trim()).await {
+        Ok(f) => f,
+        Err(_) => fallback_fill(
+            model.trim(),
+            state
+                .data_dir
+                .join("dsh-home")
+                .to_string_lossy()
+                .into_owned(),
+        ),
+    };
 
     let mut out = Vec::new();
     for spec in registry() {
@@ -367,6 +418,7 @@ mod tests {
     fn contexto() -> Fill {
         Fill {
             base_url: "http://127.0.0.1:11711/v1".into(),
+            base_root_url: "http://127.0.0.1:11711".into(),
             model: "Qwen3.6-27B-MTP.gguf".into(),
             api_key: Some("sk-segredo".into()),
             dsh_home: "/data/dsh-home".into(),
@@ -425,5 +477,59 @@ mod tests {
                 s.id
             );
         }
+    }
+
+    /// `{baseRootUrl}` é a raiz SEM `/v1`: o cliente Anthropic anexa
+    /// /v1/messages sozinho, e a base OpenAI dobraria o caminho.
+    #[test]
+    fn base_root_url_fills_without_the_v1_suffix() {
+        let f = contexto();
+        assert_eq!(fill("{baseRootUrl}", &f, false), "http://127.0.0.1:11711");
+        assert_eq!(fill("{baseUrl}", &f, false), "http://127.0.0.1:11711/v1");
+    }
+
+    /// Com o servidor parado, o Fill de fallback também deriva a raiz —
+    /// senão o preview do claude-code quebrava com `{baseRootUrl}` literal.
+    #[test]
+    fn the_fallback_fill_also_derives_the_root_url() {
+        let f = fallback_fill("m.gguf", "/data/dsh-home".into());
+        assert_eq!(f.base_url, "http://127.0.0.1:11711/v1");
+        assert_eq!(f.base_root_url, "http://127.0.0.1:11711");
+        assert_eq!(fill("{baseRootUrl}", &f, true), "http://127.0.0.1:11711");
+        // Sem chave no fallback: o dummy "local" entra no lugar.
+        assert_eq!(fill("{apiKeyOrDummy}", &f, false), "local");
+    }
+
+    /// O contrato do cartão Claude Code: raiz na ANTHROPIC_BASE_URL, Bearer
+    /// via AUTH_TOKEN e TODOS os tiers apontando para o modelo escolhido.
+    #[test]
+    fn claude_code_env_points_every_tier_at_the_local_root() {
+        let spec = registry().iter().find(|s| s.id == "claude-code").unwrap();
+        assert_eq!(spec.probe_bin, "claude");
+        assert_eq!(spec.launch, &["{bin}"]);
+        // Sem npx: `claude` não roda bem via `npx -y`.
+        assert!(spec.npx_package.is_none());
+
+        let env: std::collections::HashMap<_, _> = spec.env.iter().copied().collect();
+        assert_eq!(env["ANTHROPIC_BASE_URL"], "{baseRootUrl}");
+        assert_eq!(env["ANTHROPIC_AUTH_TOKEN"], "{apiKeyOrDummy}");
+        for tier in [
+            "ANTHROPIC_DEFAULT_MODEL",
+            "ANTHROPIC_DEFAULT_FABLE_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            "ANTHROPIC_SMALL_FAST_MODEL",
+        ] {
+            assert_eq!(env[tier], "{model}", "{tier} aponta o modelo escolhido");
+        }
+        assert_eq!(env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"], "1");
+
+        // A base resolvida NÃO termina em /v1 — e o segredo sai mascarado.
+        let f = contexto();
+        let base = fill(env["ANTHROPIC_BASE_URL"], &f, true);
+        assert_eq!(base, "http://127.0.0.1:11711");
+        assert!(!base.ends_with("/v1"));
+        assert_eq!(fill(env["ANTHROPIC_AUTH_TOKEN"], &f, true), "•••");
     }
 }
