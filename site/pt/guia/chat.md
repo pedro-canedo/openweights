@@ -52,12 +52,16 @@ Presets salvam um conjunto de parâmetros com um nome.
 (MTP), visão e o resto dos botões do llama.cpp — mudaram de casa: agora moram
 em **Servidor Local**, junto do modelo que os usa. O atalho no painel leva
 direto para lá, com o modelo da conversa já selecionado. A razão é que carga é
-propriedade do modelo, não da conversa: é a mesma configuração para o chat, o
-agente e qualquer app que consuma a API. Veja
+propriedade do modelo, não da conversa: é a mesma configuração para o chat e
+qualquer app que consuma a API. Veja
 [configurar o llama.cpp](/pt/integracoes/api-local#configurar-o-llama-cpp).
 
-## Chat ou agente
+## Quando você quer trabalho feito, não só resposta
 
-O botão no compositor alterna entre **Chat** — o modelo só fala — e **Agente**,
-onde ele pode usar ferramentas para fazer o trabalho de verdade. Isso é uma
-seção inteira à parte: [o harness agêntico](/pt/agente/).
+Chat é chat: o modelo fala. Para trabalho de agente — ler e editar arquivos,
+rodar comandos — o botão **Agente** no compositor abre o
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): um agente
+de código completo que o app instala, configura e abre por você, já apontado
+para todos os provedores e modelos que você tem. A primeira abertura instala;
+depois é um clique. Veja
+[Abrir em um harness](/pt/integracoes/api-local#abrir-em-um-harness).

@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.9.0"
+version = "0.10.0"
 edition = "2024"
 license = "MIT"
 
@@ -44,11 +44,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
-# O agente precisa alcançar o computador em volta do projeto: avisar a pessoa
-# e usar a área de transferência. Quem faz isso direito em cada sistema são
-# os plugins oficiais — o crate `lr_desktop` só define o contrato.
+# Aviso do sistema (cluster: pareamento, empréstimo de GPU). Quem faz isso
+# direito em cada sistema é o plugin oficial.
 tauri-plugin-notification = "2"
-tauri-plugin-clipboard-manager = "2"
 # Atualização de dentro do app. A assinatura é do próprio updater (minisign,
 # de graça) e não tem relação com o certificado de code signing que falta:
 # ela garante que o pacote baixado veio deste projeto, não que o sistema
@@ -75,23 +73,12 @@ lr_engine = { path = "crates/engine" }
 lr_providers = { path = "crates/providers" }
 lr_nodejs = { path = "crates/nodejs" }
 lr_ninerouter = { path = "crates/ninerouter" }
+lr_dshhost = { path = "crates/dshhost" }
 lr_proc = { path = "crates/proc" }
 lr_gateway = { path = "crates/gateway" }
 lr_models = { path = "crates/models" }
 lr_advisor = { path = "crates/advisor" }
 lr_store = { path = "crates/store" }
-lr_tools = { path = "crates/tools" }
-lr_desktop = { path = "crates/desktop" }
-lr_policy = { path = "crates/policy" }
-lr_checkpoint = { path = "crates/checkpoint" }
-lr_agent = { path = "crates/agent" }
-lr_mcp = { path = "crates/mcp" }
-lr_memory = { path = "crates/memory" }
-lr_rag = { path = "crates/rag" }
-lr_webtools = { path = "crates/webtools" }
-lr_codetools = { path = "crates/codetools" }
-lr_gittools = { path = "crates/gittools" }
-lr_datatools = { path = "crates/datatools" }
 lr_cluster = { path = "crates/cluster" }
 
 [target.'cfg(windows)'.dependencies]

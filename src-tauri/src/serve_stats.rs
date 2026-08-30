@@ -2,7 +2,7 @@
 //! llama-server e os dois acumuladores que a tela mostra.
 //!
 //! Semântica dos números: eles cobrem TODO o tráfego atendido pelo servidor —
-//! chat interno, agente, automações e apps externos (Claude Code, Cursor…) —
+//! chat interno e apps externos (DeepSeek Harness, Claude Code, Cursor…) —
 //! porque vêm do próprio motor. "Sessão" = desde que o APP abriu (não desde o
 //! boot do servidor); "desde sempre" mora na tabela `serve_totals` do SQLite.
 //!
@@ -188,8 +188,8 @@ impl ServeStatsCollector {
     }
 }
 
-/// Laço do coletor, no molde de `scheduler::spawn_loop`: só pode nascer
-/// DEPOIS de `app.manage(state)` — cada tick pega o estado pelo handle.
+/// Laço do coletor: só pode nascer DEPOIS de `app.manage(state)` — cada
+/// tick pega o estado pelo handle.
 pub fn spawn_loop(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut ticker = tokio::time::interval(TICK);

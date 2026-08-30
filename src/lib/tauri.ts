@@ -51,12 +51,49 @@ const mockProfile: HardwareProfile = {
   ],
 };
 
+// Estado simulado do DeepSeek Harness gerenciado: começa não instalado para
+// que o CTA do Chat exercite o caminho completo (instalar → subir → abrir).
+let dshMock = {
+  nodeInstalled: false,
+  installed: false,
+  running: false,
+  port: 0,
+  panelUrl: null as string | null,
+  version: "",
+};
+
 async function mockInvoke(cmd: string, _args?: Record<string, unknown>) {
   switch (cmd) {
     case "hardware_profile":
       return mockProfile;
     case "app_version":
       return "0.1.0-dev";
+    case "dsh_status":
+      return { ...dshMock };
+    case "dsh_install":
+      dshMock = {
+        ...dshMock,
+        nodeInstalled: true,
+        installed: true,
+        version: "0.1.1-rc.2",
+      };
+      return { ...dshMock };
+    case "dsh_start":
+      dshMock = {
+        nodeInstalled: true,
+        installed: true,
+        running: true,
+        port: 3080,
+        panelUrl: "http://127.0.0.1:3080/",
+        version: "0.1.1-rc.2",
+      };
+      return { ...dshMock };
+    case "dsh_open_panel":
+      // Navegador: não há janela Tauri para abrir — no-op coerente.
+      return undefined;
+    case "dsh_stop":
+      dshMock = { ...dshMock, running: false, port: 0, panelUrl: null };
+      return { ...dshMock };
     case "provider_endpoint":
       // Endpoint local simulado, sem chave — defesa em profundidade para
       // qualquer chamador que chegue aqui fora do Tauri.

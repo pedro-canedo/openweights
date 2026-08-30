@@ -1,7 +1,7 @@
 # Grafo de código — o índice que diz *onde olhar*
 
-Plano de trabalho e caderno de medições do `lr_graph`. Mesma regra do
-[Code Mode](code-mode.md): número medido **nesta máquina**, com o que falhou junto.
+Plano de trabalho e caderno de medições do `lr_graph`. Mesma regra do resto do
+projeto: número medido **nesta máquina**, com o que falhou junto.
 
 ## O problema
 

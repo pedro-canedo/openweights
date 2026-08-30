@@ -17,8 +17,9 @@ poucos MB, sem Electron.
   inteira na GPU, divide com a CPU ou é só CPU.
 - **Conversa localmente**, com streaming, markdown, destaque de código e
   histórico em disco.
-- **Roda um agente** que lê e edita arquivos, roda comandos, usa Git, navega na
-  web e analisa dados — sob o nível de autorização que você escolher.
+- **Entrega seus modelos a agentes de código externos** — DeepSeek Harness,
+  Claude Code, Aider, OpenCode — abertos com um clique, pré-configurados com
+  todos os seus provedores e modelos.
 - **Se ajusta para a sua máquina**: pergunta ao llama.cpp quanta memória cada
   configuração custa na *sua* placa, aplica uma e desfaz sozinho se o modelo
   não carregar.
@@ -38,11 +39,10 @@ poucos MB, sem Electron.
 
 | O quê | Onde |
 |---|---|
-| Conversas, ajustes, histórico de execuções | Banco SQLite local, na pasta de dados do app |
+| Conversas e ajustes | Banco SQLite local, na pasta de dados do app |
 | Modelos | A pasta que você escolheu ao baixar |
 | O runtime do llama.cpp | Pasta de dados do app, baixado na primeira execução |
-| Memória do agente | Arquivos Markdown, por projeto e global — abríveis pelo app |
-| Chaves de API (Hugging Face, OpenRouter, busca web) | O mesmo banco SQLite, em texto puro |
+| Chaves de API (Hugging Face, OpenRouter) | O mesmo banco SQLite, em texto puro |
 
 ::: warning Sobre as chaves de API
 As chaves ficam **em texto puro** junto do resto dos ajustes — ainda não há
@@ -55,5 +55,5 @@ máquina, mas um programa rodando como seu usuário consegue ler.
 - [Instalação](/pt/guia/instalacao) — uma linha, ou o instalador na mão.
 - [Primeira execução](/pt/guia/primeira-execucao) — detecção de hardware e o
   download do motor.
-- [O harness agêntico](/pt/agente/) — o que faz o agente funcionar em modelo
-  pequeno.
+- [Abrir em um harness](/pt/integracoes/api-local#abrir-em-um-harness) —
+  agentes de código externos pré-configurados com os seus modelos.

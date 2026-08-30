@@ -5,7 +5,6 @@ export type Screen =
   | "discover"
   | "models"
   | "chat"
-  | "activity"
   | "server"
   | "providers"
   | "settings";

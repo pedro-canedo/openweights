@@ -1,7 +1,7 @@
 // Prévia de arquivos visuais (HTML, imagens, SVG) dentro do app.
 //
-// O agente gera páginas (jogos, landing pages) na pasta do projeto e, sem
-// isto, a pessoa precisava sair do app para VER o resultado. O arquivo é
+// A pasta da sessão pode ter páginas (jogos, landing pages) e, sem isto,
+// a pessoa precisava sair do app para VER o resultado. O arquivo é
 // carregado pelo protocolo asset do Tauri (`convertFileSrc`): zero cópia de
 // string pelo IPC e os recursos relativos (style.css, script.js ao lado do
 // index.html) resolvem sozinhos — como abrir o arquivo no navegador.
@@ -82,7 +82,7 @@ export default function PreviewPane({
   /** Caminho ABSOLUTO do arquivo (o protocolo asset não conhece a pasta da sessão). */
   path: string;
   name: string;
-  /** Muda quando a lista de arquivos atualiza (agente gravou algo) — recarrega a prévia. */
+  /** Muda quando a lista de arquivos atualiza (algo gravou por fora) — recarrega a prévia. */
   refreshKey?: number;
   onClose: () => void;
   /** Presente quando dá para alternar para o código (HTML/SVG) — vira o toggle no cabeçalho. */

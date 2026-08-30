@@ -60,5 +60,5 @@ que uma promessa que você não pode.
 
 - [Modelos e quantização](/pt/guia/modelos) — como ler as cores.
 - [Chat](/pt/guia/chat) — a tela de conversa, parâmetros e anexos.
-- [O harness agêntico](/pt/agente/) — quando você quer trabalho feito, não só
-  resposta.
+- [Abrir em um harness](/pt/integracoes/api-local#abrir-em-um-harness) —
+  quando você quer trabalho feito, não só resposta.

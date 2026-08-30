@@ -1,9 +1,6 @@
 // Espelhos TypeScript dos tipos Rust (serde rename_all = "camelCase").
 // Mantenha em sincronia com src-tauri/crates/*/src e src-tauri/src/commands.rs.
 
-import type { RunMode } from "./agent/types";
-import type { WorkMode } from "./agent/scout";
-
 export type GpuVendor = "nvidia" | "amd" | "intel" | "apple" | "other";
 
 export interface GpuInfo {
@@ -173,7 +170,7 @@ export interface ServerStatus {
 /**
  * Agregado de tráfego servido pelo motor (espelho de `ServeAgg` do backend,
  * serde camelCase). Vem dos counters do próprio llama-server (/metrics),
- * então cobre TODOS os clientes: chat interno, agente e apps externos.
+ * então cobre TODOS os clientes: chat interno e apps externos.
  */
 export interface ServeAgg {
   /** Tokens de prompt processados de fato (exclui os vindos do cache). */
@@ -204,6 +201,34 @@ export interface ServeStatsDto {
   allTime: ServeAgg;
 }
 
+// ------------------------------------------------------- props do servidor ---
+
+export interface ChatTemplateCaps {
+  supportsTools: boolean;
+  supportsParallelToolCalls: boolean;
+  supportsSystemRole: boolean;
+}
+
+export interface ServerProps {
+  modelPath: string | null;
+  chatTemplateCaps: ChatTemplateCaps;
+  nCtx: number | null;
+  modalities: string[];
+  /** `"router"` quando quem respondeu foi o roteador, não um modelo. */
+  role: string | null;
+}
+
+/**
+ * Esta resposta fala de um modelo?
+ *
+ * No modo Router, `/props` sem `?model=` devolve as props do ROTEADOR — e
+ * elas parecem um modelo sem capacidade nenhuma. Quem lê os campos precisa
+ * passar por aqui antes, senão "ainda não sei" vira "não suporta".
+ */
+export function describesModel(p: ServerProps | null): p is ServerProps {
+  return p != null && p.role !== "router" && p.modelPath != null;
+}
+
 // ----------------------------------------------------------------- chat ---
 
 export interface ChatRow {
@@ -227,8 +252,8 @@ export interface MessageRow {
   /** Duração da geração em ms. */
   genMs: number | null;
   /**
-   * Execução do agente que produziu esta resposta (null no chat comum).
-   * É por ele que a conversa reabre com a trilha de ações que a gerou.
+   * Herança do modo agente removido: a coluna `messages.run_id` continua no
+   * banco (dados antigos), mas daqui em diante é sempre `null`.
    */
   runId: string | null;
 }
@@ -273,29 +298,6 @@ export interface ChatParams {
    * Ausente/`null` = cair para `ChatRow.modelId`.
    */
   model?: string | null;
-  /**
-   * Modo agente desta conversa: em vez de uma resposta única, o pedido vira
-   * um run com ferramentas (o laço vive no Rust). Opcional para não quebrar
-   * os `paramsJson` já gravados — ausente cai no padrão (ligado: o app é
-   * agent-first). `false` gravado explicitamente preserva o modo Chat.
-   */
-  agent?: boolean;
-  /** Nível de autorização do agente. Ausente = `"smart"`. */
-  mode?: RunMode;
-  /**
-   * Como o agente trabalha (Scout Rule), independente da autorização:
-   * conversar, só planejar, executar o pedido ou rodar o plano inteiro em
-   * laço. Opcional para não quebrar os `paramsJson` já gravados —
-   * ausente = `"agent"`.
-   */
-  workMode?: WorkMode;
-  /**
-   * Code Mode: em vez de pedir uma ferramenta por passo, o agente escreve um
-   * programa que usa todas de uma vez — mais rápido e muito mais barato em
-   * contexto, e o único caminho que funciona com modelo que não emite tool
-   * call. Ausente = desligado (depende do Node na máquina).
-   */
-  codeMode?: boolean;
 }
 
 export interface WorkspaceFile {
@@ -354,9 +356,48 @@ export const DEFAULT_CHAT_PARAMS: ChatParams = {
   effort: "high",
   workspaceDir: null,
   model: null,
-  // Agent-first: conversa nova já nasce no modo agente. Quem prefere o chat
-  // puro escolhe no seletor, e a escolha fica gravada nos params da conversa.
-  agent: true,
-  mode: "smart",
-  workMode: "agent",
 };
+
+/** Campos que um `ChatParams` persistido pode trazer de volta à tela. */
+const CHAT_PARAM_KEYS = [
+  "systemPrompt",
+  "temperature",
+  "topP",
+  "topK",
+  "maxTokens",
+  "approval",
+  "effort",
+  "workspaceDir",
+  "model",
+] as const satisfies readonly (keyof ChatParams)[];
+
+/**
+ * Saneia um `ChatParams` vindo de JSON persistido (conversa ou preset):
+ * aplica os padrões por baixo e DESCARTA campos que não existem mais.
+ *
+ * O modo agente foi removido — `paramsJson` antigos ainda trazem
+ * `agent`/`mode`/`workMode`/`codeMode` e esses campos precisam ser
+ * ignorados sem erro (e sem voltar a ser gravados no próximo persist).
+ */
+export function sanitizeChatParams(raw: unknown): ChatParams {
+  const out: ChatParams = { ...DEFAULT_CHAT_PARAMS };
+  if (raw != null && typeof raw === "object") {
+    const r = raw as Record<string, unknown>;
+    for (const key of CHAT_PARAM_KEYS) {
+      if (r[key] !== undefined) {
+        (out as unknown as Record<string, unknown>)[key] = r[key];
+      }
+    }
+  }
+  return out;
+}
+
+/** `sanitizeChatParams` direto do JSON — inválido/corrompido cai nos padrões. */
+export function parseChatParams(json: string | null): ChatParams {
+  if (!json) return { ...DEFAULT_CHAT_PARAMS };
+  try {
+    return sanitizeChatParams(JSON.parse(json));
+  } catch {
+    return { ...DEFAULT_CHAT_PARAMS };
+  }
+}

@@ -1,0 +1,27 @@
+[package]
+name = "lr_dshhost"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Instala, supervisiona e configura o DeepSeek Harness (dsh) de forma isolada"
+
+[dependencies]
+lr_nodejs = { path = "../nodejs" }
+lr_proc = { path = "../proc" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+# Escrita cirúrgica do settings.yaml: o arquivo é multi-namespace e gravado
+# também pela UI do dsh — reescrever por inteiro apagaria as escolhas da
+# pessoa. Fork mantido do serde_yaml (o original foi arquivado em 2024).
+serde_yaml_ng = "0.10"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

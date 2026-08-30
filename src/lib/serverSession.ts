@@ -2,10 +2,9 @@
 // no ar, listar os modelos carregados e resolver o nome pedido para o id que
 // o Router conhece.
 //
-// Este módulo é deliberadamente independente do chat: o `generationStore`
-// (chat normal) e o `runStore` do agente (H1) precisam exatamente da mesma
-// preparação antes de abrir um stream, e duplicar essa lógica é como se
-// perde a paridade entre os dois caminhos.
+// Este módulo é deliberadamente independente do chat: qualquer caminho que
+// abra um stream contra o servidor local precisa exatamente da mesma
+// preparação, e mantê-la aqui evita duplicá-la.
 
 import { getServerStatus, getSetting, startServer } from "./api";
 import { providerEndpoint, splitModelRef, type ProviderId } from "./providers";

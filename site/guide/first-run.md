@@ -61,4 +61,5 @@ cannot.
 
 - [Models and quantization](/guide/models) — how to read the colours.
 - [Chat](/guide/chat) — the conversation screen, parameters and attachments.
-- [The agent harness](/agent/) — when you want work done, not just answers.
+- [Open in a harness](/integrations/local-api#open-in-a-harness) — when you
+  want work done, not just answers.

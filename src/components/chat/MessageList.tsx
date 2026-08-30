@@ -13,8 +13,6 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { speechStore } from "../../lib/speech";
-import type { RunSummary } from "../../lib/agent/types";
-import { PastRunTrail } from "../agent/RunTimeline";
 import Markdown from "./Markdown";
 import ThinkingBlock from "./ThinkingBlock";
 import { formatDuration } from "../../lib/format";
@@ -38,12 +36,6 @@ export interface UiMessage {
   error?: boolean;
   /** A resposta não foi gravada: ao reabrir a conversa ela não volta. */
   unsaved?: boolean;
-  /**
-   * Execução do agente que produziu esta resposta. Com ela a conversa
-   * reabre mostrando o que foi FEITO (arquivos, comandos), não só o que foi
-   * dito no fim.
-   */
-  runId?: string | null;
 }
 
 function ActionButton({
@@ -118,26 +110,13 @@ export default function MessageList({
   onRegenerate,
   onEditResend,
   onDeleteMsg,
-  trail,
-  runSummaries,
-  onOpenTrace,
 }: {
   messages: UiMessage[];
   generating: boolean;
   loadingModel: boolean;
-  /** Resumos das execuções desta conversa, por runId (contagem sem abrir). */
-  runSummaries?: Record<string, RunSummary>;
-  /** Abre o painel lateral com a execução inteira. */
-  onOpenTrace?: (runId: string) => void;
   onRegenerate?: () => void;
   onEditResend?: (index: number) => void;
   onDeleteMsg?: (index: number) => void;
-  /**
-   * Trilha da execução do agente (passos + cards de ferramenta) desenhada
-   * depois das mensagens. Quando existe, ela é quem mostra o andamento —
-   * o indicador genérico de "gerando" fica de fora.
-   */
-  trail?: ReactNode;
 }) {
   const { t, i18n } = useTranslation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -156,7 +135,7 @@ export default function MessageList({
   useEffect(() => {
     const el = scrollRef.current;
     if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, generating, loadingModel, trail]);
+  }, [messages, generating, loadingModel]);
 
   // Sair da conversa cala a voz: ninguém espera que ela continue falando de
   // outra tela.
@@ -389,16 +368,6 @@ export default function MessageList({
                       </div>
                     ) : null;
                   })()}
-                  {/* O que o agente FEZ para chegar a esta resposta. Só
-                      aparece em resposta de execução — e a trilha do run
-                      ainda vivo é a do fluxo (`trail`), não esta. */}
-                  {m.runId && (
-                    <PastRunTrail
-                      runId={m.runId}
-                      summary={runSummaries?.[m.runId] ?? null}
-                      onOpenTrace={onOpenTrace}
-                    />
-                  )}
                 </>
               )}
               {actionBar(m, i)}
@@ -406,10 +375,8 @@ export default function MessageList({
           ),
         )}
 
-        {trail}
-
         {(loadingModel && !waitingFirstToken && messages.length === 0) ||
-        (generating && last?.role === "user" && !trail) ? (
+        (generating && last?.role === "user") ? (
           <div className="flex items-center gap-2 py-1 text-sm text-dim">
             <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
             {loadingModel ? t("chat.loadingModel") : t("chat.generating")}

@@ -1,7 +1,6 @@
 // Mocks para desenvolvimento da UI no navegador (sem Tauri).
 // Dados plausíveis para uma máquina com GPU de 16 GB.
 
-import type { ServerProps } from "./agent/types";
 import type {
   ChatRow,
   DownloadStatus,
@@ -13,6 +12,7 @@ import type {
   QuantView,
   RuntimeState,
   ServeAgg,
+  ServerProps,
   ServerStatus,
   ServeStatsDto,
   ClusterSnapshot,

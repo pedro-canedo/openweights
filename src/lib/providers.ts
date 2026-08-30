@@ -249,6 +249,42 @@ export const nineRouterOpenPanel = (): Promise<void> =>
 export const nineRouterUninstall = (removeData: boolean): Promise<NineRouterStatus> =>
   invoke<NineRouterStatus>("ninerouter_uninstall", { removeData });
 
+// --------------------------------------------------------------------- dsh ---
+
+/**
+ * DeepSeek Harness (dsh) gerenciado pelo app, no mesmo molde do 9router:
+ * instalação isolada em pasta própria com Node portátil, progresso e log
+ * chegando pelo MESMO evento "provider" (`onProviderEvent`).
+ */
+export interface DshStatus {
+  nodeInstalled: boolean;
+  installed: boolean;
+  running: boolean;
+  port: number;
+  /** URL da UI web quando no ar — é o que a janela do painel carrega. */
+  panelUrl: string | null;
+  version: string;
+}
+
+export const dshStatus = (): Promise<DshStatus> =>
+  invoke<DshStatus>("dsh_status");
+
+export const dshInstall = (): Promise<DshStatus> =>
+  invoke<DshStatus>("dsh_install");
+
+/**
+ * Instala se preciso, sobe o servidor local se preciso, escreve o
+ * settings.yaml com todos os provedores/modelos e spawna o `dsh web`.
+ * Demorado na primeira vez (Node + npm install) — acompanhe o progresso
+ * com `onProviderEvent`; a UI não deve travar esperando.
+ */
+export const dshStart = (): Promise<DshStatus> => invoke<DshStatus>("dsh_start");
+
+/// Janela Tauri própria, como o painel do 9router (não iframe).
+export const dshOpenPanel = (): Promise<void> => invoke<void>("dsh_open_panel");
+
+export const dshStop = (): Promise<DshStatus> => invoke<DshStatus>("dsh_stop");
+
 // ----------------------------------------------------------------- gateway ---
 
 export interface GatewayStatus {

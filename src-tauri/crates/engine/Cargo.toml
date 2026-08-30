@@ -6,7 +6,6 @@ license.workspace = true
 description = "Adaptadores de engine de inferência (llama-server em Router mode)"
 
 [dependencies]
-lr_types.workspace = true
 lr_proc = { path = "../proc" }
 serde.workspace = true
 serde_json.workspace = true

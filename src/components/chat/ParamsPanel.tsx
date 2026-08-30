@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { deletePreset, listPresets, savePreset } from "../../lib/api";
 import type { ChatParams, PresetRow } from "../../lib/types";
-import { DEFAULT_CHAT_PARAMS } from "../../lib/types";
+import { sanitizeChatParams } from "../../lib/types";
 import { navigate } from "../../lib/nav";
 
 function Slider({
@@ -79,10 +79,12 @@ export default function ParamsPanel({
     const row = presets.find((p) => p.id === id);
     if (!row) return;
     try {
-      const parsed = JSON.parse(row.json) as Partial<ChatParams>;
+      // Parse tolerante: preset gravado na era do modo agente traz campos
+      // que não existem mais — o saneamento os descarta sem erro.
+      const parsed = sanitizeChatParams(JSON.parse(row.json));
       // `model` é da conversa, não do preset: aplicar um preset não pode
       // trocar o modelo escolhido pelo usuário.
-      onChange({ ...DEFAULT_CHAT_PARAMS, ...parsed, model: params.model });
+      onChange({ ...parsed, model: params.model });
     } catch {
       // preset corrompido — ignora
     }

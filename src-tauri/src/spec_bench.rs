@@ -137,7 +137,7 @@ pub async fn measure(
 
 /// Gera um punhado de tokens e mede a taxa.
 async fn generate_tps(state: &AppState, model: &str, prompt: &str) -> Result<f64, String> {
-    let endpoint = state.agent_endpoint().await?;
+    let endpoint = state.llama_endpoint().await?;
     let client =
         LlamaClient::new(&endpoint.base_url).with_optional_api_key(endpoint.api_key.clone());
 

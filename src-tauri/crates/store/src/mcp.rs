@@ -1,6 +1,10 @@
 //! Persistência dos conectores MCP: configuração dos servidores e cache das
 //! definições de ferramentas.
 //!
+//! O app não lê mais estas tabelas (o consumidor era o modo agente,
+//! removido); o módulo fica para preservar o dado de quem configurou
+//! conectores — e para um futuro "exportar para o harness externo".
+//!
 //! O par `tools_hash` / `tools_approved_hash` implementa a defesa contra
 //! "rug pull": se o servidor mudar suas ferramentas depois de aprovado, os
 //! hashes divergem e o app volta a pedir revisão do usuário.

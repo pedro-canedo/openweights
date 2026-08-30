@@ -26,9 +26,24 @@ pub mod props;
 pub use client::{
     ChatDelta, ChatMessage, ChatOutcome, ChatRequest, ContentPart, Dialect, FunctionCallMsg,
     ImageUrl, LlamaClient, MessageContent, NamedFunction, NamedToolChoice, Timings, ToolCallMsg,
-    ToolCallReq, ToolChoice, tool_specs_to_api,
+    ToolCallReq, ToolChoice,
 };
 pub use props::{ChatTemplateCaps, ServerProps, parse_props};
+
+/// Onde o modelo atende.
+///
+/// Nem sempre é o llama-server local: uma conversa apontada para o OpenRouter
+/// ou para o 9router resolve para o endereço deles. Por isso os dois campos
+/// extras — `headers` carrega a atribuição que o provedor pede, e `dialect`
+/// diz se as extensões do llama.cpp podem viajar no corpo da requisição.
+#[derive(Debug, Clone, Default)]
+pub struct Endpoint {
+    pub base_url: String,
+    pub api_key: Option<String>,
+    /// Cabeçalhos extras exigidos pelo provedor. Vazio no servidor local.
+    pub headers: Vec<(String, String)>,
+    pub dialect: Dialect,
+}
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

@@ -21,9 +21,6 @@ import {
   writeWorkspaceFile,
 } from "../../lib/api";
 import type { WorkspaceFile } from "../../lib/types";
-import CheckpointList from "../agent/CheckpointList";
-import RagPanel from "../agent/RagPanel";
-import MemoryPanel from "../agent/MemoryPanel";
 import PreviewPane, { canShowCode, previewKind } from "./PreviewPane";
 import FileIcon, { FolderIcon } from "./FileIcon";
 
@@ -158,8 +155,6 @@ type WorkspaceCtx = {
   disabled?: boolean;
   explorerOpen: boolean;
   setExplorerOpen: (open: boolean) => void;
-  /** Muda quando o agente cria um checkpoint — recarrega a lista. */
-  checkpointsKey: number;
   /** Sobe a cada mudança real de conteúdo na pasta (releitura periódica). */
   filesTick: number;
   addFolder: () => Promise<void>;
@@ -204,7 +199,6 @@ export function WorkspaceHost({
   files,
   onFiles,
   disabled,
-  checkpointsKey = 0,
   children,
 }: {
   dir: string | null;
@@ -212,8 +206,6 @@ export function WorkspaceHost({
   files: WorkspaceFile[];
   onFiles: (files: WorkspaceFile[]) => void;
   disabled?: boolean;
-  /** Contador de checkpoints do run corrente (força recarga da lista). */
-  checkpointsKey?: number;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -235,7 +227,7 @@ export function WorkspaceHost({
   const assinaturaDe = (lista: WorkspaceFile[]) =>
     lista.map((f) => `${f.path}:${f.bytes}`).join("|");
   // Sobe a cada mudança real de conteúdo: é o que faz a prévia aberta se
-  // renovar sozinha quando o agente reescreve o arquivo.
+  // renovar sozinha quando o arquivo é reescrito por fora.
   const [filesTick, setFilesTick] = useState(0);
 
   const reloadFiles = () => {
@@ -267,17 +259,15 @@ export function WorkspaceHost({
       return;
     }
     reloadFiles();
-    // Recarrega quando a pasta muda, o agente grava um checkpoint, ou o
-    // explorador abre — senão index.html / MEMORY.md nascem e a lista fica vazia.
+    // Recarrega quando a pasta muda ou o explorador abre — senão um arquivo
+    // recém-criado não aparece e a lista fica vazia.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dir, checkpointsKey, explorerOpen]);
+  }, [dir, explorerOpen]);
 
-  // Releitura periódica enquanto a pessoa está OLHANDO para os arquivos.
-  //
-  // O checkpoint do agente não cobre o caso comum: ele grava vários arquivos
-  // dentro de um passo só, e um comando que a pessoa roda no terminal não
-  // gera checkpoint nenhum. Sem isto era preciso fechar e reabrir o
-  // explorador para a lista mudar — foi assim que o problema apareceu.
+  // Releitura periódica enquanto a pessoa está OLHANDO para os arquivos:
+  // um comando rodado no terminal, ou qualquer programa externo, muda a
+  // pasta sem avisar — sem isto era preciso fechar e reabrir o explorador
+  // para a lista mudar.
   //
   // A varredura é limitada (400 arquivos, 5 níveis) e só corre com o painel
   // aberto e a janela visível; a assinatura acima garante que um ciclo sem
@@ -404,7 +394,6 @@ export function WorkspaceHost({
         disabled,
         explorerOpen,
         setExplorerOpen,
-        checkpointsKey,
         filesTick,
         addFolder,
         removeFolder,
@@ -434,19 +423,6 @@ export function WorkspaceHost({
       <WorkspaceEditor />
     </WorkspaceContext.Provider>
   );
-}
-
-/**
- * Acesso ao explorador de dentro do `WorkspaceHost` — usado pelo atalho de
- * checkpoint do agente, que precisa abrir a coluna onde a lista mora.
- */
-export function useWorkspacePanel(): {
-  dir: string | null;
-  explorerOpen: boolean;
-  openExplorer: () => void;
-} {
-  const { dir, explorerOpen, setExplorerOpen } = useWorkspace();
-  return { dir, explorerOpen, openExplorer: () => setExplorerOpen(true) };
 }
 
 export function WorkspaceTrigger() {
@@ -581,7 +557,6 @@ export function WorkspaceExplorer() {
     dir,
     explorerOpen,
     setExplorerOpen,
-    checkpointsKey,
     addFolder,
     removeFolder,
     reveal,
@@ -589,8 +564,6 @@ export function WorkspaceExplorer() {
     setQuery,
     visible,
     error,
-    openFile,
-    reloadFiles,
   } = useWorkspace();
 
   const tree = useMemo(() => buildTree(visible), [visible]);
@@ -650,33 +623,6 @@ export function WorkspaceExplorer() {
               <FileTree nodes={tree} depth={0} />
             )}
           </div>
-          {/* Checkpoints, índice e memória continuam ancorados no rodapé da
-              coluna, mas agora dentro de um bloco que ENCOLHE: numa janela
-              baixa os três somados passavam da altura disponível e empurravam
-              o explorador para fora da janela, levando a interface junto.
-              `min-h-0` é o que autoriza o flexbox a encolher aqui; a rolagem
-              própria devolve o que o encolhimento tirou. */}
-          <div className="flex min-h-0 flex-col overflow-y-auto">
-            {/* Desfazer das alterações do agente, junto dos arquivos. */}
-            <CheckpointList workspaceDir={dir} reloadKey={checkpointsKey} />
-            {/* Índice do projeto: clicar num resultado abre o arquivo no mesmo
-                editor da árvore (o trecho traz caminho e linha). */}
-            <RagPanel
-              workspaceDir={dir}
-              onOpenFile={(path) =>
-                void openFile({
-                  path,
-                  name: path.split("/").pop() ?? path,
-                  bytes: 0,
-                })
-              }
-            />
-            <MemoryPanel
-              workspaceDir={dir}
-              reloadKey={checkpointsKey}
-              onChanged={reloadFiles}
-            />
-          </div>
         </>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
@@ -689,15 +635,6 @@ export function WorkspaceExplorer() {
             {t("workspace.add")}
           </button>
         </div>
-      )}
-
-      {/* Memória global continua visível mesmo sem pasta escolhida. */}
-      {!dir && (
-        <MemoryPanel
-          workspaceDir={dir}
-          reloadKey={checkpointsKey}
-          onChanged={reloadFiles}
-        />
       )}
 
       {error && (
@@ -713,7 +650,6 @@ function WorkspaceEditor() {
   const { t } = useTranslation();
   const {
     dir,
-    checkpointsKey,
     filesTick,
     editorOpen,
     openPath,
@@ -776,10 +712,10 @@ function WorkspaceEditor() {
           <PreviewPane
             path={absPath}
             name={fileName}
-            // O agente pode estar mexendo no arquivo: tanto o checkpoint
-            // quanto a releitura periódica da pasta renovam a prévia, então
-            // ela acompanha o que foi gravado sem ninguém clicar em nada.
-            refreshKey={checkpointsKey + filesTick}
+            // O arquivo pode mudar por fora: a releitura periódica da pasta
+            // renova a prévia, então ela acompanha o que foi gravado sem
+            // ninguém clicar em nada.
+            refreshKey={filesTick}
             onClose={closeEditor}
             onShowCode={
               canShowCode(fileName) ? () => setPreviewMode(false) : undefined

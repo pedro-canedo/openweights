@@ -10,7 +10,7 @@
 ![Windows, macOS and Linux](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
 📖 **[Documentation](https://pedro-canedo.github.io/openweights/)** — install
-guide, the agent harness explained piece by piece, and the integrations.
+guide, models and quantization, and the integrations.
 
 Run LLMs on your own PC — no terminal, no CUDA setup, no guessing which
 quantization fits.
@@ -27,10 +27,13 @@ Windows, macOS and Linux.
   quantization for *your* PC: green runs fully on the GPU, yellow splits with the
   CPU, grey is CPU-only.
 - 💬 **Local chat** — streaming, markdown and history on disk.
-- 🤖 **Agent mode** — the model reads and edits files, runs commands, uses Git,
-  browses the web and analyses data. Every action goes through your approval (or
-  not, if you prefer), and a snapshot of the project is taken before the first
-  change: you can always go back.
+- 🤖 **Agent work in an external harness, one click away** — the app hands your
+  models to an external coding agent —
+  [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), Claude
+  Code, Aider, OpenCode — pre-configured with all your providers and models.
+  The DeepSeek Harness is installed and managed by the app itself (isolated
+  folder, portable Node included) and opens in a window of its own; your API
+  key travels by environment variable, never on the command line.
 - 🎛️ **Tunes itself for your machine** — no one has to learn what `-ts`, `-ub`
   or `-ctk` mean. The app asks the engine which devices exist and how much is
   free on each, reads the real layer count from the file, and asks llama.cpp
@@ -38,19 +41,6 @@ Windows, macOS and Linux.
   the background, and re-does it when the hardware picture changes. What you
   set by hand is never touched. If you want the numbers, the panel shows every
   candidate and can measure real tokens/s instead of trusting the estimate.
-- ⚡ **Code Mode** — instead of asking for one tool at a time, the agent writes a
-  program that uses them all at once: a whole task becomes a single step, and
-  only the result comes back to the conversation. It spends far less context,
-  and it gets work out of models that can't emit tool calls at all. The program
-  runs sandboxed — no file or command access outside the tools, which still go
-  through your approval.
-- 🧭 **Built for small models** — the goal becomes short deliverables, each with a
-  fresh context, and the tool menu adapts to the model's window: what doesn't fit
-  is requested on demand.
-- 🧠 **Memory and project index** — the agent remembers what it learned and
-  searches your code by meaning.
-- 🧩 **MCP connectors** — Model Context Protocol servers become tools, approved
-  per server.
 - 🔌 **OpenAI-compatible API** — other apps point at `localhost` and use the same
   model.
 - 🎚️ **Every llama.cpp knob, visually** — MTP speculation, RoPE/YaRN, KV cache,
@@ -59,10 +49,6 @@ Windows, macOS and Linux.
   never leaves the interface behind. Named presets (*MTP turbo*, *VRAM saver*),
   a live preview of the exact command and INI, and loading the model from the
   same screen.
-- 🧰 **Open in a harness** — hand the loaded model to an external coding agent —
-  [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), Aider,
-  OpenCode — pointed at your local API, in one click. No endpoint to configure by
-  hand; your API key travels by environment variable, never on the command line.
 - 🖧 **Extra GPU on the network** — two machines on the same network load one
   model together: the file stays on one, the other only lends its card, and a
   12 GB PC next to an 18 GB Mac becomes 30 GB. Off by default, it announces
@@ -218,10 +204,9 @@ src-tauri/src/        Tauri app (commands, state, telemetry)
 src-tauri/crates/     Rust core, one crate per concern:
                         hw, runtime, models, advisor    hardware and models
                         engine, store, types            llama-server, SQLite, contracts
-                        agent, tools, policy            agent loop, tools, permissions
-                        checkpoint, mcp, memory, rag    undo, connectors, memory, index
-                        webtools, codetools,            internet, build/test,
-                        gittools, datatools             Git, CSV/SQLite
+                        providers, ninerouter, dshhost  external sources, local router,
+                        gateway, nodejs                 managed harness, entry point, Node
+                        proc, fetch                     process supervision, HTTP
 ```
 
 ## Contributing
@@ -231,7 +216,7 @@ Issues and pull requests are welcome. Before opening a PR, run what CI runs:
 ```bash
 npm run build                                   # types + frontend build
 cd src-tauri
-cargo test --workspace                          # ~960 tests
+cargo test --workspace                          # Rust backend tests
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
@@ -249,7 +234,7 @@ Project conventions, one line each:
 
 ### About your API keys
 
-Keys you paste into the app (OpenRouter, Hugging Face, web search) are stored in
+Keys you paste into the app (OpenRouter, Hugging Face) are stored in
 plain text in the local SQLite database, next to the rest of the settings. There
 is no OS keyring integration yet — the same is true of every secret the app
 already handled, so this is a known limitation rather than something new. The

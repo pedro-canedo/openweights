@@ -228,8 +228,7 @@ export interface BenchOutcome {
  * Mede as configurações nesta máquina.
  *
  * Custa minutos e a placa inteira: o motor é derrubado enquanto roda e volta
- * ao fim. Lança `engine-busy:<quem>` quando há execução de agente, automação
- * ou indexação em curso.
+ * ao fim. Lança `engine-busy:<quem>` quando outra tarefa está usando o motor.
  */
 export function tuneBench(
   model: string,

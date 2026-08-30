@@ -6,12 +6,12 @@
 //! comando, então nunca vira injeção. A chave de API só viaja por variável de
 //! ambiente: argv é visível na lista de processos de qualquer usuário.
 //!
-//! DeepSeek Harness (`dsh`): o provedor OpenAI-compatible entra por uma seção
-//! `llm-pi-ai:` no `settings.yaml` do `DSH_HOME` (fato verificado nos
-//! pacotes npm `@deepseek-ai/dsh`/`dsh-base`/`dsh-llm-pi-ai`). Em vez de
-//! mesclar YAML no perfil pessoal de quem usa, o app aponta `DSH_HOME` para
-//! uma pasta própria (`<data>/dsh-home`) e escreve o arquivo inteiro — sem
-//! parser de YAML, sem risco de comer configuração alheia.
+//! DeepSeek Harness (`dsh`): não abre mais em terminal — o cartão DELEGA ao
+//! caminho gerenciado (`commands_dsh`): Node portátil + pacote pinado numa
+//! pasta do app, `settings.yaml` multi-provider escrito cirurgicamente no
+//! `DSH_HOME` gerenciado (`<data>/dsh-home`, ver `lr_dshhost::settings`),
+//! processo supervisionado e painel em janela própria. Os DEMAIS harnesses
+//! continuam abrindo em terminal, exatamente como antes.
 
 use crate::state::AppState;
 use serde::Serialize;
@@ -43,14 +43,16 @@ struct HarnessSpec {
 /// O registro. Ordem = ordem dos cartões na tela.
 fn registry() -> &'static [HarnessSpec] {
     &[
+        // O dsh é o único harness GERENCIADO: `harness_launch` delega ao
+        // `commands_dsh` (instala, escreve o settings.yaml, supervisiona e
+        // abre em janela do app). `launch`/`env` daqui não são executados —
+        // ficam como documentação do equivalente em terminal.
         HarnessSpec {
             id: "dsh",
             name: "DeepSeek Harness",
             probe_bin: "dsh",
             install_cmd: "npm install -g @deepseek-ai/dsh",
             launch: &["{bin}", "web"],
-            // O provedor vem do settings.yaml que o app escreve no DSH_HOME
-            // gerenciado; a chave (se houver) vai pela env referenciada lá.
             env: &[("DSH_HOME", "{dshHome}"), (API_KEY_ENV, "{apiKey}")],
             docs_url: "https://github.com/deepseek-ai/deepseek-harness",
             npx_package: Some("@deepseek-ai/dsh"),
@@ -250,6 +252,28 @@ pub async fn harness_list(
 
     let mut out = Vec::new();
     for spec in registry() {
+        // dsh: o cartão reflete o caminho GERENCIADO — instalado é a nossa
+        // pasta isolada (não o PATH), sempre lançável (a primeira abertura
+        // instala com progresso) e o preview mostra o comando supervisionado.
+        if spec.id == "dsh" {
+            let l = crate::commands_dsh::layout(&state);
+            let instalado = l.instalado();
+            out.push(HarnessStatus {
+                id: spec.id.to_string(),
+                name: spec.name.to_string(),
+                installed: instalado,
+                path: instalado.then(|| l.bin_js().display().to_string()),
+                launchable: true,
+                install_cmd: spec.install_cmd.to_string(),
+                command_preview: format!(
+                    "DSH_HOME={} dsh web --port 0 --no-open  # gerenciado pelo app",
+                    f.dsh_home
+                ),
+                docs_url: spec.docs_url.to_string(),
+            });
+            continue;
+        }
+
         let path = probe(spec.probe_bin).await;
         let npx = if path.is_none() && spec.npx_package.is_some() {
             probe("npx").await.is_some()
@@ -287,33 +311,9 @@ pub async fn harness_list(
     Ok(out)
 }
 
-/// O `settings.yaml` que faz o modelo local aparecer no seletor do dsh.
-///
-/// Formato do adaptador `dsh-llm-pi-ai` (rota declarada à mão): `api:
-/// openai-completions` + `baseURL` + catálogo de modelos. A chave nunca entra
-/// no arquivo — `apiKeyEnv` é uma referência resolvida por requisição.
-fn dsh_settings_yaml(f: &Fill, train_ctx: Option<u32>) -> String {
-    let ctx = train_ctx.unwrap_or(32_768);
-    let mut y = String::from("# gerado pelo OpenWeights — reescrito a cada lançamento\n");
-    y.push_str("llm-pi-ai:\n  providers:\n    openweights:\n");
-    y.push_str("      displayName: OpenWeights (local)\n");
-    y.push_str("      api: openai-completions\n");
-    y.push_str(&format!("      baseURL: {}\n", f.base_url));
-    if f.api_key.is_some() {
-        y.push_str(&format!("      apiKeyEnv: {API_KEY_ENV}\n"));
-    }
-    y.push_str("      models:\n");
-    y.push_str(&format!("        - id: \"{}\"\n", f.model.replace('"', "")));
-    y.push_str(&format!(
-        "          name: \"{}\"\n",
-        f.model.replace('"', "")
-    ));
-    y.push_str(&format!("          contextWindow: {ctx}\n"));
-    y
-}
-
 #[tauri::command]
 pub async fn harness_launch(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     id: String,
     model: String,
@@ -323,6 +323,16 @@ pub async fn harness_launch(
         .iter()
         .find(|s| s.id == id)
         .ok_or("harness desconhecido")?;
+
+    // dsh: DELEGA ao caminho gerenciado. Não exige modelo selecionado nem
+    // servidor previamente no ar — o `dsh_start` sobe o que faltar e escreve
+    // o settings.yaml com TODOS os modelos; depois o painel abre em janela
+    // do app, não em terminal.
+    if spec.id == "dsh" {
+        crate::commands_dsh::dsh_start_inner(&app, &state).await?;
+        return crate::commands_dsh::abrir_painel(&app, &state).await;
+    }
+
     let model = model.trim();
     if model.is_empty() {
         return Err("modelo vazio".into());
@@ -340,15 +350,6 @@ pub async fn harness_launch(
         }
         (None, None) => return Err(format!("{} não está instalado", spec.name)),
     };
-
-    // dsh: escrever o provedor no DSH_HOME gerenciado antes de abrir.
-    if spec.id == "dsh" {
-        let home = state.data_dir.join("dsh-home");
-        std::fs::create_dir_all(&home).map_err(|e| e.to_string())?;
-        let ctx = crate::commands::profile_for(&state, model).and_then(|p| p.ctx);
-        std::fs::write(home.join("settings.yaml"), dsh_settings_yaml(&f, ctx))
-            .map_err(|e| e.to_string())?;
-    }
 
     // Monta o argv real (sem máscara) e o diretório de trabalho.
     let argv: Vec<String> = spec
@@ -442,27 +443,13 @@ mod tests {
         assert_eq!(fill("{apiKey}", &sem, false), "");
     }
 
+    /// O settings.yaml do dsh não é mais gerado aqui: virou escrita
+    /// cirúrgica multi-provider em `lr_dshhost::settings` (testada lá), e o
+    /// launch do dsh delega ao caminho gerenciado. Este teste trava a env
+    /// referenciada pelo yaml para não divergir entre os dois módulos.
     #[test]
-    fn dsh_settings_declare_the_local_route() {
-        let y = dsh_settings_yaml(&contexto(), Some(131_072));
-        assert!(y.contains("llm-pi-ai:"));
-        assert!(y.contains("api: openai-completions"));
-        assert!(y.contains("baseURL: http://127.0.0.1:11711/v1"));
-        assert!(y.contains("apiKeyEnv: OPENWEIGHTS_API_KEY"));
-        assert!(!y.contains("sk-segredo"), "segredo nunca entra no arquivo");
-        assert!(y.contains("contextWindow: 131072"));
-        // Sem chave configurada, a rota fica sem autenticação — e sem a
-        // referência, que com env ausente derrubaria toda requisição com
-        // MISSING_CREDENTIAL.
-        let sem = dsh_settings_yaml(
-            &Fill {
-                api_key: None,
-                ..contexto()
-            },
-            None,
-        );
-        assert!(!sem.contains("apiKeyEnv"));
-        assert!(sem.contains("contextWindow: 32768"));
+    fn the_dsh_key_env_matches_the_managed_settings_writer() {
+        assert_eq!(API_KEY_ENV, lr_dshhost::settings::OPENWEIGHTS_KEY_ENV);
     }
 
     #[test]

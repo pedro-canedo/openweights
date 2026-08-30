@@ -4,7 +4,6 @@ import { genStats } from "../lib/llama";
 import { formatBytes } from "../lib/format";
 import MonitorPopover from "./monitor/MonitorPopover";
 import { telemetryStore } from "./monitor/telemetryStore";
-import { runStore } from "../lib/agent/runStore";
 import { ClusterChip } from "./server/ClusterPanel";
 
 function Meter({ percent }: { percent: number }) {
@@ -45,10 +44,6 @@ export default function StatusBar() {
   // Assinatura única de telemetria, compartilhada com o popover de monitor.
   const tel = useSyncExternalStore(telemetryStore.subscribe, telemetryStore.get);
   const gen = useSyncExternalStore(genStats.subscribe, genStats.get);
-  // O laço do agente vive no Rust: a taxa dele é estimada pelos deltas (o
-  // store re-emite a cada delta, então este componente re-renderiza junto).
-  useSyncExternalStore(runStore.subscribe, runStore.get);
-  const agentTps = runStore.liveTps();
   const [monitorOpen, setMonitorOpen] = useState(false);
   const monitorRef = useRef<HTMLDivElement>(null);
 
@@ -137,15 +132,6 @@ export default function StatusBar() {
             {gen.tokensPerSec != null
               ? `${gen.tokensPerSec.toFixed(1)} ${t("status.tokensPerSec")}`
               : t("chat.generating")}
-          </span>
-        )}
-        {!gen.generating && agentTps != null && (
-          <span
-            className="flex items-center gap-1.5 text-[11px] tabular-nums text-accent"
-            title={t("status.tpsEstimated")}
-          >
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            {`~${agentTps.toFixed(1)} ${t("status.tokensPerSec")}`}
           </span>
         )}
 

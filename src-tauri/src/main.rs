@@ -2,19 +2,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
-mod commands_activity;
-mod commands_agent;
-mod commands_automation;
 mod commands_cluster;
+mod commands_dsh;
 mod commands_flags;
 mod commands_harness;
-mod commands_mcp;
-mod commands_memory;
 mod commands_providers;
-mod commands_rag;
 mod commands_tuning;
 mod desktop_host;
-mod scheduler;
 mod serve_stats;
 mod spec_bench;
 mod state;
@@ -33,7 +27,6 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let profile = lr_hw::detect();
@@ -69,9 +62,7 @@ fn main() {
             });
 
             app.manage(state);
-            // O relógio das automações precisa do estado já publicado.
-            scheduler::spawn_loop(app.handle().clone());
-            // O coletor das estatísticas de serviço também: cada tick pega o
+            // O coletor das estatísticas de serviço: cada tick pega o
             // estado pelo handle, então só pode nascer DEPOIS do manage.
             serve_stats::spawn_loop(app.handle().clone());
 
@@ -143,6 +134,12 @@ fn main() {
             // Abrir o modelo carregado num harness externo.
             commands_harness::harness_list,
             commands_harness::harness_launch,
+            // DeepSeek Harness gerenciado (instala, supervisiona, painel).
+            commands_dsh::dsh_status,
+            commands_dsh::dsh_install,
+            commands_dsh::dsh_start,
+            commands_dsh::dsh_stop,
+            commands_dsh::dsh_open_panel,
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,
@@ -169,61 +166,7 @@ fn main() {
             commands::workspace_read,
             commands::workspace_write,
             commands::workspace_reveal,
-            // Modo agente: execuções, confirmações, trilha e checkpoints.
-            commands_agent::run_start,
-            commands_agent::run_attach,
-            commands_agent::run_approve,
-            commands_agent::run_cancel,
-            commands_agent::runs_list,
-            commands_agent::run_events_list,
-            commands_agent::run_reap,
-            commands_agent::runs_waiting_answer,
-            commands_agent::run_plan_get,
-            commands_agent::run_plan_approve,
-            commands_agent::run_answer,
-            commands_agent::run_plan_replan,
-            commands_agent::tool_permissions_list,
-            commands_agent::tool_permission_set,
-            commands_agent::tools_list,
-            commands_agent::tool_group_counts,
-            commands_agent::tool_groups_get,
-            commands_agent::tool_groups_set,
-            commands_agent::checkpoints_list,
-            commands_agent::checkpoint_restore,
-            commands_agent::chat_set_model,
-            commands_agent::web_config_get,
-            commands_agent::web_config_set,
-            // Atividade: o histórico do que o agente fez.
-            commands_activity::activity_runs,
-            commands_activity::activity_calls,
-            commands_activity::activity_run_calls,
-            commands_activity::activity_stats,
-            commands_activity::run_call_outputs,
-            // Automações (tarefas que rodam sozinhas).
-            commands_automation::automations_list,
-            commands_automation::automation_save,
-            commands_automation::automation_delete,
-            commands_automation::automation_run_now,
-            // Conectores MCP.
-            commands_mcp::mcp_servers_list,
-            commands_mcp::mcp_server_add,
-            commands_mcp::mcp_server_remove,
-            commands_mcp::mcp_server_enable,
-            commands_mcp::mcp_server_test,
-            commands_mcp::mcp_server_tools,
-            commands_mcp::mcp_server_approve_tools,
-            // Memória do agente.
-            commands_memory::memory_facts_list,
-            commands_memory::memory_fact_add,
-            commands_memory::memory_fact_delete,
-            commands_memory::memory_consolidate_now,
-            commands_memory::memory_open_folder,
-            // Índice do projeto (busca por significado).
-            commands_rag::rag_status,
-            commands_rag::rag_index_start,
-            commands_rag::rag_index_cancel,
-            commands_rag::rag_search,
-            commands_rag::rag_clear,
+            commands::chat_set_model,
             // Outras fontes de LLM (OpenRouter, 9router).
             commands_providers::providers_config_get,
             commands_providers::providers_config_set,
@@ -256,16 +199,17 @@ fn main() {
                     #[cfg(windows)]
                     webview_perm::allow_microphone(app);
                 }
-                // A janela principal fechou: o painel do 9router não pode
-                // segurar o app de pé sozinho. Sem isto o processo continua
-                // vivo — e o 9router junto, que é o que o `shutdown_blocking`
-                // abaixo existe para evitar.
+                // A janela principal fechou: os painéis do 9router e do dsh
+                // não podem segurar o app de pé sozinhos. Sem isto o processo
+                // continua vivo — e os sidecars junto, que é o que o
+                // `shutdown_blocking` abaixo existe para evitar.
                 tauri::RunEvent::WindowEvent {
                     label,
                     event: tauri::WindowEvent::Destroyed,
                     ..
                 } if label == "main" => {
                     commands_providers::fechar_painel(app);
+                    commands_dsh::fechar_painel(app);
                 }
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     if let Some(state) = app.try_state::<state::AppState>() {

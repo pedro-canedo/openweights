@@ -7,8 +7,7 @@ usarem o modelo que você já tem carregado.
 
 Escolha a porta, aperte **Iniciar**, e o endereço aparece com um botão de copiar.
 Tudo abaixo vale no momento de iniciar — mudar um ajuste exige parar e iniciar o
-motor de novo. A tela diz isso, e recusa reiniciar enquanto uma execução do
-agente ou a indexação do projeto estiver usando o motor (ela diz qual).
+motor de novo. A tela diz isso.
 
 | Ajuste | O que faz |
 |---|---|
@@ -67,19 +66,25 @@ INI, e a configuração própria de um modelo sempre vence a global.
 
 ## Abrir em um harness
 
-Com um modelo carregado, a seção **Abrir em um harness** entrega esse modelo a
-um agente de código externo apontado para a sua API local — um clique, sem
-configurar endpoint na mão.
+A seção **Abrir em um harness** entrega os seus modelos a um agente de código
+externo apontado para a sua API local — um clique, sem configurar endpoint na
+mão. É aqui que o trabalho de agente mora agora: o app não tem um
+chat-com-ferramentas próprio.
 
 | Harness | Como |
 |---|---|
-| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | O app escreve o provedor local numa pasta de configuração própria e abre a interface web do `dsh` |
+| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | Gerenciado pelo app: ele instala o `dsh` numa pasta isolada (Node portátil incluído), escreve **todos** os seus provedores e modelos numa pasta de configuração própria e abre a interface web em janela do app. A primeira abertura instala; depois é um clique |
+| **Claude Code** | Lançado contra a sua API local, com o modelo já escolhido |
 | **Aider** | Sobe apontado para a sua API, com o modelo já escolhido |
 | **OpenCode** | Idem, pelas variáveis de ambiente que ele espera |
 
 Cada cartão diz se o programa está instalado, mostra o comando (copiável) e
 oferece o botão **Abrir**. Quando não está instalado mas o `npx` existe, o app
 usa o `npx` e mostra o comando de instalação definitiva.
+
+A mesma abertura do DeepSeek Harness mora na tela de **Chat** como o botão
+**Agente** — um clique a partir da conversa, com o progresso da instalação
+mostrado na primeira vez.
 
 ::: tip A chave nunca vai no comando
 Quando você define uma chave de API, ela viaja por variável de ambiente — nunca

@@ -16,8 +16,9 @@ installer of a few MB, no Electron.
   whether it fits fully on your GPU, splits with the CPU, or is CPU-only.
 - **Chats locally**, with streaming, markdown, code highlighting and history on
   disk.
-- **Runs an agent** that reads and edits files, runs commands, uses Git,
-  browses the web and analyses data — under the authorization level you pick.
+- **Hands your models to external coding agents** — DeepSeek Harness, Claude
+  Code, Aider, OpenCode — opened with one click, pre-configured with all your
+  providers and models.
 - **Tunes itself for your machine**: it asks llama.cpp how much memory each
   configuration costs on *your* card, applies one, and rolls back on its own if
   the model fails to load.
@@ -36,11 +37,10 @@ installer of a few MB, no Electron.
 
 | What | Where |
 |---|---|
-| Conversations, settings, run history | Local SQLite database in the app's data folder |
+| Conversations and settings | Local SQLite database in the app's data folder |
 | Models | The folder you chose when downloading them |
 | The llama.cpp runtime | App data folder, downloaded on first launch |
-| Agent memory | Markdown files, per project and global — openable from the app |
-| API keys (Hugging Face, OpenRouter, web search) | The same SQLite database, in plain text |
+| API keys (Hugging Face, OpenRouter) | The same SQLite database, in plain text |
 
 ::: warning About the API keys
 Keys are stored **in plain text** next to the rest of the settings — there is no
@@ -52,4 +52,5 @@ running as your user can read it.
 
 - [Install](/guide/install) — one line, or the installer by hand.
 - [First run](/guide/first-run) — hardware detection and the engine download.
-- [The agent harness](/agent/) — what makes the agent work on small models.
+- [Open in a harness](/integrations/local-api#open-in-a-harness) — external
+  coding agents pre-configured with your models.

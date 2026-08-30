@@ -290,7 +290,6 @@ async fn stream_reassembles_fragmented_tool_call_arguments() {
         .unwrap();
 
     assert_eq!(out.finish_reason.as_deref(), Some("tool_calls"));
-    assert!(out.wants_tools());
     assert_eq!(out.tool_calls.len(), 1);
     let call = &out.tool_calls[0];
     assert_eq!(call.id, "call_abc");
@@ -400,7 +399,7 @@ async fn stream_plain_answer_finishes_with_stop() {
         .unwrap();
     assert_eq!(out.content, "Olá, mundo");
     assert_eq!(out.finish_reason.as_deref(), Some("stop"));
-    assert!(!out.wants_tools());
+    assert!(out.tool_calls.is_empty());
     assert_eq!(
         out.timings.as_ref().unwrap().predicted_per_second,
         Some(50.0)
@@ -722,9 +721,10 @@ fn request_body_carries_tools_and_sampling() {
         top_k: Some(40),
         max_tokens: Some(512),
         parallel_tool_calls: Some(false),
+        tools: vec![json!({"type":"function"})],
+        tool_choice: Some(ToolChoice::auto()),
         ..ChatRequest::new("m", vec![ChatMessage::user("oi")])
     }
-    .with_tools(vec![json!({"type":"function"})])
     .with_extra("reasoning_effort", json!("high"));
     let body = serde_json::to_value(&request).unwrap();
     // f32 → JSON alarga a mantissa (0.699999988…); o que importa é o valor.
@@ -790,123 +790,6 @@ fn multimodal_parts_serialize_in_openai_shape() {
         "data:image/png;base64,AAA"
     );
     assert_eq!(msg.text(), "o que é isto?");
-}
-
-// -------------------------------------------------- sanitização de schema ---
-
-fn spec(parameters: Value) -> ToolSpec {
-    ToolSpec {
-        name: "fs_read".into(),
-        description: "lê um arquivo".into(),
-        parameters,
-        category: lr_types::agent::ToolCategory::Read,
-        tier: lr_types::agent::ToolTier::Safe,
-        origin: lr_types::agent::ToolOrigin::Builtin,
-        read_only: true,
-    }
-}
-
-/// (e) O conversor GBNF do llama.cpp rejeita atalhos PCRE e referências —
-/// tudo isso sai antes de chegar ao servidor.
-#[test]
-fn tool_specs_are_sanitized_for_the_gbnf_converter() {
-    let tools = tool_specs_to_api(&[spec(json!({
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "urn:fs_read",
-        "type": "object",
-        "definitions": { "Path": { "type": "string" } },
-        "properties": {
-            "path":    { "type": "string", "pattern": "^\\d+$" },
-            "iso":     { "type": "string", "pattern": "^[A-Za-z_.-]+$" },
-            "ref":     { "$ref": "#/definitions/Path" },
-            "mode":    { "type": "string", "enum": ["text", "bytes"] },
-            "limit":   { "type": "integer", "minimum": 1, "maximum": 100 },
-            "nested":  {
-                "type": "object",
-                "properties": { "deep": { "type": "string", "pattern": "\\w+" } }
-            },
-            "list":    { "type": "array", "items": { "type": "string", "pattern": "\\s" } }
-        },
-        "required": ["path"],
-        "not": { "required": ["ref"] },
-        "if": { "properties": { "mode": { "const": "bytes" } } },
-        "patternProperties": { "^x-": { "type": "string" } },
-        "additionalProperties": false
-    }))]);
-
-    assert_eq!(tools.len(), 1);
-    assert_eq!(tools[0]["type"], "function");
-    assert_eq!(tools[0]["function"]["name"], "fs_read");
-    let p = &tools[0]["function"]["parameters"];
-
-    for gone in [
-        "$schema",
-        "$id",
-        "definitions",
-        "not",
-        "if",
-        "patternProperties",
-    ] {
-        assert!(p.get(gone).is_none(), "`{gone}` deveria ter sido removido");
-    }
-    // `pattern` com atalho PCRE sai; regex simples fica.
-    assert!(p["properties"]["path"].get("pattern").is_none());
-    assert_eq!(p["properties"]["iso"]["pattern"], "^[A-Za-z_.-]+$");
-    // `$ref` some, mas a propriedade continua existindo (vira livre).
-    assert!(p["properties"]["ref"].is_object());
-    assert!(p["properties"]["ref"].get("$ref").is_none());
-    // Recursão em objetos aninhados e em `items`.
-    assert!(
-        p["properties"]["nested"]["properties"]["deep"]
-            .get("pattern")
-            .is_none()
-    );
-    assert!(p["properties"]["list"]["items"].get("pattern").is_none());
-    // O que o conversor entende continua intacto.
-    assert_eq!(p["type"], "object");
-    assert_eq!(p["properties"]["mode"]["enum"][1], "bytes");
-    assert_eq!(p["properties"]["limit"]["minimum"], 1);
-    assert_eq!(p["required"][0], "path");
-    assert_eq!(p["additionalProperties"], false);
-}
-
-#[test]
-fn sanitizer_never_touches_property_names_or_enum_data() {
-    // Uma propriedade LEGÍTIMA chamada `if` (ou `$ref`) não pode sumir só
-    // porque o nome coincide com uma palavra-chave.
-    let tools = tool_specs_to_api(&[spec(json!({
-        "type": "object",
-        "properties": {
-            "if":   { "type": "string" },
-            "$ref": { "type": "string" },
-            "kind": { "enum": [{ "$ref": "isto-e-dado" }, "outro"] }
-        }
-    }))]);
-    let p = &tools[0]["function"]["parameters"];
-    assert_eq!(p["properties"]["if"]["type"], "string");
-    assert_eq!(p["properties"]["$ref"]["type"], "string");
-    assert_eq!(p["properties"]["kind"]["enum"][0]["$ref"], "isto-e-dado");
-}
-
-#[test]
-fn parameters_are_normalized_to_an_object_schema() {
-    let tools = tool_specs_to_api(&[spec(Value::Null), spec(json!({"properties": {}}))]);
-    assert_eq!(tools[0]["function"]["parameters"]["type"], "object");
-    assert!(tools[0]["function"]["parameters"]["properties"].is_object());
-    assert_eq!(tools[1]["function"]["parameters"]["type"], "object");
-}
-
-#[test]
-fn regex_safety_matches_the_gbnf_converter_limits() {
-    for safe in ["^[a-z]+$", "a|b", "x{2,4}", "\\.", "^/tmp/.*$"] {
-        assert!(regex_is_gbnf_safe(safe), "deveria ser aceita: {safe}");
-    }
-    for unsafe_p in ["\\d+", "\\w", "\\s*", "\\bfoo", "(?i)x", "(?:a)", "\\p{L}"] {
-        assert!(
-            !regex_is_gbnf_safe(unsafe_p),
-            "deveria ser rejeitada: {unsafe_p}"
-        );
-    }
 }
 
 // ------------------------------------------------------------- unitários ---

@@ -2,7 +2,6 @@
 // Todas as telas usam ESTE módulo — nunca `invoke` direto.
 
 import { invoke, isTauri, listen } from "./tauri";
-import type { ServerProps } from "./agent/types";
 import type {
   ChatRow,
   DownloadEvent,
@@ -15,6 +14,7 @@ import type {
   QuantsView,
   RuntimeEvent,
   RuntimeState,
+  ServerProps,
   ServerStatus,
   ServeStatsDto,
   Telemetry,
@@ -100,7 +100,7 @@ export const startServer = () =>
 export const stopServer = () =>
   isTauri ? invoke<void>("server_stop") : mocks.stopServer();
 
-/** Quem está usando o motor agora: `agent` (execução ou automação), `rag`. */
+/** Quem está usando o motor agora (valores definidos pelo backend). */
 export const serverBusy = (): Promise<{ busyWith: string[] }> =>
   isTauri
     ? invoke<{ busyWith: string[] }>("server_busy")

@@ -3,7 +3,6 @@
     "discover": "Discover",
     "models": "My Models",
     "chat": "Chat",
-    "activity": "Activity",
     "server": "Local Server",
     "settings": "Settings",
     "providers": "Sources"
@@ -15,7 +14,6 @@
     "vram": "VRAM",
     "noGpu": "no dedicated GPU",
     "tokensPerSec": "tok/s",
-    "tpsEstimated": "Estimated from stream chunks — the exact number arrives at the end of the step.",
     "disk": "DISK",
     "free": "free",
     "net": "NET"
@@ -122,6 +120,22 @@
     "deleteChat": "Delete chat",
     "deleteChatConfirm": "Delete \"{{title}}\"?",
     "params": "Parameters",
+    "harness": {
+      "agent": "Agent",
+      "title": "Agent mode is now the DeepSeek Harness",
+      "body": "A full coding agent in its own window, pre-configured with all your providers and models. The first open installs it — after that it is one click.",
+      "open": "Open",
+      "openPanel": "Open panel",
+      "starting": "Opening the DeepSeek Harness…",
+      "installing": "Installing the DeepSeek Harness — first time only…",
+      "installHint": "First open downloads the portable Node runtime and the harness package.",
+      "error": "The DeepSeek Harness did not open",
+      "phase": {
+        "resolving": "resolving dependencies",
+        "extracting": "extracting",
+        "finishing": "finishing"
+      }
+    },
     "approval": {
       "manual": "Approve manually",
       "auto": "Approve automatically",
@@ -273,7 +287,6 @@
       "open": "Add",
       "attach": "Add files or photos",
       "skills": "Skills",
-      "connectors": "Connectors",
       "plugins": "Add plugins...",
       "soon": "Coming soon"
     },
@@ -290,74 +303,6 @@
     "speakStop": "Stop reading",
     "emptyAnswer": "(the model answered nothing)",
     "notSaved": "Couldn't save this answer — it won't come back when you reopen the chat."
-  },
-  "activity": {
-    "title": "Activity",
-    "subtitle": "What the agent has done on this machine, what it cost and what you approved.",
-    "noPrice": "A local model charges no money: the cost is your time and the tokens it spends.",
-    "automation": "Automation",
-    "chatGone": "Chat #{{id}}",
-    "period": {
-      "label": "Period",
-      "h24": "24 hours",
-      "d7": "7 days",
-      "all": "All time"
-    },
-    "stats": {
-      "title": "The numbers for this period",
-      "runs": "Runs",
-      "failed": "Did not end well",
-      "calls": "Agent actions",
-      "denied": "Refused actions",
-      "tokens": "Tokens",
-      "tokensSplit": "{{prompt}} in · {{completion}} out",
-      "duration": "Total time"
-    },
-    "status": {
-      "maxSteps": "Stopped at the step limit",
-      "escalated": "Stopped after repeated errors"
-    },
-    "tab": {
-      "runs": "Runs",
-      "calls": "Actions"
-    },
-    "runs": {
-      "none": "No runs in this period.",
-      "noSummary": "This run left no summary.",
-      "workspace": "Folder",
-      "tokens": "{{total}} tokens",
-      "callsTitle": "Actions in this run",
-      "callsNone": "This run used no tools."
-    },
-    "calls": {
-      "none": "No actions in this period.",
-      "filterLabel": "Filter actions",
-      "filter": {
-        "all": "All",
-        "changed": "Changed something",
-        "denied": "Refused"
-      },
-      "limit": "Showing the {{limit}} most recent actions. Open a run to see the rest."
-    },
-    "by": {
-      "user": "You confirmed it",
-      "policy": "A rule allowed it",
-      "yolo": "Automatic mode",
-      "none": "No confirmation needed"
-    },
-    "decision": {
-      "allowOnce": "Allowed once",
-      "allowAlways": "Always allowed",
-      "allowEdited": "Allowed with edits",
-      "deny": "Refused",
-      "denyAlways": "Always refused"
-    },
-    "empty": {
-      "title": "The agent has not done anything on this machine yet.",
-      "body": "As soon as it reads a file, runs a command or touches your project, it all shows up here: every run with what it touched, the time and tokens it cost, and who approved each action — automations included, since those run with nobody watching.",
-      "cta": "Start a chat"
-    },
-    "waitingAnswer": "Waiting for an answer"
   },
   "server": {
     "title": "Local Server",
@@ -553,21 +498,7 @@
     "runtimeMissing": "not installed",
     "runtimeInstall": "Install / update",
     "version": "Version",
-    "clusterLink": "Extra GPU on the network — open Local Server",
-    "webSearch": {
-      "title": "Web search",
-      "subtitle": "Without a key, the agent searches via DuckDuckGo — free, lower quality, and prone to blocking. With a Brave or Tavily key, results get better.",
-      "provider": "Search provider",
-      "providerAuto": "Automatic (default)",
-      "providerDuckDuckGo": "DuckDuckGo (no key)",
-      "providerBrave": "Brave Search",
-      "providerTavily": "Tavily",
-      "apiKey": "API key",
-      "apiKeyPlaceholder": "Paste your Brave or Tavily key (optional)",
-      "saved": "Saved — already in effect.",
-      "saveFailed": "Could not save: {{error}}",
-      "applyHint": "Changes apply immediately, no app restart needed. On automatic, the key picks the provider (tvly-… means Tavily; any other key, Brave)."
-    }
+    "clusterLink": "Extra GPU on the network — open Local Server"
   },
   "onboarding": {
     "welcome": "Welcome to OpenWeights",
@@ -619,422 +550,6 @@
     "saved": "Saved",
     "copy": "Copy",
     "currentValue": "current: {{v}}"
-  },
-  "agent": {
-    "toggle": "Agent",
-    "modeChat": "Chat",
-    "modeAgent": "Agent",
-    "toggleOn": "Agent mode on",
-    "toggleOff": "Agent mode off",
-    "unsupported": "This model does not advertise tool support. Agent mode may work poorly.",
-    "unsupportedShort": "no tool support",
-    "supported": "supports tools",
-    "mode": {
-      "label": "Authorization",
-      "chat": "No tools",
-      "approve": "Always ask",
-      "smart": "Ask for changes",
-      "yolo": "Automatic (YOLO)",
-      "chatHint": "The model only talks, it runs nothing.",
-      "approveHint": "Every tool asks for your confirmation.",
-      "smartHint": "Reading runs on its own; writes and commands ask first.",
-      "yoloHint": "Runs on its own inside the project folder. A checkpoint is created before the first change."
-    },
-    "codeMode": {
-      "label": "Code Mode",
-      "on": "Code Mode on",
-      "off": "Code Mode off",
-      "hint": "The agent writes a program that uses the tools all at once instead of asking for one per step: fewer round trips, far less context. Requires Node on the machine."
-    },
-    "yolo": {
-      "badge": "YOLO",
-      "banner": "Running automatically inside {{dir}} — checkpoint created.",
-      "confirmTitle": "Enable automatic mode for this run?",
-      "confirmBody": "The agent will create files, edit them and run commands inside the project folder without asking. Actions outside the folder, network access and commands we cannot parse still ask. A checkpoint is created before the first change.",
-      "confirmOk": "Enable for this run",
-      "needWorkspace": "Pick a project folder to use automatic mode."
-    },
-    "approval": {
-      "title": "The agent wants to use {{tool}}",
-      "allow": "Allow",
-      "allowAlways": "Always allow",
-      "deny": "Deny",
-      "denyAndTell": "Deny and explain",
-      "denyReason": "Tell the agent what to do instead...",
-      "pending": "Waiting for your confirmation",
-      "argsTitle": "Arguments",
-      "showArgs": "show arguments",
-      "hideArgs": "hide arguments",
-      "commandIn": "in {{dir}}",
-      "opaqueWarning": "We could not fully parse this command — review it before allowing.",
-      "outsideWorkspace": "Outside the project folder.",
-      "scopeWorkspace": "in this project",
-      "scopeGlobal": "in every project"
-    },
-    "terminal": {
-      "title": "Session terminal",
-      "empty": "No command has run in this conversation yet."
-    },
-    "tool": {
-      "running": "Running...",
-      "ok": "Done",
-      "failed": "Failed",
-      "denied": "Denied",
-      "waiting": "Waiting for confirmation",
-      "output": "Output",
-      "result": "Result",
-      "showMore": "show all",
-      "showLess": "collapse",
-      "truncated": "output truncated",
-      "duration": "{{time}}",
-      "category": {
-        "read": "read",
-        "edit": "edit",
-        "execute": "execute",
-        "network": "network",
-        "mcp": "connector",
-        "meta": "internal"
-      }
-    },
-    "run": {
-      "thinking": "Analyzing...",
-      "step": "Step {{n}}",
-      "trace": "Run",
-      "actionsCount_one": "{{count}} action taken",
-      "actionsCount_other": "{{count}} actions taken",
-      "actionsOpen": "See what was done",
-      "showTrace": "show run",
-      "cancel": "Stop agent",
-      "finished": "Done",
-      "cancelled": "Cancelled by user",
-      "error": "The run failed",
-      "maxSteps": "Step limit reached ({{n}}). Ask it to continue if needed.",
-      "escalated": "The agent got stuck on repeated errors and stopped for you to decide.",
-      "compacted": "Context summarized to keep going.",
-      "verified": "Result verified",
-      "verifyFailed": "Verification found problems",
-      "empty": "No runs yet.",
-      "usage": "{{steps}} steps · {{tools}} tools · {{time}}",
-      "toolsSelected": "{{active}} of {{available}} tools in this window",
-      "toolsRequested": "The agent asked for more tools: {{tools}}",
-      "subagentStarted": {
-        "explorer": "Helper investigating: {{objective}}",
-        "coder": "Helper working on: {{objective}}"
-      },
-      "subagentDone": "Helper finished in {{steps}} step(s)",
-      "subagentStopped": "Helper stopped before finishing ({{steps}} step(s))",
-      "toolsUnsupported": "No tools: this model's chat template can't take them.",
-      "toolsRejected": "The server refused the request with tools — carried on without them.",
-      "verdictOk": "Check: passed",
-      "verdictFail": "Check: failed",
-      "endCancelled": "Cancelled",
-      "endError": "Failed",
-      "endMaxSteps": "Stopped at the step limit",
-      "endEscalated": "Stopped for your decision"
-    },
-    "live": {
-      "thinking": "Thinking about the next step",
-      "writing": "Writing the answer",
-      "task": "Step {{n}}/{{total}}: {{title}}",
-      "step": "step {{n}}"
-    },
-    "focus": {
-      "title": "Plan",
-      "empty": "No plan yet"
-    },
-    "checkpoint": {
-      "created": "Checkpoint created",
-      "restore": "Restore",
-      "restored": "Files restored",
-      "list": "Checkpoints",
-      "empty": "No checkpoints in this project.",
-      "confirmRestore": "Restore files to this point? Later changes will be lost.",
-      "backendGit": "shadow git",
-      "backendCopy": "file copy"
-    },
-    "tools": {
-      "title": "Tools",
-      "permissions": "Permissions",
-      "policyAlwaysAllow": "Always allow",
-      "policyAsk": "Ask",
-      "policyNever": "Never",
-      "resetAll": "Reset to defaults",
-      "fsRead": "Read file",
-      "fsWrite": "Create/replace file",
-      "fsEdit": "Edit file",
-      "fsList": "List folder",
-      "fsGlob": "Find files",
-      "fsGrep": "Search contents",
-      "terminalRun": "Run command",
-      "todoUpdate": "Update plan",
-      "memorySave": "Save to memory",
-      "workspaceSearch": "Search project",
-      "webSearch": "Search the web",
-      "webFetch": "Fetch web page",
-      "webDownload": "Download file",
-      "httpRequest": "HTTP request",
-      "projectInfo": "Detect project",
-      "buildRun": "Build",
-      "testRun": "Run tests",
-      "lintRun": "Lint code",
-      "formatRun": "Format code",
-      "codeRun": "Run script",
-      "gitStatus": "Git status",
-      "gitDiff": "Show changes",
-      "gitLog": "Git history",
-      "gitAdd": "Stage files",
-      "gitCommit": "Commit changes",
-      "gitBranch": "Git branches",
-      "gitStash": "Stash changes",
-      "gitRestore": "Discard changes",
-      "csvPreview": "Preview CSV",
-      "csvQuery": "Query CSV",
-      "dataSummary": "Summarize data",
-      "sqlQuery": "SQL query",
-      "sqlSchema": "Database schema",
-      "planCreate": "Split into steps",
-      "planUpdate": "Update step",
-      "taskComplete": "Finish step",
-      "askUser": "Ask the user",
-      "toolsFind": "Find tools",
-      "agentDelegate": "Delegate to a helper",
-      "clipboardRead": "Read the clipboard",
-      "clipboardWrite": "Copy to clipboard",
-      "notifyUser": "Notify you",
-      "openPath": "Open file or link",
-      "runCode": "Run program"
-    },
-    "toolGroups": {
-      "title": "Tool families",
-      "subtitle": "Turning a family off puts those tools out of the agent's reach.",
-      "windowHint": "Even with every family on, the agent only gets the tools that fit the model's window — it asks for the rest when it needs them.",
-      "count_one": "1 tool",
-      "count_other": "{{count}} tools",
-      "countNone": "no tools",
-      "lastOne": "Keep at least one family on. To stop the agent from using tools at all, pick \"No tools\" under authorization.",
-      "saveFailed": "Could not save: {{error}}",
-      "files": {
-        "label": "Files",
-        "desc": "Read, create, edit and find files in the project folder."
-      },
-      "terminal": {
-        "label": "Terminal",
-        "desc": "Run commands on your computer."
-      },
-      "code": {
-        "label": "Code",
-        "desc": "Detect the project, build, run tests, lint and format."
-      },
-      "git": {
-        "label": "Git",
-        "desc": "See history and changes, stage files and commit."
-      },
-      "data": {
-        "label": "Data",
-        "desc": "Preview and query CSV files and SQLite databases."
-      },
-      "web": {
-        "label": "Web",
-        "desc": "Search, open pages and download files from the internet."
-      },
-      "memory": {
-        "label": "Memory",
-        "desc": "Keep what should be remembered in later chats."
-      },
-      "project": {
-        "label": "Project index",
-        "desc": "Search the indexed project files by meaning."
-      },
-      "plan": {
-        "label": "Planning",
-        "desc": "Split the task into steps and ask you when unsure."
-      },
-      "mcp": {
-        "label": "Connectors",
-        "desc": "Tools lent by the MCP connectors you turned on."
-      },
-      "desktop": {
-        "label": "Computer",
-        "desc": "Clipboard, system notifications and opening files or links."
-      }
-    },
-    "mcp": {
-      "title": "Connectors (MCP)",
-      "subtitle": "Connect MCP servers to give the agent new tools.",
-      "add": "Add connector",
-      "addManual": "Fill in manually",
-      "addJson": "Paste JSON",
-      "jsonPlaceholder": "{\"mcpServers\": { ... }}",
-      "name": "Name",
-      "transport": "Type",
-      "stdio": "Local program",
-      "http": "Remote server (HTTP)",
-      "command": "Command",
-      "args": "Arguments",
-      "env": "Environment variables",
-      "url": "URL",
-      "headers": "Headers",
-      "test": "Test connection",
-      "connected": "Connected",
-      "disconnected": "Disconnected",
-      "enable": "Enable",
-      "disable": "Disable",
-      "remove": "Remove",
-      "removeConfirm": "Remove connector {{name}}?",
-      "toolsCount": "{{count}} tools",
-      "empty": "No connectors configured.",
-      "changedTitle": "This connector's tools changed",
-      "changedBody": "Server {{name}} changed its tools since you approved it. Review before using it again.",
-      "approveTools": "Review and approve",
-      "badgeReadOnly": "read only",
-      "badgeDestructive": "destructive",
-      "badgeOpenWorld": "reaches the internet",
-      "elicitation": "The connector needs some information",
-      "elicitationSend": "Send",
-      "invalidJson": "Invalid JSON.",
-      "testFailed": "Could not connect: {{error}}",
-      "namePlaceholder": "e.g. GitHub",
-      "argsHint": "Space separated; use quotes for values with spaces.",
-      "envHint": "One per line, as KEY=value.",
-      "headersHint": "One per line, as Name: value.",
-      "statusDisabled": "Disabled",
-      "statusError": "Last attempt failed",
-      "statusPending": "Awaiting review",
-      "testing": "Testing...",
-      "testFirst": "Test the connection to read the tools.",
-      "showTools": "Show tools",
-      "hideTools": "Hide tools",
-      "noTools": "No tools read yet."
-    },
-    "automations": {
-      "title": "Automations",
-      "subtitle": "A request that runs on its own every so often, even when you are away.",
-      "add": "New automation",
-      "empty": "No automations yet.",
-      "toggle": "Turn the automation {{name}} on or off",
-      "name": "Name",
-      "namePlaceholder": "e.g. Daily summary",
-      "prompt": "What to do",
-      "promptPlaceholder": "e.g. list what changed in the project today and what is still open.",
-      "workspace": "Project folder",
-      "noWorkspace": "No folder chosen",
-      "clearWorkspace": "Clear folder",
-      "model": "Model",
-      "modelDefault": "Use the first one in the library",
-      "interval": "How often",
-      "every": {
-        "manual": "Only when I ask",
-        "hourly": "Every hour",
-        "every4h": "Every 4 hours",
-        "daily": "Every day",
-        "weekly": "Every week",
-        "custom": "Every {{minutes}} minutes"
-      },
-      "nextRun": "Runs again {{when}}",
-      "today": "today at {{time}}",
-      "tomorrow": "tomorrow at {{time}}",
-      "soon": "as soon as it can",
-      "manualOnly": "Runs only when you ask",
-      "paused": "Off — does not run on its own",
-      "never": "Has not run yet.",
-      "runNow": "Run now",
-      "edit": "Edit",
-      "delete": "Delete",
-      "deleteConfirm": "Delete the automation {{name}}? This cannot be undone.",
-      "unattendedHint": "Nobody is watching when an automation runs: on \"{{mode}}\" it stops at the first confirmation request and waits for you.",
-      "waitingTitle": "Stopped, waiting for you",
-      "waitingBody": "The automation asked for a confirmation and won't continue on its own. Open the run to answer.",
-      "statusMaxSteps": "Stopped at the step limit",
-      "statusEscalated": "Stopped after repeated errors",
-      "appHint": "The automation clock runs inside the app: with it closed, nothing fires. At the scheduled time the AI engine starts on its own."
-    },
-    "memory": {
-      "title": "Memory",
-      "subtitle": "What the agent remembers between chats in this project.",
-      "facts": "Saved facts",
-      "addFact": "Add fact",
-      "factPlaceholder": "E.g.: this project uses pnpm, not npm.",
-      "empty": "Nothing memorized yet.",
-      "delete": "Forget",
-      "scopeGlobal": "Global",
-      "scopeWorkspace": "This project",
-      "consolidate": "Tidy memory now",
-      "consolidating": "Tidying...",
-      "saved": "Memorized",
-      "openFolder": "Open memory folder"
-    },
-    "rag": {
-      "title": "Project index",
-      "subtitle": "Lets the agent search project files by meaning.",
-      "index": "Index project",
-      "reindex": "Refresh index",
-      "indexing": "Indexing {{done}}/{{total}} files...",
-      "indexed": "{{files}} files · {{chunks}} chunks",
-      "clear": "Clear index",
-      "needModel": "Download an embedding model to index (try nomic-embed-text or bge-m3).",
-      "openDiscover": "Download embedding model",
-      "vectorOff": "Vector search unavailable — using text search only.",
-      "empty": "This project has not been indexed yet.",
-      "searchPlaceholder": "Search the project...",
-      "scanning": "Scanning files...",
-      "embedding": "Building vectors {{done}}/{{total}}...",
-      "cancelling": "Cancelling...",
-      "noResults": "No matching snippet.",
-      "confirmClear": "Delete this project's index? You can rebuild it later.",
-      "sourceText": "text",
-      "sourceVector": "meaning",
-      "sourceBoth": "text + meaning",
-      "openFile": "Open file"
-    },
-    "question": {
-      "title": "The agent needs you",
-      "hint": "Click an option to fill in the answer, or write your own — the run resumes the plan where it stopped.",
-      "answerPlaceholder": "Your answer…",
-      "send": "Answer",
-      "failed": "Could not answer — this question may have been answered in another window."
-    }
-  },
-  "plan": {
-    "title": "Work plan",
-    "subtitle": "Big tasks become small deliveries that fit the model's window.",
-    "goal": "Goal",
-    "progress": "{{done}} of {{total}} deliveries",
-    "empty": "No plan yet.",
-    "planning": "Splitting the task...",
-    "approve": "Approve plan",
-    "approveHint": "Nothing runs before you approve.",
-    "approved": "Plan approved",
-    "replan": "Redo plan",
-    "addTask": "Add step",
-    "editTask": "Edit step",
-    "removeTask": "Remove step",
-    "doneWhen": "Done when",
-    "handoff": "Passed along",
-    "dependsOn": "Depends on",
-    "files": "Files",
-    "status": {
-      "pending": "Queued",
-      "running": "In progress",
-      "done": "Done",
-      "blocked": "Blocked",
-      "failed": "Failed",
-      "skipped": "Skipped"
-    },
-    "taskOf": "Step {{n}} of {{total}}",
-    "blockedReason": "Needs you to continue",
-    "contextFresh": "Context reset for this step",
-    "windowHint": "Model window: {{ctx}} tokens — deliveries up to {{perTask}}",
-    "mode": {
-      "chat": "Chat",
-      "plan": "Planning",
-      "agent": "Execute",
-      "loop": "Loop",
-      "chatHint": "Answers only, no tools.",
-      "planHint": "Investigates and proposes the plan. Changes nothing until you approve.",
-      "agentHint": "Plans in steps and executes each one with proof of completion.",
-      "loopHint": "Runs the whole plan, checking each delivery before moving on."
-    },
-    "etaTotal": "Estimated time left: ≈ {{time}}"
   },
   "tune": {
     "open": "Tune for this machine",

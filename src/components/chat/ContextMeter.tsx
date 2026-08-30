@@ -12,12 +12,9 @@ import {
   restartServer,
   setModelCtx,
 } from "../../lib/api";
-import { describesModel } from "../../lib/agent/types";
+import { describesModel } from "../../lib/types";
 import { remoteModelInfo, splitModelRef } from "../../lib/providers";
-import {
-  collectContextBuckets,
-  type AgentUsageSlice,
-} from "../../lib/contextUsage";
+import { collectContextBuckets } from "../../lib/contextUsage";
 import type { Attachment } from "./AttachmentChips";
 import type { UiMessage } from "./MessageList";
 
@@ -64,7 +61,6 @@ export default function ContextMeter({
   attachments,
   systemPrompt,
   generating = false,
-  agent = null,
 }: {
   model: string;
   messages: UiMessage[];
@@ -72,8 +68,6 @@ export default function ContextMeter({
   attachments: Attachment[];
   systemPrompt: string;
   generating?: boolean;
-  /** Run do agente vivo: raciocínio e ferramentas não passam pelas bolhas. */
-  agent?: AgentUsageSlice | null;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -120,9 +114,8 @@ export default function ContextMeter({
         draft,
         attachments,
         systemPrompt,
-        agent,
       }),
-    [messages, draft, attachments, systemPrompt, agent],
+    [messages, draft, attachments, systemPrompt],
   );
 
   const used = buckets.reduce((s, b) => s + b.tokens, 0);

@@ -1,9 +1,8 @@
-//! Cliente HTTP do llama-server para o **harness agêntico**.
+//! Cliente HTTP do llama-server para o que roda **em Rust**.
 //!
 //! O `llama.ts` do webview continua dono do chat normal; este cliente existe
-//! porque o loop do agente vive em Rust e precisa de coisas que o chat não
-//! usa: `tools`/`tool_choice`, agregação de tool-call deltas, `/props`,
-//! `/v1/embeddings` e contagem de tokens do prompt.
+//! para quem precisa falar com o motor sem passar pelo webview — medição de
+//! desempenho (bench/tuning), `/props` e contagem de tokens do prompt.
 //!
 //! Fatos do protocolo (llama-server, ago/2026) que moldam o código:
 //! - Em SSE, `delta.tool_calls` chega como `[{index, id?, type?,
@@ -19,7 +18,6 @@
 
 use crate::EngineError;
 use crate::props::{ServerProps, parse_props};
-use lr_types::agent::ToolSpec;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
@@ -256,14 +254,6 @@ impl ChatRequest {
         }
     }
 
-    pub fn with_tools(mut self, tools: Vec<Value>) -> Self {
-        if !tools.is_empty() {
-            self.tool_choice.get_or_insert_with(ToolChoice::auto);
-        }
-        self.tools = tools;
-        self
-    }
-
     pub fn with_extra(mut self, key: impl Into<String>, value: Value) -> Self {
         self.extra.insert(key.into(), value);
         self
@@ -359,10 +349,6 @@ pub struct ChatOutcome {
 }
 
 impl ChatOutcome {
-    pub fn wants_tools(&self) -> bool {
-        !self.tool_calls.is_empty()
-    }
-
     /// Turno do assistente para reinjetar no histórico do próximo passo.
     pub fn to_assistant_message(&self) -> ChatMessage {
         if self.tool_calls.is_empty() {
@@ -1238,158 +1224,9 @@ fn estimate_tokens(messages: &[ChatMessage]) -> u32 {
     u32::try_from(est).unwrap_or(u32::MAX)
 }
 
-// ----------------------------------------------------- schema → API tools ---
-
-/// Palavras-chave de JSON Schema que o conversor GBNF do llama.cpp não
-/// suporta. Deixá-las passar produz gramática inválida ou — pior — o bug
-/// *fail-open* em que a restrição some sem aviso. Removidas na entrada.
-const UNSUPPORTED_KEYWORDS: &[&str] = &[
-    "$schema",
-    "$id",
-    "$ref",
-    "$defs",
-    "$anchor",
-    "$comment",
-    "$dynamicRef",
-    "$dynamicAnchor",
-    "$vocabulary",
-    "definitions",
-    "not",
-    "if",
-    "then",
-    "else",
-    "dependencies",
-    "dependentSchemas",
-    "dependentRequired",
-    "propertyNames",
-    "patternProperties",
-    "contains",
-    "minContains",
-    "maxContains",
-    "unevaluatedProperties",
-    "unevaluatedItems",
-    "additionalItems",
-];
-
-/// Chaves cujo valor é um sub-schema.
-const SCHEMA_VALUE_KEYS: &[&str] = &["items", "additionalProperties"];
-/// Chaves cujo valor é uma lista de sub-schemas.
-const SCHEMA_LIST_KEYS: &[&str] = &["anyOf", "oneOf", "allOf", "prefixItems"];
-/// Chaves cujo valor é um mapa `nome → sub-schema` (os nomes são dados, não
-/// palavras-chave: uma propriedade chamada `if` tem que sobreviver).
-const SCHEMA_MAP_KEYS: &[&str] = &["properties"];
-
-/// `true` quando a regex usa construções que o conversor GBNF rejeita.
-///
-/// Ele entende literais, classes `[...]`, `.`, `*`, `+`, `?`, `{n,m}`,
-/// alternância e grupos simples — mas **não** os atalhos PCRE (`\d`, `\w`,
-/// `\s`, `\b`, `\p{...}`), backreferences nem grupos `(?...)`.
-fn regex_is_gbnf_safe(pattern: &str) -> bool {
-    if pattern.contains("(?") {
-        return false;
-    }
-    let mut chars = pattern.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                // `\.` `\-` `\/` etc. são escapes de literal: ok.
-                Some(next) if next.is_ascii_alphanumeric() => return false,
-                Some(_) => {}
-                None => return false,
-            }
-        }
-    }
-    true
-}
-
-/// Poda um JSON Schema para o que o conversor GBNF do llama.cpp aguenta.
-fn sanitize_schema(v: &Value) -> Value {
-    let Value::Object(map) = v else {
-        return v.clone();
-    };
-    let mut out = Map::new();
-    for (key, val) in map {
-        if UNSUPPORTED_KEYWORDS.contains(&key.as_str()) {
-            continue;
-        }
-        if key == "pattern" {
-            if val.as_str().is_some_and(regex_is_gbnf_safe) {
-                out.insert(key.clone(), val.clone());
-            }
-            continue;
-        }
-        if SCHEMA_MAP_KEYS.contains(&key.as_str()) {
-            if let Value::Object(props) = val {
-                let inner: Map<String, Value> = props
-                    .iter()
-                    .map(|(name, schema)| (name.clone(), sanitize_schema(schema)))
-                    .collect();
-                out.insert(key.clone(), Value::Object(inner));
-            }
-            continue;
-        }
-        if SCHEMA_LIST_KEYS.contains(&key.as_str()) {
-            if let Value::Array(items) = val {
-                out.insert(
-                    key.clone(),
-                    Value::Array(items.iter().map(sanitize_schema).collect()),
-                );
-            }
-            continue;
-        }
-        if SCHEMA_VALUE_KEYS.contains(&key.as_str()) {
-            out.insert(
-                key.clone(),
-                match val {
-                    // `items` pode ser lista de schemas (tuplas).
-                    Value::Array(items) => {
-                        Value::Array(items.iter().map(sanitize_schema).collect())
-                    }
-                    other => sanitize_schema(other),
-                },
-            );
-            continue;
-        }
-        // `enum`, `const`, `default`, `examples` carregam DADOS, não
-        // schemas: copiar literalmente (um valor de enum pode ter uma chave
-        // chamada `$ref` sem ser uma referência).
-        out.insert(key.clone(), val.clone());
-    }
-    Value::Object(out)
-}
-
-/// Garante um schema de objeto no topo: modelos pequenos lidam mal com
-/// `parameters` ausente ou de outro tipo, e o conversor GBNF exige objeto.
-fn normalize_parameters(v: &Value) -> Value {
-    let sanitized = sanitize_schema(v);
-    let Value::Object(mut map) = sanitized else {
-        return json!({ "type": "object", "properties": {} });
-    };
-    map.entry("type".to_string())
-        .or_insert_with(|| Value::String("object".into()));
-    if map.get("type").and_then(Value::as_str) == Some("object") {
-        map.entry("properties".to_string())
-            .or_insert_with(|| Value::Object(Map::new()));
-    }
-    Value::Object(map)
-}
-
-/// Converte o catálogo interno no `tools` da API OpenAI, já saneado.
-pub fn tool_specs_to_api(specs: &[ToolSpec]) -> Vec<Value> {
-    specs
-        .iter()
-        .map(|s| {
-            json!({
-                "type": "function",
-                "function": {
-                    "name": s.name,
-                    "description": s.description,
-                    "parameters": normalize_parameters(&s.parameters),
-                }
-            })
-        })
-        .collect()
-}
+// O conversor "catálogo de ferramentas → `tools` da API" (sanitização de
+// JSON Schema para o GBNF do llama.cpp) morava aqui; saiu junto com o modo
+// agente — o chat simples nunca envia ferramentas ao modelo.
 
 #[cfg(test)]
 mod tests;

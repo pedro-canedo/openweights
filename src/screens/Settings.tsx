@@ -9,10 +9,6 @@ import {
   setSetting,
 } from "../lib/api";
 import { invoke, isTauri } from "../lib/tauri";
-import Automations from "../components/settings/Automations";
-import McpConnectors from "../components/settings/McpConnectors";
-import ToolGroups from "../components/settings/ToolGroups";
-import WebSearchSettings from "../components/settings/WebSearchSettings";
 import { formatBytes } from "../lib/format";
 import { navigate } from "../lib/nav";
 import type { HardwareProfile, RuntimeEvent, RuntimeState } from "../lib/types";
@@ -80,12 +76,6 @@ export default function Settings() {
 
         <HfTokenRow />
         <RuntimeRow />
-        {/* Famílias primeiro: os conectores são uma delas. */}
-        <ToolGroups />
-        {/* A busca é uma das ferramentas de internet: fica junto delas. */}
-        <WebSearchSettings />
-        <McpConnectors />
-        <Automations />
         <HardwareCard profile={profile} modelsDir={paths?.modelsDir} />
       </div>
     </div>

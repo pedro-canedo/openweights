@@ -14,6 +14,15 @@ fn err_str<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
+/// Instante atual em milissegundos desde a época — o carimbo `measured_at`
+/// das medições de desempenho usa esta régua.
+pub(crate) fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 // ------------------------------------------------------------ hardware ---
 
 #[tauri::command]
@@ -860,26 +869,19 @@ fn lan_urls(port: u16) -> Vec<String> {
 
 /// Quem está usando o motor agora — vazio quer dizer "pode derrubar".
 ///
-/// A guarda mora aqui, e não na tela, porque metade dos usuários do motor não
-/// passa pela tela: o relógio das automações dispara execuções sozinho e o
-/// índice do projeto pede embeddings ao mesmo servidor. Uma guarda no
-/// frontend enxerga só a conversa aberta.
-pub(crate) fn engine_busy_with(state: &AppState) -> Vec<&'static str> {
-    let mut quem = Vec::new();
-    if state.agent.live_count() > 0 {
-        quem.push("agent");
-    }
-    if state.rag.is_indexing() {
-        quem.push("rag");
-    }
-    quem
+/// Já apontou execuções do agente e indexação do projeto; esses usuários
+/// saíram do app junto com o modo agente, então hoje não há mais nenhum
+/// consumidor interno além da própria conversa aberta. A guarda (e o
+/// contrato com a interface) fica: um usuário novo do motor entra aqui.
+pub(crate) fn engine_busy_with(_state: &AppState) -> Vec<&'static str> {
+    Vec::new()
 }
 
 /// Situação do motor para a interface decidir o que oferecer.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineBusy {
-    /// `agent` (execução do agente ou automação), `rag` (indexação).
+    /// Vazio hoje: nenhum consumidor interno segura o motor.
     pub busy_with: Vec<&'static str>,
 }
 
@@ -895,8 +897,7 @@ pub fn server_busy(state: State<'_, AppState>) -> EngineBusy {
 /// Existe porque mudar porta, chave, número de conversas simultâneas ou
 /// qualquer ajuste por modelo exige reler os argumentos e o INI, que só são
 /// lidos no boot. Era feito em dois passos pela tela do chat, sem saber quem
-/// mais estava usando o servidor — e derrubava execução de agente, automação
-/// e indexação no meio.
+/// mais estava usando o servidor.
 ///
 /// `force` é a saída para quem sabe o que está fazendo: a interface pergunta
 /// antes, dizendo quem vai ser interrompido.
@@ -950,8 +951,8 @@ pub(crate) async fn restart_engine(
 /// `GET /props` do servidor em execução: capacidades do chat template.
 ///
 /// É a ÚNICA fonte de verdade sobre suporte a ferramentas — decidir por nome
-/// de modelo dá falso positivo (e o agente trava pedindo tools que o template
-/// não sabe renderizar).
+/// de modelo dá falso positivo (um harness externo trava pedindo tools que o
+/// template não sabe renderizar).
 ///
 /// Duas armadilhas do modo Router, ambas tratadas aqui:
 ///
@@ -1102,6 +1103,15 @@ pub fn chat_rename(state: State<'_, AppState>, chat_id: i64, title: String) -> C
     state.store.rename_chat(chat_id, &title).map_err(err_str)
 }
 
+/// Lembra qual modelo a conversa estava usando (o seletor troca no meio).
+#[tauri::command]
+pub fn chat_set_model(state: State<'_, AppState>, chat_id: i64, model_id: String) -> CmdResult<()> {
+    state
+        .store
+        .set_chat_model(chat_id, &model_id)
+        .map_err(err_str)
+}
+
 #[tauri::command]
 pub fn chat_set_params(
     state: State<'_, AppState>,
@@ -1154,7 +1164,7 @@ pub fn message_add(
             gen_ms,
             modelo,
             chave.as_deref(),
-            // Chat comum: não há execução do agente por trás desta resposta.
+            // `run_id` é herança do modo agente removido: fica NULL sempre.
             None,
         )
         .map_err(err_str)

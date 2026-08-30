@@ -3,7 +3,6 @@
     "discover": "Descobrir",
     "models": "Meus Modelos",
     "chat": "Chat",
-    "activity": "Atividade",
     "server": "Servidor Local",
     "settings": "Configurações",
     "providers": "Fontes"
@@ -15,7 +14,6 @@
     "vram": "VRAM",
     "noGpu": "sem GPU dedicada",
     "tokensPerSec": "tok/s",
-    "tpsEstimated": "Estimado pelos pedaços do stream — o número exato chega ao fim do passo.",
     "disk": "DISCO",
     "free": "livres",
     "net": "REDE"
@@ -122,6 +120,22 @@
     "deleteChat": "Excluir conversa",
     "deleteChatConfirm": "Excluir \"{{title}}\"?",
     "params": "Parâmetros",
+    "harness": {
+      "agent": "Agente",
+      "title": "O modo agente virou o DeepSeek Harness",
+      "body": "Um agente de código completo em janela própria, pré-configurado com todos os seus provedores e modelos. A primeira abertura instala — depois é um clique.",
+      "open": "Abrir",
+      "openPanel": "Abrir painel",
+      "starting": "Abrindo o DeepSeek Harness…",
+      "installing": "Instalando o DeepSeek Harness — só na primeira vez…",
+      "installHint": "A primeira abertura baixa o Node portátil e o pacote do harness.",
+      "error": "O DeepSeek Harness não abriu",
+      "phase": {
+        "resolving": "resolvendo dependências",
+        "extracting": "extraindo",
+        "finishing": "finalizando"
+      }
+    },
     "approval": {
       "manual": "Aprovar manualmente",
       "auto": "Aprovar automaticamente",
@@ -273,7 +287,6 @@
       "open": "Adicionar",
       "attach": "Adicionar arquivos ou fotos",
       "skills": "Habilidades",
-      "connectors": "Conectores",
       "plugins": "Adicionar plugins...",
       "soon": "Em breve"
     },
@@ -290,74 +303,6 @@
     "speakStop": "Parar de ler",
     "emptyAnswer": "(o modelo não respondeu nada)",
     "notSaved": "Não consegui guardar esta resposta — ela não volta ao reabrir a conversa."
-  },
-  "activity": {
-    "title": "Atividade",
-    "subtitle": "O que o agente fez nesta máquina, quanto custou e o que você autorizou.",
-    "noPrice": "Modelo local não cobra em dinheiro: o custo é o seu tempo e os tokens gastos.",
-    "automation": "Automação",
-    "chatGone": "Conversa #{{id}}",
-    "period": {
-      "label": "Período",
-      "h24": "24 horas",
-      "d7": "7 dias",
-      "all": "Desde sempre"
-    },
-    "stats": {
-      "title": "As contas do período",
-      "runs": "Execuções",
-      "failed": "Não terminaram bem",
-      "calls": "Ações do agente",
-      "denied": "Ações recusadas",
-      "tokens": "Tokens",
-      "tokensSplit": "{{prompt}} de entrada · {{completion}} de saída",
-      "duration": "Tempo somado"
-    },
-    "status": {
-      "maxSteps": "Parou no limite de passos",
-      "escalated": "Parou após erros seguidos"
-    },
-    "tab": {
-      "runs": "Execuções",
-      "calls": "Ações"
-    },
-    "runs": {
-      "none": "Nenhuma execução neste período.",
-      "noSummary": "Esta execução não deixou resumo.",
-      "workspace": "Pasta",
-      "tokens": "{{total}} tokens",
-      "callsTitle": "Ações desta execução",
-      "callsNone": "Esta execução não usou nenhuma ferramenta."
-    },
-    "calls": {
-      "none": "Nenhuma ação neste período.",
-      "filterLabel": "Filtrar ações",
-      "filter": {
-        "all": "Todas",
-        "changed": "Alteraram algo",
-        "denied": "Recusadas"
-      },
-      "limit": "Mostrando as {{limit}} ações mais recentes. Para ver o resto, abra a execução."
-    },
-    "by": {
-      "user": "Você confirmou",
-      "policy": "Uma regra permitiu",
-      "yolo": "Modo automático",
-      "none": "Não precisou de confirmação"
-    },
-    "decision": {
-      "allowOnce": "Permitido uma vez",
-      "allowAlways": "Permitido sempre",
-      "allowEdited": "Permitido com ajustes",
-      "deny": "Recusado",
-      "denyAlways": "Recusado sempre"
-    },
-    "empty": {
-      "title": "O agente ainda não fez nada nesta máquina.",
-      "body": "Quando ele ler um arquivo, rodar um comando ou mexer no seu projeto, tudo aparece aqui: cada execução com o que ela tocou, o tempo e os tokens que custou, e quem autorizou cada ação — inclusive as automações, que rodam sem ninguém olhando.",
-      "cta": "Começar uma conversa"
-    },
-    "waitingAnswer": "Aguardando resposta"
   },
   "server": {
     "title": "Servidor Local",
@@ -553,21 +498,7 @@
     "runtimeMissing": "não instalado",
     "runtimeInstall": "Instalar / atualizar",
     "version": "Versão",
-    "clusterLink": "GPU extra na rede — abrir Servidor local",
-    "webSearch": {
-      "title": "Busca na web",
-      "subtitle": "Sem chave, o agente busca pelo DuckDuckGo — grátis, com qualidade menor e sujeito a bloqueios. Com uma chave do Brave ou da Tavily, os resultados melhoram.",
-      "provider": "Provedor de busca",
-      "providerAuto": "Automático (padrão)",
-      "providerDuckDuckGo": "DuckDuckGo (sem chave)",
-      "providerBrave": "Brave Search",
-      "providerTavily": "Tavily",
-      "apiKey": "Chave de API",
-      "apiKeyPlaceholder": "Cole a chave do Brave ou da Tavily (opcional)",
-      "saved": "Salvo — já está valendo.",
-      "saveFailed": "Não deu para salvar: {{error}}",
-      "applyHint": "As mudanças valem na hora, sem reiniciar o app. No automático, a chave decide o provedor (tvly-… é Tavily; outra chave, Brave)."
-    }
+    "clusterLink": "GPU extra na rede — abrir Servidor local"
   },
   "onboarding": {
     "welcome": "Bem-vindo ao OpenWeights",
@@ -619,422 +550,6 @@
     "saved": "Salvo",
     "copy": "Copiar",
     "currentValue": "atual: {{v}}"
-  },
-  "agent": {
-    "toggle": "Agente",
-    "modeChat": "Chat",
-    "modeAgent": "Agente",
-    "toggleOn": "Modo agente ligado",
-    "toggleOff": "Modo agente desligado",
-    "unsupported": "Este modelo não declara suporte a ferramentas. O modo agente pode funcionar de forma limitada.",
-    "unsupportedShort": "sem suporte a ferramentas",
-    "supported": "suporta ferramentas",
-    "mode": {
-      "label": "Autorização",
-      "chat": "Sem ferramentas",
-      "approve": "Pedir sempre",
-      "smart": "Pedir para alterações",
-      "yolo": "Automático (YOLO)",
-      "chatHint": "O modelo só conversa, não executa nada.",
-      "approveHint": "Toda ferramenta pede sua confirmação.",
-      "smartHint": "Leitura roda sozinha; escrita e comandos pedem confirmação.",
-      "yoloHint": "Roda sozinho dentro da pasta do projeto. Um checkpoint é criado antes da primeira alteração."
-    },
-    "codeMode": {
-      "label": "Code Mode",
-      "on": "Code Mode ligado",
-      "off": "Code Mode desligado",
-      "hint": "O agente escreve um programa que usa as ferramentas de uma vez, em vez de pedir uma por passo: menos idas ao modelo, menos contexto gasto. Precisa do Node na máquina."
-    },
-    "yolo": {
-      "badge": "YOLO",
-      "banner": "Executando automaticamente dentro de {{dir}} — checkpoint criado.",
-      "confirmTitle": "Ativar modo automático nesta execução?",
-      "confirmBody": "O agente vai criar, editar arquivos e rodar comandos dentro da pasta do projeto sem pedir confirmação. Ações fora da pasta, na rede e comandos que não conseguimos analisar continuam pedindo. Um checkpoint é criado antes da primeira alteração.",
-      "confirmOk": "Ativar nesta execução",
-      "needWorkspace": "Escolha uma pasta de projeto para usar o modo automático."
-    },
-    "approval": {
-      "title": "O agente quer usar {{tool}}",
-      "allow": "Permitir",
-      "allowAlways": "Permitir sempre",
-      "deny": "Negar",
-      "denyAndTell": "Negar e explicar",
-      "denyReason": "Diga ao agente o que fazer em vez disso...",
-      "pending": "Aguardando sua confirmação",
-      "argsTitle": "Argumentos",
-      "showArgs": "ver argumentos",
-      "hideArgs": "ocultar argumentos",
-      "commandIn": "em {{dir}}",
-      "opaqueWarning": "Não conseguimos analisar este comando por completo — revise antes de permitir.",
-      "outsideWorkspace": "Fora da pasta do projeto.",
-      "scopeWorkspace": "neste projeto",
-      "scopeGlobal": "em todos os projetos"
-    },
-    "terminal": {
-      "title": "Terminal da sessão",
-      "empty": "Nenhum comando executado nesta conversa ainda."
-    },
-    "tool": {
-      "running": "Executando...",
-      "ok": "Concluído",
-      "failed": "Falhou",
-      "denied": "Negado",
-      "waiting": "Aguardando confirmação",
-      "output": "Saída",
-      "result": "Resultado",
-      "showMore": "ver tudo",
-      "showLess": "recolher",
-      "truncated": "saída truncada",
-      "duration": "{{time}}",
-      "category": {
-        "read": "leitura",
-        "edit": "edição",
-        "execute": "execução",
-        "network": "rede",
-        "mcp": "conector",
-        "meta": "interno"
-      }
-    },
-    "run": {
-      "thinking": "Analisando...",
-      "step": "Passo {{n}}",
-      "trace": "Execução",
-      "actionsCount_one": "{{count}} ação executada",
-      "actionsCount_other": "{{count}} ações executadas",
-      "actionsOpen": "Ver o que foi feito",
-      "showTrace": "ver execução",
-      "cancel": "Parar agente",
-      "finished": "Concluído",
-      "cancelled": "Cancelado pelo usuário",
-      "error": "A execução falhou",
-      "maxSteps": "Limite de passos atingido ({{n}}). Peça para continuar se precisar.",
-      "escalated": "O agente travou em erros seguidos e parou para você decidir.",
-      "compacted": "Contexto resumido para continuar a tarefa.",
-      "verified": "Resultado verificado",
-      "verifyFailed": "Verificação apontou problemas",
-      "empty": "Nenhuma execução ainda.",
-      "usage": "{{steps}} passos · {{tools}} ferramentas · {{time}}",
-      "toolsSelected": "{{active}} de {{available}} ferramentas nesta janela",
-      "toolsRequested": "O agente pediu mais ferramentas: {{tools}}",
-      "subagentStarted": {
-        "explorer": "Ajudante investigando: {{objective}}",
-        "coder": "Ajudante trabalhando: {{objective}}"
-      },
-      "subagentDone": "Ajudante concluiu em {{steps}} passo(s)",
-      "subagentStopped": "Ajudante parou antes de concluir ({{steps}} passo(s))",
-      "toolsUnsupported": "Sem ferramentas: o template deste modelo não sabe recebê-las.",
-      "toolsRejected": "O servidor recusou o pedido com ferramentas — segui sem elas.",
-      "verdictOk": "Conferência: passou",
-      "verdictFail": "Conferência: reprovou",
-      "endCancelled": "Cancelada",
-      "endError": "Falhou",
-      "endMaxSteps": "Parou no limite de passos",
-      "endEscalated": "Parou para você decidir"
-    },
-    "live": {
-      "thinking": "Pensando no próximo passo",
-      "writing": "Escrevendo a resposta",
-      "task": "Etapa {{n}}/{{total}}: {{title}}",
-      "step": "passo {{n}}"
-    },
-    "focus": {
-      "title": "Plano",
-      "empty": "Sem plano definido"
-    },
-    "checkpoint": {
-      "created": "Checkpoint criado",
-      "restore": "Restaurar",
-      "restored": "Arquivos restaurados",
-      "list": "Checkpoints",
-      "empty": "Nenhum checkpoint neste projeto.",
-      "confirmRestore": "Restaurar os arquivos para este ponto? Alterações posteriores serão perdidas.",
-      "backendGit": "git sombra",
-      "backendCopy": "cópia de arquivos"
-    },
-    "tools": {
-      "title": "Ferramentas",
-      "permissions": "Permissões",
-      "policyAlwaysAllow": "Sempre permitir",
-      "policyAsk": "Perguntar",
-      "policyNever": "Nunca",
-      "resetAll": "Restaurar padrões",
-      "fsRead": "Ler arquivo",
-      "fsWrite": "Criar/substituir arquivo",
-      "fsEdit": "Editar arquivo",
-      "fsList": "Listar pasta",
-      "fsGlob": "Procurar arquivos",
-      "fsGrep": "Buscar no conteúdo",
-      "terminalRun": "Rodar comando",
-      "todoUpdate": "Atualizar plano",
-      "memorySave": "Salvar na memória",
-      "workspaceSearch": "Buscar no projeto",
-      "webSearch": "Buscar na internet",
-      "webFetch": "Abrir página da web",
-      "webDownload": "Baixar arquivo",
-      "httpRequest": "Chamada HTTP",
-      "projectInfo": "Reconhecer o projeto",
-      "buildRun": "Compilar",
-      "testRun": "Rodar testes",
-      "lintRun": "Analisar o código",
-      "formatRun": "Formatar o código",
-      "codeRun": "Executar script",
-      "gitStatus": "Estado do Git",
-      "gitDiff": "Ver alterações",
-      "gitLog": "Histórico do Git",
-      "gitAdd": "Preparar arquivos",
-      "gitCommit": "Gravar commit",
-      "gitBranch": "Ramos do Git",
-      "gitStash": "Guardar alterações",
-      "gitRestore": "Descartar alterações",
-      "csvPreview": "Espiar CSV",
-      "csvQuery": "Consultar CSV",
-      "dataSummary": "Resumir dados",
-      "sqlQuery": "Consulta SQL",
-      "sqlSchema": "Estrutura do banco",
-      "planCreate": "Dividir em etapas",
-      "planUpdate": "Atualizar etapa",
-      "taskComplete": "Concluir etapa",
-      "askUser": "Perguntar à pessoa",
-      "toolsFind": "Procurar ferramentas",
-      "agentDelegate": "Delegar a um ajudante",
-      "clipboardRead": "Ler a área de transferência",
-      "clipboardWrite": "Copiar para a área de transferência",
-      "notifyUser": "Avisar você",
-      "openPath": "Abrir arquivo ou link",
-      "runCode": "Rodar programa"
-    },
-    "toolGroups": {
-      "title": "Famílias de ferramentas",
-      "subtitle": "Desligar uma família tira aquelas ferramentas do alcance do agente.",
-      "windowHint": "Mesmo com tudo ligado, o agente recebe só as ferramentas que cabem na janela do modelo — ele pede as outras quando precisa.",
-      "count_one": "1 ferramenta",
-      "count_other": "{{count}} ferramentas",
-      "countNone": "nenhuma ferramenta",
-      "lastOne": "Deixe pelo menos uma família ligada. Para o agente não usar ferramenta nenhuma, escolha \"Sem ferramentas\" na autorização.",
-      "saveFailed": "Não foi possível salvar: {{error}}",
-      "files": {
-        "label": "Arquivos",
-        "desc": "Ler, criar, editar e procurar arquivos da pasta do projeto."
-      },
-      "terminal": {
-        "label": "Terminal",
-        "desc": "Rodar comandos no seu computador."
-      },
-      "code": {
-        "label": "Código",
-        "desc": "Reconhecer o projeto, compilar, rodar testes, analisar e formatar."
-      },
-      "git": {
-        "label": "Git",
-        "desc": "Ver histórico e alterações, preparar arquivos e gravar commits."
-      },
-      "data": {
-        "label": "Dados",
-        "desc": "Espiar e consultar planilhas CSV e bancos SQLite."
-      },
-      "web": {
-        "label": "Internet",
-        "desc": "Buscar, abrir páginas e baixar arquivos da internet."
-      },
-      "memory": {
-        "label": "Memória",
-        "desc": "Guardar o que precisa ser lembrado nas próximas conversas."
-      },
-      "project": {
-        "label": "Índice do projeto",
-        "desc": "Buscar por significado nos arquivos já indexados."
-      },
-      "plan": {
-        "label": "Plano",
-        "desc": "Dividir a tarefa em etapas e perguntar quando ficar em dúvida."
-      },
-      "mcp": {
-        "label": "Conectores",
-        "desc": "Ferramentas emprestadas pelos conectores MCP que você ligou."
-      },
-      "desktop": {
-        "label": "Computador",
-        "desc": "Área de transferência, avisos do sistema e abrir arquivo ou link."
-      }
-    },
-    "mcp": {
-      "title": "Conectores (MCP)",
-      "subtitle": "Conecte servidores MCP para dar novas ferramentas ao agente.",
-      "add": "Adicionar conector",
-      "addManual": "Preencher manualmente",
-      "addJson": "Colar JSON",
-      "jsonPlaceholder": "{\"mcpServers\": { ... }}",
-      "name": "Nome",
-      "transport": "Tipo",
-      "stdio": "Programa local",
-      "http": "Servidor remoto (HTTP)",
-      "command": "Comando",
-      "args": "Argumentos",
-      "env": "Variáveis de ambiente",
-      "url": "URL",
-      "headers": "Cabeçalhos",
-      "test": "Testar conexão",
-      "connected": "Conectado",
-      "disconnected": "Desconectado",
-      "enable": "Ativar",
-      "disable": "Desativar",
-      "remove": "Remover",
-      "removeConfirm": "Remover o conector {{name}}?",
-      "toolsCount": "{{count}} ferramentas",
-      "empty": "Nenhum conector configurado.",
-      "changedTitle": "As ferramentas deste conector mudaram",
-      "changedBody": "O servidor {{name}} alterou suas ferramentas desde a última aprovação. Revise antes de continuar usando.",
-      "approveTools": "Revisar e aprovar",
-      "badgeReadOnly": "só leitura",
-      "badgeDestructive": "destrutiva",
-      "badgeOpenWorld": "acessa a internet",
-      "elicitation": "O conector precisa de uma informação",
-      "elicitationSend": "Enviar",
-      "invalidJson": "JSON inválido.",
-      "testFailed": "Não foi possível conectar: {{error}}",
-      "namePlaceholder": "Ex.: GitHub",
-      "argsHint": "Separados por espaço; use aspas para valores com espaço.",
-      "envHint": "Uma por linha, no formato CHAVE=valor.",
-      "headersHint": "Um por linha, no formato Nome: valor.",
-      "statusDisabled": "Desativado",
-      "statusError": "Falhou na última tentativa",
-      "statusPending": "Aguardando revisão",
-      "testing": "Testando...",
-      "testFirst": "Teste a conexão para ler as ferramentas.",
-      "showTools": "Ver ferramentas",
-      "hideTools": "Ocultar ferramentas",
-      "noTools": "Nenhuma ferramenta lida ainda."
-    },
-    "automations": {
-      "title": "Automações",
-      "subtitle": "Um pedido que roda sozinho de tempos em tempos, mesmo sem você por perto.",
-      "add": "Nova automação",
-      "empty": "Nenhuma automação ainda.",
-      "toggle": "Ligar ou desligar a automação {{name}}",
-      "name": "Nome",
-      "namePlaceholder": "Ex.: Resumo do dia",
-      "prompt": "O que fazer",
-      "promptPlaceholder": "Ex.: liste o que mudou no projeto hoje e o que ficou pendente.",
-      "workspace": "Pasta do projeto",
-      "noWorkspace": "Nenhuma pasta escolhida",
-      "clearWorkspace": "Tirar a pasta",
-      "model": "Modelo",
-      "modelDefault": "Usar o primeiro da biblioteca",
-      "interval": "De quanto em quanto tempo",
-      "every": {
-        "manual": "Só quando eu mandar",
-        "hourly": "A cada hora",
-        "every4h": "A cada 4 horas",
-        "daily": "Todo dia",
-        "weekly": "Toda semana",
-        "custom": "A cada {{minutes}} minutos"
-      },
-      "nextRun": "Roda de novo {{when}}",
-      "today": "hoje às {{time}}",
-      "tomorrow": "amanhã às {{time}}",
-      "soon": "assim que der",
-      "manualOnly": "Roda só quando você mandar",
-      "paused": "Desligada — não roda sozinha",
-      "never": "Ainda não rodou.",
-      "runNow": "Rodar agora",
-      "edit": "Editar",
-      "delete": "Apagar",
-      "deleteConfirm": "Apagar a automação {{name}}? Isso não tem volta.",
-      "unattendedHint": "Ninguém está olhando quando a automação roda: em «{{mode}}» ela para no primeiro pedido de confirmação e fica esperando você.",
-      "waitingTitle": "Parada esperando você",
-      "waitingBody": "A automação pediu uma confirmação e não continua sozinha. Abra a execução para responder.",
-      "statusMaxSteps": "Parou no limite de passos",
-      "statusEscalated": "Parou por erros seguidos",
-      "appHint": "O relógio das automações roda dentro do app: com ele fechado, nada dispara. Na hora marcada, o motor de IA sobe sozinho."
-    },
-    "memory": {
-      "title": "Memória",
-      "subtitle": "O que o agente lembra entre conversas neste projeto.",
-      "facts": "Fatos salvos",
-      "addFact": "Adicionar fato",
-      "factPlaceholder": "Ex.: este projeto usa pnpm, não npm.",
-      "empty": "Nada memorizado ainda.",
-      "delete": "Esquecer",
-      "scopeGlobal": "Global",
-      "scopeWorkspace": "Este projeto",
-      "consolidate": "Organizar memória agora",
-      "consolidating": "Organizando...",
-      "saved": "Memorizado",
-      "openFolder": "Abrir pasta de memória"
-    },
-    "rag": {
-      "title": "Índice do projeto",
-      "subtitle": "Permite ao agente buscar por significado nos arquivos do projeto.",
-      "index": "Indexar projeto",
-      "reindex": "Atualizar índice",
-      "indexing": "Indexando {{done}}/{{total}} arquivos...",
-      "indexed": "{{files}} arquivos · {{chunks}} trechos",
-      "clear": "Limpar índice",
-      "needModel": "Baixe um modelo de embedding para indexar (sugestão: nomic-embed-text ou bge-m3).",
-      "openDiscover": "Baixar modelo de embedding",
-      "vectorOff": "Busca vetorial indisponível — usando apenas busca textual.",
-      "empty": "Este projeto ainda não foi indexado.",
-      "searchPlaceholder": "Buscar no projeto...",
-      "scanning": "Varrendo arquivos...",
-      "embedding": "Gerando vetores {{done}}/{{total}}...",
-      "cancelling": "Cancelando...",
-      "noResults": "Nenhum trecho encontrado.",
-      "confirmClear": "Apagar o índice deste projeto? Dá para indexar de novo depois.",
-      "sourceText": "texto",
-      "sourceVector": "significado",
-      "sourceBoth": "texto + significado",
-      "openFile": "Abrir arquivo"
-    },
-    "question": {
-      "title": "O agente precisa de você",
-      "hint": "Clique numa opção para preencher a resposta, ou escreva a sua — a execução retoma o plano de onde parou.",
-      "answerPlaceholder": "Sua resposta…",
-      "send": "Responder",
-      "failed": "Não deu para responder — talvez esta pergunta já tenha sido respondida em outra janela."
-    }
-  },
-  "plan": {
-    "title": "Plano de trabalho",
-    "subtitle": "Tarefas grandes viram entregas pequenas que cabem na janela do modelo.",
-    "goal": "Objetivo",
-    "progress": "{{done}} de {{total}} entregas",
-    "empty": "Nenhum plano ainda.",
-    "planning": "Dividindo a tarefa...",
-    "approve": "Aprovar plano",
-    "approveHint": "Nada é executado antes de você aprovar.",
-    "approved": "Plano aprovado",
-    "replan": "Refazer plano",
-    "addTask": "Adicionar etapa",
-    "editTask": "Editar etapa",
-    "removeTask": "Remover etapa",
-    "doneWhen": "Pronto quando",
-    "handoff": "O que passou adiante",
-    "dependsOn": "Depende de",
-    "files": "Arquivos",
-    "status": {
-      "pending": "Na fila",
-      "running": "Em andamento",
-      "done": "Concluída",
-      "blocked": "Bloqueada",
-      "failed": "Falhou",
-      "skipped": "Pulada"
-    },
-    "taskOf": "Etapa {{n}} de {{total}}",
-    "blockedReason": "Precisa de você para continuar",
-    "contextFresh": "Contexto reiniciado para esta etapa",
-    "windowHint": "Janela do modelo: {{ctx}} tokens — entregas de até {{perTask}}",
-    "mode": {
-      "chat": "Conversa",
-      "plan": "Planejamento",
-      "agent": "Executar",
-      "loop": "Laço",
-      "chatHint": "Só responde, não usa ferramentas.",
-      "planHint": "Investiga e propõe o plano. Não altera nada até você aprovar.",
-      "agentHint": "Planeja em etapas e executa cada uma com prova de conclusão.",
-      "loopHint": "Executa o plano inteiro, conferindo cada entrega antes de seguir."
-    },
-    "etaTotal": "Tempo previsto do que falta: ≈ {{time}}"
   },
   "tune": {
     "open": "Ajustar para esta máquina",

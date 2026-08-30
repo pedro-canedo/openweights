@@ -10,7 +10,7 @@
 ![Windows, macOS e Linux](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
 📖 **[Documentação](https://pedro-canedo.github.io/openweights/pt/)** — guia de
-instalação, o harness agêntico explicado por partes e as integrações.
+instalação, modelos e quantização e as integrações.
 
 Rode LLMs no seu PC sem terminal, sem CUDA e sem chute de quantização.
 
@@ -19,15 +19,10 @@ OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://gith
 - 🔍 **Hardware no piloto automático** — identifica CPU, RAM, GPU e VRAM e baixa o build do llama.cpp que combina (CUDA, Vulkan ou só CPU).
 - 🤗 **Modelos do Hugging Face, já filtrados** — busca GGUF e recomenda a quantização para o *seu* PC: verde roda inteiro na GPU, amarelo divide com a CPU, cinza fica só no processador.
 - 💬 **Chat local** — streaming, markdown e histórico no disco.
-- 🤖 **Modo agente** — o modelo lê e edita arquivos, roda comandos, usa Git, consulta a internet e analisa dados. Cada ação passa pela sua confirmação (ou não, se você preferir), e uma foto do projeto é tirada antes da primeira alteração: dá para voltar atrás.
+- 🤖 **Trabalho de agente num harness externo, a um clique** — o app entrega seus modelos a um agente de código externo — [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), Claude Code, Aider, OpenCode — pré-configurado com todos os seus provedores e modelos. O DeepSeek Harness é instalado e gerenciado pelo próprio app (pasta isolada, Node portátil incluído) e abre em janela própria; sua chave de API viaja por variável de ambiente, nunca na linha de comando.
 - 🎛️ **Se ajusta à sua máquina sozinho** — ninguém precisa aprender o que são `-ts`, `-ub` ou `-ctk`. O app pergunta ao motor quais dispositivos existem e quanto sobra em cada um, lê o número real de camadas no arquivo e pergunta ao próprio llama.cpp quanto cada configuração custa de memória — então converge numa, em segundo plano, e refaz quando o retrato do hardware muda. O que você definiu na mão nunca é tocado. Se quiser os números, o painel mostra cada candidato e mede tokens/s de verdade em vez de confiar na estimativa.
-- ⚡ **Code Mode** — em vez de pedir uma ferramenta por vez, o agente escreve um programa que usa todas de uma vez: uma tarefa inteira vira um passo, e só o resultado volta para a conversa. Gasta muito menos contexto, e faz trabalhar até o modelo que não sabe emitir chamada de ferramenta. O programa roda isolado — sem acesso a arquivo nem a comandos por fora das ferramentas, que continuam passando pela sua autorização.
-- 🧭 **Feito para modelo pequeno** — o objetivo vira entregas curtas, cada uma com contexto novo, e o cardápio de ferramentas se ajusta à janela do modelo: o que não cabe, ele pede quando precisa.
-- 🧠 **Memória e índice do projeto** — o agente lembra do que aprendeu e busca por significado no seu código.
-- 🧩 **Conectores MCP** — servidores do padrão Model Context Protocol entram como ferramentas, com aprovação por servidor.
 - 🔌 **API compatível com OpenAI** — outros apps apontam para `localhost` e usam o mesmo modelo.
 - 🎚️ **Todos os botões do llama.cpp, no visual** — especulação MTP, RoPE/YaRN, cache KV, reaproveitamento de cache e o resto: as flags que importam têm rótulo e dica em português, e **todas as outras são lidas do binário instalado**, então uma atualização do motor nunca deixa a interface para trás. Presets com nome (*MTP turbo*, *Economia de VRAM*), prévia do comando e do INI exatos, e o modelo carrega pela própria tela.
-- 🧰 **Abrir em um harness** — entregue o modelo carregado a um agente de código externo — [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), Aider, OpenCode — apontado para a sua API local, num clique. Sem endpoint para configurar na mão; sua chave de API viaja por variável de ambiente, nunca na linha de comando.
 - 🖧 **GPU extra na rede** — duas máquinas na mesma rede carregam um modelo juntas: o arquivo fica em uma, a outra só empresta a placa, e um PC de 12 GB ao lado de um Mac de 18 GB viram 30 GB. Vem desligado, não anuncia nada até você ligar, e quem empresta a placa precisa aceitar o pedido na mão.
 - 🌐 **Outras fontes de modelo** — além da sua máquina, as conversas podem ser atendidas pelo **OpenRouter** (centenas de modelos por uma chave só, com catálogo nativo mostrando preço e contexto) ou pelo **9router**, um roteador local com painel próprio que o app instala, roda e remove numa pasta isolada — Node portátil incluído, sem tocar no seu sistema. O painel do 9router abre embutido no app.
 - 🚪 **Ponto de entrada único (opcional)** — um Traefik local que encaminha um endereço só para o motor local e para o 9router, por prefixo, para apontar outra ferramenta ao OpenWeights sem decorar portas. Não é túnel: nada fica acessível pela internet.
@@ -173,10 +168,9 @@ src-tauri/src/        app Tauri (comandos, estado, telemetria)
 src-tauri/crates/     núcleo Rust, um crate por assunto:
                         hw, runtime, models, advisor    hardware e modelos
                         engine, store, types            llama-server, SQLite, contratos
-                        agent, tools, policy            laço do agente, ferramentas, permissões
-                        checkpoint, mcp, memory, rag    desfazer, conectores, memória, índice
-                        webtools, codetools,            internet, build/teste,
-                        gittools, datatools             Git, CSV/SQLite
+                        providers, ninerouter, dshhost  fontes externas, roteador local,
+                        gateway, nodejs                 harness gerenciado, entrada única, Node
+                        proc, fetch                     supervisão de processos, HTTP
 ```
 
 ## Contribuir
@@ -186,7 +180,7 @@ Issues e pull requests são bem-vindos. Antes de abrir um PR, rode o que o CI ro
 ```bash
 npm run build                                   # tipos + build do frontend
 cd src-tauri
-cargo test --workspace                          # ~960 testes
+cargo test --workspace                          # testes do backend Rust
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
@@ -203,7 +197,7 @@ Convenções do projeto, em uma linha cada:
 
 ### Sobre suas chaves de API
 
-As chaves que você cola no app (OpenRouter, Hugging Face, busca na web) ficam em
+As chaves que você cola no app (OpenRouter, Hugging Face) ficam em
 texto puro no banco SQLite local, ao lado das demais configurações. Ainda não há
 integração com o cofre de senhas do sistema — o mesmo já valia para todos os
 segredos que o app guardava, então isto é uma limitação conhecida, não uma

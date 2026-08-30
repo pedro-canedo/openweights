@@ -7,9 +7,7 @@ model you already have loaded.
 
 Set the port, press **Start**, and the address appears with a copy button.
 Everything below applies at start time — change a setting and the engine has to
-be stopped and started again for it to take effect. The screen says so, and it
-refuses to restart while an agent run or a project indexing is using the engine
-(it names which one).
+be stopped and started again for it to take effect. The screen says so.
 
 | Setting | What it does |
 |---|---|
@@ -68,19 +66,25 @@ model's own setting always wins over the global one.
 
 ## Open in a harness
 
-With a model loaded, the **Open in a harness** section hands that model to an
-external coding agent pointed at your local API — one click, no endpoint to
-configure by hand.
+The **Open in a harness** section hands your models to an external coding
+agent pointed at your local API — one click, no endpoint to configure by hand.
+This is also where agent work lives now: the app has no chat-with-tools of its
+own.
 
 | Harness | How |
 |---|---|
-| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | The app writes the local provider into a configuration folder of its own and opens the `dsh` web UI |
+| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | Managed by the app: it installs `dsh` in an isolated folder (portable Node included), writes **all** your providers and models into a configuration folder of its own, and opens the web UI in a window of the app. The first open installs; after that it is one click |
+| **Claude Code** | Launched against your local API, with the model already selected |
 | **Aider** | Starts pointed at your API, with the model already selected |
 | **OpenCode** | Same, through the environment variables it expects |
 
 Each card says whether the program is installed, shows the command (copyable)
 and offers the **Open** button. When it is not installed but `npx` exists, the
 app uses `npx` and shows the command for installing it for good.
+
+The same DeepSeek Harness open lives in the **Chat** screen as the **Agent**
+button — one click from the conversation, with install progress shown on the
+first time.
 
 ::: tip The key never rides in the command
 When you set an API key, it travels through an environment variable — never on

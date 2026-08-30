@@ -1,14 +1,8 @@
 // Tela de Chat: conversas persistidas (SQLite via api), seletor de modelo
 // (Router mode carrega sob demanda), streaming SSE direto do llama-server,
 // parâmetros por conversa, raciocínio (thinking), anexos, regenerar/editar
-// e auto-título em background.
-//
-// Com o modo agente ligado (`ChatParams.agent`) o envio deixa de ser um
-// stream de uma resposta e vira um run com ferramentas: quem toca é o
-// `runStore` (laço no Rust), e a tela desenha a trilha de eventos no fluxo
-// da conversa. Tudo o mais — anexos, menções, edição, persistência — segue
-// exatamente igual, inclusive a gravação da mensagem do usuário ANTES de
-// começar (o backend conta com ela para montar o histórico).
+// e auto-título em background. A mensagem do usuário é gravada ANTES de a
+// geração começar (o backend conta com ela para montar o histórico).
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
@@ -27,10 +21,6 @@ import {
 import { type ChatMessage, type ContentPart } from "../lib/llama";
 import { chatStore } from "../lib/chatStore";
 import { generationStore } from "../lib/generationStore";
-import { isRunActive, runStore, type RunView } from "../lib/agent/runStore";
-import { plansFirst, type WorkMode } from "../lib/agent/scout";
-import { runsList } from "../lib/agent/agentApi";
-import type { RunMode, RunSummary } from "../lib/agent/types";
 import {
   listLoadedModels,
   matchServerModel,
@@ -44,6 +34,7 @@ import {
 import { navigate, takePendingChatModel } from "../lib/nav";
 import {
   DEFAULT_CHAT_PARAMS,
+  parseChatParams,
   type ChatParams,
   type ChatRow,
   type MessageRow,
@@ -54,31 +45,23 @@ import {
   readAttachment,
   type Attachment,
 } from "../components/chat/AttachmentChips";
-import AgentToggle from "../components/agent/AgentToggle";
-import LiveStatus from "../components/agent/LiveStatus";
-import ApprovalBar from "../components/agent/ApprovalBar";
-import QuestionCard from "../components/agent/QuestionCard";
-import FocusChip from "../components/agent/FocusChip";
-import ModeSelect from "../components/agent/ModeSelect";
-import RunTimeline, { RunTrail } from "../components/agent/RunTimeline";
-import SessionTerminal from "../components/agent/SessionTerminal";
-import TaskBoard from "../components/agent/TaskBoard";
-import YoloBadge from "../components/agent/YoloBadge";
 import ChatHero from "../components/chat/ChatHero";
 import { ApprovalSelect } from "../components/chat/ChatProperties";
 import Composer from "../components/chat/Composer";
 import {
-  useWorkspacePanel,
   WorkspaceExplorer,
   WorkspaceHost,
   WorkspaceToggle,
   WorkspaceTrigger,
 } from "../components/chat/WorkspacePanel";
+import {
+  HarnessComposerButton,
+  HarnessLaunchOverlay,
+} from "../components/chat/HarnessCta";
 import MessageList, { type UiMessage } from "../components/chat/MessageList";
 import ModelSelect from "../components/chat/ModelSelect";
 import ContextMeter from "../components/chat/ContextMeter";
 import ParamsPanel from "../components/chat/ParamsPanel";
-import { sliceFromRun } from "../lib/contextUsage";
 
 /**
  * Opções do seletor: ids servidos pelo Router (GET /v1/models) PRIMEIRO,
@@ -182,7 +165,6 @@ function rowToUi(r: MessageRow): UiMessage {
     reasoning: reasoning || undefined,
     genTokens: r.genTokens,
     genMs: r.genMs,
-    runId: r.runId,
   };
 }
 
@@ -263,91 +245,6 @@ function toApiMessages(history: UiMessage[]): ChatMessage[] {
   });
 }
 
-/** Teto de passos de um run disparado pelo chat (o Rust também limita). */
-// Comporta um plano de 12 entregas (12×8 + folga). O limite REAL de cada run
-// é o plano: cada etapa tem teto próprio de 8 passos e 2 tentativas, então um
-// plano pequeno para muito antes disto — o número alto só não estrangula a
-// granularidade máxima que o modo Executar promete.
-const AGENT_MAX_STEPS = 100;
-
-/** Texto final do run: o último passo com conteúdo (ou o resumo). */
-function runFinalText(run: RunView | undefined): string {
-  if (!run) return "";
-  for (let i = run.items.length - 1; i >= 0; i--) {
-    const item = run.items[i];
-    if (item.kind === "step" && item.text.trim()) return item.text;
-  }
-  return run.summary;
-}
-
-/**
- * Faixa do agente logo acima do composer: aviso do modo automático, plano
- * corrente e falha ao iniciar. Fica em um componente próprio porque precisa
- * do contexto do `WorkspaceHost` — o atalho "Restaurar" do YOLO abre o
- * explorador, que é onde a lista de checkpoints mora.
- */
-function AgentBar({
-  run,
-  mode,
-  workspaceDir,
-  startError,
-  onDismissError,
-  showTrace,
-  onOpenTrace,
-}: {
-  run: RunView | undefined;
-  mode: RunMode;
-  workspaceDir: string | null;
-  startError: string | null;
-  onDismissError: () => void;
-  /** Há um run encerrado cuja trilha ainda pode ser aberta no painel. */
-  showTrace: boolean;
-  onOpenTrace: () => void;
-}) {
-  const { t } = useTranslation();
-  const { openExplorer } = useWorkspacePanel();
-  const focusMd = run?.focusMd ?? "";
-  const yolo = mode === "yolo";
-
-  if (!yolo && !focusMd && !run?.plan && !startError && !showTrace) return null;
-
-  return (
-    <div className="px-6">
-      <div className="mx-auto mb-1.5 flex max-w-3xl flex-wrap items-center gap-2">
-        {yolo && (
-          <YoloBadge
-            workspaceDir={run?.workspaceDir ?? workspaceDir}
-            checkpoint={run?.checkpoints[0] ?? null}
-            onOpenCheckpoint={() => openExplorer()}
-          />
-        )}
-        {(run?.plan || focusMd) && (
-          <FocusChip todoMd={focusMd} plan={run?.plan ?? null} />
-        )}
-        {showTrace && (
-          <button
-            type="button"
-            onClick={onOpenTrace}
-            className="rounded-full border border-edge bg-panel px-2 py-1 text-[11px] text-dim transition-colors hover:text-ink"
-          >
-            {t("agent.run.showTrace")}
-          </button>
-        )}
-        {startError && (
-          <button
-            type="button"
-            onClick={onDismissError}
-            title={t("common.close")}
-            className="min-w-0 flex-1 truncate text-left text-[11px] text-bad"
-          >
-            {startError}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export default function Chat() {
   const { t } = useTranslation();
   const { chats, openId, openNew } = useSyncExternalStore(
@@ -358,7 +255,6 @@ export default function Chat() {
     generationStore.subscribe,
     generationStore.get,
   );
-  const runSnap = useSyncExternalStore(runStore.subscribe, runStore.get);
 
   // Sair do Chat DESMONTA esta tela (App renderiza por condicional): sem
   // semear o id daqui, voltar de "Meus Modelos" abria uma conversa em branco
@@ -377,23 +273,6 @@ export default function Chat() {
   const [dragOver, setDragOver] = useState(false);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
   const [workspaceFiles, setWorkspaceFiles] = useState<WorkspaceFile[]>([]);
-  const [traceOpen, setTraceOpen] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  // Abre sozinho na primeira execução do run: quem liga o agente quer VER o
-  // comando rodando. Depois disso a escolha é da pessoa — fechar fica
-  // fechado até o próximo run.
-  const autoOpened = useRef<string | null>(null);
-  // Execuções desta conversa por runId: dão a contagem de ações de cada
-  // resposta sem precisar reconstruir a trilha inteira de todas elas.
-  const [runSummaries, setRunSummaries] = useState<Record<string, RunSummary>>(
-    {},
-  );
-  // Último run encerrado desta conversa: a trilha sai do fluxo quando a
-  // resposta é persistida, mas continua acessível pelo painel.
-  const [lastTrace, setLastTrace] = useState<{
-    chatId: number;
-    runId: string;
-  } | null>(null);
 
   const busyRef = useRef(false);
   // "Época" da conversa exibida: troca/criação invalida listMessages stale.
@@ -475,18 +354,10 @@ export default function Chat() {
     resetComposer();
 
     // Parâmetros da conversa (paramsJson) — carregar não deve re-persistir.
+    // O parse é tolerante: params antigos (do modo agente removido) trazem
+    // campos que não existem mais e eles são descartados sem erro.
     paramsSkipRef.current = true;
-    let loaded = DEFAULT_CHAT_PARAMS;
-    if (chat.paramsJson) {
-      try {
-        loaded = {
-          ...DEFAULT_CHAT_PARAMS,
-          ...(JSON.parse(chat.paramsJson) as Partial<ChatParams>),
-        };
-      } catch {
-        // JSON corrompido — usa padrões
-      }
-    }
+    const loaded = parseChatParams(chat.paramsJson);
     setParams(loaded);
     // `chats.model_id` só é gravado na criação: o modelo atual da conversa
     // mora nos params (fallback para o da criação).
@@ -494,15 +365,6 @@ export default function Chat() {
     pendingModelRef.current = null;
     const restoredModel = pending ?? loaded.model ?? chat.modelId;
     if (restoredModel) setSelectedModel(restoredModel);
-
-    // As execuções da conversa: cada resposta do agente carrega o id da sua,
-    // e é o resumo que diz quantas ações ela teve sem abrir a trilha.
-    void runsList(chat.id)
-      .then((list) => {
-        if (convEpochRef.current !== epoch) return;
-        setRunSummaries(Object.fromEntries(list.map((r) => [r.id, r])));
-      })
-      .catch(() => setRunSummaries({}));
 
     try {
       const rows = await listMessages(chat.id);
@@ -581,19 +443,9 @@ export default function Chat() {
     // `listChats` stale (disparado no mount) pode omitir a conversa nova
     // e parecer exclusão — se ainda há job, a lista é que está atrasada.
     if (generationStore.jobFor(activeChatId)) return;
-    // Mesmo raciocínio para o agente: run vivo = a lista é que está velha.
-    if (runStore.isBusy(activeChatId)) return;
     deletedChatsRef.current.add(activeChatId);
     generationStore.markDeleted(activeChatId);
-    runStore.markDeleted(activeChatId);
   }, [chats, activeChatId]);
-
-  // Voltar para esta tela a REMONTA: o run continua no Rust, então reata
-  // (o store replica os eventos por `seq`, sem duplicar a trilha).
-  useEffect(() => {
-    if (activeChatId == null) return;
-    void runStore.ensureAttached(activeChatId);
-  }, [activeChatId]);
 
   // ------------------------------------------------------------- anexos ---
 
@@ -626,90 +478,6 @@ export default function Chat() {
   const generating =
     job != null && (job.state === "running" || job.state === "queued");
   const loadingModel = job?.loadingModel ?? false;
-
-  // ------------------------------------------------------------- agente ---
-  // Tudo derivado do snapshot (nada de ler o Map do store durante o render).
-  const agentOn = params.agent === true;
-  const agentMode: RunMode = params.mode ?? "smart";
-  const workMode: WorkMode = params.workMode ?? "agent";
-  const runId = activeChatId != null ? runSnap.byChat[activeChatId] : undefined;
-  const run = runId ? runSnap.runs.find((r) => r.runId === runId) : undefined;
-  const runActive = run != null && isRunActive(run.status);
-  const runStarting =
-    activeChatId != null && runSnap.starting.includes(activeChatId);
-  const startError =
-    activeChatId != null
-      ? (runSnap.startErrors.find((e) => e.chatId === activeChatId)?.message ??
-        null)
-      : null;
-  const pendingCall =
-    run?.pendingCallId != null ? (run.tools[run.pendingCallId] ?? null) : null;
-  // "Ocupado" para a UI: stream do chat normal OU run do agente.
-  const busy = generating || runActive || runStarting;
-  const agentUsage = sliceFromRun(run, runActive || runStarting);
-  // Run antigo para o painel quando não há mais run corrente na conversa.
-  const traceRunId =
-    !run && lastTrace?.chatId === activeChatId ? lastTrace.runId : null;
-
-  // A pergunta que está PAUSANDO esta conversa: do run vivo escalado, ou do
-  // último run persistido — só quando a âncora dele é a última mensagem
-  // (a mesma regra do desvio do composer: uma escalada enterrada no meio do
-  // papo não segura a conversa).
-  const perguntaPendente = (() => {
-    if (run?.status === "escalated" && run.question) return run.question;
-    let ancora: UiMessage | undefined;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant") {
-        ancora = messages[i];
-        break;
-      }
-    }
-    const resumo = ancora?.runId ? runSummaries[ancora.runId] : undefined;
-    return resumo?.status === "escalated" &&
-      resumo.question &&
-      !resumo.answer &&
-      !resumo.resumedBy
-      ? resumo.question
-      : null;
-  })();
-
-  // Quadro do plano (Scout Rule): aparece quando há plano e, nos modos que
-  // planejam antes de agir, já durante a divisão da tarefa.
-  const boardMode: WorkMode = run?.workMode ?? workMode;
-  const showBoard =
-    run != null &&
-    (run.plan != null || (isRunActive(run.status) && plansFirst(boardMode)));
-
-  const openTrace = () => {
-    setTraceOpen(true);
-    setParamsOpen(false);
-    setTerminalOpen(false);
-  };
-
-  // Primeira execução do run abre o terminal sozinha — é o momento em que
-  // ele tem o que mostrar. Uma vez por run: se a pessoa fechar, fica fechado.
-  useEffect(() => {
-    if (!run || autoOpened.current === run.runId) return;
-    const executando = Object.values(run.tools).some(
-      (c) => c.state === "running" && c.category === "execute",
-    );
-    if (!executando) return;
-    autoOpened.current = run.runId;
-    setTerminalOpen(true);
-    setTraceOpen(false);
-    setParamsOpen(false);
-  }, [run]);
-
-  /**
-   * Tira do fluxo a trilha de um run já encerrado (cancelado, com erro, no
-   * limite de passos). Sem isso ela ficaria pendurada DEPOIS das mensagens
-   * novas, fora de ordem — a execução inteira continua no painel.
-   */
-  const parkFinishedRun = (chatId: number) => {
-    if (!run || activeChatId !== chatId || isRunActive(run.status)) return;
-    setLastTrace({ chatId, runId: run.runId });
-    runStore.dismiss(chatId);
-  };
 
   const displayMessages: UiMessage[] = (() => {
     if (!job) return messages;
@@ -786,83 +554,11 @@ export default function Chat() {
     })();
   }, [job?.id, job?.state, activeChatId, t]);
 
-  /**
-   * Run encerrado: o Rust SEMPRE grava a âncora na conversa (o texto final,
-   * ou o resumo do desfecho quando não houve texto) — em qualquer status.
-   * Recarregamos do banco e, com a âncora confirmada, tiramos a trilha viva
-   * do fluxo: o PastRunTrail pendurado nela assume, com plano + veredito +
-   * ações. A trilha só FICA quando a leitura falhou — aí ela é o único lugar
-   * onde aquele trabalho existe na tela até o próximo envio.
-   */
-  useEffect(() => {
-    if (activeChatId == null || run == null) return;
-    if (isRunActive(run.status)) return;
-    const epoch = convEpochRef.current;
-    const chatId = activeChatId;
-    const finishedId = run.runId;
-    const snapshot: UiMessage = {
-      role: "assistant",
-      content: runFinalText(run),
-      tokensPerSec: null,
-    };
-    void (async () => {
-      let ui: UiMessage[] | null = null;
-      try {
-        ui = (await listMessages(chatId)).map(rowToUi);
-      } catch {
-        // Uma releitura única: falha transitória aqui deixaria a trilha
-        // pendurada e o texto final em dobro até o próximo envio.
-        await new Promise((r) => setTimeout(r, 1000));
-        try {
-          ui = (await listMessages(chatId)).map(rowToUi);
-        } catch {
-          ui = null; // segue com o texto que já está na trilha
-        }
-      }
-      if (convEpochRef.current !== epoch) return;
-      // O run que acabou de terminar não estava na lista carregada na
-      // abertura: sem esta releitura a resposta dele ficaria sem a contagem
-      // de ações até a próxima visita à conversa.
-      void runsList(chatId)
-        .then((list) => {
-          if (convEpochRef.current !== epoch) return;
-          setRunSummaries(Object.fromEntries(list.map((r) => [r.id, r])));
-        })
-        .catch(() => {});
-      // A trilha só sai do fluxo quando a ÂNCORA deste run está confirmada no
-      // banco (o Rust agora grava sempre — com o resumo quando não há texto).
-      // É nela que o PastRunTrail se pendura com plano + veredito + ações; um
-      // dismiss sem âncora confirmada era como o histórico sumia do chat.
-      const ancorada =
-        ui?.some((m) => m.role === "assistant" && m.runId === finishedId) ??
-        false;
-      if (ancorada) {
-        setLastTrace({ chatId, runId: finishedId });
-        runStore.dismiss(chatId);
-      }
-      setMessages((prev) => {
-        // Uma leitura que veio com MENOS mensagens do que a tela mostra não
-        // pode apagar a conversa (mesma defesa do `mergeLoaded`).
-        if (!ui || ui.length < prev.length) {
-          return upsertAssistant(prev, snapshot);
-        }
-        // Sem a resposta no banco (texto vazio), o snapshot da trilha entra
-        // no lugar — senão a conversa perderia o que o agente respondeu.
-        return ui[ui.length - 1]?.role === "assistant"
-          ? ui
-          : upsertAssistant(ui, snapshot);
-      });
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [run?.runId, run?.status, activeChatId]);
-
   // --------------------------------------------------------------- envio ---
 
   const handleSend = async () => {
     if (busyRef.current || !selectedModel) return;
-    if (generationStore.isBusy(activeChatId) || runStore.isBusy(activeChatId)) {
-      return;
-    }
+    if (generationStore.isBusy(activeChatId)) return;
     const text = draft.trim();
     if (!text && attachments.length === 0) return;
 
@@ -983,61 +679,6 @@ export default function Chat() {
       }
 
       if (chatId == null) return;
-      parkFinishedRun(chatId);
-      if (agentOn) {
-        // A última execução parou ESPERANDO esta resposta (pergunta do
-        // agente, etapa bloqueada)? Então a mensagem retoma o plano de onde
-        // parou, em vez de começar um trabalho novo do zero.
-        //
-        // A regra é UMA: o desvio só vale quando a pergunta do agente é a
-        // ÚLTIMA coisa na conversa — a âncora do run escalado é a última
-        // mensagem do assistente ANTES desta. Isso mata três sequestros: o
-        // run escalado de outra conversa (a âncora vem das mensagens DESTA),
-        // o escalado antigo enterrado no meio do papo (qualquer resposta
-        // posterior o desativa) e a janela pós-dismiss (o banco responde na
-        // hora, não o cache de resumos).
-        const esperando = await (async () => {
-          let ancora: UiMessage | undefined;
-          for (let i = history.length - 1; i >= 0; i--) {
-            if (history[i].role === "assistant") {
-              ancora = history[i];
-              break;
-            }
-          }
-          const runDaAncora = ancora?.runId ?? run?.runId;
-          if (!runDaAncora) return null;
-          // O BANCO decide, sempre: um run já respondido continua
-          // "escalated" para sempre, e só `answer`/`resumedBy` separam
-          // "esperando você" de "já respondido em outra janela". Sem esta
-          // leitura, a mensagem seguinte virava uma segunda resposta e
-          // nascia um run duplicado sobre o mesmo plano.
-          const lista = await runsList(chatId).catch(() => []);
-          const resumo = lista.find((r) => r.id === runDaAncora);
-          return resumo?.status === "escalated" &&
-            !resumo.answer &&
-            !resumo.resumedBy
-            ? resumo.id
-            : null;
-        })();
-        if (esperando) {
-          const continuou = await runStore
-            .answer(chatId, esperando, content)
-            .catch(() => false);
-          if (continuou) return;
-        }
-        // O laço do agente monta o próprio histórico a partir do banco (a
-        // mensagem acima já está gravada); aqui só entregamos o pedido.
-        void runStore.start({
-          chatId,
-          prompt: content,
-          model: selectedModel,
-          params: sendParams,
-          mode: agentMode,
-          workMode,
-          maxSteps: AGENT_MAX_STEPS,
-        });
-        return;
-      }
       generationStore.start({
         chatId,
         messages: toApiMessages(history),
@@ -1066,7 +707,7 @@ export default function Chat() {
   // ------------------------------------------------- regenerar / editar ---
 
   const regenerate = async () => {
-    if (busyRef.current || busy) return;
+    if (busyRef.current || generating) return;
     const prev = messages;
     const last = prev[prev.length - 1];
     if (!last || last.role !== "assistant") return;
@@ -1082,7 +723,6 @@ export default function Chat() {
       }
       if (convEpochRef.current === epoch) setMessages(history);
       if (!canPersistId(chatId)) return;
-      parkFinishedRun(chatId);
       generationStore.start({
         chatId,
         messages: toApiMessages(history),
@@ -1095,7 +735,7 @@ export default function Chat() {
   };
 
   const startEdit = (index: number) => {
-    if (busyRef.current || busy) return;
+    if (busyRef.current || generating) return;
     const msg = messages[index];
     if (!msg || msg.role !== "user") return;
     setEditingIdx(index);
@@ -1104,7 +744,7 @@ export default function Chat() {
   };
 
   const removeMessage = async (index: number) => {
-    if (busyRef.current || busy) return;
+    if (busyRef.current || generating) return;
     const epoch = convEpochRef.current;
     const msg = messages[index];
     if (!msg) return;
@@ -1132,8 +772,7 @@ export default function Chat() {
           }
           files={workspaceFiles}
           onFiles={setWorkspaceFiles}
-          disabled={busy}
-          checkpointsKey={run?.checkpoints.length ?? 0}
+          disabled={generating}
         >
         <div className="flex min-h-0 flex-1">
           <div
@@ -1164,67 +803,8 @@ export default function Chat() {
 
             <div className="absolute top-3 right-4 z-10 flex items-center gap-2">
               <WorkspaceToggle />
-              {(agentOn || run != null || traceRunId != null) && (
-                <button
-                  onClick={() => {
-                    setTraceOpen((o) => !o);
-                    setParamsOpen(false);
-                  }}
-                  title={t("agent.run.trace")}
-                  className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
-                    traceOpen
-                      ? "border-accent text-accent"
-                      : pendingCall
-                        ? "border-warn text-warn"
-                        : "border-edge text-dim hover:border-accent hover:text-ink"
-                  }`}
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
-                  </svg>
-                </button>
-              )}
-              {(agentOn || run != null || traceRunId != null) && (
-                <button
-                  onClick={() => {
-                    setTerminalOpen((o) => !o);
-                    setTraceOpen(false);
-                    setParamsOpen(false);
-                  }}
-                  title={t("agent.terminal.title")}
-                  className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
-                    terminalOpen
-                      ? "border-accent text-accent"
-                      : "border-edge text-dim hover:border-accent hover:text-ink"
-                  }`}
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M4 17l6-5-6-5M12 19h8" />
-                  </svg>
-                </button>
-              )}
               <button
-                onClick={() => {
-                  setParamsOpen((o) => !o);
-                  setTraceOpen(false);
-                  setTerminalOpen(false);
-                }}
+                onClick={() => setParamsOpen((o) => !o)}
                 title={t("chat.params")}
                 className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
                   paramsOpen
@@ -1257,109 +837,27 @@ export default function Chat() {
                   {t("nav.discover")}
                 </button>
               </div>
-            ) : displayMessages.length === 0 &&
-              !busy &&
-              !loadingModel &&
-              run == null ? (
+            ) : displayMessages.length === 0 && !generating && !loadingModel ? (
               <ChatHero onPick={setDraft} />
             ) : (
               <MessageList
                 messages={displayMessages}
-                generating={busy}
+                generating={generating}
                 loadingModel={loadingModel}
                 onRegenerate={() => void regenerate()}
                 onEditResend={startEdit}
                 onDeleteMsg={(i) => void removeMessage(i)}
-                runSummaries={runSummaries}
-                onOpenTrace={(id) => {
-                  setLastTrace({ chatId: activeChatId ?? -1, runId: id });
-                  openTrace();
-                }}
-                trail={
-                  run ? (
-                    <>
-                      {showBoard && (
-                        <TaskBoard
-                          plan={run.plan}
-                          model={run.model}
-                          planning={run.plan == null}
-                          canApprove={plansFirst(boardMode)}
-                          onApprove={() =>
-                            void runStore.approvePlan(activeChatId)
-                          }
-                          onReplan={() => void runStore.replan(activeChatId)}
-                        />
-                      )}
-                      <RunTrail run={run} onOpenTrace={openTrace} />
-                    </>
-                  ) : null
-                }
               />
             )}
 
             {!noModels && (
               <div className="shrink-0">
-                {agentOn && (
-                  <AgentBar
-                    run={run}
-                    mode={agentMode}
-                    workspaceDir={params.workspaceDir}
-                    startError={startError}
-                    onDismissError={() =>
-                      activeChatId != null &&
-                      runStore.clearStartError(activeChatId)
-                    }
-                    showTrace={traceRunId != null && !traceOpen}
-                    onOpenTrace={openTrace}
-                  />
-                )}
-
-                {/* O que ele está fazendo agora — some sozinha quando não há
-                    run ativo ou quando a barra de aprovação assume o espaço. */}
-                <div className="px-6">
-                  <LiveStatus run={run} />
-                </div>
-
-                {/* A execução parou numa PERGUNTA: as opções viram botões
-                    (preenchem o compositor; a resposta retoma o plano). */}
-                {perguntaPendente && !runActive && (
-                  <div className="px-6">
-                    <div className="mx-auto mb-2 max-w-3xl">
-                      <QuestionCard
-                        question={perguntaPendente}
-                        onPick={setDraft}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Confirmação pendente: Enter permite, Esc nega. */}
-                {pendingCall && run && (
-                  <div className="px-6">
-                    <ApprovalBar
-                      call={pendingCall}
-                      workspaceDir={run.workspaceDir ?? params.workspaceDir}
-                      onDecide={(decision) =>
-                        void runStore.approve(
-                          run.runId,
-                          pendingCall.callId,
-                          decision,
-                        )
-                      }
-                    />
-                  </div>
-                )}
-
                 <Composer
                   draft={draft}
                   onDraftChange={setDraft}
                   onSend={() => void handleSend()}
-                  onStop={() =>
-                    runActive || runStarting
-                      ? runStore.cancel(activeChatId)
-                      : generationStore.cancel(activeChatId)
-                  }
-                  generating={busy}
+                  onStop={() => generationStore.cancel(activeChatId)}
+                  generating={generating}
                   disabled={!selectedModel}
                   attachments={attachments}
                   onAttachFiles={(files) => void addFiles(files)}
@@ -1373,28 +871,13 @@ export default function Chat() {
                   startActions={<WorkspaceTrigger />}
                   leftActions={
                     <>
-                      <AgentToggle
+                      {/* Onde vivia o toggle de agente: o CTA do harness. */}
+                      <HarnessComposerButton />
+                      <ApprovalSelect
                         params={params}
                         onChange={setParams}
-                        model={selectedModel}
-                        disabled={busy}
+                        disabled={generating}
                       />
-                      {/* Com o agente ligado quem manda na confirmação é o
-                          nível de autorização do run — o seletor antigo
-                          sairia dizendo outra coisa sobre a mesma decisão. */}
-                      {agentOn ? (
-                        <ModeSelect
-                          params={params}
-                          onChange={setParams}
-                          disabled={busy}
-                        />
-                      ) : (
-                        <ApprovalSelect
-                          params={params}
-                          onChange={setParams}
-                          disabled={busy}
-                        />
-                      )}
                     </>
                   }
                   rightActions={
@@ -1405,8 +888,7 @@ export default function Chat() {
                         draft={draft}
                         attachments={attachments}
                         systemPrompt={params.systemPrompt}
-                        generating={busy}
-                        agent={agentUsage}
+                        generating={generating}
                       />
                       <ModelSelect
                         models={models ?? []}
@@ -1421,7 +903,7 @@ export default function Chat() {
                         }}
                         params={params}
                         onParamsChange={setParams}
-                        disabled={busy}
+                        disabled={generating}
                       />
                     </>
                   }
@@ -1436,25 +918,14 @@ export default function Chat() {
               params={params}
               onChange={setParams}
               model={selectedModel}
-              generating={busy}
-            />
-          )}
-          {traceOpen && (
-            <RunTimeline
-              run={run ?? null}
-              runId={traceRunId}
-              onClose={() => setTraceOpen(false)}
-            />
-          )}
-          {terminalOpen && (
-            <SessionTerminal
-              run={run ?? null}
-              runId={traceRunId}
-              onClose={() => setTerminalOpen(false)}
+              generating={generating}
             />
           )}
         </div>
         </WorkspaceHost>
+
+        {/* Progresso/erro do DeepSeek Harness — flutuante, não bloqueia. */}
+        <HarnessLaunchOverlay />
       </div>
     </div>
   );

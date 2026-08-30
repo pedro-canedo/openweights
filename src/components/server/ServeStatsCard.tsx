@@ -3,7 +3,7 @@
 // de processamento de prompt e de geração.
 //
 // Os números vêm dos counters do próprio motor (/metrics), então cobrem TODO
-// o tráfego servido: chat interno, agente e apps externos (Claude Code,
+// o tráfego servido: chat interno e apps externos (Claude Code,
 // Cursor…). "Sessão" = desde que o app abriu; "Desde sempre" = acumulado no
 // banco. As velocidades são médias do recorte escolhido, não instantâneas.
 

@@ -302,7 +302,7 @@ async fn rollback(
 /// carga, e é ele que faz o erro de "não coube" aparecer aqui, onde ainda dá
 /// para voltar atrás, em vez de na cara da pessoa na primeira mensagem.
 async fn carga_de_prova(state: &AppState, model: &str) -> Result<(), String> {
-    let endpoint = state.agent_endpoint().await?;
+    let endpoint = state.llama_endpoint().await?;
     let client = lr_engine::LlamaClient::new(&endpoint.base_url)
         .with_optional_api_key(endpoint.api_key.clone());
 
@@ -447,7 +447,7 @@ pub async fn tune_bench(
     }
 
     let machine = state.profile.machine_key();
-    let agora = crate::scheduler::now_ms();
+    let agora = crate::commands::now_ms();
     // A série é uma por machine_key, nomeada pela placa principal — None
     // significa "rodou na CPU" e a tela mostra exatamente isso.
     let gpu = state.profile.best_gpu().map(|g| g.name.clone());

@@ -1,5 +1,8 @@
-//! Persistência da memória do agente: fatos (semântica, curada, injetada no
-//! prompt) e episódios (histórico do que foi feito, consolidado em idle).
+//! Persistência da memória do antigo modo agente: fatos (semântica, curada)
+//! e episódios (histórico do que foi feito).
+//!
+//! O app não lê mais estas tabelas (o consumidor era o modo agente,
+//! removido); o módulo fica para preservar o que a pessoa memorizou.
 //!
 //! Decisão de projeto: memória NÃO é banco vetorial. Fatos são poucos, curtos
 //! e inspecionáveis; o arquivo `MEMORY.md` do workspace é a face legível deles.

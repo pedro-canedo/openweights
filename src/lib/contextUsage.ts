@@ -2,8 +2,6 @@
 // llama-server expor tokenize. O raciocínio conta: é gerado no KV cache
 // daquele passo, mesmo quando não volta no prompt seguinte.
 
-import type { RunView } from "./agent/runStore";
-
 export const IMAGE_TOKENS = 256;
 
 export type UsageBucket = {
@@ -16,13 +14,6 @@ export type ChatUsageMessage = {
   content: string;
   reasoning?: string;
   images?: unknown[];
-};
-
-/** Fatia do run do agente que entra na janela e não está nas bolhas do chat. */
-export type AgentUsageSlice = {
-  steps: { text: string; reasoning: string }[];
-  tools: { argsJson: string; resultPreview: string; output: string }[];
-  focusMd: string;
 };
 
 const COLORS: Record<string, string> = {
@@ -38,36 +29,11 @@ export function estimateTokens(text: string): number {
   return Math.max(0, Math.round(text.length / 4));
 }
 
-/** Só enquanto o run está vivo: depois o texto já foi (ou será) parar nas mensagens. */
-export function sliceFromRun(
-  run: RunView | undefined,
-  active: boolean,
-): AgentUsageSlice | null {
-  if (!run || !active) return null;
-  const steps: AgentUsageSlice["steps"] = [];
-  const tools: AgentUsageSlice["tools"] = [];
-  for (const item of run.items) {
-    if (item.kind === "step") {
-      steps.push({ text: item.text, reasoning: item.reasoning });
-    } else if (item.kind === "tool") {
-      const t = run.tools[item.id];
-      if (!t) continue;
-      tools.push({
-        argsJson: t.argsJson,
-        resultPreview: t.resultPreview,
-        output: t.output,
-      });
-    }
-  }
-  return { steps, tools, focusMd: run.focusMd };
-}
-
 export function collectContextBuckets(opts: {
   messages: ChatUsageMessage[];
   draft: string;
   attachments: { kind: string; data: string }[];
   systemPrompt: string;
-  agent?: AgentUsageSlice | null;
 }): UsageBucket[] {
   let conversation = 0;
   let reasoning = 0;
@@ -75,18 +41,6 @@ export function collectContextBuckets(opts: {
     conversation += estimateTokens(m.content);
     if (m.images) conversation += m.images.length * IMAGE_TOKENS;
     reasoning += estimateTokens(m.reasoning ?? "");
-  }
-  if (opts.agent) {
-    conversation += estimateTokens(opts.agent.focusMd);
-    for (const s of opts.agent.steps) {
-      conversation += estimateTokens(s.text);
-      reasoning += estimateTokens(s.reasoning);
-    }
-    for (const t of opts.agent.tools) {
-      conversation += estimateTokens(t.argsJson);
-      conversation += estimateTokens(t.resultPreview);
-      conversation += estimateTokens(t.output);
-    }
   }
   let attached = 0;
   for (const a of opts.attachments) {

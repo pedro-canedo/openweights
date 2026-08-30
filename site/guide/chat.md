@@ -53,12 +53,15 @@ Presets save a set of parameters under a name.
 in **Local Server**, next to the model that uses them. The shortcut in the panel
 takes you straight there with the conversation's model already selected. The
 reason: how a model loads is a property of the model, not of the conversation —
-it is the same configuration for chat, for the agent, and for any app consuming
-the API. See [configuring llama.cpp](/integrations/local-api#configuring-llama-cpp).
+it is the same configuration for chat and for any app consuming the API. See
+[configuring llama.cpp](/integrations/local-api#configuring-llama-cpp).
 
-## Chat or agent
+## When you want work done, not just answers
 
-The toggle in the composer switches between **Chat** — the model only talks —
-and **Agent**, where it can use tools to actually do the work. That is a
-different screen's worth of behaviour, and it has its own section:
-[the agent harness](/agent/).
+Chat is chat: the model talks. For agent work — reading and editing files,
+running commands — the **Agent** button in the composer opens the
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): a full
+coding agent that the app installs, configures and opens for you, already
+pointed at every provider and model you have. The first open installs it;
+after that it is one click. See
+[Open in a harness](/integrations/local-api#open-in-a-harness).

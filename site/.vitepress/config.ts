@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress";
 
 // Site público do OpenWeights: apresentação + documentação, em inglês e
 // português. O README continua sendo o cartão de visita do repositório; aqui
-// mora o que não cabe nele — o harness agêntico explicado por partes.
+// mora o que não cabe nele — guia, modelos e as integrações por partes.
 //
 // `base` é o subcaminho do GitHub Pages do projeto. Se um dia houver domínio
 // próprio, isto vira "/" e o CNAME entra em `public/`.
@@ -17,20 +17,6 @@ const enSidebar = [
       { text: "First run", link: "/guide/first-run" },
       { text: "Models and quantization", link: "/guide/models" },
       { text: "Chat", link: "/guide/chat" },
-    ],
-  },
-  {
-    text: "The agent harness",
-    items: [
-      { text: "How a run works", link: "/agent/" },
-      { text: "Authorization and permissions", link: "/agent/authorization" },
-      { text: "Tools", link: "/agent/tools" },
-      { text: "Work modes and plans", link: "/agent/plans" },
-      { text: "Code Mode", link: "/agent/code-mode" },
-      { text: "Checkpoints", link: "/agent/checkpoints" },
-      { text: "Memory and project index", link: "/agent/memory" },
-      { text: "MCP connectors", link: "/agent/mcp" },
-      { text: "Automations", link: "/agent/automations" },
     ],
   },
   {
@@ -59,20 +45,6 @@ const ptSidebar = [
       { text: "Primeira execução", link: "/pt/guia/primeira-execucao" },
       { text: "Modelos e quantização", link: "/pt/guia/modelos" },
       { text: "Chat", link: "/pt/guia/chat" },
-    ],
-  },
-  {
-    text: "O harness agêntico",
-    items: [
-      { text: "Como uma execução funciona", link: "/pt/agente/" },
-      { text: "Autorização e permissões", link: "/pt/agente/autorizacao" },
-      { text: "Ferramentas", link: "/pt/agente/ferramentas" },
-      { text: "Modos de trabalho e planos", link: "/pt/agente/planos" },
-      { text: "Code Mode", link: "/pt/agente/code-mode" },
-      { text: "Checkpoints", link: "/pt/agente/checkpoints" },
-      { text: "Memória e índice do projeto", link: "/pt/agente/memoria" },
-      { text: "Conectores MCP", link: "/pt/agente/mcp" },
-      { text: "Automações", link: "/pt/agente/automacoes" },
     ],
   },
   {
@@ -123,7 +95,6 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: "Guide", link: "/guide/", activeMatch: "/guide/" },
-          { text: "Agent", link: "/agent/", activeMatch: "/agent/" },
           {
             text: "Integrations",
             link: "/integrations/local-api",
@@ -152,7 +123,6 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: "Guia", link: "/pt/guia/", activeMatch: "/pt/guia/" },
-          { text: "Agente", link: "/pt/agente/", activeMatch: "/pt/agente/" },
           {
             text: "Integrações",
             link: "/pt/integracoes/api-local",

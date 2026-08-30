@@ -2,10 +2,9 @@
 //! `providers.config`.
 //!
 //! Setting e não tabela: são três provedores fixos, não um CRUD de N
-//! conectores arbitrários. O precedente é o `web.config` do `lr_webtools` —
-//! mesma forma, mesmo parse defensivo, mesma escrita atômica. Quando (e se) o
-//! usuário puder cadastrar endpoints OpenAI-compatíveis quaisquer, aí sim a
-//! tabela se paga.
+//! conectores arbitrários — mesma forma de sempre, parse defensivo, escrita
+//! atômica. Quando (e se) o usuário puder cadastrar endpoints
+//! OpenAI-compatíveis quaisquer, aí sim a tabela se paga.
 
 use crate::model_ref::ProviderId;
 use serde::{Deserialize, Serialize};
