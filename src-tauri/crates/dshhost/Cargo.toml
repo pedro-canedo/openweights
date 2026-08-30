@@ -6,6 +6,7 @@ license.workspace = true
 description = "Instala, supervisiona e configura o DeepSeek Harness (dsh) de forma isolada"
 
 [dependencies]
+lr_fetch = { path = "../fetch" }
 lr_nodejs = { path = "../nodejs" }
 lr_proc = { path = "../proc" }
 serde.workspace = true

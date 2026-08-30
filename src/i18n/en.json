@@ -3,9 +3,10 @@
     "discover": "Discover",
     "models": "My Models",
     "chat": "Chat",
+    "harness": "DeepSeek Harness",
     "server": "Local Server",
-    "settings": "Settings",
-    "providers": "Sources"
+    "providers": "Sources",
+    "settings": "Settings"
   },
   "status": {
     "cpu": "CPU",
@@ -123,18 +124,9 @@
     "harness": {
       "agent": "Agent",
       "title": "Agent mode is now the DeepSeek Harness",
-      "body": "A full coding agent in its own window, pre-configured with all your providers and models. The first open installs it — after that it is one click.",
-      "open": "Open",
-      "openPanel": "Open panel",
-      "starting": "Opening the DeepSeek Harness…",
-      "installing": "Installing the DeepSeek Harness — first time only…",
-      "installHint": "First open downloads the portable Node runtime and the harness package.",
-      "error": "The DeepSeek Harness did not open",
-      "phase": {
-        "resolving": "resolving dependencies",
-        "extracting": "extracting",
-        "finishing": "finishing"
-      }
+      "body": "A full coding agent with its own screen right here in the app, pre-configured with all your providers and models.",
+      "open": "Open the harness",
+      "openPanel": "Go to the harness"
     },
     "approval": {
       "manual": "Approve manually",
@@ -303,6 +295,46 @@
     "speakStop": "Stop reading",
     "emptyAnswer": "(the model answered nothing)",
     "notSaved": "Couldn't save this answer — it won't come back when you reopen the chat."
+  },
+  "harness": {
+    "title": "DeepSeek Harness",
+    "subtitle": "A full coding agent, installed and supervised by OpenWeights: it runs from an app folder, listens on 127.0.0.1 only, and comes pointed at your local and remote models.",
+    "running": "up on port {{port}}",
+    "reload": "Reload",
+    "openWindow": "Open in a window",
+    "stop": "Stop",
+    "embedHint": "The harness runs inside OpenWeights and shuts down with it.",
+    "stateInstalled": "Installed — version {{version}}",
+    "stateNotInstalled": "Not installed yet",
+    "installed": "installed",
+    "notInstalled": "not installed",
+    "readyHint": "Starting the harness rewrites its configuration with the providers and models the app knows right now.",
+    "sizeWarning": "Installing downloads the portable Node runtime and about 190 npm packages into an app folder — the first time takes ten to thirty minutes, and nothing is installed globally. You can keep using the app meanwhile.",
+    "install": "Install",
+    "installAndStart": "Install and open",
+    "start": "Open the harness",
+    "installHint": "You can leave this screen: the install keeps going and the progress is here when you come back.",
+    "error": "The DeepSeek Harness did not open",
+    "phase": {
+      "resolving": "resolving dependencies",
+      "extracting": "extracting",
+      "finishing": "finishing"
+    },
+    "working": {
+      "install": "installing the DeepSeek Harness…",
+      "start": "opening the DeepSeek Harness…",
+      "stop": "shutting down…",
+      "uninstall": "removing…"
+    },
+    "controlTitle": "A controlled environment",
+    "controlBody": "Everything the harness needs lives inside OpenWeights — nothing leaks into your system.",
+    "controlIsolated": "Portable Node and packages in an app folder, never a global install.",
+    "controlProviders": "Local Server, OpenRouter and 9Router are written into the harness configuration for you.",
+    "controlKeys": "API keys go only into the child process environment, never into a file.",
+    "uninstall": "Uninstall",
+    "uninstallWarning": "This deletes the harness install. You can keep or also delete the sessions and credentials created inside it.",
+    "uninstallAll": "Delete everything",
+    "uninstallKeepData": "Delete but keep the data"
   },
   "server": {
     "title": "Local Server",

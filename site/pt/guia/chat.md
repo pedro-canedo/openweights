@@ -59,9 +59,9 @@ qualquer app que consuma a API. Veja
 ## Quando você quer trabalho feito, não só resposta
 
 Chat é chat: o modelo fala. Para trabalho de agente — ler e editar arquivos,
-rodar comandos — o botão **Agente** no compositor abre o
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness): um agente
-de código completo que o app instala, configura e abre por você, já apontado
-para todos os provedores e modelos que você tem. A primeira abertura instala;
-depois é um clique. Veja
-[Abrir em um harness](/pt/integracoes/api-local#abrir-em-um-harness).
+rodar comandos — existe o
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), um agente
+de código completo com **item próprio na barra lateral**, logo abaixo do Chat.
+O app instala, supervisiona e roda ele embutido, já apontado para todos os
+provedores e modelos que você tem. O botão **Agente** no compositor só leva
+até lá. Veja [Abrir em um harness](/pt/integracoes/api-local#abrir-em-um-harness).

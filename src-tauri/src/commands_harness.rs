@@ -6,12 +6,15 @@
 //! comando, então nunca vira injeção. A chave de API só viaja por variável de
 //! ambiente: argv é visível na lista de processos de qualquer usuário.
 //!
-//! DeepSeek Harness (`dsh`): não abre mais em terminal — o cartão DELEGA ao
-//! caminho gerenciado (`commands_dsh`): Node portátil + pacote pinado numa
-//! pasta do app, `settings.yaml` multi-provider escrito cirurgicamente no
-//! `DSH_HOME` gerenciado (`<data>/dsh-home`, ver `lr_dshhost::settings`),
-//! processo supervisionado e painel em janela própria. Os DEMAIS harnesses
-//! continuam abrindo em terminal, exatamente como antes.
+//! DeepSeek Harness (`dsh`): não abre em terminal e nem por este caminho — ele
+//! tem TELA PRÓPRIA no app (barra lateral), onde a instalação, a subida, a
+//! parada e o uso embutido acontecem à vista, sobre o gerenciado de
+//! `commands_dsh`: Node portátil + pacote pinado numa pasta do app,
+//! `settings.yaml` multi-provider escrito cirurgicamente no `DSH_HOME`
+//! gerenciado (`<data>/dsh-home`, ver `lr_dshhost::settings`) e processo
+//! supervisionado. O cartão daqui só leva até essa tela; `harness_launch`
+//! ainda delega ao caminho gerenciado para quem chamar o comando direto. Os
+//! DEMAIS harnesses continuam abrindo em terminal, exatamente como antes.
 
 use crate::state::AppState;
 use serde::Serialize;

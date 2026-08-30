@@ -45,7 +45,21 @@ pub const READY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Teto do `npm install` — mesmo racional do 9router: antivírus + dezenas de
 /// milhares de arquivos tornam minutos normais, pendurar para sempre não.
-pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+///
+/// A folga aqui é bem maior que a do 9router porque foi medida: resolver a
+/// árvore do dsh (o monorepo publica ~190 pacotes em lockstep) tomou 18
+/// minutos de CPU cheia e 3 GB de RAM numa máquina comum, ANTES de baixar o
+/// primeiro tarball. Com o log ao vivo funcionando, esperar é aceitável;
+/// falhar a dez minutos do fim não é.
+pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(45 * 60);
+
+/// Intervalo mínimo entre duas linhas de log mandadas à tela. O npm com
+/// `--loglevel=info` escreve milhares delas; emitir cada uma entope o canal
+/// de eventos da janela sem contar nada a mais para quem lê.
+const LOG_THROTTLE: Duration = Duration::from_millis(120);
+
+/// Quantas linhas ficam guardadas para o detalhe de uma falha.
+const MAX_LINHAS_LOG: usize = 400;
 
 /// Graça entre o pedido de parada e a força bruta. O dispose do dsh tem
 /// timeout interno de 5 s; 6 dá folga para ele terminar por bem.
@@ -188,17 +202,32 @@ pub async fn instalar(
     layout: &Layout,
     on_event: &(dyn Fn(DshEvent) + Send + Sync),
 ) -> Result<(), DshError> {
+    // Restos de uma tentativa que morreu no meio (o `node_modules` existe, o
+    // pacote não) confundem a resolução da próxima e escondem o erro real
+    // atrás de uma árvore meio construída. Sair do zero custa pouco: o que
+    // pesa é o download, e ele está no cache do npm.
+    let modules = layout.app().join("node_modules");
+    if modules.is_dir() && !layout.instalado() {
+        on_event(DshEvent::Log {
+            line: "limpando uma instalação anterior incompleta".to_string(),
+        });
+        lr_fetch::remove_dir_all_retrying(&modules)?;
+    }
     std::fs::create_dir_all(layout.app())?;
 
     match rodar_npm(node, layout, true, on_event).await {
         Ok(()) => Ok(()),
-        Err(e) => {
+        // Só vale repetir quando o npm REJEITOU o pacote — aí a suspeita é o
+        // `--ignore-scripts`. Repetir depois de um estouro de prazo só dobra
+        // a espera de quem já esperou 45 minutos por nada.
+        Err(e @ DshError::Npm { .. }) => {
             log::warn!("npm com --ignore-scripts falhou ({e}); repetindo sem a flag");
             on_event(DshEvent::Log {
                 line: "scripts de instalação do pacote serão executados".to_string(),
             });
             rodar_npm(node, layout, false, on_event).await
         }
+        Err(e) => Err(e),
     }
 }
 
@@ -218,52 +247,120 @@ async fn rodar_npm(
         .ok_or(DshError::NodeMissing)?;
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    // Heap grande para o npm: resolver a árvore do dsh guarda em memória os
+    // packuments dos ~190 pacotes do monorepo (cada um com centenas de
+    // versões) e passa dos 3 GB. Perto do teto padrão do V8 o processo entra
+    // em GC contínuo e a instalação rasteja antes de morrer sem mensagem
+    // útil. O limite não reserva memória — só permite crescer.
+    cmd.env("NODE_OPTIONS", "--max-old-space-size=8192");
     lr_proc::prepare(&mut cmd);
 
     let mut filho = lr_proc::spawn_supervised(&mut cmd)?;
-    let stdout = filho.stdout.take();
-    let stderr = filho.stderr.take();
+
+    // Os DOIS canos, ao mesmo tempo — e é aqui que a instalação do dsh
+    // pendurava.
+    //
+    // O npm escreve TODO o log de progresso no stderr (o stdout de um
+    // `install` fica vazio), então ler só o stdout até o EOF é um bloqueio
+    // mútuo: o buffer do outro cano enche (64 KB no Windows), o npm trava na
+    // escrita, e o leitor espera um EOF que só chegaria quando o npm
+    // terminasse. Com os ~190 pacotes do dsh o estouro é certo — a tela
+    // ficava muda até o `INSTALL_TIMEOUT` e nada era instalado. Duas tarefas
+    // despejando num canal drenam os dois canos sempre.
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(512);
+    if let Some(saida) = filho.stdout.take() {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let mut leitor = tokio::io::BufReader::new(saida).lines();
+            while let Ok(Some(linha)) = leitor.next_line().await {
+                if tx.send(linha).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    if let Some(saida) = filho.stderr.take() {
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            let mut leitor = tokio::io::BufReader::new(saida).lines();
+            while let Ok(Some(linha)) = leitor.next_line().await {
+                if tx.send(linha).await.is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    // Sem este drop o loop abaixo nunca termina: o canal só fecha quando o
+    // último remetente some, e este seria eterno.
+    drop(tx);
 
     // O log ao vivo substitui a barra de progresso: o npm não publica
-    // porcentagem, e uma tela muda por minutos parece travada.
-    let mut linhas = Vec::new();
-    if let Some(saida) = stdout {
-        let mut leitor = tokio::io::BufReader::new(saida).lines();
-        while let Ok(Some(linha)) = leitor.next_line().await {
-            if let Some(fase) = fase_do_npm(&linha) {
+    // porcentagem, e uma tela muda por minutos parece travada. Só as últimas
+    // linhas ficam guardadas — o log inteiro do dsh é megabyte, e o que
+    // interessa numa falha é o fim.
+    let mut ultimas: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    let mut fase_atual: Option<&'static str> = None;
+    let mut ultimo_emit: Option<std::time::Instant> = None;
+    // O prazo cobre a leitura TAMBÉM, não só a espera pelo código de saída: um
+    // npm pendurado sem escrever nada nunca fecha os canos, e sem isto o laço
+    // esperaria para sempre um canal que só fecha quando o processo morre.
+    let inicio = std::time::Instant::now();
+    let drenagem = async {
+        while let Some(linha) = rx.recv().await {
+            if let Some(fase) = fase_do_npm(&linha)
+                && fase_atual != Some(fase)
+            {
+                fase_atual = Some(fase);
                 on_event(DshEvent::Installing {
                     phase: fase.to_string(),
                 });
             }
-            on_event(DshEvent::Log {
-                line: linha.clone(),
-            });
-            linhas.push(linha);
+            // Uma linha a cada [`LOG_THROTTLE`] mantém a tela viva sem
+            // despejar os milhares de `http fetch` do npm no canal de eventos
+            // da janela.
+            let agora = std::time::Instant::now();
+            if ultimo_emit.is_none_or(|t| agora.duration_since(t) >= LOG_THROTTLE) {
+                ultimo_emit = Some(agora);
+                on_event(DshEvent::Log {
+                    line: linha.clone(),
+                });
+            }
+            if ultimas.len() == MAX_LINHAS_LOG {
+                ultimas.pop_front();
+            }
+            ultimas.push_back(linha);
         }
+    };
+
+    let matar = |filho: &mut tokio::process::Child| {
+        if let Some(pid) = filho.id() {
+            lr_proc::kill_process_tree(pid);
+        }
+    };
+
+    if tokio::time::timeout(INSTALL_TIMEOUT, drenagem)
+        .await
+        .is_err()
+    {
+        matar(&mut filho);
+        return Err(DshError::Timeout(INSTALL_TIMEOUT.as_secs()));
     }
 
-    let status = match tokio::time::timeout(INSTALL_TIMEOUT, filho.wait()).await {
+    // Os canos fecharam: o que resta é colher o código de saída, e para isso
+    // sobra o que ainda não foi gasto do mesmo prazo.
+    let restante = INSTALL_TIMEOUT.saturating_sub(inicio.elapsed());
+    let status = match tokio::time::timeout(restante, filho.wait()).await {
         Ok(r) => r?,
         Err(_) => {
-            if let Some(pid) = filho.id() {
-                lr_proc::kill_process_tree(pid);
-            }
+            matar(&mut filho);
             return Err(DshError::Timeout(INSTALL_TIMEOUT.as_secs()));
         }
     };
 
     if !status.success() {
-        let mut detalhe = String::new();
-        if let Some(saida) = stderr {
-            let mut leitor = tokio::io::BufReader::new(saida).lines();
-            while let Ok(Some(l)) = leitor.next_line().await {
-                detalhe.push_str(&l);
-                detalhe.push('\n');
-            }
-        }
-        if detalhe.trim().is_empty() {
-            detalhe = linhas.join("\n");
-        }
+        // O detalhe vem das mesmas linhas que a tela viu passar: os dois
+        // canos já foram drenados, não há um stderr guardado para reler.
+        let detalhe: String = ultimas.iter().cloned().collect::<Vec<_>>().join("\n");
         return Err(DshError::Npm {
             codigo: status.code().map(|c| c.to_string()).unwrap_or_default(),
             detalhe: detalhe
@@ -281,6 +378,19 @@ async fn rodar_npm(
         return Err(DshError::Verification(
             "bin do dsh não encontrado após a instalação".to_string(),
         ));
+    }
+    Ok(())
+}
+
+/// Apaga a instalação do pacote (o Node portátil é compartilhado com os
+/// outros provedores e fica).
+///
+/// `remover_dados` é o `DSH_HOME` — settings, sessões e credenciais que a
+/// pessoa criou DENTRO do harness. A tela avisa antes; nada aqui é implícito.
+pub fn desinstalar(layout: &Layout, dsh_home: &Path, remover_dados: bool) -> std::io::Result<()> {
+    lr_fetch::remove_dir_all_retrying(&layout.raiz)?;
+    if remover_dados {
+        lr_fetch::remove_dir_all_retrying(dsh_home)?;
     }
     Ok(())
 }
@@ -431,6 +541,19 @@ impl DshHost {
     /// espera de readiness consultar sem segurar o mutex do processo.
     pub fn porta_handle(&self) -> Arc<AtomicU16> {
         Arc::clone(&self.porta)
+    }
+
+    /// O processo já morreu? Consulta sem bloquear.
+    ///
+    /// Existe porque a tela decide o layout inteiro pelo `running`: se o dsh
+    /// cair sozinho (ou for morto por fora), o slot continuaria ocupado e a
+    /// tela mostraria um quadro embutido apontando para uma porta morta, sem
+    /// oferecer o botão de subir de novo.
+    pub fn morreu(&mut self) -> bool {
+        match self.filho.as_mut() {
+            Some(c) => matches!(c.try_wait(), Ok(Some(_)) | Err(_)),
+            None => true,
+        }
     }
 
     /// Porta real, quando já conhecida.

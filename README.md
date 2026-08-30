@@ -27,13 +27,16 @@ Windows, macOS and Linux.
   quantization for *your* PC: green runs fully on the GPU, yellow splits with the
   CPU, grey is CPU-only.
 - 💬 **Local chat** — streaming, markdown and history on disk.
-- 🤖 **Agent work in an external harness, one click away** — the app hands your
-  models to an external coding agent —
-  [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), Claude
-  Code, Aider, OpenCode — pre-configured with all your providers and models.
-  The DeepSeek Harness is installed and managed by the app itself (isolated
-  folder, portable Node included) and opens in a window of its own; your API
-  key travels by environment variable, never on the command line.
+- 🤖 **A coding agent with a screen of its own** — the
+  [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) is a
+  sidebar item next to the chat: install it, start it, stop it and remove it
+  from there, and use it embedded right in the app. It is installed and
+  supervised by OpenWeights itself (isolated folder, portable Node included,
+  never a global install), it listens on loopback only, and it comes
+  pre-configured with all your providers and models — your API key travels by
+  environment variable, never on the command line or in a file. Other agents —
+  Claude Code, Aider, OpenCode — get a ready-made command pointed at the local
+  API.
 - 🎛️ **Tunes itself for your machine** — no one has to learn what `-ts`, `-ub`
   or `-ctk` mean. The app asks the engine which devices exist and how much is
   free on each, reads the real layer count from the file, and asks llama.cpp

@@ -16,9 +16,10 @@ installer of a few MB, no Electron.
   whether it fits fully on your GPU, splits with the CPU, or is CPU-only.
 - **Chats locally**, with streaming, markdown, code highlighting and history on
   disk.
-- **Hands your models to external coding agents** — DeepSeek Harness, Claude
-  Code, Aider, OpenCode — opened with one click, pre-configured with all your
-  providers and models.
+- **Runs a coding agent of its own** — the DeepSeek Harness has an item in the
+  sidebar: installed, supervised and embedded by the app, pre-configured with
+  all your providers and models. Claude Code, Aider and OpenCode get a
+  ready-made command pointed at the local API.
 - **Tunes itself for your machine**: it asks llama.cpp how much memory each
   configuration costs on *your* card, applies one, and rolls back on its own if
   the model fails to load.

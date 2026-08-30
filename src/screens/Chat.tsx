@@ -54,10 +54,7 @@ import {
   WorkspaceToggle,
   WorkspaceTrigger,
 } from "../components/chat/WorkspacePanel";
-import {
-  HarnessComposerButton,
-  HarnessLaunchOverlay,
-} from "../components/chat/HarnessCta";
+import { HarnessComposerButton } from "../components/chat/HarnessCta";
 import MessageList, { type UiMessage } from "../components/chat/MessageList";
 import ModelSelect from "../components/chat/ModelSelect";
 import ContextMeter from "../components/chat/ContextMeter";
@@ -923,9 +920,6 @@ export default function Chat() {
           )}
         </div>
         </WorkspaceHost>
-
-        {/* Progresso/erro do DeepSeek Harness — flutuante, não bloqueia. */}
-        <HarnessLaunchOverlay />
       </div>
     </div>
   );

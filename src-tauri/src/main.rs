@@ -140,6 +140,7 @@ fn main() {
             commands_dsh::dsh_start,
             commands_dsh::dsh_stop,
             commands_dsh::dsh_open_panel,
+            commands_dsh::dsh_uninstall,
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,

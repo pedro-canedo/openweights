@@ -73,7 +73,7 @@ own.
 
 | Harness | How |
 |---|---|
-| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | Managed by the app: it installs `dsh` in an isolated folder (portable Node included), writes **all** your providers and models into a configuration folder of its own, and opens the web UI in a window of the app. The first open installs; after that it is one click |
+| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | Has a screen of its own in the sidebar — install, start, stop and remove it from there, and use it embedded in the app. The app installs `dsh` in an isolated folder (portable Node included) and writes **all** your providers and models into a configuration folder of its own. The card here takes you to that screen |
 | **Claude Code** | Launched against your local API, with the model already selected |
 | **Aider** | Starts pointed at your API, with the model already selected |
 | **OpenCode** | Same, through the environment variables it expects |
@@ -82,9 +82,11 @@ Each card says whether the program is installed, shows the command (copyable)
 and offers the **Open** button. When it is not installed but `npx` exists, the
 app uses `npx` and shows the command for installing it for good.
 
-The same DeepSeek Harness open lives in the **Chat** screen as the **Agent**
-button — one click from the conversation, with install progress shown on the
-first time.
+The DeepSeek Harness screen is where its whole life cycle lives: the state of
+the install, the live log of the first one (portable Node plus ~190 npm
+packages, ten to thirty minutes), the embedded panel once it is up, and an
+uninstall that can also take the sessions and credentials created inside it.
+The **Agent** button in the Chat composer takes you to the same screen.
 
 ::: tip The key never rides in the command
 When you set an API key, it travels through an environment variable — never on

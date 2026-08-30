@@ -285,6 +285,13 @@ export const dshOpenPanel = (): Promise<void> => invoke<void>("dsh_open_panel");
 
 export const dshStop = (): Promise<DshStatus> => invoke<DshStatus>("dsh_stop");
 
+/**
+ * Apaga a instalação gerenciada. `removeData` leva junto o DSH_HOME — as
+ * sessões e credenciais criadas dentro do harness.
+ */
+export const dshUninstall = (removeData: boolean): Promise<DshStatus> =>
+  invoke<DshStatus>("dsh_uninstall", { removeData });
+
 // ----------------------------------------------------------------- gateway ---
 
 export interface GatewayStatus {

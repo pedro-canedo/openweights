@@ -63,7 +63,14 @@ pub(crate) fn dsh_home(state: &AppState) -> PathBuf {
 async fn status_atual(state: &AppState) -> DshStatus {
     let l = layout(state);
     let instalado = l.instalado();
-    let guard = state.dsh.lock().await;
+    let mut guard = state.dsh.lock().await;
+    // Um processo que morreu sozinho não pode continuar contando como "no
+    // ar": a tela decide o layout inteiro por isto, e ficaria com um quadro
+    // apontado para uma porta morta em vez do botão de subir de novo.
+    if guard.as_mut().is_some_and(|d| d.morreu()) {
+        guard.take();
+        state.dsh_pid.store(0, Ordering::SeqCst);
+    }
     let port = guard.as_ref().and_then(|d| d.porta());
     DshStatus {
         node_installed: state.node.state().installed,
@@ -181,7 +188,17 @@ async fn montar_provedores(
     let mut envs = Vec::new();
 
     // --- openweights (local) ---
-    let (base_local, chave_local, modelos) = modelos_locais(state).await?;
+    //
+    // Sem servidor local o harness não morre: ele ainda vale pelos provedores
+    // remotos. Só um harness SEM NENHUMA rota é que não faz sentido — esse
+    // caso vira erro no fim da função.
+    let (base_local, chave_local, modelos) = match modelos_locais(state).await {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("dsh sem o provedor local ({e}); seguindo com os remotos");
+            (String::new(), None, Vec::new())
+        }
+    };
     if !modelos.is_empty() {
         provedores.push((
             "openweights".to_string(),
@@ -290,6 +307,13 @@ async fn montar_provedores(
         }
     }
 
+    if provedores.is_empty() {
+        return Err(
+            "nenhum modelo para entregar ao harness: suba o Servidor Local (ou ligue um provedor remoto com favoritos) e tente de novo"
+                .to_string(),
+        );
+    }
+
     Ok((provedores, envs))
 }
 
@@ -311,8 +335,11 @@ pub(crate) async fn dsh_start_inner(app: &AppHandle, state: &AppState) -> CmdRes
         let guard = state.server.lock().await;
         guard.as_ref().map(|s| s.is_spawned()).unwrap_or(false)
     };
-    if !rodando {
-        crate::commands::start_engine(app, state).await?;
+    if !rodando && let Err(e) = crate::commands::start_engine(app, state).await {
+        // Sem runtime do llama.cpp, sem modelo baixado — o harness ainda abre
+        // com os provedores remotos. Abortar aqui deixava o lançamento inteiro
+        // refém de uma aba que a pessoa talvez nem use.
+        log::warn!("dsh: o servidor local não subiu ({e}); seguindo sem ele");
     }
 
     // 3. Providers + envs de chave, e o settings.yaml cirúrgico. A escrita é
@@ -465,6 +492,28 @@ async fn dsh_stop_inner(state: &AppState) -> CmdResult<()> {
     }
     state.dsh_pid.store(0, Ordering::SeqCst);
     Ok(())
+}
+
+/// Para o processo e apaga a instalação.
+///
+/// `remove_data` leva junto o `DSH_HOME`: settings, sessões e credenciais
+/// criadas dentro do harness. A tela pergunta antes — quem instalou pelo app
+/// também desinstala pelo app, sem precisar caçar pasta no disco.
+#[tauri::command]
+pub async fn dsh_uninstall(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    remove_data: bool,
+) -> CmdResult<DshStatus> {
+    dsh_stop_inner(&state).await?;
+    fechar_painel(&app);
+    let l = layout(&state);
+    let home = dsh_home(&state);
+    tauri::async_runtime::spawn_blocking(move || lr_dshhost::desinstalar(&l, &home, remove_data))
+        .await
+        .map_err(err_str)?
+        .map_err(err_str)?;
+    Ok(status_atual(&state).await)
 }
 
 #[tauri::command]

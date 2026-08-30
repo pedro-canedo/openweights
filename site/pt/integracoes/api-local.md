@@ -73,7 +73,7 @@ chat-com-ferramentas próprio.
 
 | Harness | Como |
 |---|---|
-| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | Gerenciado pelo app: ele instala o `dsh` numa pasta isolada (Node portátil incluído), escreve **todos** os seus provedores e modelos numa pasta de configuração própria e abre a interface web em janela do app. A primeira abertura instala; depois é um clique |
+| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | Tem tela própria na barra lateral — instalar, subir, parar e remover acontecem ali, e ele roda embutido no app. O app instala o `dsh` numa pasta isolada (Node portátil incluído) e escreve **todos** os seus provedores e modelos numa pasta de configuração própria. O cartão daqui leva até essa tela |
 | **Claude Code** | Lançado contra a sua API local, com o modelo já escolhido |
 | **Aider** | Sobe apontado para a sua API, com o modelo já escolhido |
 | **OpenCode** | Idem, pelas variáveis de ambiente que ele espera |
@@ -82,9 +82,11 @@ Cada cartão diz se o programa está instalado, mostra o comando (copiável) e
 oferece o botão **Abrir**. Quando não está instalado mas o `npx` existe, o app
 usa o `npx` e mostra o comando de instalação definitiva.
 
-A mesma abertura do DeepSeek Harness mora na tela de **Chat** como o botão
-**Agente** — um clique a partir da conversa, com o progresso da instalação
-mostrado na primeira vez.
+A tela do DeepSeek Harness é onde o ciclo de vida dele inteiro mora: o estado
+da instalação, o log ao vivo da primeira (Node portátil mais ~190 pacotes npm,
+de dez a trinta minutos), o painel embutido quando está no ar, e uma
+desinstalação que pode levar junto as sessões e credenciais criadas lá dentro.
+O botão **Agente** no compositor do Chat leva para essa mesma tela.
 
 ::: tip A chave nunca vai no comando
 Quando você define uma chave de API, ela viaja por variável de ambiente — nunca

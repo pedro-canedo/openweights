@@ -10,7 +10,7 @@ import {
   harnessList,
   type HarnessStatus,
 } from "../../lib/flags";
-import { dshOpenPanel, dshStart } from "../../lib/providers";
+import { navigate } from "../../lib/nav";
 
 export default function HarnessLauncher({
   model,
@@ -47,12 +47,12 @@ export default function HarnessLauncher({
     setError(null);
     try {
       if (id === "dsh") {
-        // O dsh é gerenciado pelo app (mesmo caminho do CTA "Agente" do
-        // Chat): `dsh_start` instala se preciso, sobe o servidor e escreve a
-        // config; o painel abre em janela própria. O preview de comando do
-        // cartão continua aí para quem prefere o terminal.
-        await dshStart();
-        await dshOpenPanel();
+        // O dsh é gerenciado pelo app e tem tela própria: instalar, subir,
+        // parar e usar acontecem lá, com progresso e log à vista. Aqui o
+        // cartão só leva até ela — instalar por trás deste botão escondia
+        // minutos de trabalho numa tela sobre outra coisa. O preview de
+        // comando continua aí para quem prefere o terminal.
+        navigate("harness");
       } else {
         await harnessLaunch(id, model);
       }
@@ -119,11 +119,6 @@ export default function HarnessLauncher({
                   : t("server.harness.open")}
               </button>
             </div>
-            {h.id === "dsh" && launching === "dsh" && (
-              <p className="mt-1 text-[10px] leading-relaxed text-dim">
-                {t("chat.harness.installing")}
-              </p>
-            )}
             <div className="relative mt-2">
               <pre className="select-text overflow-x-auto rounded-lg border border-edge bg-panel2 p-2 font-mono text-[11px] leading-relaxed text-dim">
                 {h.installed || h.launchable ? h.commandPreview : h.installCmd}

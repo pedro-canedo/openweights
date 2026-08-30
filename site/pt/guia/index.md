@@ -17,9 +17,10 @@ poucos MB, sem Electron.
   inteira na GPU, divide com a CPU ou é só CPU.
 - **Conversa localmente**, com streaming, markdown, destaque de código e
   histórico em disco.
-- **Entrega seus modelos a agentes de código externos** — DeepSeek Harness,
-  Claude Code, Aider, OpenCode — abertos com um clique, pré-configurados com
-  todos os seus provedores e modelos.
+- **Roda um agente de código próprio** — o DeepSeek Harness tem item na barra
+  lateral: instalado, supervisionado e embutido pelo app, pré-configurado com
+  todos os seus provedores e modelos. Claude Code, Aider e OpenCode ganham o
+  comando pronto, apontado para a API local.
 - **Se ajusta para a sua máquina**: pergunta ao llama.cpp quanta memória cada
   configuração custa na *sua* placa, aplica uma e desfaz sozinho se o modelo
   não carregar.
