@@ -143,7 +143,8 @@ async fn modelos_locais(state: &AppState) -> CmdResult<(String, Option<String>, 
         .collect();
 
     // Janela de contexto: perfil gravado > cabeçalho do GGUF > 32768. O scan
-    // é um só; o cabeçalho só é lido para quem não tem perfil.
+    // é um só, e o cabeçalho de cada modelo é lido UMA vez — dele saem duas
+    // respostas: a janela de treino e se o raciocínio tem interruptor.
     let artefatos = lr_models::scan_local(&state.models_dir);
     let sem_gguf = |s: &str| {
         s.strip_suffix(".gguf")
@@ -151,24 +152,27 @@ async fn modelos_locais(state: &AppState) -> CmdResult<(String, Option<String>, 
             .map(str::to_string)
             .unwrap_or_else(|| s.to_string())
     };
-    let ctx_do_cabecalho = |id: &str| {
+    let cabecalho = |id: &str| {
         artefatos
             .iter()
             .find(|a| a.name == id || sem_gguf(&a.name) == sem_gguf(id))
-            .and_then(|a| lr_models::read_local_meta(&a.primary_path).context_length)
+            .map(|a| lr_models::read_local_meta(&a.primary_path))
     };
 
     let modelos = ids
         .into_iter()
         .map(|id| {
+            let meta = cabecalho(&id);
             let ctx = crate::commands::profile_for(state, &id)
                 .and_then(|p| p.ctx)
-                .or_else(|| ctx_do_cabecalho(&id))
+                .or_else(|| meta.as_ref().and_then(|m| m.context_length))
                 .unwrap_or(32_768);
             ModeloDsh {
                 name: id.clone(),
                 id,
                 context_window: Some(ctx),
+                max_tokens: Some(lr_dshhost::settings::teto_de_saida(ctx)),
+                thinking: meta.is_some_and(|m| m.thinking_toggle),
             }
         })
         .collect();
@@ -240,6 +244,15 @@ async fn montar_provedores(
                 id: id.clone(),
                 name: id.clone(),
                 context_window: ctx_de(id),
+                // Rota remota não recebe teto nosso: o teto de saída de um
+                // modelo do OpenRouter é dele, costuma ser bem menor que
+                // metade da janela, e pedir mais do que ele aceita é um 400
+                // na cara de quem só queria conversar. O default do dsh vale.
+                max_tokens: None,
+                // Idem o interruptor de raciocínio: cada provedor remoto tem
+                // o seu formato, e declarar o do Qwen aqui daria um botão
+                // que não mexe em nada.
+                thinking: false,
             })
             .collect();
         drop(cache);
@@ -278,6 +291,11 @@ async fn montar_provedores(
                             name: m.id.clone(),
                             id: m.id,
                             context_window: m.context_length,
+                            // Mesma razão da rota do OpenRouter: quem atende
+                            // por trás do 9router é uma conta de terceiro,
+                            // com tetos e formatos próprios.
+                            max_tokens: None,
+                            thinking: false,
                         })
                         .collect(),
                 },

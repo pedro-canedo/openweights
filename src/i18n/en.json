@@ -6,7 +6,9 @@
     "harness": "DeepSeek Harness",
     "server": "Local Server",
     "providers": "Sources",
-    "settings": "Settings"
+    "settings": "Settings",
+    "collapse": "Collapse the sidebar",
+    "expand": "Expand the sidebar"
   },
   "status": {
     "cpu": "CPU",

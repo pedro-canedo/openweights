@@ -88,6 +88,17 @@ de dez a trinta minutos), o painel embutido quando está no ar, e uma
 desinstalação que pode levar junto as sessões e credenciais criadas lá dentro.
 O botão **Agente** no compositor do Chat leva para essa mesma tela.
 
+O app também conta ao harness duas coisas sobre cada modelo local que antes
+ficavam no chute. O **teto de saída** passa a sair da janela de contexto do
+próprio modelo (metade dela), em vez de o harness assumir 32k para todo mundo
+— número que um modelo pequeno não tem como honrar. E quando o chat template
+do modelo lê `enable_thinking` — o caso do Qwen3 e afins — o app declara o
+interruptor de raciocínio, e o harness passa a mostrar um seletor de esforço
+com um **Off** que desliga o raciocínio de verdade. Isso pesa mais do que
+parece: um modelo de raciocínio diante de um pedido aberto ("faça um site
+bonito") gasta o orçamento inteiro de saída pensando, e para antes de escrever
+o primeiro arquivo.
+
 ::: tip A chave nunca vai no comando
 Quando você define uma chave de API, ela viaja por variável de ambiente — nunca
 na linha de comando, que qualquer processo da máquina consegue ler. A prévia

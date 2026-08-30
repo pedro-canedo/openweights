@@ -7,7 +7,7 @@ import GenerationPanel from "./components/GenerationPanel";
 import Onboarding from "./components/Onboarding";
 import NavConversations from "./components/NavConversations";
 import UpdateBadge from "./components/UpdateBadge";
-import { OwWordmark } from "./components/OpenWeightsLogo";
+import { OwMark, OwWordmark } from "./components/OpenWeightsLogo";
 import Discover from "./screens/Discover";
 import MyModels from "./screens/MyModels";
 import Chat from "./screens/Chat";
@@ -30,11 +30,37 @@ const icons: Record<Screen, string> = {
     "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z",
 };
 
+/** Ícone do próprio botão: um painel com a coluna lateral marcada. */
+const ICONE_PAINEL =
+  "M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm5.5-1v16";
+
+/** Onde a escolha de recolher a barra mora entre sessões. */
+const CHAVE_BARRA = "ow.sidebar.collapsed";
+
 export default function App() {
   const { t } = useTranslation();
   const [screen, setScreen] = useState<Screen>("discover");
+  // A barra recolhida devolve ~180 px ao palco — o que importa de verdade
+  // com o harness embutido, que é uma aplicação inteira dentro do nosso
+  // quadro. A escolha sobrevive ao fechar o app; um `localStorage` que falhe
+  // (modo restrito) só significa começar aberto.
+  const [recolhida, setRecolhida] = useState(() => {
+    try {
+      return localStorage.getItem(CHAVE_BARRA) === "1";
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => onNavigate(setScreen), []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CHAVE_BARRA, recolhida ? "1" : "0");
+    } catch {
+      // sem armazenamento: a escolha vale só nesta sessão
+    }
+  }, [recolhida]);
 
   const items: Screen[] = [
     "discover",
@@ -49,16 +75,79 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-56 shrink-0 flex-col border-r border-edge bg-panel">
-          <div className="px-4 py-4">
-            <OwWordmark className="text-[17px]" />
+        <nav
+          className={`flex shrink-0 flex-col border-r border-edge bg-panel transition-[width] ${
+            recolhida ? "w-14" : "w-56"
+          }`}
+        >
+          <div
+            className={`flex items-center py-4 ${
+              recolhida ? "justify-center px-0" : "gap-2 px-4"
+            }`}
+          >
+            {recolhida ? (
+              <OwMark className="h-6" />
+            ) : (
+              <OwWordmark className="text-[17px]" />
+            )}
+            <button
+              type="button"
+              onClick={() => setRecolhida((v) => !v)}
+              title={t(recolhida ? "nav.expand" : "nav.collapse")}
+              aria-label={t(recolhida ? "nav.expand" : "nav.collapse")}
+              className={`rounded-lg p-1.5 text-dim transition-colors hover:bg-panel2 hover:text-ink ${
+                recolhida ? "hidden" : "ml-auto"
+              }`}
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                viewBox="0 0 24 24"
+              >
+                <path d={ICONE_PAINEL} />
+              </svg>
+            </button>
           </div>
+
+          {/* Recolhida, o botão de reabrir vira o primeiro item da coluna:
+              no cabeçalho ele disputaria os 56 px com a marca. */}
+          {recolhida && (
+            <button
+              type="button"
+              onClick={() => setRecolhida(false)}
+              title={t("nav.expand")}
+              aria-label={t("nav.expand")}
+              className="mx-2 mb-1 flex items-center justify-center rounded-lg py-2 text-dim transition-colors hover:bg-panel2 hover:text-ink"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                viewBox="0 0 24 24"
+              >
+                <path d={ICONE_PAINEL} />
+              </svg>
+            </button>
+          )}
+
           <div className="flex shrink-0 flex-col gap-0.5 px-2">
             {items.map((s) => (
               <button
                 key={s}
                 onClick={() => setScreen(s)}
-                className={`flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                // Recolhida, o rótulo vira `title`: o ícone sozinho não diz
+                // "Fontes" para quem chegou agora.
+                title={recolhida ? t(`nav.${s}`) : undefined}
+                className={`flex items-center rounded-lg py-2 text-left text-sm transition-colors ${
+                  recolhida ? "justify-center px-0" : "gap-3 px-3"
+                } ${
                   screen === s
                     ? "bg-panel2 text-ink"
                     : "text-dim hover:bg-panel2/60 hover:text-ink"
@@ -75,13 +164,20 @@ export default function App() {
                 >
                   <path d={icons[s]} />
                 </svg>
-                {t(`nav.${s}`)}
+                {!recolhida && t(`nav.${s}`)}
               </button>
             ))}
           </div>
-          <div className="mx-3 mt-3 h-px bg-edge" />
-          <NavConversations />
-          <UpdateBadge />
+
+          {/* Conversas e versão só existem com largura para o texto: em 56 px
+              a busca e os títulos não cabem, e meio título é pior que nenhum. */}
+          {!recolhida && (
+            <>
+              <div className="mx-3 mt-3 h-px bg-edge" />
+              <NavConversations />
+              <UpdateBadge />
+            </>
+          )}
         </nav>
 
         {/* O palco não rola: quem rola é a tela.

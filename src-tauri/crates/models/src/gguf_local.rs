@@ -31,6 +31,15 @@ pub struct LocalGgufMeta {
     /// "não sei", não "não tem": arquiteturas novas podem usar outra chave, e
     /// a interface nunca deve bloquear por isso.
     pub nextn_layers: Option<u32>,
+    /// O chat template aceita `enable_thinking` — isto é, o raciocínio do
+    /// modelo pode ser LIGADO E DESLIGADO por quem chama, via
+    /// `chat_template_kwargs`.
+    ///
+    /// É a única maneira honesta de saber: não existe chave de metadado que
+    /// diga "sou um modelo de raciocínio", e adivinhar pelo nome erra nos
+    /// dois sentidos. O template é o que o llama.cpp de fato executa, então
+    /// se ele lê a variável, o botão funciona.
+    pub thinking_toggle: bool,
 }
 
 /// Teto de pares chave/valor lidos. Um GGUF normal tem dezenas; um arquivo
@@ -57,6 +66,7 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
     let n_kv = read_u64(&mut r)?.min(MAX_KV);
 
     let mut arch: Option<String> = None;
+    let mut thinking_toggle = false;
     let mut valores: Vec<(String, u64)> = Vec::new();
 
     for _ in 0..n_kv {
@@ -89,10 +99,14 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
             7 => {
                 r.seek(SeekFrom::Current(1)).ok()?;
             }
-            // String: só a arquitetura importa; as outras são puladas.
+            // String: a arquitetura e o chat template importam; o resto é
+            // pulado. O template chega a dezenas de KB, então dele fica só
+            // a resposta de uma pergunta — nunca o texto.
             8 => {
                 if key == "general.architecture" {
                     arch = Some(read_string(&mut r)?);
+                } else if key == "tokenizer.chat_template" {
+                    thinking_toggle = read_string(&mut r)?.contains("enable_thinking");
                 } else {
                     skip_string(&mut r)?;
                 }
@@ -116,6 +130,7 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
         context_length: acha("context_length"),
         n_experts: acha("expert_count"),
         nextn_layers: acha("nextn_predict_layers"),
+        thinking_toggle,
     })
 }
 
@@ -270,6 +285,41 @@ mod tests {
         let meta = read_local_meta(f.path());
         assert_eq!(meta.n_experts, Some(128));
         assert_eq!(meta.nextn_layers, Some(1));
+    }
+
+    /// O botão de raciocínio do harness sai daqui: o template do Qwen3 lê
+    /// `enable_thinking`, e é isso — não o nome do modelo — que diz se
+    /// desligar o raciocínio é possível.
+    #[test]
+    fn a_thinking_toggle_is_read_from_the_chat_template() {
+        let com = escreve(&gguf(&[
+            ("general.architecture", KV::Str("qwen35")),
+            ("qwen35.block_count", KV::U32(65)),
+            (
+                "tokenizer.chat_template",
+                KV::Str("{%- if enable_thinking %}<think>{%- endif %}"),
+            ),
+        ]));
+        assert!(read_local_meta(com.path()).thinking_toggle);
+
+        // Template sem a variável: o modelo pensa (ou não) sozinho, e o app
+        // não pode oferecer um botão que não faria nada.
+        let sem = escreve(&gguf(&[
+            ("general.architecture", KV::Str("llama")),
+            ("llama.block_count", KV::U32(32)),
+            (
+                "tokenizer.chat_template",
+                KV::Str("{{ bos_token }}{% for m in messages %}{{ m.content }}{% endfor %}"),
+            ),
+        ]));
+        assert!(!read_local_meta(sem.path()).thinking_toggle);
+
+        // Sem template nenhum é "não" — ausência nunca vira promessa.
+        let nada = escreve(&gguf(&[
+            ("general.architecture", KV::Str("llama")),
+            ("llama.block_count", KV::U32(32)),
+        ]));
+        assert!(!read_local_meta(nada.path()).thinking_toggle);
     }
 
     /// Lixo, arquivo vazio e magic errado devolvem "não sei" — nunca pânico.

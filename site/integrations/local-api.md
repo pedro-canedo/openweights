@@ -88,6 +88,16 @@ packages, ten to thirty minutes), the embedded panel once it is up, and an
 uninstall that can also take the sessions and credentials created inside it.
 The **Agent** button in the Chat composer takes you to the same screen.
 
+The app also tells the harness two things about each local model that it used
+to leave to guesswork. The **output cap** is declared from the model's own
+context window (half of it), instead of the harness assuming 32k for every
+model — a number that a small model cannot honour. And when the model's chat
+template reads `enable_thinking` — Qwen3 and friends — the app declares the
+reasoning switch, so the harness shows an effort selector with an **Off** that
+really turns thinking off. That matters more than it sounds: a reasoning model
+asked for something open-ended ("build me a beautiful site") can spend its
+entire output budget thinking, and stop before writing a single file.
+
 ::: tip The key never rides in the command
 When you set an API key, it travels through an environment variable — never on
 the command line, which any process on the machine can read. The preview shows

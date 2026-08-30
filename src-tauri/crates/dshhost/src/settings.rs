@@ -51,15 +51,56 @@ const CABECALHO: &str = "\
 # perdidos nesta reescrita. A chave de API nunca entra aqui — apenas o nome\n\
 # da variável de ambiente (apiKeyEnv), exportada no processo do dsh.\n";
 
-/// Um modelo de uma rota, com os únicos campos que o schema do dsh aceita e
-/// que o app conhece (`id`, `name`, `contextWindow`; os demais — `maxTokens`,
-/// `input`, `reasoningEfforts`, `compat` — ficam nos defaults do dsh).
+/// Nível de raciocínio oferecido além de `off`.
+///
+/// Com `qwen-chat-template` o dispatch só distingue LIGADO de DESLIGADO
+/// (`enable_thinking: !!reasoningEffort`), então oferecer "low/medium/high"
+/// seria três botões fazendo a mesma coisa. Um nível só, e honesto.
+const NIVEL_LIGADO: &str = "high";
+
+/// Formato de raciocínio dos modelos locais cujo template lê
+/// `enable_thinking`.
+///
+/// O pi-ai traduz isto em `chat_template_kwargs: { enable_thinking,
+/// preserve_thinking }` — exatamente os dois nomes que o template do Qwen3
+/// lê, e que o llama.cpp repassa ao aplicar o template. Verificado contra o
+/// servidor real: com `enable_thinking: false` a resposta vem sem
+/// `reasoning_content`.
+const FORMATO_THINKING: &str = "qwen-chat-template";
+
+/// Teto de saída para uma janela de contexto — metade dela, entre 2 048 e
+/// 65 536 tokens.
+///
+/// Metade porque a saída divide a janela com o prompt, e um agente de código
+/// entra com prompt de sistema, ferramentas e arquivos: prometer a janela
+/// inteira de saída é prometer o que não cabe. O piso serve ao modelo
+/// pequeno (uma janela de 4k não pode render um teto de 32k, que é o que o
+/// dsh assume sozinho); o teto existe porque, passado certo ponto, quem
+/// bate no limite está num laço, não escrevendo um arquivo grande — e
+/// esperar por isso é pior que cortar.
+pub fn teto_de_saida(context_window: u32) -> u32 {
+    (context_window / 2).clamp(2_048, 65_536)
+}
+
+/// Um modelo de uma rota, com os campos do schema do dsh que o app sabe
+/// preencher (`input` e o resto do `compat` ficam nos defaults do dsh).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModeloDsh {
     pub id: String,
     pub name: String,
     /// `None` = omitir e deixar o `defaultContextWindow` do dsh valer.
     pub context_window: Option<u32>,
+    /// Teto de saída por resposta. `None` deixa valer o `defaultMaxTokens` do
+    /// dsh — 32768, um número que ele aplica sem saber o tamanho da janela e
+    /// que num modelo de 8k de contexto é uma promessa impossível.
+    pub max_tokens: Option<u32>,
+    /// O raciocínio deste modelo pode ser ligado e desligado por quem chama.
+    ///
+    /// Só quando isto é verdade a rota declara `reasoningEfforts`, e é a
+    /// declaração que faz o seletor de esforço aparecer no harness. Um modelo
+    /// sem o interruptor não ganha botão nenhum — um botão que não muda nada
+    /// é pior que a ausência dele.
+    pub thinking: bool,
 }
 
 /// Uma rota do adapter `llm-pi-ai`. O `api` é sempre `openai-completions`:
@@ -96,10 +137,33 @@ fn valor_provedor(p: &ProvedorDsh) -> Value {
             if let Some(cw) = mo.context_window {
                 mm.insert("contextWindow".into(), Value::from(u64::from(cw)));
             }
+            if let Some(mt) = mo.max_tokens {
+                mm.insert("maxTokens".into(), Value::from(u64::from(mt)));
+            }
+            if mo.thinking {
+                // `off` sem valor é o que o schema pede: só ele pode vir
+                // vazio, e é assim que o dispatch sabe "não mandar esforço"
+                // — que no fim vira `enable_thinking: false`.
+                let mut niveis = Mapping::new();
+                niveis.insert("off".into(), Value::Null);
+                niveis.insert(NIVEL_LIGADO.into(), NIVEL_LIGADO.into());
+                mm.insert("reasoningEfforts".into(), Value::Mapping(niveis));
+
+                let mut compat = Mapping::new();
+                compat.insert("thinkingFormat".into(), FORMATO_THINKING.into());
+                mm.insert("compat".into(), Value::Mapping(compat));
+            }
             Value::Mapping(mm)
         })
         .collect();
     m.insert("models".into(), Value::Sequence(modelos));
+    // Nível padrão da rota. Sem ele o dsh não manda esforço nenhum, e um
+    // modelo que hoje raciocina passaria a não raciocinar só porque ganhou o
+    // botão — mudança silenciosa de comportamento na cara de quem atualiza.
+    // Com ele, o padrão continua sendo o de sempre e o botão é ganho puro.
+    if p.models.iter().any(|mo| mo.thinking) {
+        m.insert("reasoning".into(), NIVEL_LIGADO.into());
+    }
     Value::Mapping(m)
 }
 
@@ -304,6 +368,24 @@ mod tests {
             id: id.to_string(),
             name: id.to_string(),
             context_window: ctx,
+            max_tokens: ctx.map(teto_de_saida),
+            thinking: false,
+        }
+    }
+
+    /// Como o app declara um modelo de rota remota: janela sim, teto não —
+    /// o teto de saída de lá é do provedor.
+    fn modelo_remoto(id: &str, ctx: u32) -> ModeloDsh {
+        ModeloDsh {
+            max_tokens: None,
+            ..modelo(id, Some(ctx))
+        }
+    }
+
+    fn modelo_pensante(id: &str, ctx: u32) -> ModeloDsh {
+        ModeloDsh {
+            thinking: true,
+            ..modelo(id, Some(ctx))
         }
     }
 
@@ -322,6 +404,68 @@ mod tests {
         )
     }
 
+    /// O teto de saída acompanha a janela, mas não sem limites: um modelo
+    /// minúsculo não pode herdar os 32k que o dsh assume sozinho, e um de
+    /// janela enorme não ganha um teto que só serve para esperar mais por um
+    /// laço.
+    #[test]
+    fn the_output_cap_follows_the_window_between_a_floor_and_a_ceiling() {
+        assert_eq!(teto_de_saida(131_072), 65_536, "metade da janela");
+        assert_eq!(teto_de_saida(32_768), 16_384);
+        assert_eq!(teto_de_saida(4_096), 2_048, "no piso");
+        assert_eq!(teto_de_saida(1_024), 2_048, "abaixo do piso, sobe ao piso");
+        assert_eq!(teto_de_saida(1_000_000), 65_536, "no teto");
+    }
+
+    /// O interruptor de raciocínio é uma declaração de DUAS partes: os níveis
+    /// (que fazem o seletor aparecer) e o formato (que diz ao dispatch como
+    /// mandar). Uma sem a outra não liga botão nenhum.
+    ///
+    /// `off:` sai sem valor de propósito — é o que o schema do dsh aceita
+    /// só para esse nível, e o parser dele (YAML 1.2) lê a chave como a
+    /// string "off", não como o booleano falso do YAML 1.1.
+    #[test]
+    fn a_thinking_model_declares_levels_and_format() {
+        let rota = (
+            "openweights".to_string(),
+            ProvedorDsh {
+                display_name: "OpenWeights (local)".to_string(),
+                base_url: "http://127.0.0.1:11711/v1".to_string(),
+                api_key_env: OPENWEIGHTS_KEY_ENV.to_string(),
+                models: vec![
+                    modelo_pensante("Qwen3.8-27B.gguf", 131_072),
+                    modelo("Phi-5.gguf", Some(32_768)),
+                ],
+            },
+        );
+        let saida = merge_settings("", std::slice::from_ref(&rota));
+
+        assert!(saida.contains("reasoningEfforts:"));
+        assert!(saida.contains("off: null"));
+        assert!(saida.contains("thinkingFormat: qwen-chat-template"));
+        assert!(saida.contains("maxTokens: 65536"));
+        // O padrão da rota mantém o comportamento de antes do botão.
+        assert!(saida.contains("reasoning: high"));
+
+        // O modelo SEM interruptor não ganha seletor — só o teto.
+        let doc: Value = serde_yaml_ng::from_str(&saida).unwrap();
+        let modelos = doc["llm-pi-ai"]["providers"]["openweights"]["models"]
+            .as_sequence()
+            .unwrap();
+        assert!(modelos[1].get("reasoningEfforts").is_none());
+        assert!(modelos[1].get("compat").is_none());
+        assert_eq!(modelos[1]["maxTokens"], Value::from(16_384));
+    }
+
+    /// Rota remota não recebe teto nosso: o do provedor é dele, e pedir mais
+    /// do que ele aceita é um 400 no meio da conversa.
+    #[test]
+    fn a_remote_route_keeps_the_harness_defaults() {
+        let saida = merge_settings("", &[openrouter()]);
+        assert!(!saida.contains("maxTokens"));
+        assert!(!saida.contains("reasoningEfforts"));
+    }
+
     fn openrouter() -> (String, ProvedorDsh) {
         (
             "openrouter".to_string(),
@@ -329,7 +473,7 @@ mod tests {
                 display_name: "OpenRouter".to_string(),
                 base_url: "https://openrouter.ai/api/v1".to_string(),
                 api_key_env: OPENROUTER_KEY_ENV.to_string(),
-                models: vec![modelo("meta-llama/llama-4-maverick", Some(1_048_576))],
+                models: vec![modelo_remoto("meta-llama/llama-4-maverick", 1_048_576)],
             },
         )
     }
@@ -341,7 +485,7 @@ mod tests {
                 display_name: "9Router".to_string(),
                 base_url: "http://127.0.0.1:20128/v1".to_string(),
                 api_key_env: NINEROUTER_KEY_ENV.to_string(),
-                models: vec![modelo("gcli/grok-4.6", Some(256_000))],
+                models: vec![modelo_remoto("gcli/grok-4.6", 256_000)],
             },
         )
     }
