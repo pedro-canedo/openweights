@@ -7,6 +7,8 @@ import type { LocalModel } from "../lib/types";
 import { deleteModel, listLocalModels } from "../lib/api";
 import { formatBytes } from "../lib/format";
 import { navigate } from "../lib/nav";
+import { autorDoRepo } from "../lib/authorAvatars";
+import AuthorAvatar from "../components/discover/AuthorAvatar";
 import IncompleteDownloads from "../components/models/IncompleteDownloads";
 import TunePanel from "../components/models/TunePanel";
 
@@ -33,23 +35,37 @@ function ModelCard({
       .finally(onDeleted);
   };
 
+  // O modelo solto (arrastado para a pasta) não tem repositório, logo não tem
+  // autor: ali o quadrado da foto seria um "?" ocupando lugar à toa.
+  const autor = autorDoRepo(model.repoId);
+
   return (
     <div className="flex flex-col rounded-xl border border-edge bg-panel p-4">
-      <div className="flex min-w-0 items-start gap-2">
-        <p className="min-w-0 flex-1 truncate text-sm font-medium text-ink" title={model.name}>
-          {model.name}
-        </p>
-        {model.quantLabel && (
-          <span className="shrink-0 rounded-md bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-accent">
-            {model.quantLabel}
-          </span>
+      <div className="flex min-w-0 items-start gap-3">
+        {autor && (
+          <AuthorAvatar author={autor} size={36} className="rounded-lg" />
         )}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-start gap-2">
+            <p
+              className="min-w-0 flex-1 truncate text-sm font-medium text-ink"
+              title={model.name}
+            >
+              {model.name}
+            </p>
+            {model.quantLabel && (
+              <span className="shrink-0 rounded-md bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-accent">
+                {model.quantLabel}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 truncate text-xs text-dim" title={model.repoId}>
+            {model.repoId || t("models.loose")}
+            {" · "}
+            <span className="tabular-nums">{formatBytes(model.totalBytes)}</span>
+          </p>
+        </div>
       </div>
-      <p className="mt-1 truncate text-xs text-dim" title={model.repoId}>
-        {model.repoId || t("models.loose")}
-        {" · "}
-        <span className="tabular-nums">{formatBytes(model.totalBytes)}</span>
-      </p>
 
       <div className="mt-auto pt-4">
         {confirming ? (

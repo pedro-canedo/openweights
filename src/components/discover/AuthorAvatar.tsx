@@ -1,12 +1,16 @@
 // Foto do autor/organização no Hub, com as iniciais coloridas por baixo.
 //
-// A foto é `huggingface.co/{autor}.png` — um caminho previsível, sem uma
-// chamada de API por autor. Ela entra POR CIMA das iniciais em vez de
-// substituí-las: enquanto carrega (ou quando o autor não tem foto) o que se
-// vê é um bloco com as letras, nunca um buraco cinza que pula quando a
-// imagem chega.
+// Não existe caminho previsível para o avatar do Hugging Face:
+// `huggingface.co/{autor}.png` é convenção do GitHub e ali responde 404 —
+// era por isso que a lista só mostrava letras. A URL real vem do perfil, que
+// `useAuthorAvatar` busca em lote e guarda.
+//
+// A foto entra POR CIMA das iniciais em vez de substituí-las: enquanto ela
+// não chega (ou quando o autor não tem uma) o que se vê é um bloco com as
+// letras do nome, nunca um buraco cinza que pula quando a imagem carrega.
 
 import { useState } from "react";
+import { useAuthorAvatar } from "../../lib/authorAvatars";
 
 const TONS = [
   "bg-sky-500/20 text-sky-300",
@@ -42,10 +46,10 @@ export default function AuthorAvatar({
   size?: number;
   className?: string;
 }) {
-  const [falhou, setFalhou] = useState(!author);
-  const src = author
-    ? `https://huggingface.co/${encodeURIComponent(author)}.png`
-    : "";
+  const src = useAuthorAvatar(author);
+  // Uma URL que o Hub deu mas o webview não conseguiu carregar volta para as
+  // iniciais — e a chave no `<img>` faz o estado recomeçar a cada foto nova.
+  const [quebrada, setQuebrada] = useState<string | null>(null);
 
   return (
     <span
@@ -59,8 +63,9 @@ export default function AuthorAvatar({
       >
         {iniciais(author || "?")}
       </span>
-      {!falhou && (
+      {src && src !== quebrada && (
         <img
+          key={src}
           src={src}
           alt=""
           width={size}
@@ -69,7 +74,7 @@ export default function AuthorAvatar({
           decoding="async"
           referrerPolicy="no-referrer"
           className="absolute inset-0 h-full w-full object-cover"
-          onError={() => setFalhou(true)}
+          onError={() => setQuebrada(src)}
         />
       )}
     </span>

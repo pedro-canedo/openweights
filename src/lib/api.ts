@@ -52,6 +52,17 @@ export const searchModels = (query: string, sort: SearchSort = "trending") =>
     ? invoke<ModelSummary[]>("models_search", { query, sort })
     : mocks.searchModels(query);
 
+/**
+ * Fotos de perfil dos autores no Hub, por nome — só as que existem.
+ *
+ * Em lote de propósito: a lista pergunta pelos 30 autores da página de uma
+ * vez, e o backend responde do cache o que já sabe.
+ */
+export const authorAvatars = (authors: string[]) =>
+  isTauri
+    ? invoke<Record<string, string>>("models_author_avatars", { authors })
+    : mocks.authorAvatars(authors);
+
 /** Cartão do modelo em Markdown (vazio quando o repositório não tem um). */
 export const modelReadme = (repoId: string) =>
   isTauri

@@ -22,6 +22,7 @@ impl SortBy {
     }
 }
 
+#[derive(Clone)]
 pub struct HfClient {
     http: reqwest::Client,
     token: Option<String>,
@@ -307,6 +308,70 @@ impl HfClient {
             })
             .collect())
     }
+
+    /// A foto de perfil do autor no Hub — `None` quando ele não tem uma.
+    ///
+    /// Não há caminho previsível para o avatar: `huggingface.co/{autor}.png`
+    /// é convenção do GitHub e aqui responde 404 para todo mundo. Quem sabe a
+    /// URL é o `overview` do perfil, e o perfil mora em uma de duas rotas
+    /// conforme o autor seja uma pessoa ou uma organização — daí as duas
+    /// tentativas, e daí o cache de quem chama: cada nome custa uma ida à
+    /// rede que não muda de resposta durante a sessão.
+    ///
+    /// Quem nunca subiu foto recebe do Hub um identicon gerado
+    /// (`/avatars/<hash>.svg`), o mesmo losango colorido para milhares de
+    /// perfis. Esse caso volta `None` de propósito: as iniciais do nome
+    /// distinguem mais do que ele.
+    pub async fn author_avatar(&self, author: &str) -> Option<String> {
+        if !nome_de_perfil(author) {
+            return None;
+        }
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Overview {
+            #[serde(default)]
+            avatar_url: Option<String>,
+        }
+        for rota in ["users", "organizations"] {
+            let url = format!("{HF_BASE}/api/{rota}/{author}/overview");
+            let Ok(resp) = self.auth(self.http.get(&url)).send().await else {
+                continue;
+            };
+            if resp.status() != 200 {
+                continue;
+            }
+            // O perfil existe: qualquer que seja a resposta daqui, procurar na
+            // outra rota é gastar uma requisição para receber 404.
+            let Ok(ov) = resp.json::<Overview>().await else {
+                return None;
+            };
+            return ov.avatar_url.as_deref().and_then(avatar_absoluto);
+        }
+        None
+    }
+}
+
+/// Nome de perfil do Hub: letras, dígitos, `-`, `_` e `.`.
+///
+/// O nome entra em uma URL sem escape, então o que não couber aqui não vira
+/// requisição — nem para descobrir que não existe.
+fn nome_de_perfil(nome: &str) -> bool {
+    !nome.is_empty()
+        && nome.len() <= 96
+        && nome
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+}
+
+/// A URL do avatar, absoluta — e `None` para o identicon gerado.
+fn avatar_absoluto(url: &str) -> Option<String> {
+    if url.is_empty() || url.starts_with("/avatars/") {
+        return None;
+    }
+    if url.starts_with("https://") || url.starts_with("http://") {
+        return Some(url.to_string());
+    }
+    url.starts_with('/').then(|| format!("{HF_BASE}{url}"))
 }
 
 fn to_summary(m: ApiModel) -> ModelSummary {
@@ -536,6 +601,32 @@ mod tests {
         let c = capacidades(None, &["visual-question-answering".to_string()], None);
         assert!(c.vision);
         assert!(!c.tools && !c.reasoning);
+    }
+
+    #[test]
+    fn avatar_do_hub_vira_url_absoluta() {
+        assert_eq!(
+            avatar_absoluto("https://cdn-avatars.huggingface.co/v1/x.png").as_deref(),
+            Some("https://cdn-avatars.huggingface.co/v1/x.png")
+        );
+        assert_eq!(
+            avatar_absoluto("/foto.png").as_deref(),
+            Some("https://huggingface.co/foto.png")
+        );
+        // identicon gerado: melhor as iniciais do nome
+        assert_eq!(avatar_absoluto("/avatars/69e3.svg"), None);
+        assert_eq!(avatar_absoluto(""), None);
+    }
+
+    #[test]
+    fn nome_de_perfil_recusa_o_que_nao_e_nome() {
+        assert!(nome_de_perfil("unsloth"));
+        assert!(nome_de_perfil("huihui-ai"));
+        assert!(nome_de_perfil("TheBloke_2.0"));
+        assert!(!nome_de_perfil(""));
+        assert!(!nome_de_perfil("um/dois"));
+        assert!(!nome_de_perfil("../etc"));
+        assert!(!nome_de_perfil("nome com espaço"));
     }
 
     #[test]

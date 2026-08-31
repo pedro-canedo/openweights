@@ -190,6 +190,37 @@ export async function localModels(): Promise<LocalModel[]> {
   ];
 }
 
+/// As fotos dos autores no navegador: consulta o Hub de verdade.
+///
+/// É a única exceção ao "mock não faz rede", e por um motivo: o avatar é
+/// público, o Hub libera CORS e a foto é justamente o que se está tentando
+/// ver na tela. Um mock devolvendo nada faria a UI parecer certa no navegador
+/// e diferente no app — o oposto do que estes dados existem para fazer.
+export async function authorAvatars(
+  authors: string[],
+): Promise<Record<string, string>> {
+  const fotos: Record<string, string> = {};
+  await Promise.all(
+    [...new Set(authors.filter(Boolean))].map(async (autor) => {
+      for (const rota of ["users", "organizations"]) {
+        try {
+          const r = await fetch(
+            `https://huggingface.co/api/${rota}/${autor}/overview`,
+          );
+          if (!r.ok) continue;
+          const url: string | undefined = (await r.json())?.avatarUrl;
+          // `/avatars/*.svg` é o identicon gerado — as iniciais dizem mais.
+          if (url?.startsWith("https://")) fotos[autor] = url;
+          return;
+        } catch {
+          return;
+        }
+      }
+    }),
+  );
+  return fotos;
+}
+
 let mockServer: ServerStatus = {
   running: false,
   baseUrl: null,

@@ -90,6 +90,7 @@ fn main() {
             commands::runtime_ensure,
             commands::models_search,
             commands::models_readme,
+            commands::models_author_avatars,
             commands::server_live,
             commands::models_quants,
             commands::download_start,

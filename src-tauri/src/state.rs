@@ -28,6 +28,13 @@ pub struct AppState {
     /// visita à aba viraria uma requisição de rede.
     pub openrouter_cache:
         tokio::sync::Mutex<Option<(std::time::Instant, Vec<lr_providers::OpenRouterModel>)>>,
+    /// Foto de perfil de cada autor do Hub já consultado, inclusive as
+    /// ausências (`None`).
+    ///
+    /// Descobrir que um autor NÃO tem foto custa as mesmas duas requisições
+    /// que descobrir a URL dela; sem guardar o "não" aqui, cada tecla digitada
+    /// na busca mandaria de novo a lista inteira de autores para a rede.
+    pub author_avatars: tokio::sync::Mutex<std::collections::HashMap<String, Option<String>>>,
     /// Node portátil, isolado do Node do sistema. Serve o 9router.
     pub node: lr_nodejs::NodeManager,
     /// 9router em execução, quando ligado.
@@ -206,6 +213,7 @@ impl AppState {
             server_pid,
             serve_stats: crate::serve_stats::ServeStatsCollector::new(),
             openrouter_cache: tokio::sync::Mutex::new(None),
+            author_avatars: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             node: lr_nodejs::NodeManager::new(data_dir.join("providers"), os, arch),
             ninerouter: tokio::sync::Mutex::new(None),
             ninerouter_pid: AtomicU32::new(0),

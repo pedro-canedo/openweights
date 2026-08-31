@@ -97,6 +97,69 @@ pub async fn models_search(
         .map_err(err_str)
 }
 
+/// As fotos de perfil dos autores da lista, por nome — só as que existem.
+///
+/// Vem em lote porque a tela pergunta em lote: uma busca traz 30 modelos e
+/// costuma repetir autores, e um comando por linha seria uma rajada de IPC
+/// para responder a mesma coisa várias vezes. O que já foi consultado sai do
+/// cache do estado; o resto vai à rede em paralelo, com no máximo seis
+/// consultas ao Hub ao mesmo tempo — o suficiente para a lista se preencher
+/// de uma vez sem parecer um robô batendo na API.
+#[tauri::command]
+pub async fn models_author_avatars(
+    state: State<'_, AppState>,
+    authors: Vec<String>,
+) -> CmdResult<std::collections::HashMap<String, String>> {
+    let mut fotos: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut faltando: Vec<String> = Vec::new();
+    {
+        let cache = state.author_avatars.lock().await;
+        for autor in authors.iter().filter(|a| !a.trim().is_empty()) {
+            match cache.get(autor) {
+                Some(Some(url)) => {
+                    fotos.insert(autor.clone(), url.clone());
+                }
+                Some(None) => {}
+                None => {
+                    if !faltando.contains(autor) {
+                        faltando.push(autor.clone());
+                    }
+                }
+            }
+        }
+    }
+    if faltando.is_empty() {
+        return Ok(fotos);
+    }
+
+    let cliente = state.hf.lock().await.clone();
+    let vagas = std::sync::Arc::new(tokio::sync::Semaphore::new(6));
+    let tarefas: Vec<_> = faltando
+        .into_iter()
+        .map(|autor| {
+            let cliente = cliente.clone();
+            let vagas = std::sync::Arc::clone(&vagas);
+            tokio::spawn(async move {
+                let _vaga = vagas.acquire().await;
+                let url = cliente.author_avatar(&autor).await;
+                (autor, url)
+            })
+        })
+        .collect();
+
+    let mut cache = state.author_avatars.lock().await;
+    for tarefa in tarefas {
+        let Ok((autor, url)) = tarefa.await else {
+            continue;
+        };
+        if let Some(u) = &url {
+            fotos.insert(autor.clone(), u.clone());
+        }
+        cache.insert(autor, url);
+    }
+    Ok(fotos)
+}
+
 /// O que o servidor está fazendo AGORA — para a barra de status.
 ///
 /// Junta as três perguntas que ficavam três telas adiante: qual modelo está
