@@ -52,6 +52,12 @@ export const searchModels = (query: string, sort: SearchSort = "trending") =>
     ? invoke<ModelSummary[]>("models_search", { query, sort })
     : mocks.searchModels(query);
 
+/** Cartão do modelo em Markdown (vazio quando o repositório não tem um). */
+export const modelReadme = (repoId: string) =>
+  isTauri
+    ? invoke<string>("models_readme", { repoId })
+    : Promise.resolve("");
+
 export const getModelQuants = (
   repoId: string,
   paramsTotal: number | null,

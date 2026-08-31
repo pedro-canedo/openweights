@@ -17,6 +17,10 @@ Rode LLMs no seu PC sem terminal, sem CUDA e sem chute de quantização.
 OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://github.com/ggml-org/llama.cpp) atrás de uma interface simples: detecta o hardware, instala o runtime certo e indica quais modelos cabem na sua máquina. Tudo local — nada vai para a nuvem. Windows, macOS e Linux.
 
 - 🔍 **Hardware no piloto automático** — identifica CPU, RAM, GPU e VRAM e baixa o build do llama.cpp que combina (CUDA, Vulkan ou só CPU).
+- 🔎 **Uma tela de descoberta que responde antes do download** — a lista de
+  modelos fica ao lado de um painel de detalhe com todas as quantizações e o
+  veredito de hardware de cada uma, o que o modelo sabe fazer (visão,
+  ferramentas, raciocínio) e o cartão que o autor escreveu, lido dentro do app.
 - 🤗 **Modelos do Hugging Face, já filtrados** — busca GGUF e recomenda a quantização para o *seu* PC: verde roda inteiro na GPU, amarelo divide com a CPU, cinza fica só no processador.
 - 💬 **Chat local** — streaming, markdown e histórico no disco.
 - 🤖 **Um agente de código com tela própria** — o [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) é um item da barra lateral, ao lado do chat: instalar, subir, parar e remover acontecem ali, e ele roda embutido no aplicativo. Quem instala e supervisiona é o próprio OpenWeights (pasta isolada, Node portátil incluído, nunca instalação global), ele escuta só em loopback e já vem pré-configurado com todos os seus provedores e modelos — sua chave de API viaja por variável de ambiente, nunca na linha de comando nem em arquivo. Para os outros agentes — Claude Code, Aider, OpenCode — o app monta o comando pronto, apontado para a API local.

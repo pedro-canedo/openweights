@@ -48,6 +48,8 @@ const MODELS: ModelSummary[] = [
     contextLength: 262_144,
     gated: false,
     updatedAt: "2026-07-30T10:00:00.000Z",
+    license: "apache-2.0",
+    caps: { vision: false, tools: true, reasoning: true },
   },
   {
     id: "unsloth/Qwen3-8B-GGUF",
@@ -60,6 +62,8 @@ const MODELS: ModelSummary[] = [
     contextLength: 40_960,
     gated: false,
     updatedAt: "2026-06-12T10:00:00.000Z",
+    license: "apache-2.0",
+    caps: { vision: false, tools: true, reasoning: true },
   },
   {
     id: "bartowski/gemma-3-27b-it-GGUF",
@@ -72,6 +76,8 @@ const MODELS: ModelSummary[] = [
     contextLength: 131_072,
     gated: false,
     updatedAt: "2026-05-02T10:00:00.000Z",
+    license: "apache-2.0",
+    caps: { vision: false, tools: true, reasoning: true },
   },
   {
     id: "meta-llama/Llama-3.1-8B-Instruct",
@@ -84,6 +90,8 @@ const MODELS: ModelSummary[] = [
     contextLength: 131_072,
     gated: true,
     updatedAt: "2025-11-20T10:00:00.000Z",
+    license: "apache-2.0",
+    caps: { vision: false, tools: true, reasoning: true },
   },
 ];
 

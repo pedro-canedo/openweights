@@ -39,10 +39,8 @@
     "subtitle": "Busque modelos GGUF no Hugging Face — indicamos a quantização ideal para o seu hardware.",
     "searchPlaceholder": "Buscar modelos (ex.: qwen, llama, gemma...)",
     "empty": "Nenhum modelo encontrado. Tente outra busca.",
-    "downloads": "downloads",
-    "likes": "curtidas",
-    "params": "parâmetros",
-    "context": "contexto",
+    "params": "Parâmetros",
+    "context": "Contexto",
     "gated": "Requer aceitar licença",
     "gatedHint": "Aceite a licença na página do modelo no Hugging Face e adicione seu token nas Configurações.",
     "openOnHf": "Abrir no Hugging Face",
@@ -55,7 +53,24 @@
     "sortLikes": "Mais curtidos",
     "sortUpdated": "Atualizados",
     "otherFormat": "O OpenWeights roda arquivos GGUF com o llama.cpp. MLX é o formato da Apple e não roda aqui; safetensors, GPTQ e AWQ também não. O mesmo modelo quase sempre existe em GGUF.",
-    "findGguf": "Procurar a versão GGUF"
+    "findGguf": "Procurar a versão GGUF",
+    "sortBy": "Ordenar por",
+    "gatedShort": "licença",
+    "downloadOptions": "Opções de download",
+    "details": "Detalhes",
+    "readme": "Sobre este modelo",
+    "architecture": "Arquitetura",
+    "format": "Formato",
+    "capabilities": "Capacidades",
+    "updated": "atualizado {{when}}",
+    "noQuants": "Este repositório não tem arquivos GGUF que o app saiba baixar.",
+    "pickOne": "Escolha um modelo na lista para ver as quantizações, o hardware que ele pede e o que o autor escreveu sobre ele.",
+    "caps": {
+      "vision": "Visão",
+      "tools": "Ferramentas",
+      "reasoning": "Raciocínio",
+      "none": "nenhuma declarada"
+    }
   },
   "downloadsPanel": {
     "title": "Downloads",

@@ -86,6 +86,16 @@ export interface ModelSummary {
   contextLength: number | null;
   gated: boolean;
   updatedAt: string | null;
+  /** Licença do cartão do repositório, quando declarada. */
+  license: string | null;
+  caps: ModelCaps;
+}
+
+/** O que o modelo sabe fazer, derivado pelo backend do que o Hub entrega. */
+export interface ModelCaps {
+  vision: boolean;
+  tools: boolean;
+  reasoning: boolean;
 }
 
 export type FitVerdict =

@@ -55,6 +55,25 @@ pub struct ModelSummary {
     pub context_length: Option<u64>,
     pub gated: bool,
     pub updated_at: Option<String>,
+    /// Licença declarada no cartão do repositório (`apache-2.0`, `mit`, …).
+    pub license: Option<String>,
+    /// O que o modelo sabe fazer, derivado do que o Hub já entrega — a
+    /// interface não precisa do chat template inteiro (dezenas de KB por
+    /// modelo) para desenhar três selos.
+    pub caps: ModelCaps,
+}
+
+/// Capacidades de um modelo, cada uma com uma fonte verificável.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCaps {
+    /// Entende imagem: o `pipeline_tag` do Hub diz `image-text-to-text`.
+    pub vision: bool,
+    /// Chama ferramentas: o chat template tem um ramo para `tools`.
+    pub tools: bool,
+    /// Raciocina antes de responder, e o raciocínio pode ser desligado — a
+    /// mesma marca (`enable_thinking`) que o app procura no GGUF baixado.
+    pub reasoning: bool,
 }
 
 /// Um arquivo do repositório (da árvore), com tamanho real.

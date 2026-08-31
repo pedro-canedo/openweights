@@ -195,9 +195,13 @@ export default function App() {
             /* O harness embutido é uma moldura de altura fixa como o Chat: o
                quadro do agente rola por dentro, não empurra o palco. */
             <Harness />
+          ) : screen === "discover" ? (
+            /* Duas colunas que rolam por conta própria: a lista de um lado, o
+               detalhe do outro. Sob o scroll do palco, rolar o detalhe até o
+               fim do README levaria a lista junto. */
+            <Discover />
           ) : (
             <div className="h-full overflow-y-auto">
-              {screen === "discover" && <Discover />}
               {screen === "models" && <MyModels />}
               {screen === "server" && <LocalServer />}
               {screen === "providers" && <Providers />}

@@ -1,6 +1,6 @@
 //! Cliente HTTP da API do Hugging Face Hub.
 
-use crate::{HF_BASE, ModelSummary, ModelsError, RepoFile};
+use crate::{HF_BASE, ModelCaps, ModelSummary, ModelsError, RepoFile};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +41,24 @@ struct ApiModel {
     last_modified: Option<String>,
     #[serde(default)]
     gguf: Option<ApiGguf>,
+    // O `rename_all = "camelCase"` da struct procuraria `pipelineTag`, e o
+    // Hub manda `pipeline_tag` — sem este rename a etiqueta chega sempre
+    // vazia e nenhum modelo teria o selo de visão.
+    #[serde(default, rename = "pipeline_tag")]
+    pipeline_tag: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    card_data: Option<ApiCardData>,
+}
+
+/// O cabeçalho do README (`cardData`) — daqui sai a licença.
+#[derive(Deserialize)]
+struct ApiCardData {
+    #[serde(default)]
+    license: Option<String>,
+    #[serde(default)]
+    license_name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -130,7 +148,7 @@ impl HfClient {
             }
             None => {
                 let mut url = format!(
-                    "{HF_BASE}/api/models?filter=gguf&sort={}&direction=-1&limit={}&expand[]=gguf&expand[]=gated&expand[]=downloads&expand[]=likes&expand[]=lastModified",
+                    "{HF_BASE}/api/models?filter=gguf&sort={}&direction=-1&limit={}&expand[]=gguf&expand[]=gated&expand[]=downloads&expand[]=likes&expand[]=lastModified&expand[]=pipeline_tag&expand[]=tags&expand[]=cardData",
                     sort.param(),
                     limit.clamp(1, 100),
                 );
@@ -182,6 +200,28 @@ impl HfClient {
         }))
     }
 
+    /// O README do repositório, sem o cabeçalho YAML.
+    ///
+    /// É o texto que o autor escreveu sobre o modelo — na tela de descoberta,
+    /// a única fonte de "o que é isto" que não seja o nome do arquivo. Vem do
+    /// `raw`, não da API: o cartão inteiro renderizado seria HTML, e aqui o
+    /// que se quer é o Markdown.
+    pub async fn readme(&self, repo_id: &str) -> Result<String, ModelsError> {
+        let url = format!("{HF_BASE}/{repo_id}/raw/main/README.md");
+        let resp = self.auth(self.http.get(&url)).send().await?;
+        match resp.status().as_u16() {
+            200 => {}
+            401 | 403 => return Err(ModelsError::Gated),
+            404 => return Ok(String::new()),
+            s => return Err(ModelsError::Api(format!("README retornou HTTP {s}"))),
+        }
+        let texto = resp.text().await?;
+        Ok(sem_frontmatter(&texto)
+            .chars()
+            .take(MAX_README_CHARS)
+            .collect())
+    }
+
     /// Lista os arquivos (com tamanhos) de um repositório.
     pub async fn repo_files(&self, repo_id: &str) -> Result<Vec<RepoFile>, ModelsError> {
         let url = format!("{HF_BASE}/api/models/{repo_id}/tree/main?recursive=true");
@@ -223,6 +263,32 @@ fn to_summary(m: ApiModel) -> ModelSummary {
         architecture: m.gguf.as_ref().and_then(|g| g.architecture.clone()),
         context_length: m.gguf.as_ref().and_then(|g| g.context_length),
         updated_at: m.last_modified,
+        license: m
+            .card_data
+            .as_ref()
+            .and_then(|c| c.license_name.clone().or_else(|| c.license.clone())),
+        caps: capacidades(
+            m.pipeline_tag.as_deref(),
+            &m.tags,
+            m.gguf.as_ref().and_then(|g| g.chat_template.as_deref()),
+        ),
+    }
+}
+
+/// Deriva as capacidades do que o Hub entrega.
+///
+/// Nenhuma delas é adivinhada pelo NOME do modelo, que erra nos dois
+/// sentidos. Visão é o `pipeline_tag` (a etiqueta que o próprio autor
+/// escolheu); ferramentas e raciocínio saem do chat template, que é o
+/// arquivo que o llama.cpp de fato executa — se ele tem o ramo, a
+/// capacidade existe.
+fn capacidades(pipeline: Option<&str>, tags: &[String], chat_template: Option<&str>) -> ModelCaps {
+    let visao = |s: &str| s == "image-text-to-text" || s == "visual-question-answering";
+    let tpl = chat_template.unwrap_or_default();
+    ModelCaps {
+        vision: pipeline.is_some_and(visao) || tags.iter().any(|t| visao(t)),
+        tools: tpl.contains("tools"),
+        reasoning: tpl.contains("enable_thinking"),
     }
 }
 
@@ -246,6 +312,43 @@ fn parse_link_next(link: &str) -> Option<String> {
     None
 }
 
+/// Teto do README trazido para a tela. Cartões de modelo chegam a centenas
+/// de KB de tabelas de benchmark; o que interessa está no começo, e o resto
+/// só custa memória e tempo de renderização.
+const MAX_README_CHARS: usize = 60_000;
+
+/// Remove o bloco YAML de metadados do topo do README.
+///
+/// O cartão do Hub começa com `---` … `---` (licença, tags, modelo base) —
+/// informação que a interface já mostra em campos próprios, e que como texto
+/// solto abriria a descrição com uma parede de chaves e traços.
+fn sem_frontmatter(texto: &str) -> &str {
+    let t = texto.trim_start_matches('\u{feff}');
+    let Some(resto) = t.strip_prefix("---") else {
+        return t;
+    };
+    // A abertura precisa ser a linha inteira `---`; um `---abc` não é
+    // frontmatter, é texto.
+    let resto = match resto
+        .strip_prefix('\n')
+        .or_else(|| resto.strip_prefix("\r\n"))
+    {
+        Some(r) => r,
+        None => return t,
+    };
+    for (i, linha) in resto.match_indices('\n') {
+        let anterior = &resto[..i];
+        let fim = anterior.rsplit('\n').next().unwrap_or(anterior).trim_end();
+        if fim == "---" || fim == "..." {
+            return resto[i + 1..].trim_start();
+        }
+        let _ = linha;
+    }
+    // Abriu e não fechou: o documento inteiro seria comido pelo corte, então
+    // devolvê-lo como está é o comportamento menos destrutivo.
+    t
+}
+
 fn urlencode(s: &str) -> String {
     s.chars()
         .flat_map(|c| match c {
@@ -259,6 +362,115 @@ fn urlencode(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Uma resposta REAL da busca, recortada: se o Hub mudar o nome de um
+    /// campo, é aqui que se descobre — e não numa tela que passou a mostrar
+    /// "sem licença" e nenhum selo para todo mundo.
+    #[test]
+    fn a_real_search_row_fills_every_field_the_screen_shows() {
+        let json = r#"[{
+            "id": "unsloth/Qwen3.8-27B-GGUF",
+            "author": "unsloth",
+            "downloads": 8839153,
+            "likes": 3237,
+            "gated": false,
+            "lastModified": "2026-08-20T12:04:25.000Z",
+            "pipeline_tag": "image-text-to-text",
+            "tags": ["gguf", "conversational"],
+            "cardData": { "license": "apache-2.0", "base_model": ["Qwen/Qwen3.8-27B"] },
+            "gguf": {
+                "total": 27320697856,
+                "architecture": "qwen35",
+                "context_length": 262144,
+                "chat_template": "{%- if tools %}...{%- endif %}{%- if enable_thinking %}<think>{%- endif %}"
+            }
+        }]"#;
+        let raw: Vec<ApiModel> = serde_json::from_str(json).expect("desserializa");
+        let m = to_summary(raw.into_iter().next().unwrap());
+
+        assert_eq!(m.author, "unsloth");
+        assert_eq!(m.name, "Qwen3.8-27B-GGUF");
+        assert_eq!(m.downloads, 8_839_153);
+        assert_eq!(m.params_total, Some(27_320_697_856));
+        assert_eq!(m.architecture.as_deref(), Some("qwen35"));
+        assert_eq!(m.context_length, Some(262_144));
+        assert_eq!(m.license.as_deref(), Some("apache-2.0"));
+        assert!(!m.gated);
+        assert_eq!(
+            m.caps,
+            ModelCaps {
+                vision: true,
+                tools: true,
+                reasoning: true
+            }
+        );
+    }
+
+    /// `license_name` vence `license` quando existe: é o nome específico da
+    /// licença própria de um autor ("qwen-community-1.0"), e "other" não diz
+    /// nada a ninguém.
+    #[test]
+    fn a_named_license_wins_over_the_generic_one() {
+        let json = r#"[{
+            "id": "a/b",
+            "cardData": { "license": "other", "license_name": "qwen-community-1.0" }
+        }]"#;
+        let raw: Vec<ApiModel> = serde_json::from_str(json).expect("desserializa");
+        let m = to_summary(raw.into_iter().next().unwrap());
+        assert_eq!(m.license.as_deref(), Some("qwen-community-1.0"));
+    }
+
+    /// O cartão do Hub começa com um bloco YAML que a tela já mostra em
+    /// campos próprios — como texto, ele só empurraria a descrição para
+    /// baixo atrás de uma parede de chaves.
+    #[test]
+    fn the_card_header_is_stripped_from_the_readme() {
+        let com = "---\nlicense: apache-2.0\ntags:\n- unsloth\n---\n\n# Qwen3.8\n\nUm modelo.";
+        assert_eq!(sem_frontmatter(com), "# Qwen3.8\n\nUm modelo.");
+
+        // Sem cabeçalho, o texto passa inteiro.
+        let sem = "# Qwen3.8\n\nUm modelo.";
+        assert_eq!(sem_frontmatter(sem), sem);
+
+        // `---` no meio de uma linha não abre bloco nenhum: é texto.
+        let falso = "---abc\n# Título";
+        assert_eq!(sem_frontmatter(falso), falso);
+
+        // Abriu e nunca fechou: devolver tudo é menos destrutivo que comer o
+        // documento inteiro.
+        let aberto = "---\nlicense: mit\n\n# Título sem fim";
+        assert_eq!(sem_frontmatter(aberto), aberto);
+
+        // Um fechamento com `...` também é YAML válido.
+        let pontos = "---\nlicense: mit\n...\n# Título";
+        assert_eq!(sem_frontmatter(pontos), "# Título");
+    }
+
+    /// Visão vem da etiqueta que o autor escolheu; ferramentas e raciocínio,
+    /// do template que o llama.cpp executa. Nada sai do nome do modelo.
+    #[test]
+    fn capabilities_come_from_the_hub_not_from_the_name() {
+        let tpl_pensante = "{%- if enable_thinking %}<think>{%- endif %}{%- if tools %}...";
+        let c = capacidades(
+            Some("image-text-to-text"),
+            &["gguf".to_string()],
+            Some(tpl_pensante),
+        );
+        assert!(c.vision && c.tools && c.reasoning);
+
+        // Um nome cheio de promessas não vale nada sem as fontes.
+        let c = capacidades(
+            Some("text-generation"),
+            &["gguf".to_string()],
+            Some("{{ bos_token }}"),
+        );
+        assert_eq!(c, ModelCaps::default());
+
+        // Sem template, o que sobra é a etiqueta.
+        let c = capacidades(None, &["visual-question-answering".to_string()], None);
+        assert!(c.vision);
+        assert!(!c.tools && !c.reasoning);
+    }
 
     #[test]
     fn urlencode_basics() {
@@ -302,6 +514,9 @@ mod tests {
                 gated: v,
                 last_modified: None,
                 gguf: None,
+                pipeline_tag: None,
+                tags: Vec::new(),
+                card_data: None,
             };
             assert_eq!(to_summary(m).gated, expected);
         }

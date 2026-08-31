@@ -23,6 +23,10 @@ Windows, macOS and Linux.
 
 - 🔍 **Hardware on autopilot** — detects CPU, RAM, GPU and VRAM, then downloads
   the llama.cpp build that matches (CUDA, Vulkan or CPU-only).
+- 🔎 **A discovery screen that answers before you download** — the model list
+  sits beside a detail panel with every quantization and its hardware verdict,
+  what the model can do (vision, tools, reasoning), and the author's own model
+  card, read inside the app.
 - 🤗 **Hugging Face models, already filtered** — searches GGUF and recommends the
   quantization for *your* PC: green runs fully on the GPU, yellow splits with the
   CPU, grey is CPU-only.

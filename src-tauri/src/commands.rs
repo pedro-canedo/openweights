@@ -97,6 +97,23 @@ pub async fn models_search(
         .map_err(err_str)
 }
 
+/// O cartão do modelo em Markdown, para a tela de descoberta.
+///
+/// Vem por comando (e não por `fetch` da interface) para reusar o token do
+/// Hub que o app já guarda: sem ele, um repositório privado ou com licença a
+/// aceitar responderia 401 e a tela mostraria "sem descrição" para um modelo
+/// que tem uma.
+#[tauri::command]
+pub async fn models_readme(state: State<'_, AppState>, repo_id: String) -> CmdResult<String> {
+    state
+        .hf
+        .lock()
+        .await
+        .readme(&repo_id)
+        .await
+        .map_err(err_str)
+}
+
 /// O que a gaveta de quantizações precisa saber.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
