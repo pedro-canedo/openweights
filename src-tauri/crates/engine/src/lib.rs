@@ -447,6 +447,22 @@ pub enum Health {
     Down,
 }
 
+/// Um slot do servidor, com o que ele ocupa da janela agora.
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SlotState {
+    #[serde(default)]
+    pub id: u32,
+    /// Tamanho da janela deste slot.
+    #[serde(default, rename = "n_ctx")]
+    pub n_ctx: u32,
+    /// Quanto da janela já está ocupado (prompt + gerado até agora).
+    #[serde(default, rename = "n_prompt_tokens")]
+    pub n_prompt_tokens: u32,
+    #[serde(default, rename = "is_processing")]
+    pub is_processing: bool,
+}
+
 impl LlamaServer {
     pub fn new(config: ServerConfig) -> Self {
         Self {
@@ -581,6 +597,55 @@ impl LlamaServer {
         let bruto: serde_json::Value = resp.json().await?;
         parse_models_status(&bruto)
             .ok_or_else(|| EngineError::Protocol("GET /models sem a lista `data`".into()))
+    }
+
+    /// O que os slots do servidor estão fazendo AGORA (`GET /slots`).
+    ///
+    /// É a única fonte de contexto em uso que não depende de o app ser quem
+    /// fez a requisição — capta também o harness e qualquer outro cliente
+    /// batendo direto na API. `n_prompt_tokens` é o que já ocupa a janela do
+    /// slot (prompt mais o que ele gerou até agora) e `n_ctx` é o tamanho
+    /// dela.
+    ///
+    /// Diferente do `/metrics?model=…`, este endpoint é do SERVIDOR e não de
+    /// um modelo: consultá-lo não acorda quem está dormindo.
+    pub async fn slots(&self) -> Result<Vec<SlotState>, EngineError> {
+        let url = format!("{}/slots", self.config.connect_url());
+        let mut req = self.http.get(&url);
+        if let Some(key) = &self.config.api_key {
+            req = req.bearer_auth(key);
+        }
+        let resp = req.send().await?;
+        if !resp.status().is_success() {
+            // Alguns builds servem `/slots` desligado; isso não é falha do
+            // app, é uma métrica a menos.
+            return Ok(Vec::new());
+        }
+        Ok(resp.json::<Vec<SlotState>>().await.unwrap_or_default())
+    }
+
+    /// Total de tokens já decodificados desde que o servidor subiu.
+    ///
+    /// Um contador CUMULATIVO (`llamacpp:n_decode_total`), não uma taxa: os
+    /// medidores de velocidade do llama.cpp zeram a cada consulta, então
+    /// dois leitores se atrapalhariam. Com o cumulativo, cada um calcula a
+    /// própria taxa pela diferença e ninguém estraga a leitura do outro.
+    pub async fn decoded_total(&self) -> Result<Option<u64>, EngineError> {
+        let url = format!("{}/metrics", self.config.connect_url());
+        let mut req = self.http.get(&url);
+        if let Some(key) = &self.config.api_key {
+            req = req.bearer_auth(key);
+        }
+        let resp = req.send().await?;
+        if !resp.status().is_success() {
+            return Ok(None);
+        }
+        let texto = resp.text().await?;
+        Ok(texto.lines().find_map(|l| {
+            l.strip_prefix("llamacpp:n_decode_total ")
+                .and_then(|v| v.trim().parse::<f64>().ok())
+                .map(|v| v as u64)
+        }))
     }
 
     /// Espera o servidor ficar pronto, com timeout.

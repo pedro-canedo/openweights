@@ -97,6 +97,93 @@ pub async fn models_search(
         .map_err(err_str)
 }
 
+/// O que o servidor está fazendo AGORA — para a barra de status.
+///
+/// Junta as três perguntas que ficavam três telas adiante: qual modelo está
+/// de pé, quanto da janela já está ocupado e a que velocidade ele responde.
+/// A velocidade vem do contador cumulativo de tokens decodificados, dividida
+/// pelo tempo entre duas leituras: é o único número instantâneo honesto, já
+/// que os medidores de taxa do llama.cpp zeram a cada consulta.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerLive {
+    pub running: bool,
+    /// Modelo carregado, quando há um.
+    pub model: Option<String>,
+    /// Tokens já ocupados na janela do slot em uso.
+    pub ctx_used: Option<u32>,
+    pub ctx_total: Option<u32>,
+    /// Alguém está gerando agora?
+    pub generating: bool,
+    /// Tokens por segundo entre esta leitura e a anterior.
+    pub tokens_per_sec: Option<f64>,
+}
+
+#[tauri::command]
+pub async fn server_live(state: State<'_, AppState>) -> CmdResult<ServerLive> {
+    let cfg = {
+        let guard = state.server.lock().await;
+        match guard.as_ref() {
+            Some(srv) if srv.is_spawned() => srv.config().clone(),
+            _ => return Ok(ServerLive::default()),
+        }
+    };
+    let srv = lr_engine::LlamaServer::new(cfg);
+
+    // `/slots` é do servidor, não de um modelo: perguntar não acorda quem
+    // está dormindo (ao contrário do `/metrics?model=…`).
+    let slots = srv.slots().await.unwrap_or_default();
+    let ativo = slots
+        .iter()
+        .find(|s| s.is_processing)
+        .or_else(|| slots.iter().max_by_key(|s| s.n_prompt_tokens));
+    let generating = slots.iter().any(|s| s.is_processing);
+
+    let model = srv
+        .models_status()
+        .await
+        .ok()
+        .and_then(|ms| {
+            ms.into_iter()
+                .find(|m| m.state == "loaded" && !m.id.ends_with(VISION_SUFFIX))
+        })
+        .map(|m| m.id);
+
+    // A taxa só é calculável enquanto alguém gera; parado, o contador não
+    // anda e a divisão daria zero — que é diferente de "não sei".
+    let tokens_per_sec = if generating {
+        taxa_instantanea(&state, &srv).await
+    } else {
+        state.decode_mark.lock().await.take();
+        None
+    };
+
+    Ok(ServerLive {
+        running: true,
+        model,
+        ctx_used: ativo.map(|s| s.n_prompt_tokens),
+        ctx_total: ativo.map(|s| s.n_ctx),
+        generating,
+        tokens_per_sec,
+    })
+}
+
+/// Tokens por segundo entre duas leituras do contador cumulativo.
+async fn taxa_instantanea(state: &AppState, srv: &lr_engine::LlamaServer) -> Option<f64> {
+    let agora = std::time::Instant::now();
+    let total = srv.decoded_total().await.ok()??;
+    let mut marca = state.decode_mark.lock().await;
+    let taxa = match *marca {
+        Some((antes, quando)) if total >= antes => {
+            let dt = agora.duration_since(quando).as_secs_f64();
+            (dt > 0.2).then(|| (total - antes) as f64 / dt)
+        }
+        _ => None,
+    };
+    *marca = Some((total, agora));
+    taxa
+}
+
 /// O cartão do modelo em Markdown, para a tela de descoberta.
 ///
 /// Vem por comando (e não por `fetch` da interface) para reusar o token do

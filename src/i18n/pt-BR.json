@@ -19,7 +19,10 @@
     "tokensPerSec": "tok/s",
     "disk": "DISCO",
     "free": "livres",
-    "net": "REDE"
+    "net": "REDE",
+    "power": "ENERGIA",
+    "context": "CONTEXTO",
+    "contextTitle": "Janela de contexto ocupada no slot em uso"
   },
   "badge": {
     "fullGpu": "Roda 100% na GPU",
@@ -707,6 +710,10 @@
         "rejected": "A mais rápida mudava a resposta — recusada",
         "deferred": "Adiada: a máquina estava em uso",
         "unverifiable": "Não deu para verificar nesta máquina"
+      },
+      "auto": {
+        "label": "Medir e ajustar a especulação sozinho",
+        "hint": "Uma vez por modelo, quando a máquina estiver parada: o app testa as combinações, confere que a resposta não mudou e aplica a que rende mais. O motor reinicia entre os testes; qualquer uso seu interrompe e adia."
       }
     },
     "fullConfig": "Configuração completa",
@@ -732,7 +739,9 @@
       "gpuSeries": "A série é por GPU e driver: trocar de placa ou atualizar o driver começa uma série nova.",
       "bandwidth": "Teto: ~{{ram}} GB/s da memória do sistema contra ~{{gpu}} GB/s na placa. Com os especialistas na RAM, tokens por segundo é um número de banda, não de GPU.",
       "engineUpdated": "engine atualizado — não comparável",
-      "noBaseline": "sem base de comparação"
+      "noBaseline": "sem base de comparação",
+      "powerChanged": "O limite de energia da placa mudou entre as duas medições — a diferença pode vir dos watts, não da configuração.",
+      "powerLimit": "Limite de energia da placa nesta medição"
     },
     "sweep": {
       "title": "Curva",
@@ -1148,5 +1157,16 @@
         "hint": "Deixa o CUDA transbordar da VRAM para a memória do sistema em vez de falhar ao carregar. Nunca falha — e pode ficar muito lento sem avisar."
       }
     }
+  },
+  "power": {
+    "title": "Energia da GPU",
+    "subtitle": "Gerar tokens é limitado pela banda de memória da placa, não pelo quanto ela pode queimar — então baixar o limite costuma custar quase nada em velocidade e tirar bastante calor. Meça aqui em vez de acreditar: o histórico de desempenho, logo acima, mostra o antes e o depois.",
+    "limit": "limite",
+    "standard": "Padrão ({{w}} W)",
+    "eco": "Econômico ({{w}} W)",
+    "applying": "aplicando…",
+    "range": "O driver aceita de {{min}} W a {{max}} W.",
+    "notPersistent": "O limite volta ao padrão quando você reinicia o computador ou o driver recarrega — é assim que a NVIDIA fez, e nenhum aplicativo contorna isso.",
+    "needsAdmin": "Aplicar exige administrador: o Windows vai pedir confirmação."
   }
 }

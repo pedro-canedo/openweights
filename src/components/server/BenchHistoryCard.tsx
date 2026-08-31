@@ -211,6 +211,17 @@ export default function BenchHistoryCard({
         <span className={`tabular-nums ${cls}`}>
           {r.deltaPct > 0 ? "+" : ""}
           {r.deltaPct.toFixed(1)}%
+          {/* Watts diferentes: o número vale, mas a causa é outra. Sem este
+              aviso, a tela creditaria à configuração um ganho que veio do
+              limite de energia. */}
+          {r.deltaReason === "powerChanged" && (
+            <span
+              className="ml-1 text-dim"
+              title={t("tune.history.powerChanged")}
+            >
+              ⚡
+            </span>
+          )}
         </span>
       );
     }
@@ -381,6 +392,15 @@ export default function BenchHistoryCard({
                                 "border-edge text-dim",
                                 t("tune.history.build", { n: r.buildNumber }),
                               )}
+                              {/* Os watts em vigor na medição: é o que
+                                  transforma "por que ficou mais lento?" numa
+                                  pergunta respondível. */}
+                              {r.powerLimitW != null &&
+                                badge(
+                                  "border-edge text-dim",
+                                  `${r.powerLimitW} W`,
+                                  t("tune.history.powerLimit"),
+                                )}
                             </div>
                           </td>
                         </tr>

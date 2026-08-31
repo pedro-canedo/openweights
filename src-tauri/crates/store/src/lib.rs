@@ -157,6 +157,7 @@ impl Store {
         // num de 4096 e chamava a diferença de piora.
         ensure_column(&conn, "perf_runs", "n_prompt", "INTEGER")?;
         ensure_column(&conn, "perf_runs", "n_depth", "INTEGER")?;
+        ensure_column(&conn, "perf_runs", "power_limit_w", "INTEGER")?;
         engine_presets::init(&conn)?;
         // Totais "desde sempre" das estatísticas de serviço (por modelo).
         serve::init(&conn)?;

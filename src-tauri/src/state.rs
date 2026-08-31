@@ -55,6 +55,9 @@ pub struct AppState {
     /// externos que batem direto no llama-server, que é o caso real deste app
     /// desde que o DeepSeek Harness passou a rodar embutido.
     pub last_engine_use: AtomicI64,
+    /// Última leitura do contador de tokens decodificados, com o instante.
+    /// É a régua da taxa instantânea mostrada na barra de status.
+    pub decode_mark: tokio::sync::Mutex<Option<(u64, std::time::Instant)>>,
     shutdown_done: AtomicBool,
 }
 
@@ -216,6 +219,7 @@ impl AppState {
             data_dir,
             models_dir,
             last_engine_use: AtomicI64::new(0),
+            decode_mark: tokio::sync::Mutex::new(None),
             shutdown_done: AtomicBool::new(false),
         })
     }

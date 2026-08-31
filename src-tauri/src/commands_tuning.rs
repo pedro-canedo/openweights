@@ -695,6 +695,10 @@ pub async fn tune_bench(
     // A série é uma por machine_key, nomeada pela placa principal — None
     // significa "rodou na CPU" e a tela mostra exatamente isso.
     let gpu = state.profile.best_gpu().map(|g| g.name.clone());
+    // O limite de energia em vigor entra na linha: sem ele, medir a mesma
+    // configuração com 370 W e com 250 W daria duas linhas idênticas, e o Δ%
+    // atribuiria à configuração uma diferença que era de watts.
+    let power_limit_w = limite_de_energia();
     for (perfil, res) in &results {
         let _ = state.store.add_perf_run(&PerfRun {
             machine_key: machine.clone(),
@@ -714,6 +718,7 @@ pub async fn tune_bench(
             // Os pares INI legíveis do perfil: é o que deixa o histórico
             // mostrar "ngl=99 · ctx=16k" em vez de um hash.
             profile_json: serde_json::to_string(&perfil.to_ini_extras()).ok(),
+            power_limit_w,
         });
     }
 
@@ -838,8 +843,12 @@ pub struct PerfRowDto {
     /// `None` em linhas antigas. A tela mostra ao lado do número, porque
     /// 800 tok/s num prompt de 512 e 300 num de 4096 não são o mesmo eixo.
     pub n_prompt: Option<u32>,
+    /// Limite de energia da placa nesta medição, em watts. A tela mostra ao
+    /// lado do número: comparar 370 W com 250 W é um experimento, não ruído.
+    pub power_limit_w: Option<u32>,
     pub delta_pct: Option<f64>,
-    /// `"ok"` | `"first"` | `"buildChange"` | `"suspect"` | `"promptChanged"`.
+    /// `"ok"` | `"first"` | `"buildChange"` | `"suspect"` | `"promptChanged"`
+    /// | `"powerChanged"` (compara, mas com watts diferentes).
     pub delta_reason: &'static str,
     /// Variação do processamento do prompt, quando as duas medições usaram o
     /// mesmo tamanho de prompt.
@@ -908,6 +917,7 @@ pub fn perf_history(state: State<'_, AppState>, model_id: String) -> CmdResult<P
             profile_key: r.profile_key,
             profile_summary: resumo_do_perfil(r.profile_json.as_deref()),
             n_prompt: r.n_prompt,
+            power_limit_w: r.power_limit_w,
             delta_pct: d.gen_pct,
             delta_reason: d.gen_reason,
             prompt_delta_pct: d.prompt_pct,
@@ -1123,6 +1133,18 @@ pub(crate) fn spawn_auto_tune(app: &AppHandle, _state: &AppState) {
 }
 
 // ------------------------------------------- especulação automática ---
+
+/// O limite de energia da placa principal, quando dá para saber.
+fn limite_de_energia() -> Option<u32> {
+    #[cfg(windows)]
+    {
+        lr_hw::power::status().first().map(|p| p.limit_w)
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
 
 /// Uma bateria de especulação por vez, e cancelável.
 static SPEC_CANCELAR: AtomicBool = AtomicBool::new(false);

@@ -82,6 +82,26 @@ pub fn teto_de_saida(context_window: u32) -> u32 {
     (context_window / 2).clamp(2_048, 65_536)
 }
 
+/// Os níveis que o harness sabe nomear, em ordem de esforço.
+///
+/// O schema dele aceita só este vocabulário; um modelo que chame o seu nível
+/// de outro jeito ainda pode ser oferecido, desde que caiba num destes
+/// nomes — o VALOR enviado ao motor continua sendo o do template.
+const NIVEIS_DO_HARNESS: [&str; 6] = ["minimal", "low", "medium", "high", "xhigh", "max"];
+
+/// O nome do harness para um nível do template.
+///
+/// Igual quando o vocabulário coincide (`low`, `medium`, `xhigh`); `high`
+/// para qualquer coisa que o harness não saiba nomear, porque um nível
+/// oferecido com nome errado é pior que um nível a menos.
+fn apelido_do_nivel(nivel: &str) -> &'static str {
+    NIVEIS_DO_HARNESS
+        .iter()
+        .find(|n| **n == nivel)
+        .copied()
+        .unwrap_or("high")
+}
+
 /// Um modelo de uma rota, com os campos do schema do dsh que o app sabe
 /// preencher (`input` e o resto do `compat` ficam nos defaults do dsh).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +114,12 @@ pub struct ModeloDsh {
     /// dsh — 32768, um número que ele aplica sem saber o tamanho da janela e
     /// que num modelo de 8k de contexto é uma promessa impossível.
     pub max_tokens: Option<u32>,
+    /// Níveis de esforço que o chat template ACEITA, na ordem dele.
+    ///
+    /// Vazio = o modelo só sabe ligar e desligar. Cada nome aqui foi lido da
+    /// linha em que o próprio template recusa o que não conhece, então o
+    /// seletor do harness nunca oferece um valor que devolveria erro 500.
+    pub efforts: Vec<String>,
     /// O raciocínio deste modelo pode ser ligado e desligado por quem chama.
     ///
     /// Só quando isto é verdade a rota declara `reasoningEfforts`, e é a
@@ -146,11 +172,39 @@ fn valor_provedor(p: &ProvedorDsh) -> Value {
                 // — que no fim vira `enable_thinking: false`.
                 let mut niveis = Mapping::new();
                 niveis.insert("off".into(), Value::Null);
-                niveis.insert(NIVEL_LIGADO.into(), NIVEL_LIGADO.into());
-                mm.insert("reasoningEfforts".into(), Value::Mapping(niveis));
-
                 let mut compat = Mapping::new();
-                compat.insert("thinkingFormat".into(), FORMATO_THINKING.into());
+
+                if mo.efforts.is_empty() {
+                    // Template que só sabe ligar e desligar: um nível ligado,
+                    // e o formato que manda apenas o booleano.
+                    niveis.insert(NIVEL_LIGADO.into(), NIVEL_LIGADO.into());
+                    compat.insert("thinkingFormat".into(), FORMATO_THINKING.into());
+                } else {
+                    // O template aceita níveis: oferecer os DELE, com o nome
+                    // que ele valida. O formato genérico é o único que manda
+                    // o valor escolhido (`$var: thinking.effort`) além do
+                    // liga/desliga — o `qwen-chat-template` manda só o
+                    // booleano, e o esforço se perderia no caminho.
+                    for nivel in &mo.efforts {
+                        let nome = apelido_do_nivel(nivel);
+                        niveis.insert(nome.into(), nivel.clone().into());
+                    }
+                    compat.insert("thinkingFormat".into(), "chat-template".into());
+                    let mut kwargs = Mapping::new();
+                    let mut enabled = Mapping::new();
+                    enabled.insert("$var".into(), "thinking.enabled".into());
+                    kwargs.insert("enable_thinking".into(), Value::Mapping(enabled));
+                    let mut effort = Mapping::new();
+                    effort.insert("$var".into(), "thinking.effort".into());
+                    // Desligado não manda esforço: o template levanta exceção
+                    // se receber um valor que não conhece, e "nenhum" não é
+                    // um dos que ele conhece.
+                    effort.insert("omitWhenOff".into(), true.into());
+                    kwargs.insert("reasoning_effort".into(), Value::Mapping(effort));
+                    compat.insert("chatTemplateKwargs".into(), Value::Mapping(kwargs));
+                }
+
+                mm.insert("reasoningEfforts".into(), Value::Mapping(niveis));
                 mm.insert("compat".into(), Value::Mapping(compat));
             }
             Value::Mapping(mm)
@@ -369,6 +423,7 @@ mod tests {
             name: id.to_string(),
             context_window: ctx,
             max_tokens: ctx.map(teto_de_saida),
+            efforts: Vec::new(),
             thinking: false,
         }
     }
@@ -455,6 +510,75 @@ mod tests {
         assert!(modelos[1].get("reasoningEfforts").is_none());
         assert!(modelos[1].get("compat").is_none());
         assert_eq!(modelos[1]["maxTokens"], Value::from(16_384));
+    }
+
+    /// Um modelo que aceita NÍVEIS oferece os níveis dele — com os nomes que
+    /// o próprio template valida, e pelo formato que de fato envia o valor
+    /// escolhido. O outro formato manda só o booleano, e o esforço se
+    /// perderia no caminho sem ninguém notar.
+    #[test]
+    fn a_model_with_effort_levels_offers_exactly_what_its_template_accepts() {
+        let rota = (
+            "openweights".to_string(),
+            ProvedorDsh {
+                display_name: "OpenWeights (local)".to_string(),
+                base_url: "http://127.0.0.1:11711/v1".to_string(),
+                api_key_env: OPENWEIGHTS_KEY_ENV.to_string(),
+                models: vec![ModeloDsh {
+                    efforts: vec!["xhigh".into(), "medium".into(), "low".into()],
+                    ..modelo_pensante("Qwen3.8-27B.gguf", 131_072)
+                }],
+            },
+        );
+        let saida = merge_settings("", &[rota]);
+        let doc: Value = serde_yaml_ng::from_str(&saida).unwrap();
+        let m = &doc["llm-pi-ai"]["providers"]["openweights"]["models"][0];
+
+        // Os três níveis do template, mais o desligado.
+        let niveis = m["reasoningEfforts"].as_mapping().unwrap();
+        assert_eq!(niveis["off"], Value::Null);
+        assert_eq!(niveis["xhigh"], Value::from("xhigh"));
+        assert_eq!(niveis["medium"], Value::from("medium"));
+        assert_eq!(niveis["low"], Value::from("low"));
+
+        // O formato que manda o VALOR, não só o liga/desliga.
+        assert_eq!(m["compat"]["thinkingFormat"], Value::from("chat-template"));
+        let kw = &m["compat"]["chatTemplateKwargs"];
+        assert_eq!(
+            kw["enable_thinking"]["$var"],
+            Value::from("thinking.enabled")
+        );
+        assert_eq!(
+            kw["reasoning_effort"]["$var"],
+            Value::from("thinking.effort")
+        );
+        // Desligado não manda esforço: o template levanta exceção com um
+        // valor que ele não conhece, e "nenhum" não é um deles.
+        assert_eq!(kw["reasoning_effort"]["omitWhenOff"], Value::from(true));
+    }
+
+    /// Template que só sabe ligar e desligar continua com um nível só — e
+    /// pelo formato enxuto, que é o que ele entende.
+    #[test]
+    fn a_model_without_levels_keeps_the_simple_switch() {
+        let rota = (
+            "openweights".to_string(),
+            ProvedorDsh {
+                display_name: "OpenWeights (local)".to_string(),
+                base_url: "http://127.0.0.1:11711/v1".to_string(),
+                api_key_env: OPENWEIGHTS_KEY_ENV.to_string(),
+                models: vec![modelo_pensante("Qwen3-8B.gguf", 32_768)],
+            },
+        );
+        let saida = merge_settings("", &[rota]);
+        let doc: Value = serde_yaml_ng::from_str(&saida).unwrap();
+        let m = &doc["llm-pi-ai"]["providers"]["openweights"]["models"][0];
+        assert_eq!(
+            m["compat"]["thinkingFormat"],
+            Value::from("qwen-chat-template")
+        );
+        assert!(m["compat"].get("chatTemplateKwargs").is_none());
+        assert_eq!(m["reasoningEfforts"]["high"], Value::from("high"));
     }
 
     /// Rota remota não recebe teto nosso: o do provedor é dele, e pedir mais

@@ -245,6 +245,8 @@ impl Monitor {
                     util_percent: None,
                     vram_used_bytes: None,
                     vram_total_bytes: g.vram_total_bytes,
+                    power_w: None,
+                    power_limit_w: None,
                 })
                 .collect();
             (gpus, None)

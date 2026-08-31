@@ -360,8 +360,20 @@ export interface PerfRowDto {
    * migração) — exibir o profileKey encurtado ou "—", NUNCA rotular de "uso".
    */
   profileSummary: Record<string, string> | null;
+  /** Limite de energia da placa nesta medição, em watts. */
+  powerLimitW: number | null;
   deltaPct: number | null;
-  deltaReason: "ok" | "first" | "buildChange" | "suspect";
+  /**
+   * `powerChanged` compara normalmente, mas avisa: a diferença veio dos
+   * watts, não da configuração. Os demais motivos anulam o percentual.
+   */
+  deltaReason:
+    | "ok"
+    | "first"
+    | "buildChange"
+    | "suspect"
+    | "promptChanged"
+    | "powerChanged";
 }
 
 /** Uso real: média de tokens/s das respostas do chat, por configuração. */
@@ -423,6 +435,7 @@ function mockPerfHistory(): PerfHistoryDto {
         suspect: false,
         buildNumber: 10441,
         deltaPct: 3.1,
+        powerLimitW: 370,
         deltaReason: "ok",
       },
       {
@@ -432,6 +445,7 @@ function mockPerfHistory(): PerfHistoryDto {
         suspect: false,
         buildNumber: 10441,
         deltaPct: null,
+        powerLimitW: 370,
         deltaReason: "buildChange",
       },
       {
@@ -441,7 +455,8 @@ function mockPerfHistory(): PerfHistoryDto {
         suspect: true,
         buildNumber: 10380,
         deltaPct: null,
-        deltaReason: "suspect",
+        powerLimitW: 250,
+        deltaReason: "powerChanged",
       },
       {
         ...base,
@@ -452,6 +467,7 @@ function mockPerfHistory(): PerfHistoryDto {
         profileKey: "",
         profileSummary: null,
         deltaPct: null,
+        powerLimitW: 370,
         deltaReason: "first",
       },
     ],

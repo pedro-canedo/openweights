@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS perf_runs (
     gpu_name TEXT,
     profile_json TEXT,
     n_prompt INTEGER,
-    n_depth INTEGER
+    n_depth INTEGER,
+    power_limit_w INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_perf_lookup
     ON perf_runs(machine_key, model_id, profile_key);
@@ -64,6 +65,14 @@ pub struct PerfRun {
     /// Nome da placa principal na hora da medição (`None` = CPU, ou linha
     /// gravada antes desta coluna existir).
     pub gpu_name: Option<String>,
+    /// Limite de energia da placa em vigor na medição, em watts.
+    ///
+    /// Sem isto, duas corridas com limites diferentes ficariam com a MESMA
+    /// identidade de configuração e o Δ% entre elas atribuiria à configuração
+    /// uma diferença que era de watts. Com a coluna, comparar 370 W e 250 W
+    /// deixa de ser uma armadilha e vira o experimento que o card de energia
+    /// promete.
+    pub power_limit_w: Option<u32>,
     /// Os pares INI legíveis do perfil medido, em JSON — é o que permite à
     /// tela mostrar a configuração sem decifrar o hash de `profile_key`.
     pub profile_json: Option<String>,
@@ -92,12 +101,13 @@ fn run_from(r: &Row<'_>) -> rusqlite::Result<PerfRun> {
         profile_json: r.get(12)?,
         n_prompt: r.get::<_, Option<i64>>(13)?.map(|v| v.max(0) as u32),
         n_depth: r.get::<_, Option<i64>>(14)?.map(|v| v.max(0) as u32),
+        power_limit_w: r.get::<_, Option<i64>>(15)?.map(|v| v.max(0) as u32),
     })
 }
 
 const COLUNAS: &str = "machine_key, model_id, profile_key, build_number, gen_tps, prompt_tps, \
                        gen_stddev, gpu_bytes, source, suspect, measured_at, gpu_name, \
-                       profile_json, n_prompt, n_depth";
+                       profile_json, n_prompt, n_depth, power_limit_w";
 
 impl Store {
     #[allow(clippy::too_many_arguments)]
@@ -107,8 +117,8 @@ impl Store {
             "INSERT INTO perf_runs (machine_key, model_id, profile_key, build_number,
                                     gen_tps, prompt_tps, gen_stddev, gpu_bytes, source,
                                     suspect, measured_at, gpu_name, profile_json,
-                                    n_prompt, n_depth)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                                    n_prompt, n_depth, power_limit_w)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 run.machine_key,
                 run.model_id,
@@ -125,6 +135,7 @@ impl Store {
                 run.profile_json,
                 run.n_prompt.map(|v| v as i64),
                 run.n_depth.map(|v| v as i64),
+                run.power_limit_w.map(|v| v as i64),
             ],
         )?;
         Ok(())
@@ -317,11 +328,20 @@ pub fn annotate_deltas(rows: &[PerfRun]) -> Vec<Delta> {
             if atual.n_depth.unwrap_or(0) != anterior.n_depth.unwrap_or(0) {
                 return nada("promptChanged");
             }
+            // Limite de energia diferente NÃO anula o percentual: medir o
+            // efeito dos watts é justamente o que o card de energia oferece.
+            // O que muda é a razão — a tela precisa dizer que a diferença é
+            // de watts, e não creditá-la à configuração.
+            let energia_mudou = match (atual.power_limit_w, anterior.power_limit_w) {
+                (Some(a), Some(b)) => a != b,
+                _ => false,
+            };
 
+            let razao_ok = if energia_mudou { "powerChanged" } else { "ok" };
             let (gen_pct, gen_reason) = if anterior.gen_tps > 0.0 {
                 (
                     Some((atual.gen_tps - anterior.gen_tps) / anterior.gen_tps * 100.0),
-                    "ok",
+                    razao_ok,
                 )
             } else {
                 // Sem base positiva não existe percentual honesto — e um
@@ -335,7 +355,7 @@ pub fn annotate_deltas(rows: &[PerfRun]) -> Vec<Delta> {
             } else if anterior.prompt_tps > 0.0 {
                 (
                     Some((atual.prompt_tps - anterior.prompt_tps) / anterior.prompt_tps * 100.0),
-                    "ok",
+                    razao_ok,
                 )
             } else {
                 (None, "first")
@@ -372,7 +392,44 @@ mod tests {
             profile_json: None,
             n_prompt: Some(512),
             n_depth: Some(0),
+            power_limit_w: None,
         }
+    }
+
+    /// Watts diferentes NÃO invalidam a comparação — medir o efeito da
+    /// energia é o objetivo. O que muda é a razão, para a tela poder dizer
+    /// que a diferença veio dos watts e não da configuração.
+    #[test]
+    fn a_different_power_limit_is_flagged_but_still_compared() {
+        let mut novo = run("perfil-a", 40.0, 100);
+        let mut antigo = run("perfil-a", 50.0, 100);
+        novo.power_limit_w = Some(250);
+        antigo.power_limit_w = Some(370);
+
+        let annos = annotate_deltas(&[novo, antigo]);
+        assert_eq!(annos[0].gen_reason, "powerChanged");
+        let pct = annos[0].gen_pct.expect("o percentual continua valendo");
+        assert!(
+            (pct - (-20.0)).abs() < 0.01,
+            "40 contra 50 é -20%, deu {pct}"
+        );
+    }
+
+    /// Mesmo limite, ou limite desconhecido em uma das linhas: comparação
+    /// normal. Marcar tudo seria ruído.
+    #[test]
+    fn the_same_power_limit_compares_as_usual() {
+        let mut a = run("perfil-a", 44.0, 100);
+        let mut b = run("perfil-a", 40.0, 100);
+        a.power_limit_w = Some(370);
+        b.power_limit_w = Some(370);
+        assert_eq!(annotate_deltas(&[a, b])[0].gen_reason, "ok");
+
+        // Linha antiga, gravada antes da coluna existir.
+        let c = run("perfil-a", 44.0, 100);
+        let mut d = run("perfil-a", 40.0, 100);
+        d.power_limit_w = Some(370);
+        assert_eq!(annotate_deltas(&[c, d])[0].gen_reason, "ok");
     }
 
     /// Como `run`, mas com o instante escolhido — o histórico ordena por ele.

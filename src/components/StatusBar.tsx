@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { genStats } from "../lib/llama";
-import { formatBytes } from "../lib/format";
+import { formatBytes, formatCount } from "../lib/format";
 import MonitorPopover from "./monitor/MonitorPopover";
 import { telemetryStore } from "./monitor/telemetryStore";
 import { ClusterChip } from "./server/ClusterPanel";
+import { getServerLive, type ServerLive } from "../lib/api";
 
 function Meter({ percent }: { percent: number }) {
   const p = Math.max(0, Math.min(100, percent));
@@ -46,6 +47,26 @@ export default function StatusBar() {
   const gen = useSyncExternalStore(genStats.subscribe, genStats.get);
   const [monitorOpen, setMonitorOpen] = useState(false);
   const monitorRef = useRef<HTMLDivElement>(null);
+  // O que o servidor está fazendo agora. Uma consulta só responde as três
+  // perguntas que antes moravam três telas adiante — e capta o tráfego de
+  // QUALQUER cliente, inclusive o harness batendo direto na API.
+  const [live, setLive] = useState<ServerLive | null>(null);
+
+  useEffect(() => {
+    let vivo = true;
+    const olhar = () =>
+      getServerLive()
+        .then((l) => vivo && setLive(l))
+        .catch(() => vivo && setLive(null));
+    void olhar();
+    // 2 s: rápido o bastante para a velocidade parecer viva, devagar o
+    // bastante para não virar carga no próprio servidor que se mede.
+    const id = window.setInterval(olhar, 2000);
+    return () => {
+      vivo = false;
+      window.clearInterval(id);
+    };
+  }, []);
 
   // Fecha o popover ao clicar fora dele.
   useEffect(() => {
@@ -88,6 +109,18 @@ export default function StatusBar() {
                   }`}
                 />
               )}
+              {/* Watts ao lado da utilização: é o par que revela, na
+                  própria máquina, que a placa gasta muito para render pouco
+                  — esta carga é limitada por banda de memória. */}
+              {g.powerW != null && (
+                <Stat
+                  label={t("status.power")}
+                  percent={
+                    g.powerLimitW ? (g.powerW / g.powerLimitW) * 100 : 0
+                  }
+                  detail={`${g.powerW} W${g.powerLimitW ? ` / ${g.powerLimitW} W` : ""}`}
+                />
+              )}
               {g.vramUsedBytes != null && (
                 <Stat
                   label={t("status.vram")}
@@ -125,12 +158,41 @@ export default function StatusBar() {
       )}
 
       <div className="ml-auto flex items-center gap-3">
+        {live?.model && (
+          <span
+            title={live.model}
+            className="flex max-w-56 items-center gap-1.5 text-[11px] text-dim"
+          >
+            <span
+              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                live.generating ? "animate-pulse bg-accent" : "bg-ok"
+              }`}
+            />
+            <span className="truncate">{live.model}</span>
+          </span>
+        )}
+        {/* Janela ocupada: a conta que decide quando a conversa vai começar a
+            esquecer o começo. */}
+        {live?.ctxTotal != null && live.ctxUsed != null && live.ctxTotal > 0 && (
+          <span
+            title={t("status.contextTitle")}
+            className="flex items-center gap-2 text-[11px] tabular-nums text-dim"
+          >
+            <span className="font-medium">{t("status.context")}</span>
+            <Meter percent={(live.ctxUsed / live.ctxTotal) * 100} />
+            <span>
+              {formatCount(live.ctxUsed)} / {formatCount(live.ctxTotal)}
+            </span>
+          </span>
+        )}
         <ClusterChip />
-        {gen.generating && (
+        {/* A velocidade do SERVIDOR vem primeiro: ela conta o harness e
+            qualquer app externo, não só o chat daqui. */}
+        {(live?.generating || gen.generating) && (
           <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-accent">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
-            {gen.tokensPerSec != null
-              ? `${gen.tokensPerSec.toFixed(1)} ${t("status.tokensPerSec")}`
+            {(live?.tokensPerSec ?? gen.tokensPerSec) != null
+              ? `${(live?.tokensPerSec ?? gen.tokensPerSec)!.toFixed(1)} ${t("status.tokensPerSec")}`
               : t("chat.generating")}
           </span>
         )}

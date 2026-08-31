@@ -35,6 +35,10 @@ export interface GpuTelemetry {
   utilPercent: number | null;
   vramUsedBytes: number | null;
   vramTotalBytes: number;
+  /** Consumo agora, em watts (`null` fora de placas NVIDIA). */
+  powerW?: number | null;
+  /** Limite em vigor, em watts — a régua do número acima. */
+  powerLimitW?: number | null;
 }
 
 export interface Telemetry {

@@ -60,6 +60,15 @@ pub struct LocalGgufMeta {
     /// "não sei", não "não tem": arquiteturas novas podem usar outra chave, e
     /// a interface nunca deve bloquear por isso.
     pub nextn_layers: Option<u32>,
+    /// Níveis de esforço de raciocínio que o template ACEITA, na ordem em
+    /// que ele os lista.
+    ///
+    /// Não é preferência nem chute: o template do Qwen3.8 recusa qualquer
+    /// outro valor com `raise_exception`, e o llama.cpp devolve erro 500. Os
+    /// nomes saem da própria linha que faz essa validação, então o seletor da
+    /// interface oferece exatamente o que o arquivo aceita — nem um a mais,
+    /// nem um a menos.
+    pub reasoning_efforts: Vec<String>,
     /// O chat template aceita `enable_thinking` — isto é, o raciocínio do
     /// modelo pode ser LIGADO E DESLIGADO por quem chama, via
     /// `chat_template_kwargs`.
@@ -96,6 +105,7 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
 
     let mut arch: Option<String> = None;
     let mut thinking_toggle = false;
+    let mut reasoning_efforts: Vec<String> = Vec::new();
     let mut valores: Vec<(String, u64)> = Vec::new();
 
     for _ in 0..n_kv {
@@ -135,7 +145,9 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
                 if key == "general.architecture" {
                     arch = Some(read_string(&mut r)?);
                 } else if key == "tokenizer.chat_template" {
-                    thinking_toggle = read_string(&mut r)?.contains("enable_thinking");
+                    let tpl = read_string(&mut r)?;
+                    thinking_toggle = tpl.contains("enable_thinking");
+                    reasoning_efforts = niveis_de_esforco(&tpl);
                 } else {
                     skip_string(&mut r)?;
                 }
@@ -169,6 +181,7 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
         ffn_length: acha("feed_forward_length"),
         nextn_layers: acha("nextn_predict_layers"),
         thinking_toggle,
+        reasoning_efforts,
     })
 }
 
@@ -249,6 +262,37 @@ fn skip_array<R: Read + Seek>(r: &mut R) -> Option<()> {
     let total = n.checked_mul(fixo)?;
     r.seek(SeekFrom::Current(i64::try_from(total).ok()?)).ok()?;
     Some(())
+}
+
+/// Os níveis de esforço que o chat template aceita.
+///
+/// A fonte é a linha em que o próprio template recusa o que não conhece —
+/// no Qwen3.8, `resolved_reasoning_effort not in ('xhigh', 'medium', 'low')`.
+/// Ler dali é o oposto de adivinhar: um nível que passe por aqui é um nível
+/// que o modelo aceita, e a interface não oferece nada que dê erro 500.
+///
+/// Template sem essa validação devolve lista vazia — aí o app fica no que
+/// sabe (ligado/desligado), em vez de inventar nomes.
+fn niveis_de_esforco(tpl: &str) -> Vec<String> {
+    let Some(i) = tpl.find("reasoning_effort not in") else {
+        return Vec::new();
+    };
+    let resto = &tpl[i..];
+    let Some(a) = resto.find('(') else {
+        return Vec::new();
+    };
+    let Some(b) = resto[a..].find(')') else {
+        return Vec::new();
+    };
+    resto[a + 1..a + b]
+        .split(',')
+        .filter_map(|p| {
+            let n = p.trim().trim_matches('\'').trim_matches('"').trim();
+            // Só nomes simples: o que vier com espaço ou vazio não é nível.
+            (!n.is_empty() && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+                .then(|| n.to_string())
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -398,6 +442,38 @@ mod tests {
             ("llama.block_count", KV::U32(32)),
         ]));
         assert!(!read_local_meta(nada.path()).thinking_toggle);
+    }
+
+    /// Os níveis saem da linha em que o template RECUSA o que não conhece —
+    /// a mesma que faz o llama.cpp devolver 500 para um valor inventado.
+    #[test]
+    fn the_effort_levels_come_from_the_templates_own_validation() {
+        let tpl = "{%- if resolved_reasoning_effort not in ('xhigh', 'medium', 'low') %}\
+                   {{- raise_exception('Unexpected reasoning effort') }}{%- endif %}";
+        let f = escreve(&gguf(&[
+            ("general.architecture", KV::Str("qwen35")),
+            ("qwen35.block_count", KV::U32(65)),
+            ("tokenizer.chat_template", KV::Str(tpl)),
+        ]));
+        let meta = read_local_meta(f.path());
+        assert_eq!(meta.reasoning_efforts, vec!["xhigh", "medium", "low"]);
+    }
+
+    /// Template sem a validação não ganha níveis inventados: o app fica no
+    /// que sabe (ligado/desligado) em vez de oferecer um valor que dá erro.
+    #[test]
+    fn a_template_without_that_line_offers_no_levels() {
+        let f = escreve(&gguf(&[
+            ("general.architecture", KV::Str("qwen35")),
+            ("qwen35.block_count", KV::U32(65)),
+            (
+                "tokenizer.chat_template",
+                KV::Str("{%- if enable_thinking %}<think>{%- endif %}"),
+            ),
+        ]));
+        let meta = read_local_meta(f.path());
+        assert!(meta.thinking_toggle, "o interruptor continua sendo lido");
+        assert!(meta.reasoning_efforts.is_empty());
     }
 
     /// Lixo, arquivo vazio e magic errado devolvem "não sei" — nunca pânico.

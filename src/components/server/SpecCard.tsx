@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { getSetting, setSetting } from "../../lib/api";
 import {
   onTuneSpec,
   tuneSpecCancel,
@@ -20,6 +21,9 @@ import {
   type SpecOutcome,
   type SpecQuality,
 } from "../../lib/tuning";
+
+/** Onde mora a escolha de deixar o app medir sozinho. */
+const AUTO_KEY = "tune.spec.auto";
 
 const SELO: Record<SpecQuality, string> = {
   match: "text-ok",
@@ -92,6 +96,24 @@ export default function SpecCard({ model }: { model: string }) {
   const [medindo, setMedindo] = useState(false);
   const [outcome, setOutcome] = useState<SpecOutcome | null>(null);
   const [veredito, setVeredito] = useState<string | null>(null);
+  // O interruptor do recurso inteiro. Ligado por padrão: a promessa é que o
+  // app se ajuste sozinho, e quem não quiser desliga aqui — sem precisar
+  // saber que existe um ajuste chamado `tune.spec.auto`.
+  const [auto, setAuto] = useState(true);
+
+  useEffect(() => {
+    void getSetting(AUTO_KEY)
+      .then((v) => setAuto(v !== "off"))
+      .catch(() => {});
+  }, []);
+
+  const alternarAuto = (ligado: boolean) => {
+    setAuto(ligado);
+    void setSetting(AUTO_KEY, ligado ? "idle" : "off").catch(() => {});
+    // Desligar no meio de uma bateria também a interrompe: senão o
+    // interruptor mentiria por alguns minutos.
+    if (!ligado) void tuneSpecCancel();
+  };
 
   // A medição roda sozinha em segundo plano; o card é a janela para ela.
   useEffect(() => {
@@ -143,6 +165,23 @@ export default function SpecCard({ model }: { model: string }) {
           <p className="text-[12px] leading-relaxed text-dim">
             {t("tune.spec.card.subtitle")}
           </p>
+
+          <label className="mt-3 flex cursor-pointer items-start gap-2.5">
+            <input
+              type="checkbox"
+              checked={auto}
+              onChange={(e) => alternarAuto(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent,#7c5cff)]"
+            />
+            <span className="min-w-0">
+              <span className="block text-[12px] text-ink">
+                {t("tune.spec.auto.label")}
+              </span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-dim">
+                {t("tune.spec.auto.hint")}
+              </span>
+            </span>
+          </label>
 
           {medindo && (
             <div className="mt-3 flex items-center gap-3">

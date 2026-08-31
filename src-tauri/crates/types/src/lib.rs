@@ -192,6 +192,17 @@ pub struct GpuTelemetry {
     pub util_percent: Option<f32>,
     pub vram_used_bytes: Option<u64>,
     pub vram_total_bytes: u64,
+    /// Consumo agora, em watts.
+    ///
+    /// Vale mais do que parece nesta carga: gerar tokens é limitado pela
+    /// BANDA de memória, não pelo quanto a placa pode queimar. Ver os watts
+    /// ao lado dos tokens por segundo é o que permite descobrir, na própria
+    /// máquina, que baixar o limite custa quase nada em velocidade.
+    #[serde(default)]
+    pub power_w: Option<u32>,
+    /// Limite em vigor, em watts — a régua para o número acima.
+    #[serde(default)]
+    pub power_limit_w: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -100,6 +100,28 @@ export const deleteModel = (repoId: string, name: string) =>
 export const getServerStatus = () =>
   isTauri ? invoke<ServerStatus>("server_status") : mocks.serverStatus();
 
+/** O que o servidor está fazendo AGORA — modelo, janela ocupada, velocidade. */
+export interface ServerLive {
+  running: boolean;
+  model: string | null;
+  ctxUsed: number | null;
+  ctxTotal: number | null;
+  generating: boolean;
+  tokensPerSec: number | null;
+}
+
+export const getServerLive = (): Promise<ServerLive> =>
+  isTauri
+    ? invoke<ServerLive>("server_live")
+    : Promise.resolve({
+        running: true,
+        model: "Qwen3.8-27B-UD-IQ4_XS.gguf",
+        ctxUsed: 48_320,
+        ctxTotal: 128_000,
+        generating: true,
+        tokensPerSec: 41.7,
+      });
+
 export const startServer = () =>
   isTauri ? invoke<ServerStatus>("server_start") : mocks.startServer();
 

@@ -25,6 +25,11 @@ use std::collections::HashMap;
 
 use lr_types::{GpuInfo, GpuTelemetry, GpuVendor};
 use nvml_wrapper::Nvml;
+
+/// O NVML fala em miliwatts; a tela fala em watts.
+fn mw_para_w(mw: u32) -> u32 {
+    mw.div_ceil(1000)
+}
 use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
 use windows::Win32::Foundation::LUID;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
@@ -321,6 +326,8 @@ impl WinGpuMonitor {
             let mut vram_used = slot.and_then(|s| query_local_vram_used(&s.adapter));
             let mut vram_total = gpu.vram_total_bytes;
             let mut util = None;
+            let mut power_w = None;
+            let mut power_limit_w = None;
 
             if gpu.vendor == GpuVendor::Nvidia {
                 if let Some(nvml) = self.nvml.as_ref()
@@ -342,6 +349,10 @@ impl WinGpuMonitor {
                             .ok()
                             .map(|t| t as f32);
                     }
+                    // Watts na mesma passada: o NVML já está aberto e o
+                    // device já está em mãos.
+                    power_w = dev.power_usage().ok().map(mw_para_w);
+                    power_limit_w = dev.power_management_limit().ok().map(mw_para_w);
                 }
             } else if let (Some(map), Some(slot)) = (pdh_util.as_ref(), slot) {
                 util = map.get(&slot.luid).copied();
@@ -351,6 +362,8 @@ impl WinGpuMonitor {
                 util_percent: util,
                 vram_used_bytes: vram_used,
                 vram_total_bytes: vram_total,
+                power_w,
+                power_limit_w,
             });
         }
         (out, temp_c)

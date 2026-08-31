@@ -172,6 +172,12 @@ async fn modelos_locais(state: &AppState) -> CmdResult<(String, Option<String>, 
                 id,
                 context_window: Some(ctx),
                 max_tokens: Some(lr_dshhost::settings::teto_de_saida(ctx)),
+                // Os níveis vêm do template do arquivo; vazio significa
+                // "só liga e desliga".
+                efforts: meta
+                    .as_ref()
+                    .map(|m| m.reasoning_efforts.clone())
+                    .unwrap_or_default(),
                 thinking: meta.is_some_and(|m| m.thinking_toggle),
             }
         })
@@ -252,6 +258,7 @@ async fn montar_provedores(
                 // Idem o interruptor de raciocínio: cada provedor remoto tem
                 // o seu formato, e declarar o do Qwen aqui daria um botão
                 // que não mexe em nada.
+                efforts: Vec::new(),
                 thinking: false,
             })
             .collect();
@@ -295,6 +302,7 @@ async fn montar_provedores(
                             // por trás do 9router é uma conta de terceiro,
                             // com tetos e formatos próprios.
                             max_tokens: None,
+                            efforts: Vec::new(),
                             thinking: false,
                         })
                         .collect(),

@@ -19,7 +19,10 @@
     "tokensPerSec": "tok/s",
     "disk": "DISK",
     "free": "free",
-    "net": "NET"
+    "net": "NET",
+    "power": "POWER",
+    "context": "CONTEXT",
+    "contextTitle": "Context window in use on the active slot"
   },
   "badge": {
     "fullGpu": "Runs fully on GPU",
@@ -707,6 +710,10 @@
         "rejected": "The fastest one changed the answer — refused",
         "deferred": "Deferred: the machine was in use",
         "unverifiable": "Could not be verified on this machine"
+      },
+      "auto": {
+        "label": "Measure and tune speculation on its own",
+        "hint": "Once per model, while the machine is idle: the app tests the combinations, checks that the answer did not change, and applies the one that pays off most. The engine restarts between tests; any use of yours interrupts and defers it."
       }
     },
     "fullConfig": "Full configuration",
@@ -732,7 +739,9 @@
       "gpuSeries": "The series is per GPU and driver: switching cards or updating the driver starts a new series.",
       "bandwidth": "Ceiling: ~{{ram}} GB/s of system memory against ~{{gpu}} GB/s on the card. With experts in RAM, tokens per second is a bandwidth number, not a GPU number.",
       "engineUpdated": "engine updated — not comparable",
-      "noBaseline": "no baseline to compare against"
+      "noBaseline": "no baseline to compare against",
+      "powerChanged": "The card's power limit changed between the two runs — the difference may come from the watts, not the configuration.",
+      "powerLimit": "The card's power limit during this run"
     },
     "sweep": {
       "title": "Curve",
@@ -1148,5 +1157,16 @@
         "hint": "Lets CUDA spill past VRAM into system memory instead of failing to load. It never fails — and it can get very slow without saying so."
       }
     }
+  },
+  "power": {
+    "title": "GPU power",
+    "subtitle": "Generating tokens is limited by the card's memory bandwidth, not by how much it may burn — so lowering the limit usually costs almost nothing in speed and takes a lot of heat away. Measure it here instead of taking anyone's word: the performance history above shows before and after.",
+    "limit": "limit",
+    "standard": "Stock ({{w}} W)",
+    "eco": "Efficient ({{w}} W)",
+    "applying": "applying…",
+    "range": "The driver accepts {{min}} W to {{max}} W.",
+    "notPersistent": "The limit returns to stock when you restart the computer or the driver reloads — that is NVIDIA's design, and no application works around it.",
+    "needsAdmin": "Applying requires administrator: Windows will ask for confirmation."
   }
 }
