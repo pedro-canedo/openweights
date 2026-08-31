@@ -29,6 +29,10 @@ Grab the file for your system from the
 | Linux x64 (Debian/Ubuntu) | `OpenWeights_x.y.z_amd64.deb` |
 | Linux x64 (any distro) | `OpenWeights_x.y.z_amd64.AppImage` |
 
+On Windows, installing leaves a **Desktop shortcut** plus the Start menu entry —
+no hunting for the app afterwards. Prefer it without the shortcut? Delete it:
+updates will not bring it back.
+
 Once installed, the app **checks for new versions on its own** and offers a
 one-click update — you do not need to come back here.
 

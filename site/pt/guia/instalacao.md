@@ -29,6 +29,10 @@ Pegue o arquivo do seu sistema na
 | Linux x64 (Debian/Ubuntu) | `OpenWeights_x.y.z_amd64.deb` |
 | Linux x64 (qualquer distro) | `OpenWeights_x.y.z_amd64.AppImage` |
 
+No Windows, a instalação deixa o **atalho na Área de Trabalho** e a entrada no
+menu Iniciar — não é preciso caçar o app depois. Quem prefere sem o atalho pode
+apagá-lo: as atualizações não o trazem de volta.
+
 Depois de instalado, o app **procura versões novas sozinho** e oferece a
 atualização em um clique — você não precisa voltar aqui.
 

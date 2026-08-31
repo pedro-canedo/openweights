@@ -52,6 +52,11 @@
     "macOS": {
       "signingIdentity": "-"
     },
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/installer-hooks.nsh"
+      }
+    },
     "createUpdaterArtifacts": true
   },
   "plugins": {
