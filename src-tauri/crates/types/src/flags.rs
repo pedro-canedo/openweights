@@ -215,7 +215,17 @@ pub fn curated_flags() -> Vec<FlagSpec> {
         FlagSpec::new("n-cpu-moe", "memory", int(0, 999), PerModel)
             .aka(&["ncmoe"])
             .req(&[R::MoeModel])
+            .conflita(&["cpu-moe"])
             .tipado("ncmoe"),
+        // O ponto de partida da busca: TODOS os especialistas na CPU. É o
+        // extremo seguro — se o modelo carrega assim, carrega em qualquer
+        // ponto intermediário — e é de onde o otimizador desce até faltar
+        // VRAM. Sem campo tipado de propósito: quem escolhe um número é o
+        // `n-cpu-moe`, e ter os dois seria a mesma decisão por duas portas.
+        FlagSpec::new("cpu-moe", "memory", Bool, PerModel)
+            .aka(&["cmoe"])
+            .req(&[R::MoeModel])
+            .conflita(&["n-cpu-moe"]),
         FlagSpec::new(
             "split-mode",
             "memory",
@@ -232,12 +242,15 @@ pub fn curated_flags() -> Vec<FlagSpec> {
         FlagSpec::new("no-kv-offload", "memory", Bool, PerModel)
             .aka(&["nkvo"])
             .tipado("kvOffload"),
+        // Obsoletas no llama.cpp desde a b10441. Continuam no catálogo para
+        // a busca reconhecer o nome que a pessoa aprendeu — e apontam para o
+        // mesmo controle tipado que `load-mode`, que é onde a escolha mora.
         FlagSpec::new("no-mmap", "memory", Bool, PerModel)
-            .conflita(&["mlock"])
-            .tipado("mmap"),
+            .conflita(&["mlock", "load-mode"])
+            .tipado("loadMode"),
         FlagSpec::new("mlock", "memory", Bool, PerModel)
-            .conflita(&["no-mmap"])
-            .tipado("mlock"),
+            .conflita(&["no-mmap", "load-mode"])
+            .tipado("loadMode"),
         FlagSpec::new("fit", "memory", opts(&["on", "off"]), PerModel).preset("on"),
         FlagSpec::new(
             "load-mode",
@@ -247,7 +260,8 @@ pub fn curated_flags() -> Vec<FlagSpec> {
         )
         .aka(&["lm"])
         .preset("auto")
-        .conflita(&["no-mmap", "mlock"]),
+        .conflita(&["no-mmap", "mlock"])
+        .tipado("loadMode"),
         // ── contexto & lote ─────────────────────────────────────────────
         FlagSpec::new("ctx-size", "context", int(512, 262_144), PerModel)
             .aka(&["c"])
@@ -626,6 +640,62 @@ pub struct GlobalFlag {
     /// `true` = flag de presença (kind [`FlagKind::Bool`]).
     #[serde(default)]
     pub switch: bool,
+}
+
+/// Uma variável de ambiente do processo do motor, como fica gravada no
+/// setting `server_env_vars` (JSON de uma lista destas).
+///
+/// Existe porque nem tudo que muda o comportamento do llama.cpp é flag: o
+/// backend CUDA decide pelo ambiente, e a decisão mais cara — a partir de que
+/// tamanho de lote um especialista viaja para a VRAM em vez de ser
+/// multiplicado na CPU — mora em `GGML_OP_OFFLOAD_MIN_BATCH`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvVar {
+    pub key: String,
+    pub value: String,
+}
+
+/// Uma variável que o app conhece e sabe explicar. O rótulo e a dica moram no
+/// i18n (`flags.env.<KEY>.*`); aqui fica só o que não depende de idioma.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnvSpec {
+    pub key: String,
+    pub kind: FlagKind,
+    /// Valor padrão do llama.cpp, quando conhecido — informativo, nunca gravado.
+    pub default: Option<String>,
+}
+
+/// As variáveis de ambiente curadas, com o tipo do controle que a tela mostra.
+///
+/// Deliberadamente curta: cada entrada aqui é uma promessa de que existe no
+/// binário e de que o app sabe dizer o que ela faz. Qualquer outra continua
+/// possível — a tela aceita nome e valor livres.
+pub fn curated_env_vars() -> Vec<EnvSpec> {
+    vec![
+        EnvSpec {
+            key: "GGML_OP_OFFLOAD_MIN_BATCH".into(),
+            kind: int(1, 8192),
+            default: Some("32".into()),
+        },
+        EnvSpec {
+            key: "GGML_CUDA_ENABLE_UNIFIED_MEMORY".into(),
+            kind: FlagKind::Bool,
+            default: Some("0".into()),
+        },
+    ]
+}
+
+/// Variáveis que o app controla e a tela nunca grava.
+///
+/// `LLAMA_API_KEY` é o segredo, e quem o define é o campo de chave de API.
+/// O prefixo `LLAMA_ARG_*` é a outra porta para as MESMAS flags do INI: uma
+/// variável dessas atropelaria em silêncio a configuração por modelo, que é
+/// exatamente o que o app promete respeitar.
+pub fn env_is_managed(key: &str) -> bool {
+    let k = key.trim().to_ascii_uppercase();
+    k == "LLAMA_API_KEY" || k.starts_with("LLAMA_ARG_")
 }
 
 /// Problemas que a validação devolve — cada código tem texto no i18n

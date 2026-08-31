@@ -187,6 +187,9 @@ mod tests {
             avx2: true,
             avx512: false,
             ram_total_bytes: 32 << 30,
+            ram_speed_mts: None,
+            ram_channels: None,
+            ram_bandwidth_bytes_s: None,
             gpus,
         }
     }
@@ -199,6 +202,7 @@ mod tests {
             is_integrated: false,
             driver_version: Some(driver.into()),
             cuda_compute: Some(cc),
+            bandwidth_bytes_s: None,
         }
     }
 
@@ -236,6 +240,7 @@ mod tests {
             is_integrated: false,
             driver_version: None,
             cuda_compute: None,
+            bandwidth_bytes_s: None,
         }]);
         assert_eq!(select_variant(&p), BackendVariant::Vulkan);
     }

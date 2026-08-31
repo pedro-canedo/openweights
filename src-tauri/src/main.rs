@@ -6,6 +6,7 @@ mod commands_cluster;
 mod commands_dsh;
 mod commands_flags;
 mod commands_harness;
+mod commands_power;
 mod commands_providers;
 mod commands_tuning;
 mod desktop_host;
@@ -147,7 +148,11 @@ fn main() {
             commands_tuning::tune_apply,
             commands_tuning::tune_bench,
             commands_tuning::tune_bench_cancel,
+            commands_tuning::tune_sweep,
             commands_tuning::tune_spec_bench,
+            commands_tuning::tune_spec_cancel,
+            commands_power::gpu_power_status,
+            commands_power::gpu_power_set,
             commands_tuning::perf_history,
             commands::chats_list,
             commands::chat_create,

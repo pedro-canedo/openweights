@@ -152,6 +152,11 @@ impl Store {
         // SCHEMA de perf_runs (no-op aqui).
         ensure_column(&conn, "perf_runs", "gpu_name", "TEXT")?;
         ensure_column(&conn, "perf_runs", "profile_json", "TEXT")?;
+        // Com que tamanho de prompt e com que profundidade o número saiu.
+        // Sem isso, a tabela comparava 800 tok/s num prompt de 512 com 300
+        // num de 4096 e chamava a diferença de piora.
+        ensure_column(&conn, "perf_runs", "n_prompt", "INTEGER")?;
+        ensure_column(&conn, "perf_runs", "n_depth", "INTEGER")?;
         engine_presets::init(&conn)?;
         // Totais "desde sempre" das estatísticas de serviço (por modelo).
         serve::init(&conn)?;

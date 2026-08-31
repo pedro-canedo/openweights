@@ -26,6 +26,35 @@ pub struct LocalGgufMeta {
     /// Especialistas MoE (`{arch}.expert_count`) — presente e > 0 quer dizer
     /// "Mixture of Experts", que é o que habilita `n-cpu-moe`.
     pub n_experts: Option<u32>,
+    /// Especialistas que DISPARAM por token (`{arch}.expert_used_count`).
+    ///
+    /// É a razão de um MoE caber onde não deveria: o arquivo tem 256
+    /// especialistas, mas cada token acorda oito. O resto fica parado — e
+    /// peso parado pode morar na RAM do sistema.
+    pub n_experts_used: Option<u32>,
+    /// Cabeças de atenção KV (`{arch}.attention.head_count_kv`). Entra direto
+    /// na conta do KV cache, que até aqui era chutada por faixa de parâmetros.
+    pub n_kv_heads: Option<u32>,
+    /// Cabeças de atenção (`{arch}.attention.head_count`).
+    pub n_heads: Option<u32>,
+    /// Dimensão do embedding (`{arch}.embedding_length`) — de onde sai o
+    /// `head_dim` quando o arquivo não o declara.
+    pub embedding_length: Option<u32>,
+    /// Tamanho da chave por cabeça (`{arch}.attention.key_length`), quando
+    /// declarado. É o `head_dim` sem intermediários.
+    pub key_length: Option<u32>,
+    /// Tamanho do valor por cabeça (`{arch}.attention.value_length`).
+    pub value_length: Option<u32>,
+    /// Dimensão interna de UM especialista
+    /// (`{arch}.expert_feed_forward_length`) — com o número de especialistas,
+    /// é o que diz que fatia do arquivo pode sair da placa.
+    pub expert_ffn_length: Option<u32>,
+    /// Dimensão interna do especialista COMPARTILHADO
+    /// (`{arch}.expert_shared_feed_forward_length`), que dispara em todo
+    /// token e por isso fica na placa.
+    pub expert_shared_ffn_length: Option<u32>,
+    /// Dimensão interna do FFN denso (`{arch}.feed_forward_length`).
+    pub ffn_length: Option<u32>,
     /// Camadas de previsão multi-token (`{arch}.nextn_predict_layers`) — a
     /// cabeça MTP dos GGUF que suportam `--spec-type draft-mtp`. Ausente é
     /// "não sei", não "não tem": arquiteturas novas podem usar outra chave, e
@@ -129,6 +158,15 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
         n_layers: acha("block_count"),
         context_length: acha("context_length"),
         n_experts: acha("expert_count"),
+        n_experts_used: acha("expert_used_count"),
+        n_kv_heads: acha("attention.head_count_kv"),
+        n_heads: acha("attention.head_count"),
+        embedding_length: acha("embedding_length"),
+        key_length: acha("attention.key_length"),
+        value_length: acha("attention.value_length"),
+        expert_ffn_length: acha("expert_feed_forward_length"),
+        expert_shared_ffn_length: acha("expert_shared_feed_forward_length"),
+        ffn_length: acha("feed_forward_length"),
         nextn_layers: acha("nextn_predict_layers"),
         thinking_toggle,
     })
@@ -139,6 +177,15 @@ fn guarda(valores: &mut Vec<(String, u64)>, key: &str, v: u64) {
     if key.ends_with(".block_count")
         || key.ends_with(".context_length")
         || key.ends_with(".expert_count")
+        || key.ends_with(".expert_used_count")
+        || key.ends_with(".attention.head_count_kv")
+        || key.ends_with(".attention.head_count")
+        || key.ends_with(".attention.key_length")
+        || key.ends_with(".attention.value_length")
+        || key.ends_with(".embedding_length")
+        || key.ends_with(".expert_feed_forward_length")
+        || key.ends_with(".expert_shared_feed_forward_length")
+        || key.ends_with(".feed_forward_length")
         || key.ends_with(".nextn_predict_layers")
     {
         valores.push((key.to_string(), v));
@@ -285,6 +332,37 @@ mod tests {
         let meta = read_local_meta(f.path());
         assert_eq!(meta.n_experts, Some(128));
         assert_eq!(meta.nextn_layers, Some(1));
+    }
+
+    /// A geometria que faz a conta de memória parar de ser chute: quantos
+    /// especialistas disparam por token, quantas cabeças de KV existem e que
+    /// fatia do arquivo é especialista roteado.
+    #[test]
+    fn the_geometry_that_decides_what_can_leave_the_card() {
+        let f = escreve(&gguf(&[
+            ("general.architecture", KV::Str("qwen36moe")),
+            ("qwen36moe.block_count", KV::U32(48)),
+            ("qwen36moe.expert_count", KV::U32(128)),
+            ("qwen36moe.expert_used_count", KV::U32(8)),
+            ("qwen36moe.attention.head_count", KV::U32(32)),
+            ("qwen36moe.attention.head_count_kv", KV::U32(4)),
+            ("qwen36moe.attention.key_length", KV::U32(128)),
+            ("qwen36moe.attention.value_length", KV::U32(128)),
+            ("qwen36moe.embedding_length", KV::U32(4096)),
+            ("qwen36moe.expert_feed_forward_length", KV::U32(768)),
+            ("qwen36moe.expert_shared_feed_forward_length", KV::U32(512)),
+            ("qwen36moe.feed_forward_length", KV::U32(12288)),
+        ]));
+        let meta = read_local_meta(f.path());
+        assert_eq!(meta.n_experts_used, Some(8), "8 de 128 disparam por token");
+        assert_eq!(meta.n_kv_heads, Some(4));
+        assert_eq!(meta.n_heads, Some(32));
+        assert_eq!(meta.key_length, Some(128));
+        assert_eq!(meta.value_length, Some(128));
+        assert_eq!(meta.embedding_length, Some(4096));
+        assert_eq!(meta.expert_ffn_length, Some(768));
+        assert_eq!(meta.expert_shared_ffn_length, Some(512));
+        assert_eq!(meta.ffn_length, Some(12288));
     }
 
     /// O botão de raciocínio do harness sai daqui: o template do Qwen3 lê

@@ -66,6 +66,19 @@ pub fn detect() -> Vec<GpuInfo> {
         }
     }
 }
+/// Banda de memória da placa, em bytes por segundo.
+///
+/// `relógio de memória × 2 × largura do barramento / 8` — o ×2 é o "double
+/// data rate" das memórias GDDR, e é o que faz a conta bater com a ficha
+/// técnica: uma RTX 3090 reporta 9751 MHz em 384 bits, que dão os 936 GB/s
+/// anunciados. Qualquer dos dois números faltando devolve `None`: metade da
+/// conta não é uma banda.
+fn banda_nvml(dev: &nvml_wrapper::Device<'_>) -> Option<u64> {
+    use nvml_wrapper::enum_wrappers::device::Clock;
+    let mhz = dev.max_clock_info(Clock::Memory).ok()? as u64;
+    let bits = dev.memory_bus_width().ok()? as u64;
+    (mhz > 0 && bits > 0).then(|| mhz * 1_000_000 * 2 * bits / 8)
+}
 
 /// Devices NVIDIA via NVML: nome, driver, compute capability e VRAM confiáveis.
 fn detect_nvml() -> Vec<GpuInfo> {
@@ -90,6 +103,7 @@ fn detect_nvml() -> Vec<GpuInfo> {
                 is_integrated: false,
                 driver_version: driver.clone(),
                 cuda_compute: cc,
+                bandwidth_bytes_s: banda_nvml(&dev),
             });
         }
     }
@@ -155,6 +169,9 @@ fn detect_dxgi(nvml_gpus: &[GpuInfo]) -> windows::core::Result<Vec<GpuInfo>> {
                 is_integrated: integrated,
                 driver_version: None,
                 cuda_compute: None,
+                // O DXGI não expõe relógio nem largura do barramento; sem
+                // NVML, a banda fica sem resposta em vez de virar chute.
+                bandwidth_bytes_s: None,
             });
         }
 

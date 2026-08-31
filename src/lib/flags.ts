@@ -53,6 +53,8 @@ export interface FlagCatalog {
   /** O `--help` do binário não pôde ser lido; só as curadas estão aqui. */
   degraded: boolean;
   flags: FlagSpec[];
+  /** Variáveis de ambiente curadas — tabela nossa, não vem do `--help`. */
+  envVars: EnvSpec[];
 }
 
 export type IssueCode =
@@ -75,6 +77,21 @@ export interface EnginePreview {
   args: string[];
   ini: string;
   iniPath: string;
+  /** Variáveis de ambiente do processo, `NOME=valor` (segredo já mascarado). */
+  env: string[];
+}
+
+/** Uma variável de ambiente do motor, como fica no setting `server_env_vars`. */
+export interface EnvVar {
+  key: string;
+  value: string;
+}
+
+/** Uma variável que o app conhece e sabe explicar (`flags.env.<KEY>.*`). */
+export interface EnvSpec {
+  key: string;
+  kind: FlagKind;
+  default: string | null;
 }
 
 export interface RouterModelView {
@@ -88,6 +105,8 @@ export interface ModelCaps {
   hasMmproj: boolean;
   nLayers: number | null;
   trainCtx: number | null;
+  /** O arquivo é maior que a RAM utilizável — ler tudo para a memória vira swap. */
+  biggerThanRam: boolean;
   busyWith: string[];
 }
 
@@ -146,6 +165,7 @@ export function enginePreview(model?: string | null): Promise<EnginePreview> {
       args: ["--models-dir", "/dados/models", "--host", "127.0.0.1", "--port", "11711"],
       ini: `; gerado automaticamente — não edite\nversion = 1\n\n[${model ?? "modelo"}.gguf]\nmodel = /dados/models/m.gguf\nctx-size = 32768\n\n`,
       iniPath: "/dados/router-models.ini",
+      env: ["GGML_OP_OFFLOAD_MIN_BATCH=32"],
     });
   }
   return invoke<EnginePreview>("engine_preview", { model: model ?? null });
@@ -183,6 +203,7 @@ export function modelCapabilities(model: string): Promise<ModelCaps> {
       hasMmproj: false,
       nLayers: 48,
       trainCtx: 262144,
+      biggerThanRam: false,
       busyWith: [],
     });
   }
@@ -197,7 +218,7 @@ export function enginePresetsList(): Promise<EnginePresetView[]> {
         id: "builtin.mtpTurbo",
         name: "",
         builtin: true,
-        profile: { spec: "mtp", specDraftNMax: 4, specDraftPMin: 0.75, flashAttn: true, source: "manual" },
+        profile: { spec: ["draftMtp"], specDraftNMax: 4, specDraftPMin: 0.75, flashAttn: true, source: "manual" },
       },
     ]);
   }
@@ -316,6 +337,14 @@ function mockCatalog(): FlagCatalog {
         "both",
         { curated: false, helpText: "use full-size SWA cache (default: false)" },
       ),
+    ],
+    envVars: [
+      {
+        key: "GGML_OP_OFFLOAD_MIN_BATCH",
+        kind: { type: "int", min: 1, max: 8192, step: 1 },
+        default: "32",
+      },
+      { key: "GGML_CUDA_ENABLE_UNIFIED_MEMORY", kind: { type: "bool" }, default: "0" },
     ],
   };
 }

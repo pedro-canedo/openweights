@@ -224,7 +224,23 @@ pub async fn models_quants(
 
     let budget = advisor::MemoryBudget::from_profile(&state.profile)
         .with_extra_vram(state.cluster.remote_vram_now());
-    let meta = advisor::ModelMeta::estimate_from_params(params, janela);
+    // A forma do modelo, quando o Hub a publica. Sem ela a conta continua
+    // sendo a tabela por faixa de parâmetros — que descreve modelos densos e
+    // não tem o que dizer sobre mistura de especialistas, e por isso pintava
+    // de "não cabe" um arquivo que a máquina roda bem com os especialistas
+    // na RAM.
+    let geo = match publicado.as_ref() {
+        Some(m) if !m.tags.is_empty() => state
+            .hf
+            .lock()
+            .await
+            .base_config(&m.tags)
+            .await
+            .map(|c| geometria_do_config(&c))
+            .unwrap_or_default(),
+        _ => advisor::Geometry::default(),
+    };
+    let meta = advisor::ModelMeta::from_geometry(params, janela, &geo);
     let qfiles: Vec<advisor::QuantFile> = artifacts
         .iter()
         .map(|a| advisor::QuantFile {
@@ -378,6 +394,10 @@ struct ServerPrefs {
     /// gravado no salvamento; aqui só se reproduz — com a denylist filtrada
     /// de novo, porque setting é um lugar editável por fora do app.
     extra_flags: Vec<lr_types::flags::GlobalFlag>,
+    /// Variáveis de ambiente do processo do motor, escolhidas na mesma tela.
+    /// Filtradas aqui e de novo no `ServerConfig`: setting é arquivo editável
+    /// por fora do app.
+    env_vars: Vec<(String, String)>,
 }
 
 fn server_prefs(state: &AppState) -> ServerPrefs {
@@ -410,6 +430,13 @@ fn server_prefs(state: &AppState) -> ServerPrefs {
                 let chave = lr_types::flags::normalize_key(&f.key);
                 !lr_types::flags::managed_keys().contains(&chave.as_str())
             })
+            .collect(),
+        env_vars: get("server_env_vars")
+            .and_then(|v| serde_json::from_str::<Vec<lr_types::flags::EnvVar>>(&v).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|e| !e.key.trim().is_empty() && !lr_types::flags::env_is_managed(&e.key))
+            .map(|e| (e.key.trim().to_string(), e.value))
             .collect(),
     }
 }
@@ -579,6 +606,24 @@ fn model_needs_cluster_split(state: &AppState, a: &lr_models::LocalArtifact) -> 
     !matches!(r.verdict, advisor::FitVerdict::FullGpu { .. })
 }
 
+/// Traduz o `config.json` do repositório base para a geometria do advisor.
+///
+/// `num_key_value_heads` some em modelos sem GQA: ali ele é igual ao número
+/// de cabeças de atenção, e é assim que a conta o trata.
+fn geometria_do_config(c: &lr_models::BaseConfig) -> advisor::Geometry {
+    advisor::Geometry {
+        n_layers: c.num_hidden_layers,
+        n_kv_heads: c.num_key_value_heads.or(c.num_attention_heads),
+        n_heads: c.num_attention_heads,
+        head_dim: c.head_dim,
+        d_model: c.hidden_size,
+        n_experts: c.num_experts,
+        n_experts_used: c.num_experts_per_tok,
+        expert_ffn: c.moe_intermediate_size,
+        shared_ffn: c.moe_shared_expert_intermediate_size,
+    }
+}
+
 /// Parâmetros a partir do tamanho do arquivo, a ~4,8 bits por peso.
 ///
 /// É a média das quantizações que as pessoas de fato baixam (Q4_K_M a Q5_K_M)
@@ -644,6 +689,7 @@ pub(crate) async fn preview_server_config(state: &AppState) -> lr_engine::Server
     cfg.global_ini_extras = star;
     cfg.extra_args = flags_de_processo;
     cfg.extra_args.extend(state.cluster.host_extra_args().await);
+    cfg.env_extra = prefs.env_vars;
     cfg
 }
 
@@ -672,6 +718,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         models_max,
         parallel,
         extra_flags,
+        env_vars,
     } = server_prefs(state);
 
     // Spawn + instalação no slot acontecem sob o lock; a espera do /health
@@ -697,6 +744,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         cfg.api_key = api_key;
         cfg.models_max = models_max;
         cfg.parallel = parallel;
+        cfg.env_extra = env_vars;
 
         // --models-dir do llama.cpp não é recursivo; a biblioteca mora em
         // autor/repo/. O INI registra cada GGUF com o nome que a UI já usa,

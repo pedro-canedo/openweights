@@ -369,6 +369,7 @@ export async function setModelProfile(
       next.spec == null &&
       next.vision == null &&
       next.kvOffload == null &&
+      next.loadMode == null &&
       next.mmap == null &&
       next.mlock == null &&
       next.parallel == null &&

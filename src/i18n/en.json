@@ -23,6 +23,8 @@
   },
   "badge": {
     "fullGpu": "Runs fully on GPU",
+    "moeOffload": "Experts in RAM ({{ncmoe}}/{{total}} layers)",
+    "moeOffloadHint": "Only a few experts fire per token, so the idle ones live in system RAM and attention stays on the card. The app measures the exact number after downloading.",
     "partial": "Partial ({{ngl}}/{{total}} layers on GPU)",
     "partialWarn": "Runs, but much slower (partially on CPU)",
     "cpuOnly": "CPU only (slow)",
@@ -223,7 +225,8 @@
         "off": "Off",
         "mtp": "MTP",
         "ngram": "N-gram",
-        "mtpHint": "This file includes MTP — turning it on often speeds up generation."
+        "mtpHint": "This file includes MTP — turning it on often speeds up generation.",
+        "combined": "Both at once: the draft guesses new text, the n-gram guesses what is already in the prompt."
       },
       "vision": {
         "label": "Vision",
@@ -250,19 +253,16 @@
       "threads": "Threads",
       "parallel": "Parallel slots",
       "parallelHint": "Concurrent requests. More slots use more memory.",
-      "mmap": {
-        "label": "mmap",
-        "hint": "Maps the file into memory. Turning it off copies the whole model into RAM.",
-        "auto": "Automatic",
-        "on": "On",
-        "off": "Off"
-      },
-      "mlock": {
-        "label": "mlock",
-        "hint": "Locks the model in RAM so the OS cannot page it out. Only turn on if you have spare RAM.",
-        "auto": "Automatic",
-        "on": "On",
-        "off": "Off"
+      "loadMode": {
+        "label": "Load mode",
+        "hint": "How the file enters memory. “Read into RAM” loads everything up front — it pays off when memory is spare and costs dearly when it is not.",
+        "auto": "Auto",
+        "mmap": "Map file",
+        "mmapMlock": "Map + lock",
+        "mlock": "Lock in RAM",
+        "none": "Read into RAM",
+        "dio": "Direct I/O",
+        "warnNone": "This model is larger than usable RAM. Reading it all into memory trades on-demand paging for swap — mapping is what does the work here."
       },
       "configureLink": "Configure engine in Local Server"
     },
@@ -498,6 +498,7 @@
       "typedNote": "Covered by the controls above — use them to change this value.",
       "globalNote": "Process flag — configure it in the \"Global flags\" card below.",
       "preview": "Command & INI preview",
+      "envPreview": "environment",
       "needsRestart": "Changes saved — they take effect on the next server restart.",
       "recommend": "Recommend for this machine",
       "recommending": "Measuring…"
@@ -512,12 +513,23 @@
         "default": "Default (automatic)",
         "mtpTurbo": "MTP turbo",
         "vramSaver": "VRAM saver",
+        "moeOffload": "Experts in RAM",
         "longContext": "Long context"
       }
     },
     "globalFlags": {
       "title": "Global server flags",
       "hint": "Apply to every model. Process flags become llama-server arguments; the rest goes into the INI's [*] section — and a model's own setting wins over the global one."
+    },
+    "envVars": {
+      "title": "Engine environment variables",
+      "hint": "Not everything that changes llama.cpp is a flag: the CUDA backend reads the environment. Applied on the next start. The API key is set by its own field and never here.",
+      "add": "Add",
+      "namePlaceholder": "VARIABLE_NAME",
+      "valuePlaceholder": "value",
+      "managed": "{{key}} is managed by the app — the API key has its own field, and LLAMA_ARG_* would silently override the per-model settings.",
+      "on": "On",
+      "off": "Off"
     },
     "harness": {
       "title": "Open in a harness",
@@ -624,6 +636,7 @@
     },
     "reason": {
       "ctx": "A {{ctx}}-token window per conversation, costing {{kv}} of KV cache.",
+      "expertsOnCpu": "Experts of the first {{n}} layers in system RAM ({{host}}): attention stays on the card, and only the weights that sit idle most of the time leave it.",
       "kvCompressed": "Compressed KV cache: more window in the same memory, with a loss you won't notice in conversation.",
       "flashAttn": "Flash attention on: same memory, faster generation.",
       "fitsGpu": "Fits entirely on the GPU: {{used}} of {{total}}, leaving room for the system.",
@@ -634,7 +647,11 @@
       "mtp": "Has MTP",
       "mtpHint": "This file ships multi-token prediction. It may speed up generation — we haven't measured it on this machine yet.",
       "vision": "Has vision",
-      "visionHint": "This model comes with a vision projector. Loading it only when there's an image isn't ready yet."
+      "visionHint": "This model comes with a vision projector. Loading it only when there's an image isn't ready yet.",
+      "moe": "Mixture of experts",
+      "moeHint": "Only a few experts fire per token, so the idle ones can live in system RAM — that is how a model bigger than the card still runs on it.",
+      "specOnMoe": "Speculation costs more here",
+      "specOnMoeHint": "With the experts in RAM, drafting four tokens ahead stops waking eight experts and starts waking almost all of them, and each extra one is another trip across the memory bus. Measure before turning it on."
     },
     "bench": "Test on this machine",
     "benchHint": "Measures real tokens per second. Takes a few minutes and needs the whole GPU: the engine goes down while it runs.",
@@ -648,14 +665,48 @@
       "measuring": "Measuring…",
       "hint": "Predicts tokens ahead to go faster. How much it pays depends on the machine and the kind of text, so we measure instead of assuming. Restarts the engine between tests.",
       "inconclusive": "The difference is too small to be worth changing the setup. Here, speculation makes no difference.",
-      "arm": {
-        "none": "No speculation",
-        "mtp": "MTP",
-        "ngram": "N-gram"
-      },
       "prompt": {
         "code": "code",
         "prose": "prose"
+      },
+      "type": {
+        "none": "No speculation",
+        "draftSimple": "External draft",
+        "draftEagle3": "EAGLE-3",
+        "draftMtp": "MTP",
+        "draftDflash": "DFlash",
+        "draftDspark": "dSpark",
+        "ngramSimple": "Simple n-gram",
+        "ngramMapK": "N-gram (map)",
+        "ngramMapK4v": "N-gram (map k4v)",
+        "ngramMod": "N-gram",
+        "ngramCache": "N-gram (cache)"
+      },
+      "quality": {
+        "match": "identical answer",
+        "truncated": "cut at the limit",
+        "diverged": "changed the answer",
+        "unverifiable": "not verifiable",
+        "showDiff": "see what changed",
+        "expected": "expected",
+        "got": "got",
+        "unverifiableHint": "This machine does not repeat the same answer even for the same question with no speculation at all — the non-determinism is the card's own kernel. Without a stable ruler, no arm can be approved or refused on quality."
+      },
+      "card": {
+        "title": "Measured speculation",
+        "subtitle": "The app measures on its own, once per model and machine, which combination pays off most — and only applies it after checking that the model's answer stayed the same.",
+        "never": "Not measured on this machine yet",
+        "measuring": "Measuring…",
+        "running": "measuring",
+        "restartWarning": "The engine restarts between tests.",
+        "stop": "Stop"
+      },
+      "verdict": {
+        "applied": "Applied automatically",
+        "inconclusive": "No difference worth the change",
+        "rejected": "The fastest one changed the answer — refused",
+        "deferred": "Deferred: the machine was in use",
+        "unverifiable": "Could not be verified on this machine"
       }
     },
     "fullConfig": "Full configuration",
@@ -679,8 +730,22 @@
       "usageNote": "Real usage is not sliced per GPU: chat responses don't record which card they ran on.",
       "empty": "No measurements yet. “Measure now” runs a real test with this model's current configuration and records the result in this series.",
       "gpuSeries": "The series is per GPU and driver: switching cards or updating the driver starts a new series.",
+      "bandwidth": "Ceiling: ~{{ram}} GB/s of system memory against ~{{gpu}} GB/s on the card. With experts in RAM, tokens per second is a bandwidth number, not a GPU number.",
       "engineUpdated": "engine updated — not comparable",
       "noBaseline": "no baseline to compare against"
+    },
+    "sweep": {
+      "title": "Curve",
+      "hint": "Two questions have no calculable answer, only a measurable one: where to stop pushing experts to the CPU, and how big a prompt pass pays off. One llama-bench run, one model load.",
+      "ncmoe": "Measure experts on CPU",
+      "ubatch": "Measure micro-batch",
+      "measuring": "Measuring…",
+      "gen": "generation tok/s",
+      "prompt": "prompt tok/s (at {{n}})",
+      "axis": {
+        "ncmoe": "layers",
+        "ubatch": "µbatch"
+      }
     }
   },
   "update": {
@@ -793,6 +858,10 @@
       "n-cpu-moe": {
         "label": "Experts on CPU",
         "hint": "For MoE models, keeps expert weights of the first N layers in RAM — makes a big model fit a small card."
+      },
+      "cpu-moe": {
+        "label": "All experts on CPU",
+        "hint": "Keeps every MoE expert in RAM. The safe extreme, and where the optimiser starts before walking the number down."
       },
       "split-mode": {
         "label": "Multi-GPU split",
@@ -1069,6 +1138,14 @@
       "check-tensors": {
         "label": "Check tensors",
         "hint": "Validates model data at load (slower; useful for a suspicious file)."
+      }
+    },
+    "env": {
+      "GGML_OP_OFFLOAD_MIN_BATCH": {
+        "hint": "Batch size from which an expert matrix multiply is copied to VRAM instead of running on the CPU. Generation is one token at a time, so it stays on the CPU; a long prompt crosses the line and goes to the GPU. Default 32."
+      },
+      "GGML_CUDA_ENABLE_UNIFIED_MEMORY": {
+        "hint": "Lets CUDA spill past VRAM into system memory instead of failing to load. It never fails — and it can get very slow without saying so."
       }
     }
   }

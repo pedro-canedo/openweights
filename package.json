@@ -1,7 +1,7 @@
 {
   "name": "openweights",
   "private": true,
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "App desktop open source para rodar LLMs locais (llama.cpp) com harness agêntico — sem terminal, sem CUDA, sem chute de quantização.",
   "license": "MIT",
   "repository": {
@@ -15,7 +15,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "node scripts/i18n-parity.mjs && tsc --noEmit && vite build",
+    "i18n": "node scripts/i18n-parity.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },

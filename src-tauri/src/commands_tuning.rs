@@ -19,6 +19,7 @@ use lr_store::perf::PerfRun;
 use lr_types::tuning::{ModelProfile, ProfileSource};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 type CmdResult<T> = Result<T, String>;
@@ -121,6 +122,72 @@ fn local_by_name(state: &AppState, model: &str) -> Option<lr_models::LocalArtifa
 ///
 /// Custa uma sonda por candidato (menos de dois segundos cada), e por isso a
 /// heurística entrega poucos candidatos.
+/// Traduz o cabeçalho do GGUF para a geometria que o advisor entende.
+///
+/// `head_dim` sai de `attention.key_length` quando declarado — é o número
+/// exato — e o resto o advisor completa sozinho com o que faltar.
+pub(crate) fn geometria_do_cabecalho(m: &lr_models::LocalGgufMeta) -> lr_advisor::Geometry {
+    lr_advisor::Geometry {
+        n_layers: m.n_layers,
+        n_kv_heads: m.n_kv_heads,
+        n_heads: m.n_heads,
+        head_dim: m.key_length,
+        d_model: m.embedding_length,
+        n_experts: m.n_experts,
+        n_experts_used: m.n_experts_used,
+        expert_ffn: m.expert_ffn_length,
+        shared_ffn: m.expert_shared_ffn_length,
+    }
+}
+
+/// O menor `n-cpu-moe` que faz esta configuração caber na placa.
+///
+/// É a receita do manual — "comece com todos os especialistas na CPU e vá
+/// descendo o número até faltar VRAM, então volte uma" — só que sem tentativa
+/// e erro: a sonda responde quanto cada tentativa custa de memória **sem
+/// carregar o modelo**, e a relação é monótona (mais camadas de especialista
+/// na CPU, menos VRAM), então uma busca binária acha o ponto em ~7 perguntas
+/// de menos de dois segundos em vez de dezenas de carregamentos.
+///
+/// Devolve `None` quando nem com TODOS os especialistas fora a placa dá conta
+/// — aí a resposta não é este caminho, e quem decide é o veredito denso.
+async fn menor_ncmoe(
+    dir: &std::path::Path,
+    model_path: &std::path::Path,
+    base: &ModelProfile,
+    cluster: Option<&lr_advisor::devices::ClusterArgs>,
+    teto: u64,
+    camadas: u32,
+) -> Option<u32> {
+    let cabe = async |n: u32| -> bool {
+        let tentativa = ModelProfile {
+            ncmoe: Some(n),
+            ..base.clone()
+        };
+        matches!(
+            probe(dir, model_path, &tentativa, cluster).await,
+            Ok(r) if r.gpu_bytes() <= teto
+        )
+    };
+
+    // O extremo seguro primeiro: se nem ele couber, não há ponto nenhum.
+    if !cabe(camadas).await {
+        return None;
+    }
+    let (mut lo, mut hi) = (0u32, camadas);
+    while lo < hi {
+        let meio = lo + (hi - lo) / 2;
+        // Sonda que falha conta como "não coube": empurrar o número para
+        // cima erra para o lado de carregar, que é o lado seguro.
+        if cabe(meio).await {
+            hi = meio;
+        } else {
+            lo = meio + 1;
+        }
+    }
+    Some(lo)
+}
+
 #[tauri::command]
 pub async fn tune_advise(state: State<'_, AppState>, model: String) -> CmdResult<TuneAdvice> {
     let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
@@ -138,23 +205,59 @@ pub async fn tune_advise(state: State<'_, AppState>, model: String) -> CmdResult
         .with_extra_vram(state.cluster.remote_vram_now());
     // Sem cabeçalho GGUF lido, a geometria vem do tamanho do arquivo: é
     // grosseira, mas só decide QUAIS candidatos sondar — quem dá o número
-    // final é a sonda.
+    // final é a sonda. Com o cabeçalho, ela deixa de ser chute: camadas,
+    // cabeças e especialistas vêm do arquivo.
     let params_estimados = artefato.total_bytes.saturating_mul(2);
-    let meta = lr_advisor::ModelMeta::estimate_from_params(params_estimados, 8192);
+    let cabecalho = lr_models::read_local_meta(&artefato.primary_path);
+    let meta = lr_advisor::ModelMeta::from_geometry(
+        params_estimados,
+        8192,
+        &geometria_do_cabecalho(&cabecalho),
+    );
 
     // O `ngl` dos candidatos só pode vir do NÚMERO REAL de camadas, lido do
     // cabeçalho do arquivo. A tabela de chute escreveu "48" num modelo de 65
     // camadas e, com `fit = off`, as 17 restantes moraram na CPU: 23 → 4
     // tok/s, sem erro nenhum. Sem leitura, os candidatos vão sem `ngl` e o
     // `fit` do llama.cpp continua ligado.
-    let cabecalho = lr_models::read_local_meta(&artefato.primary_path);
     let candidatos = tune::candidates(&budget, &meta, artefato.total_bytes, cabecalho.n_layers);
     let teto_gpu = budget
         .vram_bytes
         .saturating_sub(lr_advisor::tune::MARGEM_VRAM_BYTES);
 
+    // Onde parar de empurrar especialista para a CPU. A busca roda UMA vez,
+    // no primeiro candidato que pede — e o número serve aos outros, que são
+    // medidos com ele como qualquer outra configuração. Repetir a busca por
+    // candidato multiplicaria por quatro uma espera que a pessoa vê.
+    let mut ncmoe_base: Option<u32> = None;
+    if let Some(c) = candidatos.iter().find(|c| c.busca_ncmoe)
+        && let Some(camadas) = cabecalho.n_layers
+    {
+        ncmoe_base = menor_ncmoe(
+            &dir,
+            &artefato.primary_path,
+            &c.profile,
+            cluster.as_ref(),
+            teto_gpu,
+            camadas,
+        )
+        .await;
+        log::info!(
+            "{}: especialistas na CPU a partir da camada {:?}",
+            artefato.name,
+            ncmoe_base
+        );
+    }
+
     let mut medidos: Vec<Measured> = Vec::new();
     for c in candidatos {
+        let c = tune::Candidate {
+            profile: ModelProfile {
+                ncmoe: c.busca_ncmoe.then_some(ncmoe_base).flatten(),
+                ..c.profile
+            },
+            ..c
+        };
         match probe(&dir, &artefato.primary_path, &c.profile, cluster.as_ref()).await {
             Ok(report) => {
                 let fits_gpu = budget.vram_bytes > 0 && report.gpu_bytes() <= teto_gpu;
@@ -192,8 +295,19 @@ pub async fn tune_advise(state: State<'_, AppState>, model: String) -> CmdResult
     let reasons = tune::explain(&escolhido, alternativa, budget.vram_bytes);
 
     let mut facts: Vec<&'static str> = Vec::new();
-    if artefato.name.to_lowercase().contains("mtp") {
+    if tem_cabeca_mtp(&cabecalho, &artefato.name) {
         facts.push("mtp");
+    }
+    if cabecalho.n_experts.is_some_and(|n| n > 0) {
+        facts.push("moe");
+        // Especular num MoE com os especialistas fora da placa costuma custar
+        // mais do que rende: adivinhar quatro tokens deixa de acordar oito
+        // especialistas e passa a acordar quase todos, e cada um a mais é
+        // outra viagem pelo barramento de memória. Não é proibição — é o
+        // aviso de que aqui a resposta tem que ser medida.
+        if escolhido.profile.ncmoe.is_some_and(|n| n > 0) {
+            facts.push("specOnMoe");
+        }
     }
     if artefato.vision_projector.is_some() {
         facts.push("vision");
@@ -323,6 +437,14 @@ async fn carga_de_prova(state: &AppState, model: &str) -> Result<(), String> {
 /// Uma medição em curso. Só uma por vez: o `llama-bench` quer a placa
 /// inteira, e duas ao mesmo tempo mediriam uma à outra.
 static MEDINDO: AtomicBool = AtomicBool::new(false);
+
+/// Há uma medição em curso? O coletor de estatísticas pergunta antes de
+/// carimbar "a máquina está em uso": a própria bateria gera tokens, e sem
+/// esta pergunta ela se marcaria como tráfego e nunca sairia do portão de
+/// ocioso que ela mesma espera.
+pub(crate) fn medindo() -> bool {
+    MEDINDO.load(Ordering::SeqCst)
+}
 static CANCELAR: AtomicBool = AtomicBool::new(false);
 
 /// Progresso de uma medição, para a tela não ficar olhando um spinner mudo.
@@ -357,6 +479,128 @@ pub struct BenchOutcome {
 /// `tune-bench` a cada configuração concluída. Ao fim, grava tudo com a
 /// impressão digital da máquina e do build do llama.cpp — é isso que faz o
 /// número caducar sozinho quando a placa, o driver ou o runtime mudam.
+/// A curva de um botão, medida de verdade.
+///
+/// Duas perguntas não têm resposta calculável, só medível: **onde parar** de
+/// empurrar especialista para a CPU, e **de que tamanho** compensa a passada
+/// de prompt. As duas têm o mesmo formato — um número, uma curva com um
+/// joelho — e o `llama-bench` aceita lista em qualquer parâmetro, então a
+/// curva inteira sai de UMA invocação, com um carregamento de modelo só.
+///
+/// Para `ncmoe` a varredura começa no MENOR valor que a sonda diz caber e
+/// sobe: valores abaixo dele não carregam, e um ponto que não carrega
+/// derruba a invocação inteira, levando junto os pontos que carregariam.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SweepOutcome {
+    pub dim: lr_advisor::bench::SweepDim,
+    pub points: Vec<lr_advisor::bench::SweepPoint>,
+    /// Com que tamanho de prompt a curva foi medida.
+    pub n_prompt: u32,
+}
+
+#[tauri::command]
+pub async fn tune_sweep(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    model: String,
+    dim: String,
+    force: Option<bool>,
+) -> CmdResult<SweepOutcome> {
+    use lr_advisor::bench::SweepDim;
+    let dim = match dim.as_str() {
+        "ncmoe" => SweepDim::Ncmoe,
+        "ubatch" => SweepDim::Ubatch,
+        outro => return Err(format!("dimensão desconhecida: {outro}")),
+    };
+    let ocupado = crate::commands::engine_busy_with(&state);
+    if !ocupado.is_empty() && !force.unwrap_or(false) {
+        return Err(format!("engine-busy:{}", ocupado.join(",")));
+    }
+    let cluster = cluster_args(&state);
+    if MEDINDO.swap(true, Ordering::SeqCst) {
+        return Err("já existe uma medição em andamento".into());
+    }
+    CANCELAR.store(false, Ordering::SeqCst);
+    let _fim = MedindoGuard;
+
+    let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
+    let runtime = {
+        let variant = lr_runtime::select_variant(&state.profile);
+        state.runtime_mgr.state(variant)
+    };
+    let dir = runtime
+        .dir
+        .ok_or("o runtime do llama.cpp ainda não está instalado")?;
+    let cabecalho = lr_models::read_local_meta(&artefato.primary_path);
+
+    // A varredura mede o motor por baixo: o servidor não pode estar de pé.
+    let _ = stop_engine(&app, &state).await;
+
+    let base = profile_for(&state, &model).unwrap_or_default();
+    let valores = match dim {
+        SweepDim::Ubatch => vec![128, 256, 512, 1024, 2048],
+        SweepDim::Ncmoe => {
+            let camadas = cabecalho
+                .n_layers
+                .ok_or("o cabeçalho do arquivo não diz quantas camadas o modelo tem")?;
+            let budget = lr_advisor::MemoryBudget::from_profile(&state.profile)
+                .with_extra_vram(state.cluster.remote_vram_now());
+            let teto = budget
+                .vram_bytes
+                .saturating_sub(lr_advisor::tune::MARGEM_VRAM_BYTES);
+            let piso = menor_ncmoe(
+                &dir,
+                &artefato.primary_path,
+                &ModelProfile {
+                    ngl: Some(camadas),
+                    ncmoe: None,
+                    ..base.clone()
+                },
+                cluster.as_ref(),
+                teto,
+                camadas,
+            )
+            .await
+            .ok_or("nem com todos os especialistas na CPU este modelo cabe nesta placa")?;
+            // Do piso para cima: é o lado onde toda configuração carrega, e a
+            // curva mostra o que se paga por folgar demais.
+            let mut v: Vec<u32> = [0u32, 2, 4, 8, 16]
+                .iter()
+                .map(|d| (piso + d).min(camadas))
+                .collect();
+            v.dedup();
+            v
+        }
+    };
+
+    let perfil = ModelProfile {
+        // Com o `ngl` fixo, a curva mede uma coisa só: onde os especialistas
+        // moram. Sem ele, o `fit` do llama.cpp mexeria nas camadas a cada
+        // ponto e a curva descreveria duas decisões ao mesmo tempo.
+        ngl: cabecalho.n_layers.or(base.ngl),
+        ..base
+    };
+    let points = lr_advisor::bench::sweep(
+        &dir,
+        &artefato.primary_path,
+        &perfil,
+        cluster.as_ref(),
+        dim,
+        &valores,
+        &CANCELAR,
+    )
+    .await
+    .map_err(err_str)?;
+
+    let _ = restart_engine(&app, &state, true).await;
+    Ok(SweepOutcome {
+        dim,
+        points,
+        n_prompt: lr_advisor::bench::N_PROMPT_LONGO,
+    })
+}
+
 #[tauri::command]
 pub async fn tune_bench(
     app: AppHandle,
@@ -464,6 +708,8 @@ pub async fn tune_bench(
             source: "bench".into(),
             suspect,
             measured_at: agora,
+            n_prompt: Some(res.n_prompt),
+            n_depth: Some(res.n_depth),
             gpu_name: gpu.clone(),
             // Os pares INI legíveis do perfil: é o que deixa o histórico
             // mostrar "ngl=99 · ctx=16k" em vez de um hash.
@@ -533,11 +779,24 @@ pub async fn tune_spec_bench(
     // MTP só faz sentido quando o arquivo traz as camadas; oferecê-lo a um
     // GGUF comum seria medir um erro de carga.
     let mut candidatos = vec![
-        lr_types::tuning::SpecType::None,
-        lr_types::tuning::SpecType::Ngram,
+        lr_types::tuning::SpecSet::new([lr_types::tuning::SpecType::None]),
+        lr_types::tuning::SpecSet::new([lr_types::tuning::SpecType::NgramMod]),
     ];
-    if artefato.name.to_lowercase().contains("mtp") {
-        candidatos.push(lr_types::tuning::SpecType::Mtp);
+    if tem_cabeca_mtp(
+        &lr_models::read_local_meta(&artefato.primary_path),
+        &artefato.name,
+    ) {
+        candidatos.push(lr_types::tuning::SpecSet::new([
+            lr_types::tuning::SpecType::DraftMtp,
+        ]));
+        // O braço que o motor sempre aceitou e o app nunca ofereceu: os dois
+        // juntos. Um rascunho adivinha texto novo, o n-grama adivinha o que
+        // já está no prompt — e um agente de código passa o dia reescrevendo
+        // arquivos que ele mesmo acabou de ler.
+        candidatos.push(lr_types::tuning::SpecSet::new([
+            lr_types::tuning::SpecType::DraftMtp,
+            lr_types::tuning::SpecType::NgramMod,
+        ]));
     }
 
     let anterior = profile_for(&state, &model);
@@ -575,9 +834,17 @@ pub struct PerfRowDto {
     /// Pares INI legíveis da configuração medida; `None` em linhas gravadas
     /// antes de `profile_json` existir (a tela cai no profileKey encurtado).
     pub profile_summary: Option<std::collections::BTreeMap<String, String>>,
+    /// Com que tamanho de prompt o `prompt_tps` desta linha foi medido —
+    /// `None` em linhas antigas. A tela mostra ao lado do número, porque
+    /// 800 tok/s num prompt de 512 e 300 num de 4096 não são o mesmo eixo.
+    pub n_prompt: Option<u32>,
     pub delta_pct: Option<f64>,
-    /// `"ok"` | `"first"` | `"buildChange"` | `"suspect"`.
+    /// `"ok"` | `"first"` | `"buildChange"` | `"suspect"` | `"promptChanged"`.
     pub delta_reason: &'static str,
+    /// Variação do processamento do prompt, quando as duas medições usaram o
+    /// mesmo tamanho de prompt.
+    pub prompt_delta_pct: Option<f64>,
+    pub prompt_delta_reason: &'static str,
 }
 
 /// O que o card de histórico desenha de uma vez.
@@ -629,7 +896,7 @@ pub fn perf_history(state: State<'_, AppState>, model_id: String) -> CmdResult<P
     let rows = runs
         .into_iter()
         .zip(anotacoes)
-        .map(|(r, (delta_pct, delta_reason))| PerfRowDto {
+        .map(|(r, d)| PerfRowDto {
             measured_at: r.measured_at,
             gen_tps: r.gen_tps,
             prompt_tps: Some(r.prompt_tps),
@@ -640,8 +907,11 @@ pub fn perf_history(state: State<'_, AppState>, model_id: String) -> CmdResult<P
             gpu_name: r.gpu_name,
             profile_key: r.profile_key,
             profile_summary: resumo_do_perfil(r.profile_json.as_deref()),
-            delta_pct,
-            delta_reason,
+            n_prompt: r.n_prompt,
+            delta_pct: d.gen_pct,
+            delta_reason: d.gen_reason,
+            prompt_delta_pct: d.prompt_pct,
+            prompt_delta_reason: d.prompt_reason,
         })
         .collect();
 
@@ -696,6 +966,35 @@ fn auto_setting(model: &str) -> String {
 ///
 /// Devolve `None` quando nenhuma sonda respondeu — melhor manter o que estava
 /// do que gravar um palpite.
+/// O arquivo traz as camadas de previsão de múltiplos tokens?
+///
+/// `nextn_predict_layers` é o que o llama.cpp de fato lê para aceitar
+/// `--spec-type draft-mtp`. O NOME do arquivo só opina quando o cabeçalho não
+/// diz nada, porque ausência ali é "não sei", não "não tem" — arquitetura
+/// nova pode usar outra chave. Confiar no nome era o bug que deixava o
+/// Qwen3.8-27B (sem "mtp" no nome, com a cabeça no arquivo) fora da medição.
+pub(crate) fn tem_cabeca_mtp(meta: &lr_models::LocalGgufMeta, nome: &str) -> bool {
+    match meta.nextn_layers {
+        Some(n) => n > 0,
+        None => nome.to_lowercase().contains("mtp"),
+    }
+}
+
+/// Leva a especulação de um perfil para outro.
+///
+/// A fase de memória (`tune::candidates` → `pick`) só decide janela, camadas e
+/// cache: ela devolve um perfil com `spec: None`, e gravá-lo inteiro por cima
+/// apagaria uma especulação que custou minutos de medição para ser escolhida.
+/// Como a chave do ajuste automático é invalidada por troca de driver, build
+/// ou cluster, sem isto o recurso funcionaria uma vez e sumiria.
+pub(crate) fn carry_spec(de: &ModelProfile, para: &mut ModelProfile) {
+    para.spec = de.spec.clone();
+    para.spec_draft_n_max = de.spec_draft_n_max;
+    para.spec_draft_n_min = de.spec_draft_n_min;
+    para.spec_draft_p_min = de.spec_draft_p_min;
+    para.spec_draft_model = de.spec_draft_model.clone();
+}
+
 async fn auto_profile_for(
     state: &AppState,
     dir: &std::path::Path,
@@ -740,6 +1039,13 @@ async fn auto_profile_for(
 /// Router é lido no boot, então o que muda aqui vale no próximo start — a
 /// interface é avisada pelo evento `tune-auto`.
 pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
+    // Uma medição em curso reinicia o motor a cada braço, e cada reinício
+    // passa por aqui (`start_engine` → `spawn_auto_tune`). Sem esta guarda, a
+    // varredura reescreveria o perfil DO MODELO SENDO MEDIDO no meio da
+    // bateria, e o resultado viraria ruído sem ninguém perceber.
+    if MEDINDO.load(Ordering::SeqCst) {
+        return;
+    }
     if AUTO_RODANDO.swap(true, Ordering::SeqCst) {
         return;
     }
@@ -773,8 +1079,13 @@ pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
         {
             continue;
         }
-        if let Some(perfil) = auto_profile_for(state, &dir, &a, cluster.as_ref()).await {
+        if let Some(mut perfil) = auto_profile_for(state, &dir, &a, cluster.as_ref()).await {
             let anterior = crate::commands::profile_for(state, &a.name);
+            // A memória manda na memória; a especulação que já foi medida
+            // continua valendo.
+            if let Some(ant) = anterior.as_ref() {
+                carry_spec(ant, &mut perfil);
+            }
             if anterior.as_ref() != Some(&perfil) {
                 mudou += 1;
             }
@@ -797,6 +1108,9 @@ pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
     if mudou > 0 {
         let _ = app.emit("tune-auto", mudou);
     }
+    // Memória primeiro, especulação depois: o quanto a especulação rende
+    // depende da janela e das camadas que acabaram de ser decididas.
+    spawn_auto_spec(&app);
 }
 
 /// Dispara a varredura sem segurar quem chamou.
@@ -806,4 +1120,294 @@ pub(crate) fn spawn_auto_tune(app: &AppHandle, _state: &AppState) {
         let state = app2.state::<AppState>();
         auto_tune_pending(app2.clone(), &state).await;
     });
+}
+
+// ------------------------------------------- especulação automática ---
+
+/// Uma bateria de especulação por vez, e cancelável.
+static SPEC_CANCELAR: AtomicBool = AtomicBool::new(false);
+
+/// Carência depois de o motor subir. Ninguém liga o servidor para vê-lo
+/// reiniciar seis vezes em seguida.
+const SPEC_ESPERA_INICIAL: Duration = Duration::from_secs(180);
+/// Quanto tempo sem tráfego conta como "a máquina está livre".
+const SPEC_OCIOSO_MIN: Duration = Duration::from_secs(300);
+/// Teto da espera pelo ocioso. Passado isto, fica para o próximo boot.
+const SPEC_ESPERA_MAX: Duration = Duration::from_secs(1800);
+/// Intervalo entre duas conferências do portão de ocioso.
+const SPEC_TENTATIVA: Duration = Duration::from_secs(60);
+
+/// Setting do interruptor: `"off"` desliga a medição automática.
+const SPEC_AUTO_SETTING: &str = "tune.spec.auto";
+
+fn spec_setting(model: &str) -> String {
+    format!("tune.spec.{}", model.trim())
+}
+
+/// O que ficou decidido para um modelo, e em que situação.
+///
+/// A chave inclui o `key()` do perfil além da situação da máquina: tokens por
+/// segundo dependem de janela, camadas e cache, então mexer na memória reabre
+/// a pergunta da especulação — de graça, porque a chave deixa de bater
+/// sozinha.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpecDecision {
+    pub key: String,
+    pub spec: Vec<lr_types::tuning::SpecType>,
+    pub gain_pct: Option<f64>,
+    /// `applied` | `inconclusive` | `rejected` | `deferred` | `unverifiable`
+    pub verdict: String,
+    pub at: i64,
+}
+
+fn spec_key(state: &AppState, perfil: &ModelProfile) -> String {
+    format!(
+        "{}|{}",
+        auto_key(state),
+        perfil.key().unwrap_or_else(|| "vazio".into())
+    )
+}
+
+/// Interrompe a bateria automática.
+#[tauri::command]
+pub async fn tune_spec_cancel() -> CmdResult<()> {
+    SPEC_CANCELAR.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+/// Mede a especulação sozinha, uma vez por modelo/máquina/motor.
+///
+/// Roda DEPOIS da fase de memória (é ela quem chama), porque o resultado
+/// depende da janela e das camadas já decididas. Espera a máquina ficar livre:
+/// são seis reinícios do motor, e fazer isso enquanto alguém conversa seria
+/// trocar velocidade futura por indisponibilidade agora.
+pub(crate) async fn auto_spec_pending(app: AppHandle, state: &AppState) {
+    if state
+        .store
+        .get_setting(SPEC_AUTO_SETTING)
+        .ok()
+        .flatten()
+        .is_some_and(|v| v == "off")
+    {
+        return;
+    }
+    SPEC_CANCELAR.store(false, Ordering::SeqCst);
+    tokio::time::sleep(SPEC_ESPERA_INICIAL).await;
+
+    // Um modelo por vez: varrer a biblioteca inteira levaria uma hora de
+    // servidor indo e voltando. O carregado é o que a pessoa está usando.
+    let Some(modelo) = modelo_em_foco(state).await else {
+        return;
+    };
+    let Some(perfil) = crate::commands::profile_for(state, &modelo) else {
+        return;
+    };
+    // Escolha da pessoa é lei, aqui como no ajuste de memória.
+    if perfil.source == ProfileSource::Manual {
+        return;
+    }
+    let chave = spec_key(state, &perfil);
+    if state
+        .store
+        .get_setting(&spec_setting(&modelo))
+        .ok()
+        .flatten()
+        .and_then(|v| serde_json::from_str::<SpecDecision>(&v).ok())
+        .is_some_and(|d| d.key == chave)
+    {
+        return;
+    }
+
+    if !esperar_ocioso(state).await {
+        gravar_decisao(state, &modelo, &chave, &[], None, "deferred");
+        return;
+    }
+
+    if MEDINDO.swap(true, Ordering::SeqCst) {
+        return; // uma medição manual tem precedência
+    }
+    let _fim = MedindoGuard;
+    let _ = app.emit(
+        "tune-spec",
+        serde_json::json!({ "phase": "start", "model": modelo }),
+    );
+
+    let candidatos = candidatos_de_spec(state, &modelo);
+    let resultado = crate::spec_bench::measure(&app, state, &modelo, &perfil, &candidatos).await;
+    let Ok(outcome) = resultado else {
+        let _ = restart_engine(&app, state, true).await;
+        return;
+    };
+
+    // Aplica só o que foi medido, no perfil RELIDO: a fase de memória pode
+    // tê-lo mudado enquanto isto rodava.
+    let mut verdict = "inconclusive";
+    let mut escolhido: Vec<lr_types::tuning::SpecType> = Vec::new();
+    let mut ganho = None;
+    if outcome.quality_gate == crate::spec_bench::QualityGate::Unverifiable {
+        verdict = "unverifiable";
+    } else if let Some(i) = outcome.best
+        && !outcome.inconclusive
+    {
+        let braco = &outcome.arms[i];
+        let base = outcome.arms[outcome.reference].avg_tps;
+        ganho = (base > 0.0).then(|| (braco.avg_tps - base) / base * 100.0);
+        escolhido = braco.spec.iter().collect();
+        let atual = crate::commands::profile_for(state, &modelo).unwrap_or_default();
+        let novo = ModelProfile {
+            spec: Some(braco.spec.clone()),
+            source: ProfileSource::Tested,
+            ..atual
+        };
+        if state.store.set_model_profile(modelo.trim(), &novo).is_ok() {
+            verdict = "applied";
+        }
+    } else if !outcome.rejected.is_empty() {
+        verdict = "rejected";
+    }
+    gravar_decisao(state, &modelo, &chave, &escolhido, ganho, verdict);
+
+    let _ = restart_engine(&app, state, true).await;
+    let _ = app.emit(
+        "tune-spec",
+        serde_json::json!({ "phase": "done", "model": modelo, "outcome": outcome, "verdict": verdict }),
+    );
+}
+
+/// Os braços que vale medir para este modelo — incluindo o combinado, que é o
+/// que o motor sempre aceitou e o app nunca ofereceu.
+fn candidatos_de_spec(state: &AppState, modelo: &str) -> Vec<lr_types::tuning::SpecSet> {
+    use lr_types::tuning::{SpecSet, SpecType};
+    let mut v = vec![
+        SpecSet::new([SpecType::None]),
+        SpecSet::new([SpecType::NgramMod]),
+    ];
+    if let Some(a) = local_by_name(state, modelo)
+        && tem_cabeca_mtp(&lr_models::read_local_meta(&a.primary_path), &a.name)
+    {
+        v.push(SpecSet::new([SpecType::DraftMtp]));
+        v.push(SpecSet::new([SpecType::DraftMtp, SpecType::NgramMod]));
+    }
+    v
+}
+
+/// O modelo que o Router tem carregado agora.
+async fn modelo_em_foco(state: &AppState) -> Option<String> {
+    let cfg = {
+        let guard = state.server.lock().await;
+        match guard.as_ref() {
+            Some(s) if s.is_spawned() => s.config().clone(),
+            _ => return None,
+        }
+    };
+    lr_engine::LlamaServer::new(cfg)
+        .models_status()
+        .await
+        .ok()?
+        .into_iter()
+        .find(|m| m.state == "loaded")
+        .map(|m| m.id)
+        .filter(|id| !id.ends_with(crate::commands::VISION_SUFFIX))
+}
+
+/// Espera a máquina ficar livre. `false` = desistiu por ora.
+async fn esperar_ocioso(state: &AppState) -> bool {
+    let limite = std::time::Instant::now() + SPEC_ESPERA_MAX;
+    loop {
+        if SPEC_CANCELAR.load(Ordering::SeqCst) {
+            return false;
+        }
+        let ultimo = state.last_engine_use.load(Ordering::SeqCst);
+        let parado = crate::commands::now_ms().saturating_sub(ultimo);
+        if ultimo == 0 || parado >= SPEC_OCIOSO_MIN.as_millis() as i64 {
+            return true;
+        }
+        if std::time::Instant::now() >= limite {
+            return false;
+        }
+        tokio::time::sleep(SPEC_TENTATIVA).await;
+    }
+}
+
+fn gravar_decisao(
+    state: &AppState,
+    modelo: &str,
+    chave: &str,
+    spec: &[lr_types::tuning::SpecType],
+    gain_pct: Option<f64>,
+    verdict: &str,
+) {
+    let d = SpecDecision {
+        key: chave.to_string(),
+        spec: spec.to_vec(),
+        gain_pct,
+        verdict: verdict.to_string(),
+        at: crate::commands::now_ms(),
+    };
+    if let Ok(json) = serde_json::to_string(&d) {
+        let _ = state.store.set_setting(&spec_setting(modelo), &json);
+    }
+}
+
+/// Dispara a medição automática sem segurar quem chamou.
+pub(crate) fn spawn_auto_spec(app: &AppHandle) {
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app2.state::<AppState>();
+        auto_spec_pending(app2.clone(), &state).await;
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn meta(nextn: Option<u32>) -> lr_models::LocalGgufMeta {
+        lr_models::LocalGgufMeta {
+            nextn_layers: nextn,
+            ..Default::default()
+        }
+    }
+
+    /// O cabeçalho manda. O nome do arquivo só fala quando o cabeçalho cala —
+    /// e era confiar nele que deixava o Qwen3.8-27B, que TEM a cabeça e não
+    /// tem "mtp" no nome, fora da medição de especulação.
+    #[test]
+    fn the_mtp_head_is_read_from_the_file_not_from_its_name() {
+        assert!(tem_cabeca_mtp(&meta(Some(2)), "Qwen3.8-27B-UD-IQ4_XS.gguf"));
+        assert!(
+            !tem_cabeca_mtp(&meta(Some(0)), "modelo-mtp.gguf"),
+            "zero camadas é 'não tem', mesmo com o nome prometendo"
+        );
+        assert!(tem_cabeca_mtp(&meta(None), "Qwen3-MTP-Q4.gguf"));
+        assert!(!tem_cabeca_mtp(&meta(None), "llama-3-8b.gguf"));
+    }
+
+    /// A fase de memória decide memória. A especulação medida atravessa a
+    /// varredura inteira — senão ela funcionaria uma vez e sumiria na próxima
+    /// troca de driver.
+    #[test]
+    fn a_memory_pass_keeps_the_speculation_that_was_measured() {
+        let medido = ModelProfile {
+            spec: Some(lr_types::tuning::SpecType::DraftMtp.into()),
+            spec_draft_n_max: Some(4),
+            spec_draft_p_min: Some(0.25),
+            ctx: Some(8192),
+            ..ModelProfile::default()
+        };
+        let mut novo = ModelProfile {
+            ctx: Some(65_536),
+            ngl: Some(65),
+            ..ModelProfile::default()
+        };
+        carry_spec(&medido, &mut novo);
+
+        assert_eq!(novo.spec, Some(lr_types::tuning::SpecType::DraftMtp.into()));
+        assert_eq!(novo.spec_draft_n_max, Some(4));
+        assert_eq!(novo.spec_draft_p_min, Some(0.25));
+        // E não desfaz o trabalho da memória.
+        assert_eq!(novo.ctx, Some(65_536));
+        assert_eq!(novo.ngl, Some(65));
+    }
 }

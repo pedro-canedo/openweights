@@ -13,6 +13,7 @@ import {
 import type { ServerStatus } from "../lib/types";
 import { Chips, NumChips, Select } from "../components/form/controls";
 import BenchHistoryCard from "../components/server/BenchHistoryCard";
+import SpecCard from "../components/server/SpecCard";
 import ClusterPanel from "../components/server/ClusterPanel";
 import ConnectCard from "../components/server/ConnectCard";
 import EngineConfigSection from "../components/server/EngineConfigSection";
@@ -111,6 +112,7 @@ export default function LocalServer() {
         selected={selectedModel}
         onSelect={setSelectedModel}
       />
+      <SpecCard model={selectedModel} />
       <BenchHistoryCard model={selectedModel} running={!!status?.running} />
       <GlobalFlagsCard running={!!status?.running} />
       <ClusterPanel />

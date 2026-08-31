@@ -7,6 +7,10 @@ description = "Adaptadores de engine de inferência (llama-server em Router mode
 
 [dependencies]
 lr_proc = { path = "../proc" }
+# Só pela lista do que o app gerencia: a última porta antes do spawn confere
+# de novo que nenhuma variável de ambiente do usuário troca a chave de API nem
+# atropela o INI por `LLAMA_ARG_*`.
+lr_types = { path = "../types" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

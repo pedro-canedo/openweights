@@ -24,7 +24,7 @@ pub use download::{
     DownloadEvent, DownloadManager, DownloadRequest, DownloadState, DownloadStatus, download_id,
 };
 pub use gguf_local::{LocalGgufMeta, read_local_meta};
-pub use hf::{GgufRepoMeta, HfClient, SortBy};
+pub use hf::{BaseConfig, GgufRepoMeta, HfClient, SortBy};
 pub use local::{LocalArtifact, scan_local};
 
 pub const HF_BASE: &str = "https://huggingface.co";

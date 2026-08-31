@@ -41,12 +41,14 @@ import { tuneAdvise } from "../../lib/tuning";
 import {
   emptyProfile,
   type KvType,
+  type LoadMode,
   type ModelProfile,
   type SpecType,
   type VisionMode,
 } from "../../lib/tuning";
 import {
   Chips,
+  MultiChips,
   NumChips,
   OptionalNum,
   Select,
@@ -58,6 +60,17 @@ import FlagControl, { RequirementBadges } from "../form/FlagControl";
 import HarnessLauncher from "./HarnessLauncher";
 
 const CTX_CHIPS = [8192, 16384, 32768, 65536];
+
+// Ordem em que a tela oferece os modos de carga: do que o llama.cpp faz
+// sozinho até o extremo que só serve quando sobra RAM.
+const LOAD_MODES: (LoadMode | "auto")[] = [
+  "auto",
+  "mmap",
+  "mmapMlock",
+  "mlock",
+  "none",
+  "dio",
+];
 const CTX_MIN = 512;
 const CTX_MAX = 262_144;
 
@@ -338,8 +351,25 @@ export default function EngineConfigSection({
       .slice(0, 30);
   }, [catalog, search, t]);
 
-  const specChoice: SpecType = draft.spec ?? "none";
-  const specOn = specChoice !== "none" || Boolean(draft.specDraftModel);
+  // O modo de carga que a tela mostra, já convertendo perfis gravados antes
+  // da b10441 — quando a mesma escolha morava em `mmap` e `mlock`.
+  const loadModeAtual: LoadMode | "auto" = draft.loadMode
+    ? draft.loadMode
+    : draft.mmap === false && draft.mlock === true
+      ? "mlock"
+      : draft.mmap === false
+        ? "none"
+        : draft.mlock === true
+          ? "mmapMlock"
+          : "auto";
+
+  // Especular com os especialistas fora da placa acorda quase todos eles a
+  // cada passada, e cada um a mais é uma viagem pelo barramento de memória.
+  const especialistasNaRam = caps?.moe === true && (draft.ncmoe ?? 0) > 0;
+
+  // O conjunto de tipos ligados. Vazio (ou só `none`) é "desligada".
+  const specChoice: SpecType[] = (draft.spec ?? []).filter((s) => s !== "none");
+  const specOn = specChoice.length > 0 || Boolean(draft.specDraftModel);
   const visionChoice: VisionMode = draft.vision ?? "onDemand";
   const kvChoice: KvChoice = draft.kvK ?? draft.kvV ?? "auto";
   const state = routerState.get(selected) ?? null;
@@ -596,21 +626,35 @@ export default function EngineConfigSection({
               {t("chat.engine.spec.mtpHint")}
             </p>
           )}
-          {specChoice === "mtp" && caps?.mtpHead === false && (
+          {specChoice.includes("draftMtp") && caps?.mtpHead === false && (
             <p className="text-[11px] leading-relaxed text-warn">
               {t("server.engineConfig.mtpMissing")}
             </p>
           )}
-          <Chips
+          {/* Múltipla escolha porque o motor aceita lista: MTP adivinha
+              texto novo, o n-grama adivinha o que já está no prompt, e um
+              agente de código vive reescrevendo arquivo que acabou de ler. */}
+          <MultiChips
             value={specChoice}
             disabled={disabled}
-            onChange={(v) => patch({ spec: v })}
+            offId={"none" as SpecType}
+            onChange={(v) => patch({ spec: v.length > 0 ? v : ["none"] })}
             options={[
-              { id: "none", label: t("chat.engine.spec.off") },
-              { id: "mtp", label: t("chat.engine.spec.mtp") },
-              { id: "ngram", label: t("chat.engine.spec.ngram") },
+              { id: "none" as SpecType, label: t("chat.engine.spec.off") },
+              { id: "draftMtp" as SpecType, label: t("chat.engine.spec.mtp") },
+              { id: "ngramMod" as SpecType, label: t("chat.engine.spec.ngram") },
             ]}
           />
+          {specChoice.length > 1 && (
+            <p className="text-[11px] leading-relaxed text-dim">
+              {t("chat.engine.spec.combined")}
+            </p>
+          )}
+          {specOn && especialistasNaRam && (
+            <p className="mt-1 text-[11px] leading-relaxed text-warn">
+              {t("tune.fact.specOnMoeHint")}
+            </p>
+          )}
           {specOn && (
             <div className="mt-1 flex flex-wrap gap-4">
               <label className="flex flex-col gap-1">
@@ -779,31 +823,29 @@ export default function EngineConfigSection({
               onCommit={(n) => patch({ parallel: n })}
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <span className={label}>{t("chat.engine.mmap.label")}</span>
-            <Chips
-              value={triFrom(draft.mmap)}
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <span className={label}>{t("chat.engine.loadMode.label")}</span>
+            <p className={hintCls}>{t("chat.engine.loadMode.hint")}</p>
+            <Select
+              value={loadModeAtual}
               disabled={disabled}
-              onChange={(v) => patch({ mmap: triTo(v) })}
-              options={[
-                { id: "auto", label: t("chat.engine.mmap.auto") },
-                { id: "on", label: t("chat.engine.mmap.on") },
-                { id: "off", label: t("chat.engine.mmap.off") },
-              ]}
+              onChange={(v) =>
+                patch({
+                  loadMode: v === "auto" ? null : (v as LoadMode),
+                  // A escolha nova manda: os campos obsoletos saem do perfil
+                  // para não sobrarem duas respostas para a mesma pergunta.
+                  mmap: null,
+                  mlock: null,
+                })
+              }
+              options={LOAD_MODES.map((m) => ({
+                value: m,
+                label: t(`chat.engine.loadMode.${m}`),
+              }))}
             />
-          </div>
-          <div className="flex flex-col gap-2">
-            <span className={label}>{t("chat.engine.mlock.label")}</span>
-            <Chips
-              value={triFrom(draft.mlock)}
-              disabled={disabled}
-              onChange={(v) => patch({ mlock: triTo(v) })}
-              options={[
-                { id: "auto", label: t("chat.engine.mlock.auto") },
-                { id: "on", label: t("chat.engine.mlock.on") },
-                { id: "off", label: t("chat.engine.mlock.off") },
-              ]}
-            />
+            {caps?.biggerThanRam === true && loadModeAtual === "none" && (
+              <p className="text-[11px] text-warn">{t("chat.engine.loadMode.warnNone")}</p>
+            )}
           </div>
           <div className="flex flex-col gap-2 sm:col-span-3">
             <span className={label}>{t("server.engineConfig.draftModel")}</span>
@@ -912,7 +954,13 @@ export default function EngineConfigSection({
         {previewOpen && preview && (
           <div className="relative">
             <pre className="select-text overflow-x-auto rounded-lg border border-edge bg-panel2 p-3 font-mono text-[11.5px] leading-relaxed text-dim">
-              {`# llama-server ${preview.args.join(" ")}\n\n# ${preview.iniPath}\n${preview.ini}`}
+              {[
+                `# llama-server ${preview.args.join(" ")}`,
+                preview.env.length > 0
+                  ? `\n# ${t("server.engineConfig.envPreview")}\n${preview.env.join("\n")}`
+                  : "",
+                `\n# ${preview.iniPath}\n${preview.ini}`,
+              ].join("\n")}
             </pre>
             <button
               type="button"

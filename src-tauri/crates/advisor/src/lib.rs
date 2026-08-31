@@ -54,6 +54,28 @@ impl MemoryBudget {
         self
     }
 }
+/// O que se sabe da forma do modelo, campo a campo, com `None` para "não sei".
+///
+/// Existe para que a mesma conta sirva às duas telas: a Descobrir, que
+/// pergunta antes do download (e busca a geometria no `config.json` do
+/// repositório base no Hub), e a de ajuste, que pergunta depois (e lê o
+/// cabeçalho do GGUF). Antes disso a única fonte era uma tabela por faixa de
+/// parâmetros, que descreve modelos densos e não tem o que dizer sobre
+/// especialistas.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Geometry {
+    pub n_layers: Option<u32>,
+    pub n_kv_heads: Option<u32>,
+    pub n_heads: Option<u32>,
+    /// Declarado (`attention.key_length` / `head_dim`), quando existe.
+    pub head_dim: Option<u32>,
+    pub d_model: Option<u32>,
+    pub n_experts: Option<u32>,
+    pub n_experts_used: Option<u32>,
+    pub expert_ffn: Option<u32>,
+    pub shared_ffn: Option<u32>,
+}
 
 /// Metadados do modelo necessários para estimar o KV cache. Vêm do
 /// `expand[]=gguf` da API do HF ou da leitura do header GGUF; quando ausentes,
@@ -68,6 +90,33 @@ pub struct ModelMeta {
     pub ctx_len: u32,
     /// Bytes por elemento do KV cache (2.0 = f16, 1.0 = q8_0).
     pub kv_bytes_per_elem: f32,
+    /// Dimensão do embedding. Só entra na conta de MoE, e só quando veio do
+    /// arquivo — a tabela de chute não a preenche.
+    pub d_model: u32,
+    /// Cabeças de atenção (não as de KV).
+    pub n_heads: u32,
+    /// Geometria de mistura de especialistas, quando o modelo é um MoE **e**
+    /// a máquina soube ler o bastante para fazer a conta.
+    pub moe: Option<MoeGeometry>,
+}
+
+/// O que faz um MoE caber onde não caberia.
+///
+/// Um modelo de 35 bilhões de parâmetros com 3 ativos não lê 35 bilhões de
+/// pesos por token: lê os da atenção, os do especialista compartilhado e os
+/// dos poucos especialistas que o roteador acordou. Os outros ficam parados —
+/// e peso parado não precisa da memória rápida.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoeGeometry {
+    /// Especialistas roteados por camada.
+    pub n_experts: u32,
+    /// Quantos disparam por token.
+    pub n_experts_used: u32,
+    /// Dimensão interna de um especialista roteado.
+    pub expert_ffn: u32,
+    /// Dimensão interna do especialista compartilhado (0 = não tem).
+    pub shared_ffn: u32,
 }
 
 impl ModelMeta {
@@ -88,7 +137,78 @@ impl ModelMeta {
             head_dim,
             ctx_len,
             kv_bytes_per_elem: 2.0,
+            // A tabela de chute não sabe nada disto, e inventar aqui seria
+            // pior que não responder: quem não tem geometria não ganha o
+            // veredito de MoE, e continua sendo avaliado como denso.
+            d_model: 0,
+            n_heads: 0,
+            moe: None,
         }
+    }
+
+    /// A geometria do arquivo, quando ela existe, caindo na tabela de chute
+    /// só no que faltar.
+    ///
+    /// É o caminho honesto: o cabeçalho do GGUF (depois do download) e o
+    /// `config.json` do repositório base no Hub (antes dele) dizem camadas,
+    /// cabeças e especialistas de verdade. A estimativa por faixa de
+    /// parâmetros continua existindo para o que nenhum dos dois responder —
+    /// e um campo chutado nunca habilita o veredito de MoE, que exige a
+    /// geometria completa.
+    pub fn from_geometry(params: u64, ctx_len: u32, g: &Geometry) -> Self {
+        let base = Self::estimate_from_params(params, ctx_len);
+        let n_heads = g.n_heads.unwrap_or(0);
+        // `head_dim` declarado vence; senão sai de `d_model / cabeças`; e só
+        // então cai no chute.
+        let head_dim = g
+            .head_dim
+            .or_else(|| match (g.d_model, n_heads) {
+                (Some(d), h) if h > 0 && d % h == 0 => Some(d / h),
+                _ => None,
+            })
+            .unwrap_or(base.head_dim);
+        Self {
+            n_layers: g.n_layers.unwrap_or(base.n_layers),
+            n_kv_heads: g.n_kv_heads.unwrap_or(base.n_kv_heads),
+            head_dim,
+            ctx_len,
+            kv_bytes_per_elem: base.kv_bytes_per_elem,
+            d_model: g.d_model.unwrap_or(0),
+            n_heads,
+            moe: match (g.n_experts, g.expert_ffn) {
+                (Some(n), Some(ffn)) if n > 0 && ffn > 0 => Some(MoeGeometry {
+                    n_experts: n,
+                    n_experts_used: g.n_experts_used.unwrap_or(0),
+                    expert_ffn: ffn,
+                    shared_ffn: g.shared_ffn.unwrap_or(0),
+                }),
+                _ => None,
+            },
+        }
+    }
+
+    /// Que fatia dos pesos são especialistas ROTEADOS — a fatia que pode
+    /// morar na RAM do sistema sem tirar a placa do caminho crítico.
+    ///
+    /// Sai da geometria, nunca de constante: por camada, os especialistas
+    /// roteados são `n_experts × 3 × d_model × expert_ffn` (as três matrizes
+    /// de um FFN com porta), contra a atenção e o especialista compartilhado,
+    /// que disparam em todo token e por isso ficam na placa. Sem a geometria
+    /// completa a resposta é `None`, e o veredito segue o caminho denso.
+    pub fn routed_expert_fraction(&self) -> Option<f32> {
+        let m = self.moe?;
+        if m.n_experts == 0 || m.expert_ffn == 0 || self.d_model == 0 || self.n_heads == 0 {
+            return None;
+        }
+        let d = self.d_model as f64;
+        let roteados = m.n_experts as f64 * 3.0 * d * m.expert_ffn as f64;
+        let compartilhado = 3.0 * d * m.shared_ffn as f64;
+        // Q, K, V e O. Q e O andam com as cabeças completas; K e V, com as
+        // de KV — é daí que vem a economia de GQA.
+        let atencao =
+            d * self.head_dim as f64 * (2.0 * self.n_heads as f64 + 2.0 * self.n_kv_heads as f64);
+        let total = roteados + compartilhado + atencao;
+        (total > 0.0).then(|| (roteados / total) as f32)
     }
 
     /// KV cache total em bytes: K e V por camada.
@@ -114,6 +234,15 @@ pub enum FitVerdict {
     FullGpu { ngl: u32 },
     /// Offload parcial: roda, mas com queda brusca de velocidade (amarelo).
     Partial { ngl: u32, layers_total: u32 },
+    /// MoE com os especialistas roteados na RAM do sistema.
+    ///
+    /// É um veredito próprio, e não um "parcial", porque a divisão é outra:
+    /// no parcial, camadas inteiras — atenção incluída — vão para a CPU, e a
+    /// atenção roda em TODO token, então cada camada fora da placa custa
+    /// caro. Aqui só saem os especialistas, que ficam parados quase sempre.
+    /// O mesmo arquivo, dividido do jeito certo, roda numa placa que a conta
+    /// densa diria não caber.
+    MoeOffload { ncmoe: u32, layers_total: u32 },
     /// Só CPU: funciona, lento (cinza).
     CpuOnly,
     /// Não cabe nem na RAM (vermelho).
@@ -155,6 +284,8 @@ pub fn evaluate(budget: &MemoryBudget, meta: &ModelMeta, file_size_bytes: u64) -
 
     let verdict = if budget.vram_bytes > 0 && file_size_bytes + kv <= vram_avail {
         FitVerdict::FullGpu { ngl: meta.n_layers }
+    } else if let Some(v) = moe_verdict(budget, meta, file_size_bytes, kv, vram_avail, ram_avail) {
+        v
     } else if budget.vram_bytes > 0 {
         // Offload parcial: peso por camada ≈ (arquivo + KV) / camadas.
         let per_layer = (file_size_bytes + kv) / meta.n_layers.max(1) as u64;
@@ -183,7 +314,58 @@ pub fn evaluate(budget: &MemoryBudget, meta: &ModelMeta, file_size_bytes: u64) -
     }
 }
 
-fn usable_ram(ram_bytes: u64) -> u64 {
+/// O veredito quando o modelo é um MoE e a máquina soube ler a geometria.
+///
+/// A pergunta muda de "quantas camadas cabem?" para "de quantas camadas
+/// preciso tirar os especialistas?". A conta é direta: cada camada cujos
+/// especialistas roteados saem da placa devolve
+/// `arquivo × fração_roteada / camadas` bytes de VRAM. Sobe-se esse número
+/// até o modelo caber — e ele tem de caber DUAS vezes: na placa o que fica, e
+/// na RAM o que sai.
+///
+/// É estimativa, e assumida como tal: depois do download o
+/// `llama-fit-params` mede a mesma configuração de verdade, e é o número dele
+/// que a tela de ajuste mostra. Esta conta serve para a tela Descobrir não
+/// pintar de cinza um arquivo que a máquina roda bem.
+fn moe_verdict(
+    budget: &MemoryBudget,
+    meta: &ModelMeta,
+    file_size_bytes: u64,
+    kv: u64,
+    vram_avail: u64,
+    ram_avail: u64,
+) -> Option<FitVerdict> {
+    if budget.vram_bytes == 0 || budget.unified {
+        return None;
+    }
+    let fracao = meta.routed_expert_fraction()? as f64;
+    let camadas = meta.n_layers.max(1);
+    let por_camada = (file_size_bytes as f64 * fracao) / camadas as f64;
+    if por_camada <= 0.0 {
+        return None;
+    }
+
+    let precisa = (file_size_bytes + kv).saturating_sub(vram_avail) as f64;
+    let ncmoe = (precisa / por_camada).ceil() as u32;
+    if ncmoe == 0 || ncmoe > camadas {
+        // Nem com todos os especialistas fora a placa dá conta: quem responde
+        // é o caminho denso, que sabe dizer "só CPU" e "não cabe".
+        return None;
+    }
+    // O que sai da placa tem de caber na RAM — junto com o resto do que o
+    // sistema já usa.
+    if (por_camada * ncmoe as f64) as u64 > ram_avail {
+        return None;
+    }
+    Some(FitVerdict::MoeOffload {
+        ncmoe,
+        layers_total: camadas,
+    })
+}
+
+/// A RAM que dá para contar com ela: o total menos a fatia que o sistema e o
+/// resto do computador já ocupam.
+pub fn usable_ram(ram_bytes: u64) -> u64 {
     (ram_bytes as f64 * RAM_USABLE_FRACTION) as u64
 }
 
@@ -312,8 +494,11 @@ pub fn evaluate_files(
     };
 
     let full_gpu = pick(&opts, |v| matches!(v, FitVerdict::FullGpu { .. }));
+    // Especialistas na RAM vem ANTES do offload parcial: no parcial saem
+    // camadas inteiras, e a atenção — que roda em todo token — sai junto.
+    let moe = pick(&opts, |v| matches!(v, FitVerdict::MoeOffload { .. }));
     let any_fit = pick(&opts, |v| !matches!(v, FitVerdict::WontFit));
-    if let Some(i) = full_gpu.or(any_fit) {
+    if let Some(i) = full_gpu.or(moe).or(any_fit) {
         opts[i].recommended = true;
     }
     opts
@@ -398,6 +583,9 @@ mod tests {
             head_dim: 128,
             ctx_len: 8192,
             kv_bytes_per_elem: 2.0,
+            d_model: 0,
+            n_heads: 0,
+            moe: None,
         }
     }
 
@@ -419,6 +607,90 @@ mod tests {
             }
             other => panic!("esperava Partial, veio {other:?}"),
         }
+    }
+
+    /// A geometria de um Qwen3-30B-A3B: 128 especialistas, 8 disparando.
+    fn moe_30b(ctx: u32) -> ModelMeta {
+        ModelMeta {
+            n_layers: 48,
+            n_kv_heads: 4,
+            head_dim: 128,
+            ctx_len: ctx,
+            kv_bytes_per_elem: 2.0,
+            d_model: 2048,
+            n_heads: 32,
+            moe: Some(MoeGeometry {
+                n_experts: 128,
+                n_experts_used: 8,
+                expert_ffn: 768,
+                shared_ffn: 0,
+            }),
+        }
+    }
+
+    /// O caso do vídeo: um arquivo que a conta densa condena, e que roda com
+    /// os especialistas na RAM do sistema.
+    #[test]
+    fn a_moe_that_does_not_fit_gets_its_own_verdict() {
+        let budget = MemoryBudget {
+            vram_bytes: 6 << 30,
+            ram_bytes: 32 << 30,
+            unified: false,
+        };
+        let r = evaluate(&budget, &moe_30b(8192), 22 << 30);
+        match r.verdict {
+            FitVerdict::MoeOffload {
+                ncmoe,
+                layers_total,
+            } => {
+                assert_eq!(layers_total, 48);
+                assert!(ncmoe > 0 && ncmoe <= 48, "ncmoe fora da faixa: {ncmoe}");
+            }
+            outro => panic!("esperava MoeOffload, veio {outro:?}"),
+        }
+    }
+
+    /// Sem RAM para receber o que sai da placa, a divisão não existe — e
+    /// prometer que existe seria pior do que dizer que não cabe.
+    #[test]
+    fn without_ram_for_the_experts_there_is_no_offload() {
+        let budget = MemoryBudget {
+            vram_bytes: 6 << 30,
+            ram_bytes: 4 << 30,
+            unified: false,
+        };
+        let r = evaluate(&budget, &moe_30b(8192), 22 << 30);
+        assert!(
+            !matches!(r.verdict, FitVerdict::MoeOffload { .. }),
+            "veio {:?}",
+            r.verdict
+        );
+    }
+
+    /// Modelo denso não ganha o veredito de MoE, nem quando aperta.
+    #[test]
+    fn a_dense_model_is_never_a_moe_offload() {
+        let budget = MemoryBudget {
+            vram_bytes: 6 << 30,
+            ram_bytes: 32 << 30,
+            unified: false,
+        };
+        let denso = ModelMeta::estimate_from_params(27_000_000_000, 8192);
+        let r = evaluate(&budget, &denso, 14 << 30);
+        assert!(!matches!(r.verdict, FitVerdict::MoeOffload { .. }));
+    }
+
+    /// A fração roteada sai da geometria: com 128 especialistas de 768 contra
+    /// uma atenção pequena, a esmagadora maioria dos pesos pode sair da placa.
+    #[test]
+    fn the_routed_fraction_comes_from_the_geometry() {
+        let f = moe_30b(8192).routed_expert_fraction().unwrap();
+        assert!(f > 0.9, "fração roteada baixa demais: {f}");
+        // Sem geometria não há fração — e sem fração, nada de veredito MoE.
+        assert_eq!(
+            ModelMeta::estimate_from_params(30_000_000_000, 8192).routed_expert_fraction(),
+            None
+        );
     }
 
     #[test]
@@ -460,6 +732,9 @@ mod tests {
             head_dim: 128,
             ctx_len: 4096,
             kv_bytes_per_elem: 2.0,
+            d_model: 0,
+            n_heads: 0,
+            moe: None,
         };
         assert_eq!(meta.kv_cache_bytes(), 512 << 20);
     }

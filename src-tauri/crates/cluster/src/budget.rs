@@ -84,6 +84,9 @@ mod tests {
             avx2: true,
             avx512: false,
             ram_total_bytes: ram_gb << 30,
+            ram_speed_mts: None,
+            ram_channels: None,
+            ram_bandwidth_bytes_s: None,
             gpus: gpu.into_iter().collect(),
         }
     }
@@ -96,6 +99,7 @@ mod tests {
             is_integrated: false,
             driver_version: None,
             cuda_compute: Some((8, 6)),
+            bandwidth_bytes_s: None,
         }
     }
 
@@ -107,6 +111,7 @@ mod tests {
             is_integrated: true,
             driver_version: None,
             cuda_compute: None,
+            bandwidth_bytes_s: None,
         }
     }
 
@@ -143,6 +148,7 @@ mod tests {
             is_integrated: false,
             driver_version: None,
             cuda_compute: None,
+            bandwidth_bytes_s: None,
         };
         let p = profile("windows", 32, Some(gpu));
         assert_eq!(device_pin(&p).as_deref(), Some("Vulkan0"));
@@ -157,6 +163,7 @@ mod tests {
             is_integrated: true,
             driver_version: None,
             cuda_compute: None,
+            bandwidth_bytes_s: None,
         };
         let dgpu = GpuInfo {
             name: "Radeon".into(),
@@ -165,6 +172,7 @@ mod tests {
             is_integrated: false,
             driver_version: None,
             cuda_compute: None,
+            bandwidth_bytes_s: None,
         };
         let p = profile("windows", 32, None);
         let mut p = p;

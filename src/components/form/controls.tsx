@@ -43,6 +43,55 @@ export function Chips<T extends string>({
   );
 }
 
+/**
+ * Chips de MÚLTIPLA escolha: as opções se acumulam em vez de se excluírem.
+ *
+ * Nasceu da especulação, onde escolher um tipo só jogava fora metade do
+ * ganho — um rascunho adivinha texto novo e um n-grama adivinha o que já está
+ * no prompt, e o motor aceita os dois juntos. `off` é a opção que zera as
+ * demais: "desligado" não é um item da lista, é a lista vazia.
+ */
+export function MultiChips<T extends string>({
+  value,
+  options,
+  offId,
+  disabled,
+  onChange,
+}: {
+  value: T[];
+  options: { id: T; label: string }[];
+  /** A opção que, ao ser clicada, limpa todas as outras. */
+  offId?: T;
+  disabled?: boolean;
+  onChange: (v: T[]) => void;
+}) {
+  const vazio = value.length === 0;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {options.map((o) => {
+        const ativo = o.id === offId ? vazio : value.includes(o.id);
+        return (
+          <button
+            key={o.id}
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              if (o.id === offId) return onChange([]);
+              const proximo = value.includes(o.id)
+                ? value.filter((v) => v !== o.id)
+                : [...value, o.id];
+              onChange(proximo);
+            }}
+            className={chipClass(ativo)}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Número opcional: vazio = "auto". Commit no blur/Enter, com clamp. */
 export function OptionalNum({
   label,

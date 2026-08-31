@@ -277,7 +277,7 @@ mod tests {
             flash_attn: Some(false),
             // Não muda memória: não deve virar argumento.
             threads: Some(8),
-            spec: Some(lr_types::tuning::SpecType::Ngram),
+            spec: Some(lr_types::tuning::SpecType::NgramMod.into()),
             ..Default::default()
         };
         let args = probe_args(Path::new("/m/a.gguf"), &p, None).join(" ");

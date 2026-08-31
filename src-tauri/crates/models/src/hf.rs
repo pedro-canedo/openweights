@@ -73,6 +73,36 @@ struct ApiGguf {
     chat_template: Option<String>,
 }
 
+/// Os campos do `config.json` do transformers que descrevem a forma.
+///
+/// Nomes seguem o arquivo; ausência é `None`, e o advisor completa o que
+/// faltar. `num_key_value_heads` some em modelos sem GQA — ali ele é igual a
+/// `num_attention_heads`, e é assim que a leitura o trata.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct BaseConfig {
+    #[serde(default)]
+    pub num_hidden_layers: Option<u32>,
+    #[serde(default)]
+    pub num_attention_heads: Option<u32>,
+    #[serde(default)]
+    pub num_key_value_heads: Option<u32>,
+    #[serde(default)]
+    pub head_dim: Option<u32>,
+    #[serde(default)]
+    pub hidden_size: Option<u32>,
+    /// `num_experts` no Qwen; `num_local_experts` no Mixtral e derivados.
+    #[serde(default, alias = "num_local_experts")]
+    pub num_experts: Option<u32>,
+    #[serde(default, alias = "num_experts_per_token")]
+    pub num_experts_per_tok: Option<u32>,
+    /// Dimensão interna de um especialista roteado.
+    #[serde(default)]
+    pub moe_intermediate_size: Option<u32>,
+    /// Dimensão interna do especialista compartilhado, quando existe.
+    #[serde(default, alias = "shared_expert_intermediate_size")]
+    pub moe_shared_expert_intermediate_size: Option<u32>,
+}
+
 /// Metadados GGUF de um repositório (via `expand[]=gguf`), sem baixar nada.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +111,10 @@ pub struct GgufRepoMeta {
     pub architecture: Option<String>,
     pub context_length: Option<u64>,
     pub chat_template: Option<String>,
+    /// Tags do repositório — é aqui que `base_model:<autor>/<nome>` aponta
+    /// para o repositório original, o único que publica a geometria.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -179,7 +213,9 @@ impl HfClient {
     /// context_length, chat_template). `None` quando o repo não expõe o
     /// bloco `gguf`.
     pub async fn gguf_meta(&self, repo_id: &str) -> Result<Option<GgufRepoMeta>, ModelsError> {
-        let url = format!("{HF_BASE}/api/models/{repo_id}?expand[]=gguf");
+        // As tags vêm junto porque é nelas que mora `base_model:` — o
+        // ponteiro para o repositório que tem a geometria completa.
+        let url = format!("{HF_BASE}/api/models/{repo_id}?expand[]=gguf&expand[]=tags");
         let resp = self.auth(self.http.get(&url)).send().await?;
         match resp.status().as_u16() {
             200 => {}
@@ -190,14 +226,44 @@ impl HfClient {
         struct Resp {
             #[serde(default)]
             gguf: Option<ApiGguf>,
+            #[serde(default)]
+            tags: Vec<String>,
         }
         let raw: Resp = resp.json().await?;
+        let tags = raw.tags;
         Ok(raw.gguf.map(|g| GgufRepoMeta {
             params_total: g.total,
             architecture: g.architecture,
             context_length: g.context_length,
             chat_template: g.chat_template,
+            tags,
         }))
+    }
+
+    /// A geometria do modelo, do `config.json` do repositório BASE.
+    ///
+    /// O bloco `gguf` da API responde parâmetros, arquitetura e janela de
+    /// treino — e para o resto ficava a tabela de chute por faixa de
+    /// parâmetros, que descreve modelos densos e não tem o que dizer sobre
+    /// mistura de especialistas. O `config.json` tem tudo: quantas camadas,
+    /// quantas cabeças de KV, quantos especialistas existem e quantos
+    /// disparam por token.
+    ///
+    /// Ele mora no repositório ORIGINAL, não no de GGUF — e o repositório de
+    /// GGUF diz qual é, na tag `base_model:<autor>/<nome>`. Sem a tag, sem
+    /// resposta: seguir para um palpite de nome seria trocar "não sei" por
+    /// "talvez", que é pior.
+    pub async fn base_config(&self, tags: &[String]) -> Option<BaseConfig> {
+        let base = tags.iter().find_map(|t| {
+            t.strip_prefix("base_model:")
+                .filter(|r| !r.contains(':') && r.contains('/'))
+        })?;
+        let url = format!("{HF_BASE}/{base}/raw/main/config.json");
+        let resp = self.auth(self.http.get(&url)).send().await.ok()?;
+        if resp.status() != 200 {
+            return None;
+        }
+        resp.json::<BaseConfig>().await.ok()
     }
 
     /// O README do repositório, sem o cabeçalho YAML.

@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS perf_runs (
     suspect INTEGER NOT NULL DEFAULT 0,
     measured_at INTEGER NOT NULL,
     gpu_name TEXT,
-    profile_json TEXT
+    profile_json TEXT,
+    n_prompt INTEGER,
+    n_depth INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_perf_lookup
     ON perf_runs(machine_key, model_id, profile_key);
@@ -65,6 +67,12 @@ pub struct PerfRun {
     /// Os pares INI legíveis do perfil medido, em JSON — é o que permite à
     /// tela mostrar a configuração sem decifrar o hash de `profile_key`.
     pub profile_json: Option<String>,
+    /// Com que tamanho de prompt `prompt_tps` foi medido. `None` em linhas
+    /// gravadas antes desta coluna — e é por isso que elas não ganham Δ de
+    /// prompt: não dá para saber se são comparáveis.
+    pub n_prompt: Option<u32>,
+    /// Quantos tokens já havia no contexto durante a geração.
+    pub n_depth: Option<u32>,
 }
 
 fn run_from(r: &Row<'_>) -> rusqlite::Result<PerfRun> {
@@ -82,12 +90,14 @@ fn run_from(r: &Row<'_>) -> rusqlite::Result<PerfRun> {
         measured_at: r.get(10)?,
         gpu_name: r.get(11)?,
         profile_json: r.get(12)?,
+        n_prompt: r.get::<_, Option<i64>>(13)?.map(|v| v.max(0) as u32),
+        n_depth: r.get::<_, Option<i64>>(14)?.map(|v| v.max(0) as u32),
     })
 }
 
 const COLUNAS: &str = "machine_key, model_id, profile_key, build_number, gen_tps, prompt_tps, \
                        gen_stddev, gpu_bytes, source, suspect, measured_at, gpu_name, \
-                       profile_json";
+                       profile_json, n_prompt, n_depth";
 
 impl Store {
     #[allow(clippy::too_many_arguments)]
@@ -96,8 +106,9 @@ impl Store {
         conn.execute(
             "INSERT INTO perf_runs (machine_key, model_id, profile_key, build_number,
                                     gen_tps, prompt_tps, gen_stddev, gpu_bytes, source,
-                                    suspect, measured_at, gpu_name, profile_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                                    suspect, measured_at, gpu_name, profile_json,
+                                    n_prompt, n_depth)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 run.machine_key,
                 run.model_id,
@@ -112,6 +123,8 @@ impl Store {
                 run.measured_at,
                 run.gpu_name,
                 run.profile_json,
+                run.n_prompt.map(|v| v as i64),
+                run.n_depth.map(|v| v as i64),
             ],
         )?;
         Ok(())
@@ -255,39 +268,85 @@ pub struct UsageRow {
     pub samples: i64,
 }
 
+/// O que a comparação com a linha anterior rende.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Delta {
+    /// Variação da GERAÇÃO, em pontos percentuais.
+    pub gen_pct: Option<f64>,
+    pub gen_reason: &'static str,
+    /// Variação do PROCESSAMENTO DO PROMPT. Separada porque tem uma condição
+    /// a mais: só compara medições feitas com o MESMO tamanho de prompt.
+    pub prompt_pct: Option<f64>,
+    pub prompt_reason: &'static str,
+}
+
 /// Delta de cada linha do histórico sobre a antecessora imediata.
 ///
 /// `rows` vem da mais recente para a mais antiga (como devolve
 /// [`Store::perf_history_rows`]); a antecessora de `rows[i]` é `rows[i+1]`.
-/// Devolve, na mesma ordem, `(delta_pct, reason)`:
-/// - `Some(pct)` com `"ok"` só quando linha e antecessora existem, são do
-///   MESMO build e nenhuma das duas é suspeita — fora disso o percentual
-///   compararia coisas que não se comparam;
-/// - `None` com `"first"` (sem antecessora na janela buscada),
-///   `"buildChange"` (o motor mudou entre as duas) ou `"suspect"` (a própria
-///   linha ou a antecessora foi medida com a placa quente).
-pub fn annotate_deltas(rows: &[PerfRun]) -> Vec<(Option<f64>, &'static str)> {
+///
+/// Razões possíveis: `"ok"`, `"first"` (sem antecessora ou sem base
+/// positiva), `"buildChange"` (o motor mudou entre as duas), `"suspect"` (uma
+/// delas foi medida com a placa quente) e — só do lado do prompt —
+/// `"promptChanged"`, quando as duas medições usaram prompts de tamanhos
+/// diferentes. Esse último caso não é raro: perfil com especialistas na CPU
+/// é medido com prompt longo justamente porque é lá que o micro-lote aparece,
+/// e comparar esse número com o de um prompt curto seria inventar uma piora.
+///
+/// A geração NÃO depende do tamanho do prompt — depende da profundidade do
+/// contexto —, então ela é comparada sempre que a profundidade bate.
+pub fn annotate_deltas(rows: &[PerfRun]) -> Vec<Delta> {
     rows.iter()
         .enumerate()
         .map(|(i, atual)| {
+            let nada = |razao: &'static str| Delta {
+                gen_pct: None,
+                gen_reason: razao,
+                prompt_pct: None,
+                prompt_reason: razao,
+            };
             let Some(anterior) = rows.get(i + 1) else {
-                return (None, "first");
+                return nada("first");
             };
             if anterior.build_number != atual.build_number {
-                return (None, "buildChange");
+                return nada("buildChange");
             }
             if atual.suspect || anterior.suspect {
-                return (None, "suspect");
+                return nada("suspect");
             }
-            if anterior.gen_tps <= 0.0 {
+            if atual.n_depth.unwrap_or(0) != anterior.n_depth.unwrap_or(0) {
+                return nada("promptChanged");
+            }
+
+            let (gen_pct, gen_reason) = if anterior.gen_tps > 0.0 {
+                (
+                    Some((atual.gen_tps - anterior.gen_tps) / anterior.gen_tps * 100.0),
+                    "ok",
+                )
+            } else {
                 // Sem base positiva não existe percentual honesto — e um
                 // infinito aqui viraria `null` no JSON com razão "ok".
-                return (None, "first");
+                (None, "first")
+            };
+
+            let mesmo_prompt = atual.n_prompt.is_some() && atual.n_prompt == anterior.n_prompt;
+            let (prompt_pct, prompt_reason) = if !mesmo_prompt {
+                (None, "promptChanged")
+            } else if anterior.prompt_tps > 0.0 {
+                (
+                    Some((atual.prompt_tps - anterior.prompt_tps) / anterior.prompt_tps * 100.0),
+                    "ok",
+                )
+            } else {
+                (None, "first")
+            };
+
+            Delta {
+                gen_pct,
+                gen_reason,
+                prompt_pct,
+                prompt_reason,
             }
-            (
-                Some((atual.gen_tps - anterior.gen_tps) / anterior.gen_tps * 100.0),
-                "ok",
-            )
         })
         .collect()
 }
@@ -311,6 +370,8 @@ mod tests {
             measured_at: 1_000,
             gpu_name: Some("RTX de Teste".into()),
             profile_json: None,
+            n_prompt: Some(512),
+            n_depth: Some(0),
         }
     }
 
@@ -476,10 +537,10 @@ mod tests {
     fn delta_exists_within_the_same_build() {
         let rows = vec![run_at("a", 44.0, 10441, 200), run_at("a", 40.0, 10441, 100)];
         let annos = annotate_deltas(&rows);
-        let (pct, reason) = &annos[0];
-        assert_eq!(*reason, "ok");
-        assert!((pct.unwrap() - 10.0).abs() < 1e-9);
-        assert_eq!(annos[1], (None, "first"));
+        assert_eq!(annos[0].gen_reason, "ok");
+        assert!((annos[0].gen_pct.unwrap() - 10.0).abs() < 1e-9);
+        assert_eq!(annos[1].gen_reason, "first");
+        assert_eq!(annos[1].gen_pct, None);
     }
 
     /// Motor atualizado entre as duas medições: números de builds diferentes
@@ -488,7 +549,8 @@ mod tests {
     fn delta_is_absent_across_a_build_change() {
         let rows = vec![run_at("a", 50.0, 10500, 200), run_at("a", 40.0, 10441, 100)];
         let annos = annotate_deltas(&rows);
-        assert_eq!(annos[0], (None, "buildChange"));
+        assert_eq!(annos[0].gen_pct, None);
+        assert_eq!(annos[0].gen_reason, "buildChange");
     }
 
     /// Uma medição suspeita no meio contamina os dois deltas que a tocam: o
@@ -503,16 +565,69 @@ mod tests {
             run_at("a", 40.0, 10441, 100),
         ];
         let annos = annotate_deltas(&rows);
-        assert_eq!(annos[0], (None, "suspect"), "antecessora suspeita");
-        assert_eq!(annos[1], (None, "suspect"), "a própria linha é suspeita");
-        assert_eq!(annos[2], (None, "first"));
+        assert_eq!(annos[0].gen_reason, "suspect", "antecessora suspeita");
+        assert_eq!(annos[1].gen_reason, "suspect", "a própria linha é suspeita");
+        assert_eq!(annos[2].gen_reason, "first");
+        assert!(annos.iter().all(|d| d.gen_pct.is_none()));
     }
 
     /// Série de uma linha só: sem antecessora, sem delta.
     #[test]
     fn a_single_row_has_no_delta() {
         let rows = vec![run_at("a", 40.0, 10441, 100)];
-        assert_eq!(annotate_deltas(&rows), vec![(None, "first")]);
+        let annos = annotate_deltas(&rows);
+        assert_eq!(annos.len(), 1);
+        assert_eq!(annos[0].gen_reason, "first");
+        assert_eq!(annos[0].gen_pct, None);
+    }
+
+    /// O ponto do vídeo, virado teste: um perfil que tira especialistas da
+    /// placa é medido com prompt LONGO, e comparar esse número com o de um
+    /// prompt curto inventaria uma piora que não existe. A geração, que não
+    /// depende do tamanho do prompt, continua comparável.
+    #[test]
+    fn a_longer_prompt_is_not_a_worse_prompt() {
+        let mut longo = run_at("moe", 18.0, 10441, 200);
+        longo.n_prompt = Some(4096);
+        longo.prompt_tps = 340.0;
+        let mut curto = run_at("denso", 16.0, 10441, 100);
+        curto.n_prompt = Some(512);
+        curto.prompt_tps = 900.0;
+
+        let annos = annotate_deltas(&[longo, curto]);
+        assert_eq!(annos[0].prompt_pct, None, "prompts de tamanhos diferentes");
+        assert_eq!(annos[0].prompt_reason, "promptChanged");
+        assert_eq!(annos[0].gen_reason, "ok", "gerar não depende do prompt");
+        assert!((annos[0].gen_pct.unwrap() - 12.5).abs() < 1e-9);
+    }
+
+    /// Mesmo tamanho de prompt: aí sim o ganho de leitura é um ganho.
+    #[test]
+    fn the_same_prompt_size_makes_the_prompt_delta_honest() {
+        let mut depois = run_at("ub2048", 17.0, 10441, 200);
+        depois.n_prompt = Some(4096);
+        depois.prompt_tps = 345.0;
+        let mut antes = run_at("ub512", 17.0, 10441, 100);
+        antes.n_prompt = Some(4096);
+        antes.prompt_tps = 23.0;
+
+        let annos = annotate_deltas(&[depois, antes]);
+        assert_eq!(annos[0].prompt_reason, "ok");
+        assert!(annos[0].prompt_pct.unwrap() > 1000.0, "22 → 345 tok/s");
+    }
+
+    /// Linha antiga (sem a coluna) não ganha Δ de prompt: não dá para saber
+    /// se ela é comparável, e chutar que sim é o defeito que se quer evitar.
+    #[test]
+    fn a_row_from_before_the_column_gets_no_prompt_delta() {
+        let mut nova = run_at("a", 40.0, 10441, 200);
+        nova.n_prompt = Some(512);
+        let mut antiga = run_at("a", 40.0, 10441, 100);
+        antiga.n_prompt = None;
+
+        let annos = annotate_deltas(&[nova, antiga]);
+        assert_eq!(annos[0].prompt_reason, "promptChanged");
+        assert_eq!(annos[0].gen_reason, "ok", "a geração ainda se compara");
     }
 
     /// Perfil vazio não tem chave (`key()` = None), mas o bench grava `""`:

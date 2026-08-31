@@ -24,4 +24,7 @@ windows = { version = "0.62", features = [
   "Win32_Graphics_Direct3D",
   "Win32_Graphics_Direct3D12",
   "Win32_System_Performance",
+  # `GetSystemFirmwareTable`: a tabela SMBIOS (velocidade e canais da RAM) sem
+  # COM, sem WMI e sem spawnar nada.
+  "Win32_System_SystemInformation",
 ] }

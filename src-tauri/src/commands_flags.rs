@@ -34,6 +34,9 @@ pub struct FlagCatalog {
     /// e diz isso — nunca esconde a seção inteira.
     pub degraded: bool,
     pub flags: Vec<FlagSpec>,
+    /// As variáveis de ambiente que o app sabe explicar. Não vêm do `--help`
+    /// (o llama.cpp não as lista): é tabela curada, e por isso não degrada.
+    pub env_vars: Vec<lr_types::flags::EnvSpec>,
 }
 
 /// Curadas + dinâmicas, com degradação explícita quando o binário não ajuda.
@@ -54,6 +57,7 @@ async fn full_catalog(state: &AppState) -> FlagCatalog {
             variant: vname,
             degraded: false,
             flags: merge_catalog(curated_flags(), &flags),
+            env_vars: lr_types::flags::curated_env_vars(),
         },
         Err(e) => {
             log::warn!("catálogo de flags sem o --help ({e}); seguindo só com as curadas");
@@ -62,6 +66,7 @@ async fn full_catalog(state: &AppState) -> FlagCatalog {
                 variant: vname,
                 degraded: true,
                 flags: merge_catalog(curated_flags(), &[]),
+                env_vars: lr_types::flags::curated_env_vars(),
             }
         }
     }
@@ -111,6 +116,9 @@ pub struct EnginePreview {
     /// desse modelo (inclusive a companheira de visão).
     pub ini: String,
     pub ini_path: String,
+    /// Variáveis de ambiente do processo, `NOME=valor`. A chave de API já vem
+    /// mascarada pelo `preview_server_config` — o bloco da tela é copiável.
+    pub env: Vec<String>,
 }
 
 #[tauri::command]
@@ -130,6 +138,11 @@ pub async fn engine_preview(
     }
     Ok(EnginePreview {
         args: cfg.to_args(),
+        env: cfg
+            .env_vars()
+            .into_iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect(),
         ini: lr_engine::render_models_preset(&star, &entries),
         ini_path: state
             .data_dir
@@ -231,6 +244,10 @@ pub struct ModelCaps {
     pub has_mmproj: bool,
     pub n_layers: Option<u32>,
     pub train_ctx: Option<u32>,
+    /// O arquivo é maior do que a RAM com que dá para contar. Quando é, ler
+    /// tudo para a memória (`load-mode = none`) troca leitura sob demanda por
+    /// swap — a interface avisa em vez de proibir.
+    pub bigger_than_ram: bool,
     pub busy_with: Vec<&'static str>,
 }
 
@@ -260,7 +277,7 @@ fn builtin_presets() -> Vec<(&'static str, lr_types::tuning::ModelProfile)> {
         (
             "builtin.mtpTurbo",
             ModelProfile {
-                spec: Some(SpecType::Mtp),
+                spec: Some(SpecType::DraftMtp.into()),
                 spec_draft_n_max: Some(4),
                 spec_draft_p_min: Some(0.75),
                 flash_attn: Some(true),
@@ -275,6 +292,18 @@ fn builtin_presets() -> Vec<(&'static str, lr_types::tuning::ModelProfile)> {
                 kv_k: Some(KvType::Q8_0),
                 kv_v: Some(KvType::Q8_0),
                 flash_attn: Some(true),
+                ..Default::default()
+            },
+        ),
+        // Todos os especialistas na RAM do sistema — o extremo seguro de
+        // onde o otimizador desce. Serve para carregar HOJE um MoE que não
+        // caberia, sem esperar a medição: se ele carrega assim, carrega em
+        // qualquer ponto intermediário.
+        (
+            "builtin.moeOffload",
+            ModelProfile {
+                flash_attn: Some(true),
+                extras: vec![("cpu-moe".into(), "1".into())],
                 ..Default::default()
             },
         ),
@@ -411,6 +440,7 @@ fn merge_profile(
     leva!(mmproj);
     leva!(vision);
     leva!(kv_offload);
+    leva!(load_mode);
     leva!(mmap);
     leva!(mlock);
     leva!(parallel);
@@ -447,6 +477,8 @@ pub fn model_capabilities(state: State<'_, AppState>, model: String) -> CmdResul
         has_mmproj: artefato.vision_projector.is_some(),
         n_layers: meta.n_layers,
         train_ctx: meta.context_length,
+        bigger_than_ram: artefato.total_bytes
+            > lr_advisor::usable_ram(state.profile.ram_total_bytes),
         busy_with: engine_busy_with(&state),
     })
 }

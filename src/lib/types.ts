@@ -10,6 +10,8 @@ export interface GpuInfo {
   isIntegrated: boolean;
   driverVersion: string | null;
   cudaCompute: [number, number] | null;
+  /** Banda de memória da placa, em bytes por segundo. `null` = não deu para saber. */
+  bandwidthBytesS: number | null;
 }
 
 export interface HardwareProfile {
@@ -20,6 +22,12 @@ export interface HardwareProfile {
   avx2: boolean;
   avx512: boolean;
   ramTotalBytes: number;
+  /** Velocidade efetiva da memória do sistema, em MT/s. */
+  ramSpeedMts: number | null;
+  /** Canais POVOADOS — dois pentes no mesmo canal não dobram a banda. */
+  ramChannels: number | null;
+  /** Banda teórica da memória do sistema, em bytes por segundo. */
+  ramBandwidthBytesS: number | null;
   gpus: GpuInfo[];
 }
 
@@ -101,6 +109,15 @@ export interface ModelCaps {
 export type FitVerdict =
   | { kind: "fullGpu"; ngl: number }
   | { kind: "partial"; ngl: number; layersTotal: number }
+  /**
+   * Mistura de especialistas com os roteados na RAM do sistema.
+   *
+   * Não é um "parcial": no parcial saem camadas inteiras, atenção junto, e a
+   * atenção roda em TODO token. Aqui só saem os pesos que passam a maior
+   * parte do tempo parados, e por isso o mesmo arquivo que a conta densa
+   * condenaria roda bem.
+   */
+  | { kind: "moeOffload"; ncmoe: number; layersTotal: number }
   | { kind: "cpuOnly" }
   | { kind: "wontFit" };
 

@@ -22,10 +22,12 @@ import {
   tuneBench,
   tuneBenchCancel,
   tuneSpecBench,
+  tuneSweep,
   type BenchProgress,
   type BenchResult,
   type ModelProfile,
   type SpecOutcome,
+  type SweepOutcome,
   type TuneAdvice,
   type TuneOption,
 } from "../../lib/tuning";
@@ -125,6 +127,10 @@ export default function TunePanel({
   const [suspeito, setSuspeito] = useState(false);
   /// Medição de especulação (o eixo MTP/n-grama).
   const [spec, setSpec] = useState<SpecOutcome | null>(null);
+  const [curva, setCurva] = useState<SweepOutcome | null>(null);
+  const [medindoCurva, setMedindoCurva] = useState<"ncmoe" | "ubatch" | null>(
+    null,
+  );
   const [medindoSpec, setMedindoSpec] = useState(false);
 
   useEffect(() => {
@@ -221,6 +227,21 @@ export default function TunePanel({
       else setResultado(errorMessage(e));
     } finally {
       setMedindoSpec(false);
+    }
+  }
+
+  async function medirCurva(dim: "ncmoe" | "ubatch", force = false) {
+    setMedindoCurva(dim);
+    setOcupado([]);
+    setResultado(null);
+    try {
+      setCurva(await tuneSweep(model, dim, force));
+    } catch (e) {
+      const quem = engineBusyReason(e);
+      if (quem) setOcupado(quem);
+      else setResultado(errorMessage(e));
+    } finally {
+      setMedindoCurva(null);
     }
   }
 
@@ -387,18 +408,30 @@ export default function TunePanel({
                   {medindoSpec ? t("tune.spec.measuring") : t("tune.spec.measure")}
                 </button>
               </div>
+              {advice.facts.includes("specOnMoe") && (
+                <p className="mt-1.5 text-[11px] leading-relaxed text-warn">
+                  {t("tune.fact.specOnMoeHint")}
+                </p>
+              )}
               {spec && (
                 <ul className="mt-1.5 flex flex-col gap-0.5">
                   {spec.arms.map((a, i) => (
                     <li
-                      key={a.spec}
+                      key={a.spec.join('+') || 'none'}
                       className={`text-[11px] tabular-nums ${
                         i === spec.best && !spec.inconclusive
                           ? "text-ok"
                           : "text-dim"
                       }`}
                     >
-                      {t(`tune.spec.arm.${a.spec}`)}
+                      {a.spec.length > 0
+                        ? a.spec
+                            .map((tipo) => t(`tune.spec.type.${tipo}`))
+                            .join(" + ")
+                        : t("tune.spec.type.none")}
+                      {/* Rápido e errado não é rápido: o selo diz se a
+                          resposta continuou a mesma. */}
+                      {a.quality === "diverged" && ` ⚠ ${t("tune.spec.quality.diverged")}`}
                       {": "}
                       {a.byPrompt
                         .map(
@@ -418,6 +451,41 @@ export default function TunePanel({
               )}
             </div>
           )}
+
+          {/* A curva de um botão. Duas perguntas não têm resposta calculável,
+              só medível: onde parar de empurrar especialista para a CPU, e de
+              que tamanho compensa a passada de prompt. */}
+          <div className="mt-2.5 rounded-lg border border-edge px-2.5 py-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] text-dim">{t("tune.sweep.title")}</span>
+              {advice.facts.includes("moe") && (
+                <button
+                  type="button"
+                  disabled={!!medindoCurva || !!medindo || medindoSpec}
+                  onClick={() => void medirCurva("ncmoe")}
+                  className="rounded-lg border border-edge px-2 py-1 text-[11px] text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+                >
+                  {medindoCurva === "ncmoe"
+                    ? t("tune.sweep.measuring")
+                    : t("tune.sweep.ncmoe")}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={!!medindoCurva || !!medindo || medindoSpec}
+                onClick={() => void medirCurva("ubatch")}
+                className="rounded-lg border border-edge px-2 py-1 text-[11px] text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+              >
+                {medindoCurva === "ubatch"
+                  ? t("tune.sweep.measuring")
+                  : t("tune.sweep.ubatch")}
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] leading-relaxed text-dim">
+              {t("tune.sweep.hint")}
+            </p>
+            {curva && <SweepChart data={curva} />}
+          </div>
 
           {suspeito && (
             <p className="mt-2 text-[11px] leading-relaxed text-warn">
@@ -443,6 +511,69 @@ export default function TunePanel({
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/// A curva medida, em barras.
+///
+/// Cinco pontos não são uma linha contínua, e desenhá-los como linha
+/// prometeria valores entre eles que ninguém mediu. Barras dizem a verdade:
+/// são estes pontos, com estes números.
+///
+/// As duas séries têm escalas próprias porque medem coisas diferentes — ler
+/// o prompt acontece às centenas de tokens por segundo, escrever a resposta
+/// às dezenas. Uma escala só esmagaria a geração contra o eixo.
+function SweepChart({ data }: { data: SweepOutcome }) {
+  const { t } = useTranslation();
+  const maxGen = Math.max(...data.points.map((p) => p.genTps), 0.001);
+  const maxPrompt = Math.max(...data.points.map((p) => p.promptTps), 0.001);
+  // O melhor de cada série ganha destaque: é o joelho da curva que a pessoa
+  // veio procurar.
+  const melhorGen = data.points.reduce((a, b) => (b.genTps > a.genTps ? b : a));
+  const melhorPrompt = data.points.reduce((a, b) =>
+    b.promptTps > a.promptTps ? b : a,
+  );
+
+  const barra = (valor: number, max: number, destaque: boolean) => (
+    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-edge">
+      <div
+        className={`h-full rounded-full ${destaque ? "bg-accent" : "bg-dim/50"}`}
+        style={{ width: `${Math.max(2, (valor / max) * 100)}%` }}
+      />
+    </div>
+  );
+
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-[10px] text-dim">
+        <span className="w-12 shrink-0 text-right">
+          {t(`tune.sweep.axis.${data.dim}`)}
+        </span>
+        <span className="flex-1">{t("tune.sweep.gen")}</span>
+        <span className="flex-1">
+          {t("tune.sweep.prompt", { n: data.nPrompt })}
+        </span>
+      </div>
+      {data.points.map((p) => (
+        <div key={p.value} className="flex items-center gap-2 text-[11px]">
+          <span className="w-12 shrink-0 text-right font-mono tabular-nums">
+            {p.value}
+          </span>
+          <div className="flex flex-1 items-center gap-1.5">
+            {barra(p.genTps, maxGen, p.value === melhorGen.value)}
+            <span className="w-12 shrink-0 tabular-nums text-dim">
+              {p.genTps.toFixed(1)}
+            </span>
+          </div>
+          <div className="flex flex-1 items-center gap-1.5">
+            {barra(p.promptTps, maxPrompt, p.value === melhorPrompt.value)}
+            <span className="w-12 shrink-0 tabular-nums text-dim">
+              {p.promptTps.toFixed(0)}
+            </span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

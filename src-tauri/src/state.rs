@@ -3,7 +3,7 @@
 use lr_types::HardwareProfile;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use tauri::{AppHandle, Manager};
 
 pub struct AppState {
@@ -47,6 +47,14 @@ pub struct AppState {
     /// Cluster RPC (1 host + 1 worker na LAN).
     pub cluster: std::sync::Arc<lr_cluster::ClusterHost>,
     pub rpc_pid: Arc<AtomicU32>,
+    /// Instante (ms) do último tráfego VISTO no motor, medido pelos counters
+    /// do `/metrics`.
+    ///
+    /// É o sinal de "a máquina está livre" que a medição automática espera —
+    /// e é medido, não presumido: capta inclusive o tráfego de harnesses
+    /// externos que batem direto no llama-server, que é o caso real deste app
+    /// desde que o DeepSeek Harness passou a rodar embutido.
+    pub last_engine_use: AtomicI64,
     shutdown_done: AtomicBool,
 }
 
@@ -207,6 +215,7 @@ impl AppState {
             store,
             data_dir,
             models_dir,
+            last_engine_use: AtomicI64::new(0),
             shutdown_done: AtomicBool::new(false),
         })
     }

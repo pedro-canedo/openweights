@@ -23,6 +23,8 @@
   },
   "badge": {
     "fullGpu": "Roda 100% na GPU",
+    "moeOffload": "Especialistas na RAM ({{ncmoe}}/{{total}} camadas)",
+    "moeOffloadHint": "Só alguns especialistas disparam por token, então os ociosos moram na RAM do sistema e a atenção fica na placa. O número exato o app mede depois do download.",
     "partial": "Parcial ({{ngl}}/{{total}} camadas na GPU)",
     "partialWarn": "Roda, mas bem mais lento (parte no processador)",
     "cpuOnly": "Só CPU (lento)",
@@ -223,7 +225,8 @@
         "off": "Desligada",
         "mtp": "MTP",
         "ngram": "N-grama",
-        "mtpHint": "Este arquivo traz MTP — ligar costuma acelerar a geração."
+        "mtpHint": "Este arquivo traz MTP — ligar costuma acelerar a geração.",
+        "combined": "Os dois juntos: o rascunho adivinha texto novo, o n-grama adivinha o que já está no prompt."
       },
       "vision": {
         "label": "Visão",
@@ -250,19 +253,16 @@
       "threads": "Threads",
       "parallel": "Slots paralelos",
       "parallelHint": "Pedidos ao mesmo tempo. Mais slots usam mais memória.",
-      "mmap": {
-        "label": "mmap",
-        "hint": "Mapeia o arquivo na memória. Desligar copia o modelo inteiro para a RAM.",
+      "loadMode": {
+        "label": "Modo de carga",
+        "hint": "Como o arquivo entra na memória. “Ler para a RAM” carrega tudo antes de servir — rende quando sobra memória e cobra caro quando não sobra.",
         "auto": "Automático",
-        "on": "Ligado",
-        "off": "Desligado"
-      },
-      "mlock": {
-        "label": "mlock",
-        "hint": "Trava o modelo na RAM para o sistema não paginar. Só ligue se tiver RAM de sobra.",
-        "auto": "Automático",
-        "on": "Ligado",
-        "off": "Desligado"
+        "mmap": "Mapear arquivo",
+        "mmapMlock": "Mapear + travar",
+        "mlock": "Travar na RAM",
+        "none": "Ler para a RAM",
+        "dio": "E/S direta",
+        "warnNone": "Este modelo é maior que a RAM utilizável. Ler tudo para a memória troca leitura sob demanda por swap — aqui quem faz o trabalho é o mapeamento."
       },
       "configureLink": "Configurar motor no Servidor Local"
     },
@@ -498,6 +498,7 @@
       "typedNote": "Coberta pelos controles acima — use-os para mudar este valor.",
       "globalNote": "Flag do processo — configure no cartão \"Flags globais\" abaixo.",
       "preview": "Prévia do comando e do INI",
+      "envPreview": "ambiente",
       "needsRestart": "Mudanças gravadas — valem no próximo reinício do servidor.",
       "recommend": "Recomendar para esta máquina",
       "recommending": "Medindo…"
@@ -512,12 +513,23 @@
         "default": "Padrão (automático)",
         "mtpTurbo": "MTP turbo",
         "vramSaver": "Economia de VRAM",
+        "moeOffload": "Especialistas na RAM",
         "longContext": "Contexto longo"
       }
     },
     "globalFlags": {
       "title": "Flags globais do servidor",
       "hint": "Valem para todos os modelos. Flags de processo viram argumentos do llama-server; as demais entram na seção [*] do INI — e a configuração própria de um modelo vence a global."
+    },
+    "envVars": {
+      "title": "Variáveis de ambiente do motor",
+      "hint": "Nem tudo que muda o llama.cpp é flag: o backend CUDA lê o ambiente. Valem no próximo início. A chave de API tem campo próprio e nunca entra aqui.",
+      "add": "Adicionar",
+      "namePlaceholder": "NOME_DA_VARIAVEL",
+      "valuePlaceholder": "valor",
+      "managed": "{{key}} é gerenciada pelo app — a chave de API tem campo próprio, e LLAMA_ARG_* atropelaria em silêncio a configuração por modelo.",
+      "on": "Ligado",
+      "off": "Desligado"
     },
     "harness": {
       "title": "Abrir em um harness",
@@ -624,6 +636,7 @@
     },
     "reason": {
       "ctx": "Janela de {{ctx}} tokens por conversa, o que custa {{kv}} de KV cache.",
+      "expertsOnCpu": "Especialistas das {{n}} primeiras camadas na RAM do sistema ({{host}}): a atenção fica na placa, e só saem os pesos que passam a maior parte do tempo parados.",
       "kvCompressed": "KV cache comprimido: cabe mais janela na mesma memória, com perda que não se nota na conversa.",
       "flashAttn": "Flash attention ligado: mesma memória, geração mais rápida.",
       "fitsGpu": "Cabe inteiro na placa: {{used}} de {{total}}, com folga para o sistema.",
@@ -634,7 +647,11 @@
       "mtp": "Traz MTP",
       "mtpHint": "Este arquivo traz previsão de múltiplos tokens. Pode acelerar a geração — ainda não medimos nesta máquina.",
       "vision": "Tem visão",
-      "visionHint": "Este modelo vem com projetor de visão. Carregá-lo só quando houver imagem ainda não está pronto."
+      "visionHint": "Este modelo vem com projetor de visão. Carregá-lo só quando houver imagem ainda não está pronto.",
+      "moe": "Mistura de especialistas",
+      "moeHint": "Só alguns especialistas disparam por token, então os ociosos podem morar na RAM do sistema — é assim que um modelo maior que a placa ainda roda nela.",
+      "specOnMoe": "Especular custa mais aqui",
+      "specOnMoeHint": "Com os especialistas na RAM, rascunhar quatro tokens deixa de acordar oito especialistas e passa a acordar quase todos, e cada um a mais é outra viagem pelo barramento de memória. Meça antes de ligar."
     },
     "bench": "Testar nesta máquina",
     "benchHint": "Mede tokens por segundo de verdade. Leva alguns minutos e ocupa a placa: o motor fica fora do ar enquanto roda.",
@@ -648,14 +665,48 @@
       "measuring": "Medindo…",
       "hint": "Prevê tokens à frente para acelerar. Quanto rende depende da máquina e do tipo de texto, então medimos em vez de supor. Reinicia o motor entre cada teste.",
       "inconclusive": "A diferença é pequena demais para valer mexer na configuração. Aqui, especulação não muda nada.",
-      "arm": {
-        "none": "Sem especulação",
-        "mtp": "MTP",
-        "ngram": "N-grama"
-      },
       "prompt": {
         "code": "código",
         "prose": "prosa"
+      },
+      "type": {
+        "none": "Sem especulação",
+        "draftSimple": "Rascunho externo",
+        "draftEagle3": "EAGLE-3",
+        "draftMtp": "MTP",
+        "draftDflash": "DFlash",
+        "draftDspark": "dSpark",
+        "ngramSimple": "N-grama simples",
+        "ngramMapK": "N-grama (mapa)",
+        "ngramMapK4v": "N-grama (mapa k4v)",
+        "ngramMod": "N-grama",
+        "ngramCache": "N-grama (cache)"
+      },
+      "quality": {
+        "match": "resposta idêntica",
+        "truncated": "cortada no limite",
+        "diverged": "mudou a resposta",
+        "unverifiable": "não verificável",
+        "showDiff": "ver o que mudou",
+        "expected": "esperado",
+        "got": "veio",
+        "unverifiableHint": "Esta máquina não repete a mesma resposta nem para a mesma pergunta sem especulação nenhuma — o não-determinismo é do próprio kernel da placa. Sem uma régua estável, nenhum braço pode ser aprovado nem recusado por qualidade."
+      },
+      "card": {
+        "title": "Especulação medida",
+        "subtitle": "O app mede sozinho, uma vez por modelo e por máquina, qual combinação rende mais — e só aplica depois de conferir que a resposta do modelo continuou a mesma.",
+        "never": "Ainda não medida nesta máquina",
+        "measuring": "Medindo…",
+        "running": "medindo",
+        "restartWarning": "O motor reinicia entre os testes.",
+        "stop": "Parar"
+      },
+      "verdict": {
+        "applied": "Aplicada automaticamente",
+        "inconclusive": "Sem diferença que valha a mudança",
+        "rejected": "A mais rápida mudava a resposta — recusada",
+        "deferred": "Adiada: a máquina estava em uso",
+        "unverifiable": "Não deu para verificar nesta máquina"
       }
     },
     "fullConfig": "Configuração completa",
@@ -679,8 +730,22 @@
       "usageNote": "O uso real não é recortado por placa: as respostas do chat não guardam em qual GPU rodaram.",
       "empty": "Nenhuma medição ainda. “Medir agora” roda um teste de verdade com a configuração vigente deste modelo e grava o resultado nesta série.",
       "gpuSeries": "A série é por GPU e driver: trocar de placa ou atualizar o driver começa uma série nova.",
+      "bandwidth": "Teto: ~{{ram}} GB/s da memória do sistema contra ~{{gpu}} GB/s na placa. Com os especialistas na RAM, tokens por segundo é um número de banda, não de GPU.",
       "engineUpdated": "engine atualizado — não comparável",
       "noBaseline": "sem base de comparação"
+    },
+    "sweep": {
+      "title": "Curva",
+      "hint": "Duas perguntas não têm resposta calculável, só medível: onde parar de empurrar especialista para a CPU e de que tamanho compensa a passada de prompt. Uma corrida do llama-bench, um carregamento de modelo.",
+      "ncmoe": "Medir especialistas na CPU",
+      "ubatch": "Medir micro-lote",
+      "measuring": "Medindo…",
+      "gen": "geração tok/s",
+      "prompt": "prompt tok/s (em {{n}})",
+      "axis": {
+        "ncmoe": "camadas",
+        "ubatch": "µlote"
+      }
     }
   },
   "update": {
@@ -793,6 +858,10 @@
       "n-cpu-moe": {
         "label": "Especialistas na CPU",
         "hint": "Em modelos MoE, mantém os pesos de especialistas das primeiras N camadas na RAM — faz um modelo grande caber numa placa pequena."
+      },
+      "cpu-moe": {
+        "label": "Todos os especialistas na CPU",
+        "hint": "Mantém todos os especialistas do MoE na RAM. É o extremo seguro, e de onde o otimizador desce até faltar VRAM."
       },
       "split-mode": {
         "label": "Divisão entre GPUs",
@@ -1069,6 +1138,14 @@
       "check-tensors": {
         "label": "Checar tensores",
         "hint": "Valida os dados do modelo na carga (mais lento; útil para arquivo suspeito)."
+      }
+    },
+    "env": {
+      "GGML_OP_OFFLOAD_MIN_BATCH": {
+        "hint": "Tamanho de lote a partir do qual a multiplicação de um especialista é copiada para a VRAM em vez de rodar na CPU. Gerar é um token por vez, então fica na CPU; um prompt longo cruza a linha e vai para a placa. Padrão 32."
+      },
+      "GGML_CUDA_ENABLE_UNIFIED_MEMORY": {
+        "hint": "Deixa o CUDA transbordar da VRAM para a memória do sistema em vez de falhar ao carregar. Nunca falha — e pode ficar muito lento sem avisar."
       }
     }
   }

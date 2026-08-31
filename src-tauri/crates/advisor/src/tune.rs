@@ -62,6 +62,15 @@ impl Intent {
 pub struct Candidate {
     pub profile: ModelProfile,
     pub intent: Intent,
+    /// O candidato precisa que a sonda descubra quantas camadas de
+    /// especialista mandar para a CPU.
+    ///
+    /// A heurística sabe QUE precisa; ela não sabe QUANTO, e chutar aqui
+    /// seria repetir o erro que o `ngl` já cometeu uma vez. Quem responde é
+    /// a sonda, que mede a memória de cada tentativa em menos de dois
+    /// segundos — a mesma receita de "desça o número até faltar VRAM e volte
+    /// uma", só que sem tentativa e erro.
+    pub busca_ncmoe: bool,
 }
 
 /// Monta os candidatos a sondar — poucos, e na ordem de preferência.
@@ -90,11 +99,29 @@ pub fn candidates(
         (budget.ram_bytes as f64 * crate::RAM_USABLE_FRACTION) as u64
     };
 
+    // Quanto do arquivo precisa mesmo estar na placa. Num MoE com os
+    // especialistas roteados na RAM, é uma fração pequena — e usar o arquivo
+    // inteiro aqui faria a janela ser escolhida contra um peso que não vai
+    // estar lá, entregando 8k numa máquina que aguenta 64k.
+    let na_placa = match meta.routed_expert_fraction() {
+        Some(f) if tem_gpu => (file_size_bytes as f64 * (1.0 - f as f64)) as u64,
+        _ => file_size_bytes,
+    };
+
     // Maior janela que cabe com KV em f16.
-    let equilibrada = maior_janela(meta, file_size_bytes, teto, KvType::F16);
+    let equilibrada = maior_janela(meta, na_placa, teto, KvType::F16);
     // A alternativa dobra a janela e paga com KV comprimido; só existe se
     // couber e se de fato for mais janela do que a equilibrada.
-    let ampla = maior_janela(meta, file_size_bytes, teto, KvType::Q8_0);
+    let ampla = maior_janela(meta, na_placa, teto, KvType::Q8_0);
+
+    // Modelo de mistura de especialistas que não cabe inteiro: a divisão
+    // certa não é partir camadas, é tirar da placa só os especialistas
+    // roteados. Só vale com o número REAL de camadas em mãos — sem ele não há
+    // `ngl` para fixar, e `-ncmoe` sem `ngl` deixaria as duas decisões pela
+    // metade.
+    let moe = meta.moe.is_some_and(|m| m.n_experts > 0);
+    let cabe_inteiro = tem_gpu && file_size_bytes + meta.kv_cache_bytes() <= teto;
+    let busca_ncmoe = moe && !cabe_inteiro && real_layers.is_some();
 
     let base = |ctx: u32, kv: Option<KvType>, intent: Intent| Candidate {
         profile: ModelProfile {
@@ -108,6 +135,7 @@ pub fn candidates(
             ..Default::default()
         },
         intent,
+        busca_ncmoe,
     };
 
     let mut out = Vec::new();
@@ -142,6 +170,7 @@ pub fn candidates(
         out.push(Candidate {
             profile: ModelProfile {
                 ctx: Some(JANELAS[0]),
+                ngl: if busca_ncmoe { real_layers } else { None },
                 kv_k: Some(KvType::Q8_0),
                 kv_v: Some(KvType::Q8_0),
                 flash_attn: tem_gpu.then_some(true),
@@ -149,6 +178,7 @@ pub fn candidates(
                 ..Default::default()
             },
             intent: Intent::Balanced,
+            busca_ncmoe,
         });
     }
     out
@@ -301,6 +331,17 @@ pub fn explain(
                         .sum::<u64>()
                         .to_string(),
                 ),
+            ],
+        ));
+    }
+    // O motivo que mais muda o que a pessoa vê: o modelo não caberia inteiro,
+    // e mesmo assim a atenção ficou toda na placa.
+    if let Some(n) = p.ncmoe.filter(|n| *n > 0) {
+        out.push(Reason::new(
+            "expertsOnCpu",
+            &[
+                ("n", n.to_string()),
+                ("host", escolhido.report.host_bytes().to_string()),
             ],
         ));
     }

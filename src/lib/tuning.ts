@@ -5,13 +5,24 @@
 // de dois segundos, sem carregar o modelo. Por isso a tela pode dizer
 // "10,7 de 16 GB" sem estar chutando.
 
-import { invoke, isTauri } from "./tauri";
+import { invoke, isTauri, listen } from "./tauri";
 
 /** Tipo do KV cache. Comprimir troca um pouco de qualidade por memória. */
 export type KvType = "f16" | "q8_0" | "q4_0";
 
 /** Especulação: prevê tokens à frente. Só é ligada depois de medida. */
-export type SpecType = "none" | "mtp" | "ngram";
+export type SpecType =
+  | "none"
+  | "draftSimple"
+  | "draftEagle3"
+  | "draftMtp"
+  | "draftDflash"
+  | "draftDspark"
+  | "ngramSimple"
+  | "ngramMapK"
+  | "ngramMapK4v"
+  | "ngramMod"
+  | "ngramCache";
 
 /** Quando carregar o projetor de visão. Ausente = sob demanda. */
 export type VisionMode = "off" | "onDemand" | "always";
@@ -20,6 +31,15 @@ export type VisionMode = "off" | "onDemand" | "always";
 export type ProfileSource = "manual" | "recommended" | "tested";
 
 /** Configuração de carga de um modelo. Campo ausente = o llama.cpp decide. */
+/**
+ * Como o arquivo do modelo vai para a memória (`--load-mode`).
+ *
+ * `none` lê tudo para a RAM antes de responder — rende quando sobra memória e
+ * cobra caro quando não sobra. Com o modelo maior que a RAM, o mapeamento é o
+ * que faz o trabalho.
+ */
+export type LoadMode = "auto" | "none" | "mmap" | "mlock" | "mmapMlock" | "dio";
+
 export interface ModelProfile {
   ctx?: number | null;
   /** Camadas na GPU. É resultado exibido, não botão. */
@@ -31,7 +51,12 @@ export interface ModelProfile {
   batch?: number | null;
   ubatch?: number | null;
   threads?: number | null;
-  spec?: SpecType | null;
+  /**
+   * Os tipos ligados ao mesmo tempo — o `--spec-type` do llama.cpp aceita
+   * lista, e um rascunho (MTP) com um n-grama são complementares: um adivinha
+   * texto novo, o outro adivinha o que já está no prompt.
+   */
+  spec?: SpecType[] | null;
   /** Tokens rascunhados por passada (`spec-draft-n-max`; 2–4 é o equilíbrio). */
   specDraftNMax?: number | null;
   specDraftNMin?: number | null;
@@ -42,7 +67,11 @@ export interface ModelProfile {
   mmproj?: string | null;
   vision?: VisionMode | null;
   kvOffload?: boolean | null;
+  /** Como o arquivo vai para a memória (`--load-mode`). */
+  loadMode?: LoadMode | null;
+  /** @deprecated obsoleto no llama.cpp; lido de perfis antigos e convertido. */
   mmap?: boolean | null;
+  /** @deprecated obsoleto no llama.cpp; lido de perfis antigos e convertido. */
   mlock?: boolean | null;
   parallel?: number | null;
   /** Qualquer outra flag do catálogo, como pares [chave, valor] do INI. */
@@ -239,6 +268,53 @@ export function tuneBench(
   return invoke<BenchOutcome>("tune_bench", { model, profiles, force });
 }
 
+/** Um ponto medido da curva de um botão. */
+export interface SweepPoint {
+  /** O valor testado nesta dimensão. */
+  value: number;
+  genTps: number;
+  promptTps: number;
+}
+
+export interface SweepOutcome {
+  dim: "ncmoe" | "ubatch";
+  points: SweepPoint[];
+  /** Com que tamanho de prompt a curva foi medida. */
+  nPrompt: number;
+}
+
+/**
+ * Mede a curva de um botão numa invocação só do `llama-bench`.
+ *
+ * `ncmoe` responde "onde parar de empurrar especialista para a CPU" e
+ * `ubatch`, "de que tamanho compensa a passada de prompt". As duas perguntas
+ * não têm resposta calculável — só medível.
+ */
+export function tuneSweep(
+  model: string,
+  dim: "ncmoe" | "ubatch",
+  force = false,
+): Promise<SweepOutcome> {
+  if (!isTauri) return Promise.resolve(mockSweep(dim));
+  return invoke<SweepOutcome>("tune_sweep", { model, dim, force });
+}
+
+function mockSweep(dim: "ncmoe" | "ubatch"): SweepOutcome {
+  const points =
+    dim === "ncmoe"
+      ? [30, 32, 34, 38, 46].map((value, i) => ({
+          value,
+          genTps: 17.4 - i * 0.9,
+          promptTps: 340 - i * 12,
+        }))
+      : [128, 256, 512, 1024, 2048].map((value, i) => ({
+          value,
+          genTps: 17.1,
+          promptTps: [22, 61, 148, 291, 345][i],
+        }));
+  return { dim, points, nPrompt: 4096 };
+}
+
 /** Para a medição: a configuração atual termina, as próximas não começam. */
 export function tuneBenchCancel(): Promise<void> {
   if (!isTauri) return Promise.resolve();
@@ -389,11 +465,30 @@ function mockPerfHistory(): PerfHistoryDto {
 // ---------------------------------------------------------- especulação ---
 
 /** O que um braço da medição de especulação rendeu. */
+/**
+ * A resposta continuou a mesma?
+ *
+ * Especulação é *lossless* — o modelo grande confere cada rascunho —, então
+ * com temperatura zero a saída tem de bater com a de quem não especula. Se
+ * mudou, não é otimização: é defeito, e o braço é recusado.
+ */
+export type SpecQuality = "match" | "truncated" | "diverged" | "unverifiable";
+
+/** Onde os textos passaram a discordar, para a tela mostrar o trecho. */
+export interface Divergence {
+  prompt: string;
+  atChar: number;
+  expected: string;
+  got: string;
+}
+
 export interface SpecArm {
-  spec: SpecType;
+  spec: SpecType[];
   /** Tokens por segundo por tipo de texto (`code`, `prose`). */
   byPrompt: [string, number][];
   avgTps: number;
+  quality: SpecQuality;
+  divergence: Divergence | null;
 }
 
 export interface SpecOutcome {
@@ -402,6 +497,12 @@ export interface SpecOutcome {
   best: number | null;
   /** A diferença é pequena demais para valer uma mudança de configuração. */
   inconclusive: boolean;
+  /** Índice do braço sem especulação — a régua de tudo. */
+  reference: number;
+  /** `unverifiable`: a máquina não repete a si mesma; nada é recusado. */
+  qualityGate: "ok" | "unverifiable";
+  /** Braços recusados por mudarem a resposta. */
+  rejected: number[];
 }
 
 /**
@@ -412,6 +513,32 @@ export interface SpecOutcome {
  * que o teste comum, por isso é um botão à parte. Não aplica nada — devolve
  * os números.
  */
+/** O que a medição automática decidiu para um modelo. */
+export interface SpecDecision {
+  key: string;
+  spec: SpecType[];
+  gainPct: number | null;
+  verdict: "applied" | "inconclusive" | "rejected" | "deferred" | "unverifiable";
+  at: number;
+}
+
+/** Progresso da medição automática, no evento `tune-spec`. */
+export interface SpecProgress {
+  phase: "start" | "done";
+  model: string;
+  outcome?: SpecOutcome;
+  verdict?: string;
+}
+
+export function onTuneSpec(h: (p: SpecProgress) => void) {
+  return listen<SpecProgress>("tune-spec", h);
+}
+
+/** Interrompe a bateria automática — quem chegou usar tem precedência. */
+export function tuneSpecCancel(): Promise<void> {
+  return isTauri ? invoke<void>("tune_spec_cancel") : Promise.resolve();
+}
+
 export function tuneSpecBench(
   model: string,
   profile: ModelProfile,
@@ -421,11 +548,45 @@ export function tuneSpecBench(
     return Promise.resolve({
       model,
       arms: [
-        { spec: "none", byPrompt: [["code", 40], ["prose", 38]], avgTps: 39 },
-        { spec: "ngram", byPrompt: [["code", 71], ["prose", 33]], avgTps: 52 },
+        {
+          spec: ["none"],
+          byPrompt: [["code", 40], ["prose", 38]],
+          avgTps: 39,
+          quality: "match",
+          divergence: null,
+        },
+        {
+          spec: ["ngramMod"],
+          byPrompt: [["code", 71], ["prose", 33]],
+          avgTps: 52,
+          quality: "match",
+          divergence: null,
+        },
+        {
+          spec: ["draftMtp", "ngramMod"],
+          byPrompt: [["code", 88], ["prose", 41]],
+          avgTps: 64.5,
+          quality: "match",
+          divergence: null,
+        },
+        {
+          spec: ["draftDflash"],
+          byPrompt: [["code", 120], ["prose", 96]],
+          avgTps: 108,
+          quality: "diverged",
+          divergence: {
+            prompt: "code",
+            atChar: 42,
+            expected: "t += x; } t }",
+            got: "t -= x; } t }",
+          },
+        },
       ],
-      best: 1,
+      best: 2,
       inconclusive: false,
+      reference: 0,
+      qualityGate: "ok",
+      rejected: [3],
     });
   }
   return invoke<SpecOutcome>("tune_spec_bench", { model, profile, force });

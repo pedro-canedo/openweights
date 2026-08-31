@@ -39,6 +39,9 @@ const mockProfile: HardwareProfile = {
   avx2: true,
   avx512: false,
   ramTotalBytes: 32 * 2 ** 30,
+  ramSpeedMts: 3200,
+  ramChannels: 2,
+  ramBandwidthBytesS: 51_200_000_000,
   gpus: [
     {
       name: "GPU simulada 16 GB",
@@ -47,6 +50,7 @@ const mockProfile: HardwareProfile = {
       isIntegrated: false,
       driverVersion: "580.00",
       cudaCompute: [12, 0],
+      bandwidthBytesS: 448_000_000_000,
     },
   ],
 };

@@ -28,6 +28,14 @@ pub struct GpuInfo {
     pub driver_version: Option<String>,
     /// Compute capability CUDA (major, minor), se NVIDIA com driver ativo.
     pub cuda_compute: Option<(u32, u32)>,
+    /// Banda de memória da placa, em bytes por segundo.
+    ///
+    /// É o outro lado da conta que decide o que vale pôr na placa: quando os
+    /// especialistas de um MoE moram na RAM do sistema, tokens por segundo
+    /// vira um número de banda, e a diferença entre os dois números é o teto
+    /// que nenhuma flag move. `None` = não deu para saber.
+    #[serde(default)]
+    pub bandwidth_bytes_s: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +48,18 @@ pub struct HardwareProfile {
     pub avx2: bool,
     pub avx512: bool,
     pub ram_total_bytes: u64,
+    /// Velocidade efetiva da memória do sistema, em MT/s (a configurada, não
+    /// a nominal do módulo).
+    #[serde(default)]
+    pub ram_speed_mts: Option<u32>,
+    /// Canais de memória POVOADOS — dois pentes no mesmo canal não dobram a
+    /// banda, e contar módulos prometeria o dobro do que a máquina entrega.
+    #[serde(default)]
+    pub ram_channels: Option<u32>,
+    /// Banda teórica da memória do sistema, em bytes por segundo:
+    /// `MT/s × largura × canais`. `None` quando a máquina não diz o bastante.
+    #[serde(default)]
+    pub ram_bandwidth_bytes_s: Option<u64>,
     pub gpus: Vec<GpuInfo>,
 }
 
@@ -106,6 +126,9 @@ mod machine_key_tests {
             avx2: true,
             avx512: false,
             ram_total_bytes: 32 << 30,
+            ram_speed_mts: None,
+            ram_channels: None,
+            ram_bandwidth_bytes_s: None,
             gpus: vec![GpuInfo {
                 name: "RTX 5060 Ti".into(),
                 vendor: GpuVendor::Nvidia,
@@ -113,6 +136,7 @@ mod machine_key_tests {
                 is_integrated: false,
                 driver_version: Some(driver.into()),
                 cuda_compute: Some((12, 0)),
+                bandwidth_bytes_s: None,
             }],
         }
     }

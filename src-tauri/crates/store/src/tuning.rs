@@ -147,6 +147,41 @@ mod tests {
         assert_eq!(s.model_profile("m.gguf").unwrap().unwrap(), p);
     }
 
+    /// Uma linha gravada por uma versão ANTIGA do app tem de voltar inteira.
+    ///
+    /// O `.ok()` na leitura é uma armadilha silenciosa: um JSON que o serde
+    /// recuse não vira erro, vira `None` — e o app trata `None` como "modelo
+    /// sem perfil" e reconfigura do zero. Quem atualizasse perderia a janela,
+    /// as camadas e a especulação sem uma linha de log. Este teste escreve o
+    /// JSON legado direto no SQLite, do jeito que ele está gravado hoje na
+    /// máquina de quem usa.
+    #[test]
+    fn a_profile_written_by_an_older_version_still_loads() {
+        let s = store();
+        let legado = r#"{"ctx":32768,"ngl":65,"kvK":"q4_0","kvV":"q4_0","flashAttn":true,
+            "spec":"mtp","specDraftNMax":4,"specDraftPMin":0.25,"source":"tested"}"#;
+        s.conn()
+            .execute(
+                "INSERT INTO model_profiles (model_id, profile_json, updated_at) VALUES (?1, ?2, 0)",
+                rusqlite::params!["Qwen3.8-27B-UD-IQ4_XS.gguf", legado],
+            )
+            .unwrap();
+
+        let p = s
+            .model_profile("Qwen3.8-27B-UD-IQ4_XS.gguf")
+            .unwrap()
+            .expect("o perfil legado não pode sumir");
+        assert_eq!(p.ctx, Some(32_768));
+        assert_eq!(p.ngl, Some(65));
+        assert_eq!(p.spec_draft_n_max, Some(4));
+        assert_eq!(
+            p.spec.as_ref().map(|s| s.as_ini_value()),
+            Some("draft-mtp".to_string())
+        );
+        // E aparece na leitura em massa, que é a que monta o INI do Router.
+        assert_eq!(s.model_profiles().unwrap().len(), 1);
+    }
+
     /// Voltar tudo para automático não pode deixar uma linha vazia para trás
     /// dizendo que há escolha.
     #[test]

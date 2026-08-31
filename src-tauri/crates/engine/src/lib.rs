@@ -189,6 +189,13 @@ pub struct ServerConfig {
     /// configuração por modelo em vez de servir de padrão herdável.
     #[serde(default)]
     pub global_ini_extras: Vec<(String, String)>,
+    /// Variáveis de ambiente escolhidas pela pessoa (setting `server_env_vars`).
+    ///
+    /// Nem tudo que muda o comportamento do motor é flag: o backend CUDA lê o
+    /// ambiente, e é lá que mora o limiar que decide se um especialista viaja
+    /// para a VRAM ou é multiplicado na CPU.
+    #[serde(default)]
+    pub env_extra: Vec<(String, String)>,
 }
 
 impl ServerConfig {
@@ -205,6 +212,7 @@ impl ServerConfig {
             extra_args: Vec::new(),
             models_preset: None,
             global_ini_extras: Vec::new(),
+            env_extra: Vec::new(),
         }
     }
 
@@ -254,6 +262,19 @@ impl ServerConfig {
         let mut envs = Vec::new();
         if let Some(key) = &self.api_key {
             envs.push(("LLAMA_API_KEY".to_string(), key.clone()));
+        }
+        // As da pessoa entram depois, mas nunca por cima do que o app
+        // gerencia: setting é arquivo editável por fora, e uma
+        // `LLAMA_API_KEY` vinda dali trocaria o segredo em silêncio.
+        for (k, v) in &self.env_extra {
+            let chave = k.trim().to_string();
+            if chave.is_empty() || lr_types::flags::env_is_managed(&chave) {
+                continue;
+            }
+            if envs.iter().any(|(existente, _)| *existente == chave) {
+                continue;
+            }
+            envs.push((chave, v.clone()));
         }
         envs
     }
@@ -616,6 +637,34 @@ pub use lr_proc::kill_process_tree;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// O setting é um arquivo editável por fora do app. Uma variável vinda
+    /// dali não pode trocar o segredo nem abrir uma segunda porta para as
+    /// mesmas flags do INI — esta é a última conferência antes do spawn.
+    #[test]
+    fn the_users_environment_never_touches_what_the_app_owns() {
+        let mut cfg = ServerConfig::new(
+            PathBuf::from("/tmp/llama-server"),
+            PathBuf::from("/tmp/models"),
+            8080,
+        );
+        cfg.api_key = Some("segredo".into());
+        cfg.env_extra = vec![
+            ("GGML_OP_OFFLOAD_MIN_BATCH".into(), "256".into()),
+            // O segredo tem campo próprio.
+            ("LLAMA_API_KEY".into(), "roubada".into()),
+            // Atropelaria em silêncio a configuração por modelo.
+            ("LLAMA_ARG_CTX_SIZE".into(), "512".into()),
+            // Nome vazio não é variável.
+            ("   ".into(), "x".into()),
+        ];
+        let envs = cfg.env_vars();
+        let m: std::collections::HashMap<_, _> = envs.into_iter().collect();
+        assert_eq!(m["LLAMA_API_KEY"], "segredo", "a chave do app é a que vale");
+        assert_eq!(m["GGML_OP_OFFLOAD_MIN_BATCH"], "256");
+        assert!(!m.contains_key("LLAMA_ARG_CTX_SIZE"));
+        assert_eq!(m.len(), 2);
+    }
 
     #[test]
     fn args_include_router_mode_essentials() {

@@ -127,6 +127,15 @@ impl ServeStatsCollector {
                 // Sem tráfego novo: nada a somar, nada a escrever no banco.
                 continue;
             }
+            // Tráfego novo: a máquina está sendo usada. A bateria de
+            // especulação espera por este relógio — e ela mesma gera tokens,
+            // então precisa não se marcar como "uso" ou nunca começaria.
+            if !crate::commands_tuning::medindo() {
+                state.last_engine_use.store(
+                    crate::commands::now_ms(),
+                    std::sync::atomic::Ordering::SeqCst,
+                );
+            }
             inner.session.entry(modelo.clone()).or_default().add(&delta);
             // Tokens são contagens; o arredondamento desfaz o ruído da
             // serialização em 6 dígitos significativos do upstream.

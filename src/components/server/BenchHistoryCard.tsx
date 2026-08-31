@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { engineBusyReason, getModelProfile } from "../../lib/api";
+import { engineBusyReason, getHardwareProfile, getModelProfile } from "../../lib/api";
 import { errorMessage } from "../../lib/serverSession";
 import { listen } from "../../lib/tauri";
 import {
@@ -19,6 +19,7 @@ import {
   type PerfHistoryDto,
   type PerfRowDto,
 } from "../../lib/tuning";
+import type { HardwareProfile } from "../../lib/types";
 
 /// Abreviações dos pares do INI que cabem numa célula de tabela.
 const SHORT_NAMES: Record<string, string> = {
@@ -31,6 +32,7 @@ const SHORT_NAMES: Record<string, string> = {
   "batch-size": "batch",
   "ubatch-size": "ubatch",
   "n-cpu-moe": "ncmoe",
+  "load-mode": "lm",
   threads: "threads",
   parallel: "par",
 };
@@ -39,7 +41,12 @@ const SHORT_NAMES: Record<string, string> = {
 const SUMMARY_PRIORITY = [
   "gpu-layers",
   "n-gpu-layers",
+  // Onde moram os especialistas é a decisão que mais muda tok/s num MoE: se
+  // ela não couber nas quatro colunas do resumo, a tabela esconde justamente
+  // o que a pessoa acabou de mexer.
+  "n-cpu-moe",
   "ctx-size",
+  "load-mode",
   "flash-attn",
   "cache-type-k",
   "batch-size",
@@ -64,6 +71,11 @@ function summaryPairs(
     return i < 0 ? SUMMARY_PRIORITY.length : i;
   };
   return entries.sort(([a], [b]) => rank(a) - rank(b));
+}
+
+/** GB/s com uma casa, para caber ao lado do tok/s. */
+function gbs(bytesPerSecond: number): string {
+  return (bytesPerSecond / 1_000_000_000).toFixed(0);
 }
 
 function shortKey(profileKey: string): string {
@@ -102,6 +114,7 @@ export default function BenchHistoryCard({
   const [medindo, setMedindo] = useState<BenchProgress | null>(null);
   const [busyWith, setBusyWith] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [hw, setHw] = useState<HardwareProfile | null>(null);
   // Só a medição iniciada AQUI mexe no botão: um bench disparado em outra
   // tela (TunePanel) emite os mesmos eventos `tune-bench`, e reagir a eles
   // deixaria "Medir agora" preso num progresso que nunca termina por aqui.
@@ -124,6 +137,18 @@ export default function BenchHistoryCard({
       alive = false;
     };
   }, [open, model]);
+
+  // O teto de banda é do hardware, não do modelo: carrega uma vez.
+  useEffect(() => {
+    if (!open || hw) return;
+    let alive = true;
+    void getHardwareProfile()
+      .then((p) => alive && setHw(p))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [open, hw]);
 
   // O progresso vem por evento: a medição leva minutos, e um spinner mudo
   // durante minutos é indistinguível de travamento.
@@ -165,6 +190,13 @@ export default function BenchHistoryCard({
 
   const rows = data?.rows ?? [];
   const usage = data?.usage ?? [];
+
+  // Alguma das medições tirou pesos da placa? É a condição para o teto de
+  // banda do sistema virar o número que manda.
+  const temOffload = rows.some((r) => {
+    const n = Number(r.profileSummary?.["n-cpu-moe"] ?? 0);
+    return Number.isFinite(n) && n > 0;
+  });
 
   /// Resumo conhecido de uma chave de perfil, para rotular o uso real.
   const summaryFor = (profileKey: string): Record<string, string> | null =>
@@ -360,6 +392,24 @@ export default function BenchHistoryCard({
               <p className="mt-2 text-[11px] leading-relaxed text-dim">
                 {t("tune.history.gpuSeries")}
               </p>
+              {/* O teto que nenhuma flag move: com parte dos pesos fora da
+                  placa, tokens por segundo deixa de ser um número de GPU e
+                  vira um número de banda de memória. */}
+              {temOffload && hw?.ramBandwidthBytesS != null && (
+                <p className="mt-1 text-[11px] leading-relaxed text-dim">
+                  {t("tune.history.bandwidth", {
+                    ram: gbs(hw.ramBandwidthBytesS),
+                    gpu:
+                      hw.gpus.find((g) => g.bandwidthBytesS != null)
+                        ?.bandwidthBytesS != null
+                        ? gbs(
+                            hw.gpus.find((g) => g.bandwidthBytesS != null)!
+                              .bandwidthBytesS!,
+                          )
+                        : "?",
+                  })}
+                </p>
+              )}
             </>
           )}
 

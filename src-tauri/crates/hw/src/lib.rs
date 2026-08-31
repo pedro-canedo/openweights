@@ -21,6 +21,15 @@ use sysinfo::{Components, DiskRefreshKind, Disks, Networks, System};
 
 #[cfg(windows)]
 mod windows_gpu;
+#[cfg(windows)]
+mod windows_ram;
+
+#[cfg(target_os = "linux")]
+mod linux_ram;
+
+#[cfg(windows)]
+pub mod power;
+pub mod smbios;
 
 /// Detecta o perfil completo da máquina. Chamado uma vez na inicialização
 /// (e sob demanda pelo botão "redetectar" nas configurações).
@@ -35,6 +44,8 @@ pub fn detect() -> HardwareProfile {
         .map(|c| c.brand().trim().to_string())
         .unwrap_or_else(|| "CPU desconhecida".to_string());
 
+    let memoria = detect_memory();
+
     HardwareProfile {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
@@ -43,7 +54,29 @@ pub fn detect() -> HardwareProfile {
         avx2: detect_avx2(),
         avx512: detect_avx512(),
         ram_total_bytes: sys.total_memory(),
+        ram_speed_mts: memoria.speed_mts,
+        ram_channels: memoria.channels,
+        ram_bandwidth_bytes_s: memoria.bandwidth_bytes_s,
         gpus: detect_gpus(),
+    }
+}
+
+/// A topologia da memória do sistema, por plataforma.
+///
+/// No macOS a pergunta não se aplica do mesmo jeito: a memória é unificada, e
+/// "banda do sistema contra banda da placa" deixa de ser uma escolha.
+fn detect_memory() -> smbios::MemoryTopology {
+    #[cfg(windows)]
+    {
+        windows_ram::topology()
+    }
+    #[cfg(target_os = "linux")]
+    {
+        linux_ram::topology()
+    }
+    #[cfg(all(not(windows), not(target_os = "linux")))]
+    {
+        smbios::MemoryTopology::default()
     }
 }
 
@@ -98,6 +131,7 @@ fn macos_gpu_stub() -> Vec<GpuInfo> {
         is_integrated: true,
         driver_version: None,
         cuda_compute: None,
+        bandwidth_bytes_s: None,
     }]
 }
 
@@ -430,5 +464,28 @@ mod tests {
         // Sem data_dir, vale o maior disco.
         assert_eq!(pick_disk(None, &disks), Some((200, 20)));
         assert_eq!(pick_disk(None, &[]), None);
+    }
+
+    /// Lê a máquina de verdade. Ignorado por padrão: depende do firmware
+    /// desta caixa, não do código. Rode com
+    /// `cargo test -p lr_hw -- --ignored --nocapture` para conferir os
+    /// números que a tela vai mostrar.
+    #[test]
+    #[ignore = "depende do firmware da máquina"]
+    fn this_machine_reports_its_memory_bandwidth() {
+        let p = detect();
+        println!(
+            "RAM: {} MT/s, {} canais, {:?} GB/s",
+            p.ram_speed_mts.map_or("?".into(), |v| v.to_string()),
+            p.ram_channels.map_or("?".into(), |v| v.to_string()),
+            p.ram_bandwidth_bytes_s.map(|b| b / 1_000_000_000)
+        );
+        for g in &p.gpus {
+            println!(
+                "GPU {}: {:?} GB/s",
+                g.name,
+                g.bandwidth_bytes_s.map(|b| b / 1_000_000_000)
+            );
+        }
     }
 }

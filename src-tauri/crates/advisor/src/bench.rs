@@ -24,9 +24,22 @@ use lr_types::tuning::ModelProfile;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-/// Prompt e geração de cada medição. Curto de propósito: o que interessa é
-/// comparar configurações, não bater recorde.
-const N_PROMPT: u32 = 256;
+/// Prompt de uma medição comum. Era 256 — **menor que o micro-lote padrão do
+/// llama.cpp, que é 512** — e essa era a razão de mexer em `-b`/`-ub` nunca
+/// mudar nada no histórico: a medição inteira cabia numa passada, então o
+/// tamanho da passada não podia importar. 512 é o mínimo em que o botão
+/// começa a existir.
+pub const N_PROMPT: u32 = 512;
+
+/// Prompt de uma medição com pesos fora da placa.
+///
+/// Aqui ler o prompt e escrever a resposta são trabalhos DIFERENTES: gerar é
+/// um token por vez, abaixo do limiar do backend, e sai da CPU; um prompt
+/// longo passa do limiar e é copiado para a placa. Medir só com prompt curto
+/// esconde o segundo caminho — que é justamente onde o ajuste do micro-lote
+/// rende.
+pub const N_PROMPT_LONGO: u32 = 4096;
+
 const N_GEN: u32 = 64;
 /// Repetições por configuração. Três dá desvio utilizável sem triplicar a
 /// espera (o custo real é carregar o modelo, que acontece uma vez).
@@ -58,6 +71,9 @@ struct BenchRow {
     model_size: Option<u64>,
     n_prompt: Option<u32>,
     n_gen: Option<u32>,
+    n_depth: Option<u32>,
+    n_cpu_moe: Option<u32>,
+    n_ubatch: Option<u32>,
     avg_ts: Option<f64>,
     stddev_ts: Option<f64>,
 }
@@ -70,6 +86,15 @@ pub struct BenchResult {
     pub gen_tps: f64,
     /// Tokens por segundo processando o prompt.
     pub prompt_tps: f64,
+    /// Com que tamanho de prompt o número acima foi medido.
+    ///
+    /// Existe porque comparar 800 tok/s num prompt de 512 com 300 num de 4096
+    /// não é comparar nada — e a tabela do histórico põe os dois na mesma
+    /// coluna. Guardar o tamanho é o que permite dizer quando o Δ vale.
+    pub n_prompt: u32,
+    /// Quantos tokens já havia no contexto durante a geração (`-d`). Zero é
+    /// uma conversa que acabou de começar.
+    pub n_depth: u32,
     /// Desvio da geração — mede quão confiável é a média.
     pub gen_stddev: f64,
     /// Build do llama.cpp, para saber quando o número caduca.
@@ -94,10 +119,12 @@ pub fn parse_results(stdout: &str) -> Result<BenchResult, BenchError> {
         .iter()
         .find(|r| r.n_gen.unwrap_or(0) > 0)
         .and_then(|r| r.avg_ts.map(|ts| (ts, r.stddev_ts.unwrap_or(0.0), r)));
+    // O prompt MAIS LONGO da corrida: quando há mais de um ponto, é o que
+    // exercita o caminho que o micro-lote decide.
     let prompt = rows
         .iter()
-        .find(|r| r.n_prompt.unwrap_or(0) > 0)
-        .and_then(|r| r.avg_ts);
+        .filter(|r| r.n_prompt.unwrap_or(0) > 0 && r.n_gen.unwrap_or(0) == 0)
+        .max_by_key(|r| r.n_prompt.unwrap_or(0));
 
     let Some((gen_tps, gen_stddev, r)) = geracao else {
         return Err(BenchError::Unreadable(head(stdout)));
@@ -105,7 +132,9 @@ pub fn parse_results(stdout: &str) -> Result<BenchResult, BenchError> {
 
     Ok(BenchResult {
         gen_tps,
-        prompt_tps: prompt.unwrap_or(0.0),
+        prompt_tps: prompt.and_then(|r| r.avg_ts).unwrap_or(0.0),
+        n_prompt: prompt.and_then(|r| r.n_prompt).unwrap_or(0),
+        n_depth: r.n_depth.unwrap_or(0),
         gen_stddev,
         build_number: r.build_number.unwrap_or(0),
         cpu_info: r.cpu_info.clone().unwrap_or_default(),
@@ -129,11 +158,34 @@ pub fn bench_args(
     profile: &ModelProfile,
     cluster: Option<&crate::devices::ClusterArgs>,
 ) -> Vec<String> {
+    bench_args_com_prompt(model_path, profile, cluster, prompt_para(profile))
+}
+
+/// O tamanho de prompt que este perfil merece.
+///
+/// Com especialistas na CPU, o prompt curto mede só metade da máquina: a
+/// geração sai da RAM do sistema, mas a leitura do prompt cruza o limiar do
+/// backend e vai para a placa. É o caminho onde o micro-lote rende, e ele só
+/// aparece com prompt longo.
+pub fn prompt_para(profile: &ModelProfile) -> u32 {
+    if profile.ncmoe.is_some_and(|n| n > 0) {
+        N_PROMPT_LONGO
+    } else {
+        N_PROMPT
+    }
+}
+
+pub fn bench_args_com_prompt(
+    model_path: &Path,
+    profile: &ModelProfile,
+    cluster: Option<&crate::devices::ClusterArgs>,
+    n_prompt: u32,
+) -> Vec<String> {
     let mut args = vec![
         "-m".to_string(),
         model_path.to_string_lossy().into_owned(),
         "-p".to_string(),
-        N_PROMPT.to_string(),
+        n_prompt.to_string(),
         "-n".to_string(),
         N_GEN.to_string(),
         "-r".to_string(),
@@ -169,12 +221,154 @@ pub fn bench_args(
     if let Some(t) = profile.threads {
         push("-t", t.to_string());
     }
+    // Como o arquivo entra na memória muda o tempo de carga e, com o modelo
+    // maior que a RAM, muda também o que a page cache consegue segurar.
+    if let Some(m) = profile.effective_load_mode() {
+        push("-lm", m.as_str().to_string());
+    }
     // Medir sem o par é medir outra máquina. O `llama-bench` aceita os mesmos
     // três flags do servidor.
     if let Some(c) = cluster {
         args.extend(c.to_args());
     }
     args
+}
+
+/// Que botão a varredura gira.
+///
+/// São os dois cuja resposta certa não dá para calcular: onde parar de
+/// empurrar especialista para a CPU, e de que tamanho a passada de prompt
+/// compensa. O `llama-bench` aceita lista em qualquer parâmetro, então a
+/// curva inteira sai de UMA invocação — um carregamento de modelo, não seis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SweepDim {
+    /// Camadas de especialista na CPU (`-ncmoe`).
+    Ncmoe,
+    /// Tamanho do micro-lote (`-ub`).
+    Ubatch,
+}
+
+impl SweepDim {
+    fn flag(&self) -> &'static str {
+        match self {
+            SweepDim::Ncmoe => "-ncmoe",
+            SweepDim::Ubatch => "-ub",
+        }
+    }
+
+    fn valor_da_linha(&self, r: &BenchRow) -> Option<u32> {
+        match self {
+            SweepDim::Ncmoe => r.n_cpu_moe,
+            SweepDim::Ubatch => r.n_ubatch,
+        }
+    }
+}
+
+/// Um ponto medido da curva.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SweepPoint {
+    /// O valor testado nesta dimensão.
+    pub value: u32,
+    pub gen_tps: f64,
+    pub prompt_tps: f64,
+}
+
+/// Repetições da varredura. UMA, e de propósito: aqui o que se procura é o
+/// FORMATO da curva — onde ela dobra —, não o número final. O ponto escolhido
+/// depois passa pelo bench normal, com três repetições e desvio.
+const REPETICOES_VARREDURA: u32 = 1;
+
+/// Roda a curva de um botão numa invocação só.
+pub async fn sweep(
+    runtime_dir: &Path,
+    model_path: &Path,
+    profile: &ModelProfile,
+    cluster: Option<&crate::devices::ClusterArgs>,
+    dim: SweepDim,
+    valores: &[u32],
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<Vec<SweepPoint>, BenchError> {
+    use std::sync::atomic::Ordering;
+    if cancel.load(Ordering::SeqCst) || valores.is_empty() {
+        return Err(BenchError::Cancelled);
+    }
+    let exe = bench_exe(runtime_dir)?;
+
+    // Prompt longo sempre: a varredura existe para enxergar o caminho que o
+    // prompt curto esconde.
+    let mut args = bench_args_com_prompt(model_path, profile, cluster, N_PROMPT_LONGO);
+    // A lista vence o valor único que o perfil possa ter posto: a última
+    // ocorrência é a que o llama-bench usa.
+    args.push(dim.flag().to_string());
+    args.push(
+        valores
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    );
+    if let Some(i) = args.iter().position(|a| a == "-r") {
+        args[i + 1] = REPETICOES_VARREDURA.to_string();
+    }
+
+    let mut cmd = tokio::process::Command::new(&exe);
+    cmd.args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .current_dir(runtime_dir)
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x0800_0000);
+    }
+    let saida = cmd.output().await?;
+    if cancel.load(Ordering::SeqCst) {
+        return Err(BenchError::Cancelled);
+    }
+    parse_sweep(&String::from_utf8_lossy(&saida.stdout), dim)
+}
+
+/// Junta as linhas do JSON num ponto por valor testado.
+///
+/// Cada valor rende duas linhas — a do prompt e a da geração — e o ponto só
+/// existe quando as duas apareceram: metade da medição não descreve a
+/// escolha, porque é exatamente entre as duas metades que o custo se move.
+pub fn parse_sweep(stdout: &str, dim: SweepDim) -> Result<Vec<SweepPoint>, BenchError> {
+    let rows: Vec<BenchRow> = serde_json::from_str(stdout)
+        .map_err(|e| BenchError::Unreadable(format!("{e}: {}", head(stdout))))?;
+
+    let mut pontos: Vec<SweepPoint> = Vec::new();
+    for r in &rows {
+        let Some(v) = dim.valor_da_linha(r) else {
+            continue;
+        };
+        let Some(ts) = r.avg_ts else { continue };
+        let ponto = match pontos.iter_mut().find(|p| p.value == v) {
+            Some(p) => p,
+            None => {
+                pontos.push(SweepPoint {
+                    value: v,
+                    gen_tps: 0.0,
+                    prompt_tps: 0.0,
+                });
+                pontos.last_mut().expect("acabou de ser inserido")
+            }
+        };
+        if r.n_gen.unwrap_or(0) > 0 {
+            ponto.gen_tps = ts;
+        } else if r.n_prompt.unwrap_or(0) > 0 {
+            ponto.prompt_tps = ts;
+        }
+    }
+    pontos.retain(|p| p.gen_tps > 0.0 || p.prompt_tps > 0.0);
+    if pontos.is_empty() {
+        return Err(BenchError::Unreadable(head(stdout)));
+    }
+    pontos.sort_by_key(|p| p.value);
+    Ok(pontos)
 }
 
 pub fn bench_exe(runtime_dir: &Path) -> Result<PathBuf, BenchError> {
@@ -288,7 +482,7 @@ mod tests {
             ngl: Some(30),
             kv_k: Some(KvType::Q8_0),
             flash_attn: Some(true),
-            spec: Some(lr_types::tuning::SpecType::Ngram),
+            spec: Some(lr_types::tuning::SpecType::NgramMod.into()),
             mmproj: Some("/m/mmproj.gguf".into()),
             ..Default::default()
         };
