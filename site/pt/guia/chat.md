@@ -64,4 +64,4 @@ rodar comandos — existe o
 de código completo com **item próprio na barra lateral**, logo abaixo do Chat.
 O app instala, supervisiona e roda ele embutido, já apontado para todos os
 provedores e modelos que você tem. O botão **Agente** no compositor só leva
-até lá. Veja [Abrir em um harness](/pt/integracoes/api-local#abrir-em-um-harness).
+até lá. Veja [o agente de código](/pt/guia/harness).

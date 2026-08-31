@@ -279,6 +279,9 @@ body {
 .ow-verdict--gpu {
   background: var(--ow-ok);
 }
+.ow-verdict--moe {
+  background: var(--ow-accent);
+}
 .ow-verdict--split {
   background: var(--ow-warn);
 }

@@ -64,4 +64,4 @@ running commands — there is the
 coding agent with **its own item in the sidebar**, right below Chat. The app
 installs it, supervises it and runs it embedded, already pointed at every
 provider and model you have. The **Agent** button in the composer just takes
-you there. See [Open in a harness](/integrations/local-api#open-in-a-harness).
+you there. See [the coding agent](/guide/harness).

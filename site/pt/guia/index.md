@@ -56,5 +56,5 @@ máquina, mas um programa rodando como seu usuário consegue ler.
 - [Instalação](/pt/guia/instalacao) — uma linha, ou o instalador na mão.
 - [Primeira execução](/pt/guia/primeira-execucao) — detecção de hardware e o
   download do motor.
-- [Abrir em um harness](/pt/integracoes/api-local#abrir-em-um-harness) —
-  agentes de código externos pré-configurados com os seus modelos.
+- [O agente de código](/pt/guia/harness) — o DeepSeek Harness, instalado e
+  rodado pelo app, pré-configurado com os seus modelos.

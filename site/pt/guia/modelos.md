@@ -28,15 +28,38 @@ RAM do sistema.
 
 ## Lendo as cores
 
-Na gaveta de quantizações cada arquivo é pontuado contra o seu hardware de
-verdade:
+Escolha um modelo em **Descobrir** e o painel da direita pontua cada arquivo
+dele contra o seu hardware de verdade:
 
 - <span class="ow-verdict ow-verdict--gpu"></span> **Verde** — cabe inteiro na VRAM, com espaço para a janela de contexto.
+- <span class="ow-verdict ow-verdict--moe"></span> **Azul** — mistura de especialistas, com os roteados na RAM do sistema. Não é rebaixamento: veja abaixo.
 - <span class="ow-verdict ow-verdict--split"></span> **Amarelo** — parte das camadas vai para a CPU. Funciona; é mais lento.
 - <span class="ow-verdict ow-verdict--cpu"></span> **Cinza** — só CPU. Usável em modelos pequenos, sofrido nos grandes.
 
 A conta inclui a janela de contexto, porque o cache KV mora na mesma memória: um
 modelo que cabe com 4k tokens pode não caber com 32k.
+
+### Por que o azul não é um amarelo
+
+Um modelo de mistura de especialistas com 35 bilhões de parâmetros lê, por
+token, os pesos de uns oito especialistas — não os de todos. Os outros ficam
+parados, e peso parado não precisa da memória rápida. Manter os especialistas
+roteados na RAM do sistema deixa a atenção inteira na placa, que é a divisão
+que funciona; pintar isso de amarelo diria "muito mais devagar" sobre a
+configuração que faz o arquivo caber. É assim que um arquivo de 22 GB responde
+em tempo real numa placa de 6 GB.
+
+## O que o painel conta
+
+Ao lado dos arquivos, o painel de detalhe responde as duas perguntas que antes
+mandavam você para o navegador:
+
+- **O que este modelo sabe fazer** — visão, ferramentas e raciocínio. Nada
+  disso é adivinhado pelo nome: visão é a etiqueta que o próprio autor
+  escolheu, e ferramentas e raciocínio saem do chat template que o llama.cpp de
+  fato executa. Se o ramo está lá, a capacidade existe.
+- **O que o autor escreveu** — o cartão do modelo do repositório, renderizado
+  aqui dentro.
 
 ## Meus Modelos
 
@@ -62,11 +85,20 @@ Ele não chuta. Três coisas são perguntadas em vez de estimadas:
 | Quais dispositivos existem e quanto sobra em cada um | `llama-server --list-devices`, com a GPU emprestada dentro quando há par |
 | Quantas camadas o modelo tem de verdade | o cabeçalho do GGUF (`block_count`) |
 | Quanto uma configuração custa de memória | o `llama-fit-params`, em cerca de um segundo e meio, sem carregar o modelo |
+| Quantos especialistas disparam por token, e que fatia do arquivo é especialista roteado | o cabeçalho do GGUF — e, antes do download, o `config.json` do repositório que a tag `base_model:` aponta |
 
-Com essas três, uma busca dirigida converge numa configuração: a maior janela
-que ainda mantém os pesos na placa, comprimindo o KV cache só quando a janela
+Com essas, uma busca dirigida converge numa configuração: a maior janela que
+ainda mantém os pesos na placa, comprimindo o KV cache só quando a janela
 exige, flash attention onde ajuda, e a razão do split tirada da memória livre
 real.
+
+Para uma mistura de especialistas que não cabe, a busca é outra. Em vez de
+partir camadas — o que manda a atenção para a CPU, e a atenção roda em todo
+token —, ela procura o menor número de camadas de especialista que precisam
+morar na RAM do sistema. Como o custo de memória cai de forma monótona
+conforme esse número sobe, uma busca binária o encontra em umas sete perguntas
+ao `llama-fit-params`, em vez das dezenas de tentativas de carregar que a
+receita manual pede.
 
 Ela roda sozinha em segundo plano assim que o motor sobe, e de novo quando o
 conjunto de dispositivos muda — parear com outra máquina muda o que cabe tanto

@@ -27,14 +27,37 @@ usually faster *and* more pleasant than a `Q6_K` spilling into system RAM.
 
 ## Reading the colours
 
-In the quantization drawer each file is scored against your actual hardware:
+Pick a model in **Discover** and the panel on the right scores every one of its
+files against your actual hardware:
 
 - <span class="ow-verdict ow-verdict--gpu"></span> **Green** — fits fully in VRAM, with room for the context window.
+- <span class="ow-verdict ow-verdict--moe"></span> **Blue** — a mixture-of-experts model with its routed experts in system RAM. Not a downgrade: see below.
 - <span class="ow-verdict ow-verdict--split"></span> **Yellow** — part of the layers go to the CPU. It works; it is slower.
 - <span class="ow-verdict ow-verdict--cpu"></span> **Grey** — CPU-only. Usable for small models, painful for large ones.
 
 The score accounts for the context window too, because the KV cache lives in the
 same memory: a model that fits at 4k tokens may not fit at 32k.
+
+### Why the blue is not a yellow
+
+A mixture-of-experts model with 35 billion parameters reads, per token, the
+weights of about eight experts — not all of them. The rest sit still, and a
+weight that sits still does not need fast memory. Keeping the routed experts in
+system RAM leaves attention whole on the card, which is the split that works;
+painting it yellow would say "much slower" about the configuration that makes
+the file fit at all. That is how a 22 GB file answers in real time on a 6 GB
+card.
+
+## What the panel tells you
+
+Beside the files, the detail panel answers the two questions that used to send
+you to the browser:
+
+- **What this model can do** — vision, tools and reasoning. None of it is
+  guessed from the name: vision is the tag its own author chose, and tools and
+  reasoning come from the chat template llama.cpp actually executes. If the
+  branch is there, the capability is real.
+- **What its author wrote** — the repository's model card, rendered in the app.
 
 ## My Models
 
@@ -59,11 +82,20 @@ It does not guess. Three things are asked rather than estimated:
 | Which devices exist and how much is free on each | `llama-server --list-devices`, including the borrowed GPU when a pair is up |
 | How many layers this model really has | the GGUF header (`block_count`) |
 | How much memory a configuration costs | `llama-fit-params`, in about a second and a half, without loading the model |
+| How many experts fire per token, and how much of the file is routed expert | the GGUF header — and, before you download, the `config.json` of the repository the `base_model:` tag points to |
 
-With those three, a directed search converges on a configuration: the largest
-context that still keeps the weights on the GPU, compressing the KV cache only
-when the window demands it, flash attention on where it helps, and the split
-ratio taken from real free memory.
+With those, a directed search converges on a configuration: the largest context
+that still keeps the weights on the GPU, compressing the KV cache only when the
+window demands it, flash attention on where it helps, and the split ratio taken
+from real free memory.
+
+For a mixture-of-experts model that does not fit, the search is a different
+one. Instead of splitting layers — which sends attention to the CPU, and
+attention runs on every token — it looks for the smallest number of expert
+layers that have to live in system RAM. Because memory cost falls monotonically
+as that number rises, a binary search finds it in about seven questions to
+`llama-fit-params`, rather than the dozens of load-and-retry cycles the manual
+recipe asks for.
 
 It runs by itself in the background once the engine is up, and again when the
 device set changes — pairing with another machine changes what fits as much as

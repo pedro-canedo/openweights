@@ -56,9 +56,20 @@ Se você quiser, ele então mede os tokens/s reais e troca a estimativa pelo que
 sua máquina realmente entregou. Uma estimativa que você pode conferir vale mais
 que uma promessa que você não pode.
 
+## A barra de status
+
+A faixa de baixo não é enfeite. Ela informa, ao vivo: CPU, RAM, GPU e VRAM; o
+**consumo da placa contra o limite dela**; disco e rede; **qual modelo está
+carregado** (com um ponto pulsando enquanto ele gera); **quanto da janela de
+contexto está em uso**; e os **tokens por segundo** do momento.
+
+Esse último número vem do servidor, não do chat — então ele conta o agente de
+código e qualquer app externo apontado para a sua API, não só o que você digita
+aqui.
+
 ## Para onde ir agora
 
 - [Modelos e quantização](/pt/guia/modelos) — como ler as cores.
 - [Chat](/pt/guia/chat) — a tela de conversa, parâmetros e anexos.
-- [Abrir em um harness](/pt/integracoes/api-local#abrir-em-um-harness) —
-  quando você quer trabalho feito, não só resposta.
+- [O agente de código](/pt/guia/harness) — quando você quer trabalho feito,
+  não só resposta.

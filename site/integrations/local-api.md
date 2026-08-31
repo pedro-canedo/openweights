@@ -35,7 +35,7 @@ From there:
 | What | Where |
 |---|---|
 | Context window, KV cache, flash attention, vision | Direct controls, each with what it costs |
-| **Speculation (MTP)** | Turning on `draft-mtp` reveals tokens per draft (2–4 is the sweet spot) and minimum confidence (0.75 avoids wasted cycles on long context) |
+| **Speculation** | MTP and n-gram, and **both at once** — they are complementary, see below |
 | GPU layers, experts on CPU, batch, threads, mmap, mlock | Under "more options" |
 | **Every other flag** | A search across the whole catalogue of your installed llama.cpp — `rope`, `yarn`, `cache-reuse`, `jinja`, `lora`, `override-kv`, whatever exists |
 
@@ -57,6 +57,64 @@ Because the router only reads this configuration at startup, changes are marked
 as "effective on the next restart". The **Load** button restarts on its own when
 something is pending, and the same button unloads the model — video memory comes
 back immediately.
+
+## Measured speculation
+
+Speculative decoding has the model guess several tokens ahead and check them all
+in one pass, keeping what it agrees with. Two kinds are on offer and they are
+complementary: a **draft** (MTP, from layers inside the file itself) guesses new
+text, while an **n-gram** guesses what is already written in the prompt — which
+is most of what a coding agent does all day, rewriting a file it just read.
+llama.cpp accepts both at the same time, so the app offers both.
+
+Whether it pays off depends on the machine and on the kind of text, so the app
+does not decide by rule — it **measures**. Once per model, machine and engine
+version, while the machine is idle, it tries each combination on two prompts
+(code and prose, reported separately, because an average would hide exactly the
+thing that matters) and applies the winner. The engine restarts between tests;
+any use of yours interrupts and defers it. The switch that turns this off is on
+the same card.
+
+::: tip A speed number cannot tell you the answer is broken
+This is the part that matters. Speculative decoding is *lossless* — the large
+model checks every draft and throws away what it rejects — so at temperature
+zero the answer **must** be identical to the one you get with no speculation at
+all. The app compares the text, and **refuses** any configuration that changed
+it, showing the diverging passage instead of just claiming it checked.
+
+It also tests itself first: if the reference run disagrees with its own repeat,
+the non-determinism is the GPU kernel's, not speculation's, and nothing is
+disqualified.
+:::
+
+## GPU power
+
+Generating tokens is bound by the card's **memory bandwidth**, not by how much
+it may burn — and bandwidth does not rise with the power limit. So on this
+workload, lowering the limit usually costs almost nothing in speed while taking
+away a good deal of heat and consumption.
+
+*Usually* is the honest word, so the card reads the state from NVML and lets you
+switch between the card's stock limit and an efficient target — both values come
+from the driver — and then tells you to measure. The performance history records
+the limit in force on every run, marking any comparison that crosses two
+different limits, so the experiment is one you can actually read.
+
+Two things the card states rather than hides: applying needs administrator
+rights, and the limit **does not survive a reboot** — that is NVIDIA's design,
+documented in NVML, and no application works around it.
+
+## Performance history
+
+Every measurement is kept per machine, model and engine build, with the change
+against the previous run. Two numbers, not one: **generation** and **prompt
+processing** are different jobs, and they get separate deltas with separate
+conditions — comparing 800 tok/s on a 512-token prompt with 300 on a 4096-token
+one called a regression what was simply another axis.
+
+A run is left without a delta when the engine version changed, when the card was
+heating up during it, or when there is nothing comparable before it. The screen
+says which.
 
 ### Global flags
 

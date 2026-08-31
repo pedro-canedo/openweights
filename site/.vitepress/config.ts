@@ -17,6 +17,7 @@ const enSidebar = [
       { text: "First run", link: "/guide/first-run" },
       { text: "Models and quantization", link: "/guide/models" },
       { text: "Chat", link: "/guide/chat" },
+      { text: "The coding agent", link: "/guide/harness" },
     ],
   },
   {
@@ -45,6 +46,7 @@ const ptSidebar = [
       { text: "Primeira execução", link: "/pt/guia/primeira-execucao" },
       { text: "Modelos e quantização", link: "/pt/guia/modelos" },
       { text: "Chat", link: "/pt/guia/chat" },
+      { text: "O agente de código", link: "/pt/guia/harness" },
     ],
   },
   {

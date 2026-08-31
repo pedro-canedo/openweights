@@ -35,7 +35,7 @@ A partir daí:
 | O que | Onde |
 |---|---|
 | Janela de contexto, cache KV, flash attention, visão | Controles diretos, com a explicação do preço de cada um |
-| **Especulação (MTP)** | Ligar `draft-mtp` abre os tokens por rascunho (2–4 é o equilíbrio) e a confiança mínima (0,75 evita ciclos desperdiçados em contexto longo) |
+| **Especulação** | MTP e n-grama, e **os dois ao mesmo tempo** — são complementares, veja abaixo |
 | Camadas na GPU, experts na CPU, batch, threads, mmap, mlock | Em "mais opções" |
 | **Todas as outras flags** | Uma busca sobre o catálogo inteiro da versão instalada do llama.cpp — `rope`, `yarn`, `cache-reuse`, `jinja`, `lora`, `override-kv`, o que existir |
 
@@ -57,6 +57,64 @@ o que está na tela é o que vai acontecer.
 Como o roteador só lê essa configuração ao subir, mudanças ficam marcadas como
 "valem no próximo reinício". O botão **Carregar** reinicia sozinho quando há algo
 pendente, e o mesmo botão descarrega o modelo — a memória de vídeo volta na hora.
+
+## Especulação medida
+
+Decodificação especulativa é o modelo adivinhar vários tokens à frente e
+conferir todos numa passada, ficando com o que ele aceita. Há dois tipos, e
+eles são complementares: um **rascunho** (MTP, de camadas que vêm no próprio
+arquivo) adivinha texto novo, enquanto um **n-grama** adivinha o que já está
+escrito no prompt — que é a maior parte do dia de um agente de código,
+reescrevendo um arquivo que acabou de ler. O llama.cpp aceita os dois juntos, e
+o app oferece os dois.
+
+Se compensa depende da máquina e do tipo de texto, então o app não decide por
+regra — ele **mede**. Uma vez por modelo, máquina e versão do motor, com a
+máquina parada, ele testa cada combinação em dois prompts (código e prosa,
+reportados separados, porque uma média esconderia exatamente o que interessa) e
+aplica o vencedor. O motor reinicia entre os testes; qualquer uso seu
+interrompe e adia. O interruptor que desliga isso está no mesmo card.
+
+::: tip Um número de velocidade não diz que a resposta virou lixo
+Esta é a parte que importa. A decodificação especulativa é *lossless* — o
+modelo grande confere cada rascunho e descarta o que recusa —, então com
+temperatura zero a resposta **tem** de ser idêntica à de quem não especula. O
+app compara o texto e **recusa** qualquer configuração que o tenha mudado,
+mostrando o trecho divergente em vez de apenas afirmar que conferiu.
+
+Ele também se testa antes: se a execução de referência discorda da própria
+repetição, o não-determinismo é do kernel da GPU e não da especulação, e
+ninguém é desclassificado.
+:::
+
+## Energia da GPU
+
+Gerar tokens é limitado pela **banda de memória** da placa, não pelo quanto ela
+pode queimar — e banda não sobe com o limite de energia. Então, nesta carga,
+baixar o limite costuma custar quase nada em velocidade e tirar bastante calor
+e consumo.
+
+"Costuma" é a palavra honesta, então o card lê o estado pelo NVML e deixa você
+alternar entre o padrão da placa e um alvo econômico — os dois valores vêm do
+driver — e manda medir. O histórico de desempenho registra o limite em vigor em
+cada corrida e marca qualquer comparação que atravesse dois limites diferentes,
+de modo que o experimento seja legível.
+
+Duas coisas que o card diz em vez de esconder: aplicar exige administrador, e o
+limite **não sobrevive a reiniciar o computador** — é assim que a NVIDIA fez,
+está documentado no NVML, e nenhum aplicativo contorna.
+
+## Histórico de desempenho
+
+Cada medição fica guardada por máquina, modelo e build do motor, com a variação
+contra a corrida anterior. Dois números, não um: **geração** e **processamento
+de prompt** são trabalhos diferentes, e cada um tem seu delta com sua condição
+— comparar 800 tok/s num prompt de 512 com 300 num de 4096 chamava de piora o
+que era simplesmente outro eixo.
+
+Uma corrida fica sem delta quando a versão do motor mudou, quando a placa estava
+esquentando durante ela, ou quando não há nada comparável antes. A tela diz qual
+é o caso.
 
 ### Flags globais
 

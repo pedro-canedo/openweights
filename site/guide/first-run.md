@@ -57,9 +57,20 @@ If you want, it then measures real tokens/s and replaces the estimate with what
 your machine actually delivered. An estimate you can check beats a promise you
 cannot.
 
+## The status bar
+
+The strip along the bottom is not decoration. It reports, live: CPU, RAM, GPU
+and VRAM; the card's **power draw against its limit**; disk and network; **which
+model is loaded** (with a pulsing dot while it generates); **how much of the
+context window is in use**; and the current **tokens per second**.
+
+That last number comes from the server, not from the chat — so it counts the
+coding agent and any external app pointed at your API, not only what you type
+here.
+
 ## Where to go next
 
 - [Models and quantization](/guide/models) — how to read the colours.
 - [Chat](/guide/chat) — the conversation screen, parameters and attachments.
-- [Open in a harness](/integrations/local-api#open-in-a-harness) — when you
-  want work done, not just answers.
+- [The coding agent](/guide/harness) — when you want work done, not just
+  answers.
