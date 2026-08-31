@@ -211,14 +211,73 @@ fn valor_provedor(p: &ProvedorDsh) -> Value {
         })
         .collect();
     m.insert("models".into(), Value::Sequence(modelos));
-    // Nível padrão da rota. Sem ele o dsh não manda esforço nenhum, e um
-    // modelo que hoje raciocina passaria a não raciocinar só porque ganhou o
-    // botão — mudança silenciosa de comportamento na cara de quem atualiza.
-    // Com ele, o padrão continua sendo o de sempre e o botão é ganho puro.
-    if p.models.iter().any(|mo| mo.thinking) {
-        m.insert("reasoning".into(), NIVEL_LIGADO.into());
+    // Nível padrão da rota, quando ela inteira pode prometê-lo. Sem padrão o
+    // dsh não manda esforço nenhum e um modelo que raciocina começa
+    // desligado; com um padrão que algum modelo da rota não aceita, esse
+    // modelo não responde uma única vez. Entre perder o padrão e perder o
+    // modelo, perde-se o padrão — o seletor por modelo continua lá.
+    if let Some(nivel) = nivel_padrao_da_rota(&p.models) {
+        m.insert("reasoning".into(), nivel.into());
     }
     Value::Mapping(m)
+}
+
+/// Os níveis que ESTE modelo aceita, com os nomes do harness.
+///
+/// Vazio quando o modelo não raciocina: para o adapter, o único nível de um
+/// modelo assim é `off` — e nenhum padrão de rota pode nomear outro.
+fn niveis_do_modelo(m: &ModeloDsh) -> Vec<&'static str> {
+    if !m.thinking {
+        return Vec::new();
+    }
+    if m.efforts.is_empty() {
+        return vec![NIVEL_LIGADO];
+    }
+    let mut niveis: Vec<&'static str> = Vec::new();
+    for e in &m.efforts {
+        let nome = apelido_do_nivel(e);
+        if !niveis.contains(&nome) {
+            niveis.push(nome);
+        }
+    }
+    niveis
+}
+
+/// O nível padrão que a ROTA inteira pode prometer, se existir.
+///
+/// `reasoning` é campo da rota no schema, mas o adapter o valida contra o
+/// modelo de CADA requisição: um nível que aquele modelo não declarou vira
+/// `UNSUPPORTED_REASONING_EFFORT` antes de a mensagem sair. E os modelos de
+/// uma rota local não combinam entre si — um instruct só aceita `off`, e dois
+/// raciocinadores podem nomear níveis diferentes (`high` num, `xhigh/medium/
+/// low` no outro). Daí a regra: o padrão só sai quando TODOS os modelos da
+/// rota aceitam o mesmo nível.
+///
+/// Entre os níveis comuns, `high` é o preferido — era o padrão fixo antes — e,
+/// na falta dele, o mais próximo subindo e só então descendo: a mesma
+/// aproximação que o pi-ai faz no `clampThinkingLevel` dele.
+fn nivel_padrao_da_rota(modelos: &[ModeloDsh]) -> Option<&'static str> {
+    let mut comuns: Option<Vec<&'static str>> = None;
+    for modelo in modelos {
+        let niveis = niveis_do_modelo(modelo);
+        if niveis.is_empty() {
+            return None;
+        }
+        comuns = Some(match comuns {
+            None => niveis,
+            Some(anteriores) => anteriores
+                .into_iter()
+                .filter(|n| niveis.contains(n))
+                .collect(),
+        });
+    }
+    let comuns = comuns?;
+    let alvo = NIVEIS_DO_HARNESS.iter().position(|n| *n == NIVEL_LIGADO)?;
+    NIVEIS_DO_HARNESS[alvo..]
+        .iter()
+        .chain(NIVEIS_DO_HARNESS[..alvo].iter().rev())
+        .find(|n| comuns.contains(n))
+        .copied()
 }
 
 /// A seção `llm-pi-ai` inteira: `providers` é um DICT keyed pela rota (não
@@ -270,6 +329,48 @@ fn default_precisa_trocar(
     true
 }
 
+/// Tira do `agent-default-model` um `reasoningEffort` que o modelo apontado
+/// não aceita.
+///
+/// O campo é do dsh — a escolha da pessoa no seletor —, mas ele sobrevive a
+/// trocas de modelo, e o adapter recusa a requisição inteira quando o nível
+/// não é um dos declarados pelo modelo novo. Só mexemos no que é nosso: rota
+/// gerenciada por este app, modelo ainda presente nela, nível que a rota não
+/// declarou. Fora disso o campo é intocável — inclusive no provedor nativo do
+/// dsh, cujos níveis não conhecemos.
+fn limpar_esforco_do_default(doc: &mut Mapping, provedores: &[(String, ProvedorDsh)]) {
+    let Some(Value::Mapping(m)) = doc.get_mut("agent-default-model") else {
+        return;
+    };
+    let (Some(prov), Some(id), Some(esforco)) = (
+        m.get("provider").and_then(Value::as_str),
+        m.get("model").and_then(Value::as_str),
+        m.get("reasoningEffort").and_then(Value::as_str),
+    ) else {
+        return;
+    };
+    if !IDS_GERENCIADOS.contains(&prov) {
+        return;
+    }
+    let Some(modelo) = provedores
+        .iter()
+        .find(|(rota, _)| rota == prov)
+        .and_then(|(_, p)| p.models.iter().find(|mo| mo.id == id))
+    else {
+        return;
+    };
+    // `off` é sempre aceito: o modelo que raciocina o declara, e o que não
+    // raciocina não tem outro.
+    if esforco == "off" || niveis_do_modelo(modelo).contains(&esforco) {
+        return;
+    }
+    log::warn!(
+        "agent-default-model pedia esforço \"{esforco}\", que {id} não aceita; \
+         o campo sai e o modelo volta ao padrão"
+    );
+    m.remove("reasoningEffort");
+}
+
 /// Mescla o documento existente com as rotas novas e devolve o YAML final.
 ///
 /// Documento ilegível não derruba nada: vira base vazia com aviso — o
@@ -307,6 +408,7 @@ pub fn merge_settings(existente: &str, provedores: &[(String, ProvedorDsh)]) -> 
             doc.insert("agent-default-model".into(), Value::Mapping(m));
         }
     }
+    limpar_esforco_do_default(&mut doc, provedores);
 
     let corpo = serde_yaml_ng::to_string(&Value::Mapping(doc)).unwrap_or_else(|e| {
         // Inalcançável na prática (o Value veio de parse ou de literais);
@@ -499,8 +601,10 @@ mod tests {
         assert!(saida.contains("off: null"));
         assert!(saida.contains("thinkingFormat: qwen-chat-template"));
         assert!(saida.contains("maxTokens: 65536"));
-        // O padrão da rota mantém o comportamento de antes do botão.
-        assert!(saida.contains("reasoning: high"));
+        // Rota mista: o Phi só aceita `off`, então a rota não promete nível
+        // nenhum — um padrão que ele não aceita derrubaria toda conversa com
+        // ele antes da primeira mensagem.
+        assert!(!saida.contains("reasoning: high"));
 
         // O modelo SEM interruptor não ganha seletor — só o teto.
         let doc: Value = serde_yaml_ng::from_str(&saida).unwrap();
@@ -579,6 +683,110 @@ mod tests {
         );
         assert!(m["compat"].get("chatTemplateKwargs").is_none());
         assert_eq!(m["reasoningEfforts"]["high"], Value::from("high"));
+    }
+
+    /// O caso que quebrou de verdade: rota com um instruct ao lado de
+    /// modelos que raciocinam. O `reasoning` da rota vale para TODOS eles, e
+    /// o adapter recusa a requisição do instruct com
+    /// `UNSUPPORTED_REASONING_EFFORT` — o modelo simplesmente não responde.
+    #[test]
+    fn a_route_with_a_non_thinking_model_promises_no_default_level() {
+        let rota = (
+            "openweights".to_string(),
+            ProvedorDsh {
+                models: vec![
+                    modelo_pensante("Ornith-1.5-9B.gguf", 131_072),
+                    modelo("Qwen3-Coder-30B-Instruct.gguf", Some(131_072)),
+                ],
+                ..local().1
+            },
+        );
+        let doc = parse(&merge_settings("", &[rota]));
+        let p = &doc["llm-pi-ai"]["providers"]["openweights"];
+        assert!(
+            p.get("reasoning").is_none(),
+            "o instruct só aceita `off`; nenhum nível serve à rota inteira"
+        );
+        // O que raciocina não perde o seletor — perde só o padrão.
+        assert!(p["models"][0].get("reasoningEfforts").is_some());
+    }
+
+    /// Dois raciocinadores que nomeiam níveis diferentes também não têm um
+    /// padrão comum em `high`: o Qwen3.8 declara `xhigh/medium/low`, e pedir
+    /// `high` a ele é o mesmo erro. Sobra o nível que os dois aceitam.
+    #[test]
+    fn a_route_of_thinking_models_settles_on_a_level_all_of_them_take() {
+        let rota = (
+            "openweights".to_string(),
+            ProvedorDsh {
+                models: vec![
+                    ModeloDsh {
+                        efforts: vec!["xhigh".into(), "medium".into(), "low".into()],
+                        ..modelo_pensante("Qwen3.8-27B.gguf", 131_072)
+                    },
+                    ModeloDsh {
+                        efforts: vec!["medium".into(), "low".into()],
+                        ..modelo_pensante("Outro.gguf", 32_768)
+                    },
+                ],
+                ..local().1
+            },
+        );
+        let doc = parse(&merge_settings("", &[rota]));
+        assert_eq!(
+            doc["llm-pi-ai"]["providers"]["openweights"]["reasoning"],
+            Value::from("medium"),
+            "sem `high` na interseção, o mais próximo subindo e depois descendo"
+        );
+    }
+
+    /// Rota inteira de liga/desliga: todo mundo aceita `high`, e o padrão de
+    /// sempre continua valendo.
+    #[test]
+    fn a_route_where_every_model_thinks_keeps_the_old_default() {
+        let rota = (
+            "openweights".to_string(),
+            ProvedorDsh {
+                models: vec![
+                    modelo_pensante("Qwen3-8B.gguf", 32_768),
+                    modelo_pensante("Ornith-1.5-9B.gguf", 131_072),
+                ],
+                ..local().1
+            },
+        );
+        let doc = parse(&merge_settings("", &[rota]));
+        assert_eq!(
+            doc["llm-pi-ai"]["providers"]["openweights"]["reasoning"],
+            Value::from("high")
+        );
+    }
+
+    /// Esforço herdado que o modelo apontado não conhece sai do
+    /// `agent-default-model`: mantido, ele seria o mesmo erro em toda
+    /// mensagem, mesmo com a rota já sem padrão.
+    #[test]
+    fn a_default_effort_the_model_cannot_take_is_dropped() {
+        let rota = (
+            "openweights".to_string(),
+            ProvedorDsh {
+                models: vec![ModeloDsh {
+                    efforts: vec!["xhigh".into(), "medium".into(), "low".into()],
+                    ..modelo_pensante("Qwen3.8-27B.gguf", 131_072)
+                }],
+                ..local().1
+            },
+        );
+        let antes = "agent-default-model:\n  provider: openweights\n  model: Qwen3.8-27B.gguf\n  reasoningEffort: high\n";
+        let doc = parse(&merge_settings(antes, std::slice::from_ref(&rota)));
+        assert!(doc["agent-default-model"].get("reasoningEffort").is_none());
+
+        // O nível que o modelo declara continua onde estava.
+        let antes = "agent-default-model:\n  provider: openweights\n  model: Qwen3.8-27B.gguf\n  reasoningEffort: low\n";
+        let doc = parse(&merge_settings(antes, &[rota]));
+        assert_eq!(
+            doc["agent-default-model"]["reasoningEffort"],
+            Value::from("low")
+        );
     }
 
     /// Rota remota não recebe teto nosso: o do provedor é dele, e pedir mais

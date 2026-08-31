@@ -55,6 +55,14 @@ frequência, a diferença entre uma resposta e um rascunho cortado.
 
 **Desligado** desliga o raciocínio de verdade, não o reduz.
 
+O esforço padrão é da **rota inteira**, não de cada modelo — o harness só
+aceita um valor para todos. Como a rota local costuma misturar modelos que
+raciocinam com modelos que não raciocinam (um Coder, por exemplo), quase nunca
+existe um nível que sirva a todos: aí a rota vai sem padrão e o raciocínio
+começa desligado, à espera do seletor. É de propósito — um padrão que algum
+modelo da rota não aceita faz esse modelo recusar toda mensagem antes de
+enviá-la.
+
 ## Teto de saída
 
 Cada modelo local também declara quanto pode escrever numa resposta — metade
