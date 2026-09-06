@@ -416,7 +416,7 @@
       "testDown": "Servidor parado — inicie-o acima.",
       "envBlock": "Variáveis de ambiente",
       "model": "Modelo carregado",
-      "noModel": "Nenhum modelo carregado — carregue um em Configurar llama.cpp, logo abaixo.",
+      "noModel": "Nenhum modelo carregado — carregue um em Configurar llama.cpp, na aba Desempenho.",
       "restartHint": "A mudança de chave só vale depois de reiniciar o servidor.",
       "restartNow": "Reiniciar agora",
       "portHint": "1234 é a porta do LM Studio e 11434 a do Ollama — apps já configurados para eles conectam sem mudar nada.",
@@ -425,7 +425,7 @@
       "envBlockAnthropic": "Variante Anthropic (Claude Code)",
       "lanUrlsTitle": "Endereços na rede",
       "lanUrlsHint": "Para outros aparelhos, WSL ou containers, use um destes endereços — 127.0.0.1 só vale dentro desta máquina. O firewall do Windows pode pedir permissão na primeira conexão.",
-      "lanUrlsOffHint": "Apps no WSL ou em containers não alcançam o 127.0.0.1 do Windows — ligue o acesso pela rede local, logo abaixo, para usá-los."
+      "lanUrlsOffHint": "Apps no WSL ou em containers não alcançam o 127.0.0.1 do Windows — ligue o acesso pela rede local, na aba Rede, para usá-los."
     },
     "stats": {
       "title": "Estatísticas de serviço",
@@ -513,7 +513,7 @@
       "default": "padrão: {{v}}",
       "managed": "Gerenciada pelo app — configure no cartão do servidor ou do cluster.",
       "typedNote": "Coberta pelos controles acima — use-os para mudar este valor.",
-      "globalNote": "Flag do processo — configure no cartão \"Flags globais\" abaixo.",
+      "globalNote": "Flag do processo — configure no cartão \"Flags globais\", na aba Avançado.",
       "preview": "Prévia do comando e do INI",
       "envPreview": "ambiente",
       "needsRestart": "Mudanças gravadas — valem no próximo reinício do servidor.",

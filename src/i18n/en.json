@@ -416,7 +416,7 @@
       "testDown": "Server stopped — start it above.",
       "envBlock": "Environment variables",
       "model": "Loaded model",
-      "noModel": "No model loaded — load one under Configure llama.cpp, right below.",
+      "noModel": "No model loaded — load one under Configure llama.cpp, in the Performance tab.",
       "restartHint": "The key change only takes effect after restarting the server.",
       "restartNow": "Restart now",
       "portHint": "1234 is LM Studio's port and 11434 is Ollama's — apps already configured for them connect without changing anything.",
@@ -425,7 +425,7 @@
       "envBlockAnthropic": "Anthropic variant (Claude Code)",
       "lanUrlsTitle": "Network addresses",
       "lanUrlsHint": "For other devices, WSL or containers, use one of these addresses — 127.0.0.1 only works inside this machine. Windows Firewall may ask for permission on the first connection.",
-      "lanUrlsOffHint": "Apps in WSL or containers can't reach Windows' 127.0.0.1 — turn on local network access, right below, to use them."
+      "lanUrlsOffHint": "Apps in WSL or containers can't reach Windows' 127.0.0.1 — turn on local network access, in the Network tab, to use them."
     },
     "stats": {
       "title": "Serving stats",
@@ -513,7 +513,7 @@
       "default": "default: {{v}}",
       "managed": "Managed by the app — configure it in the server or cluster card.",
       "typedNote": "Covered by the controls above — use them to change this value.",
-      "globalNote": "Process flag — configure it in the \"Global flags\" card below.",
+      "globalNote": "Process flag — configure it in the \"Global flags\" card, in the Advanced tab.",
       "preview": "Command & INI preview",
       "envPreview": "environment",
       "needsRestart": "Changes saved — they take effect on the next server restart.",
