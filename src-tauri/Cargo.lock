@@ -2620,6 +2620,7 @@ dependencies = [
  "flate2",
  "log",
  "lr_fetch",
+ "lr_proc",
  "lr_types",
  "reqwest 0.12.28",
  "serde",
