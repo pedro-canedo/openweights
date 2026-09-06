@@ -12,7 +12,8 @@ poucos MB, sem Electron.
 ## O que ele faz
 
 - **Detecta seu hardware** e baixa o runtime do llama.cpp certo (CUDA, Vulkan ou
-  só CPU) na primeira execução.
+  só CPU) na primeira execução — e depois **o verifica executando**, para que
+  "os arquivos estão lá" nunca seja confundido com "o motor funciona".
 - **Busca modelos GGUF no Hugging Face** e diz, por quantização, se ela cabe
   inteira na GPU, divide com a CPU ou é só CPU.
 - **Conversa localmente**, com streaming, markdown, destaque de código e
@@ -53,6 +54,8 @@ máquina, mas um programa rodando como seu usuário consegue ler.
 
 ## A seguir
 
+- [Novidades](/pt/guia/novidades) — o que mudou na versão que você baixaria
+  hoje.
 - [Instalação](/pt/guia/instalacao) — uma linha, ou o instalador na mão.
 - [Primeira execução](/pt/guia/primeira-execucao) — detecção de hardware e o
   download do motor.

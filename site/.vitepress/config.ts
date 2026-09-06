@@ -13,6 +13,7 @@ const enSidebar = [
     text: "Getting started",
     items: [
       { text: "What OpenWeights is", link: "/guide/" },
+      { text: "What's new", link: "/guide/whats-new" },
       { text: "Install", link: "/guide/install" },
       { text: "First run", link: "/guide/first-run" },
       { text: "Models and quantization", link: "/guide/models" },
@@ -42,6 +43,7 @@ const ptSidebar = [
     text: "Primeiros passos",
     items: [
       { text: "O que é o OpenWeights", link: "/pt/guia/" },
+      { text: "Novidades", link: "/pt/guia/novidades" },
       { text: "Instalação", link: "/pt/guia/instalacao" },
       { text: "Primeira execução", link: "/pt/guia/primeira-execucao" },
       { text: "Modelos e quantização", link: "/pt/guia/modelos" },
@@ -77,7 +79,7 @@ export default defineConfig({
 
   head: [
     ["link", { rel: "icon", type: "image/svg+xml", href: `${base}icon.svg` }],
-    ["meta", { name: "theme-color", content: "#7c5cff" }],
+    ["meta", { name: "theme-color", content: "#7b5cff" }],
     ["meta", { property: "og:type", content: "website" }],
     ["meta", { property: "og:title", content: "OpenWeights" }],
     [

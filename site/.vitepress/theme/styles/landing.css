@@ -18,6 +18,34 @@
   padding: var(--ow-24) 0 var(--ow-8);
 }
 
+/* A marca no topo do hero. Uma por tema: o VitePress marca `.dark` no
+   <html>, e o anel prata do ícone só existe sobre fundo escuro. */
+.ow-hero__mark {
+  display: block;
+  width: 64px;
+  height: 64px;
+  margin-bottom: var(--ow-6);
+}
+.ow-hero__mark--dark {
+  display: none;
+}
+.dark .ow-hero__mark--dark {
+  display: block;
+}
+.dark .ow-hero__mark--light {
+  display: none;
+}
+
+/* O filete da marca fechando o hero: assinatura, não decoração — por isso
+   tem largura curta e some no meio, em vez de atravessar a página. */
+.ow-hero__ribbon {
+  height: 3px;
+  width: min(320px, 60%);
+  margin-top: var(--ow-16);
+  border-radius: 3px;
+  opacity: 0.9;
+}
+
 .ow-hero__name {
   margin: 0;
   font-size: var(--ow-text-sm);

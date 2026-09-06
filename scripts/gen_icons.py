@@ -29,6 +29,9 @@ ROOT = Path(__file__).resolve().parent.parent
 ICONS = ROOT / "src-tauri" / "icons"
 PUBLIC = ROOT / "public"
 BRAND = ROOT / "brand"
+#: O site tem cópias próprias (o VitePress serve `site/public/`), e cópia que
+#: não é gerada aqui envelhece: era a marca antiga que continuava no ar.
+SITE = ROOT / "site" / "public"
 GEN_TS = ROOT / "src" / "components" / "brandArt.ts"
 
 # ----------------------------------------------------------------- cores ---
@@ -52,6 +55,14 @@ PRATA_STOPS = [
     (0.0, (0xFF, 0xFF, 0xFF)),
     (0.46, (0xE9, 0xEF, 0xFB)),
     (1.0, (0x93, 0xA4, 0xCB)),
+]
+#: O mesmo anel para quem vive sobre fundo claro — o site em tema claro, o
+#: README no GitHub. Prata sobre branco desaparece; a fita e os cubos ficam
+#: como estão, porque são eles que identificam a marca.
+PRATA_CLARO_STOPS = [
+    (0.0, (0x3A, 0x40, 0x52)),
+    (0.46, (0x26, 0x2C, 0x3B)),
+    (1.0, (0x13, 0x16, 0x20)),
 ]
 
 #: Fundo do ícone quadrado (o favicon e a marca solta saem sem fundo).
@@ -167,12 +178,12 @@ class Geo:
         ponta = (fora[0] + t[0] * self.bico, fora[1] + t[1] * self.bico)
         return orient([fora, ponta, dentro])
 
-    def pecas(self) -> list["Peca"]:
+    def pecas(self, prata_stops=PRATA_STOPS) -> list["Peca"]:
         prata = Paint(
             "prata",
             (self.cx - self.r * 0.55, self.cy - self.r * 1.1),
             (self.cx - self.r * 0.15, self.cy + self.r * 1.15),
-            PRATA_STOPS,
+            prata_stops,
         )
         fita = Paint("fita", self.grad_a, self.grad_b, FITA_STOPS)
         prata_baixo = prata.escurecido("prataBaixo", SOMBRA_PRATA)
@@ -616,11 +627,11 @@ def ico(pngs: dict[int, bytes]) -> bytes:
 # ------------------------------------------------------------------- SVG ---
 
 
-def svg(com_fundo: bool, tema: bool = False) -> str:
-    """`tema=True` troca o prata por currentColor: é a versão que o app usa,
-    para o anel acompanhar o texto no claro e no escuro."""
+def svg(com_fundo: bool, prata_stops=PRATA_STOPS) -> str:
+    """A marca em SVG. `prata_stops` troca o anel — [`PRATA_CLARO_STOPS`] é a
+    versão para fundo claro, onde o prata do ícone sumiria."""
     geo = Geo().fit(VIEW, VIEW * (0.13 if com_fundo else 0.02))
-    pecas = geo.pecas()
+    pecas = geo.pecas(prata_stops)
 
     defs = []
     vistos = set()
@@ -750,7 +761,7 @@ def brand_ts() -> str:
 
 
 def main() -> None:
-    for d in (ICONS, PUBLIC, BRAND):
+    for d in (ICONS, PUBLIC, BRAND, SITE):
         d.mkdir(parents=True, exist_ok=True)
 
     tamanhos = {32: "32x32.png", 128: "128x128.png", 256: "128x128@2x.png", 512: "icon.png"}
@@ -769,9 +780,23 @@ def main() -> None:
     GEN_TS.write_text(brand_ts(), encoding="utf-8")
 
     for size in (16, 24, 32, 48, 64, 128, 256, 1024):
-        (BRAND / f"logo-{size}.png").write_bytes(pngs.get(size) or desenha(size, com_fundo=True))
+        png_do_tamanho = pngs.get(size) or desenha(size, com_fundo=True)
+        (BRAND / f"logo-{size}.png").write_bytes(png_do_tamanho)
         print(f"  brand/logo-{size}.png")
-    print(f"marca do OpenWeights gerada em {ICONS}, {PUBLIC} e {BRAND}")
+        if size == 256:
+            (SITE / "logo.png").write_bytes(png_do_tamanho)
+        if size == 1024:
+            (SITE / "logo-1024.png").write_bytes(png_do_tamanho)
+
+    # O site pede duas versões do monograma: a navbar dele troca de arquivo
+    # conforme o tema, e no claro o anel prata não existiria.
+    (SITE / "mark.svg").write_text(svg(com_fundo=False), encoding="utf-8")
+    (SITE / "mark-light.svg").write_text(
+        svg(com_fundo=False, prata_stops=PRATA_CLARO_STOPS), encoding="utf-8"
+    )
+    (SITE / "icon.svg").write_text(svg(com_fundo=True), encoding="utf-8")
+    print("  site/public: mark.svg, mark-light.svg, icon.svg, logo.png, logo-1024.png")
+    print(f"marca do OpenWeights gerada em {ICONS}, {PUBLIC}, {BRAND} e {SITE}")
 
 
 if __name__ == "__main__":

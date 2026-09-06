@@ -16,7 +16,12 @@
   --ow-ink: #15161a;
   --ow-ink-2: #5f6169;
   --ow-ink-3: #6e7078;
-  --ow-accent: #5b3ce6;
+  /* O roxo da marca, rebaixado para ter contraste sobre branco. As outras
+     duas cores da fita entram só em elemento gráfico — a marca vai do roxo
+     ao ciano, e um texto ciano sobre branco não se lê. */
+  --ow-accent: #6a44ee;
+  --ow-accent-2: #1a7fe0;
+  --ow-accent-3: #00a2c2;
   --ow-accent-ink: #ffffff;
   --ow-ok: #15803d;
   --ow-warn: #a16207;
@@ -67,7 +72,11 @@
   --ow-ink: #e8eaf0;
   --ow-ink-2: #969eaf;
   --ow-ink-3: #828a9a;
+  /* No escuro, o roxo do ícone tem contraste de sobra: a fita do site é a
+     mesma do app, sem rebaixamento. O link continua mais claro que ela. */
   --ow-accent: #a48dff;
+  --ow-accent-2: #3d8bff;
+  --ow-accent-3: #00d8fc;
   --ow-accent-ink: #0a0d14;
   --ow-ok: #4ade80;
   --ow-warn: #fbbf24;
@@ -101,4 +110,16 @@
   --vp-button-brand-hover-bg: var(--ow-ink);
   --vp-button-brand-hover-text: var(--ow-bg);
   --vp-button-brand-active-bg: var(--ow-ink);
+}
+
+/* A fita da marca: roxo → azul → ciano, na mesma ordem do logotipo. É a
+   assinatura do produto, e por isso aparece pouco — o filete sob o hero, a
+   barra do estado de uma seção. Nunca como fundo de bloco. */
+.ow-ribbon {
+  background-image: linear-gradient(
+    90deg,
+    var(--ow-accent) 0%,
+    var(--ow-accent-2) 55%,
+    var(--ow-accent-3) 100%
+  );
 }

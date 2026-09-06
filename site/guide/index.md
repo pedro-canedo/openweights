@@ -11,7 +11,8 @@ installer of a few MB, no Electron.
 ## What it does
 
 - **Detects your hardware** and downloads the right llama.cpp runtime (CUDA,
-  Vulkan or CPU-only) on first launch.
+  Vulkan or CPU-only) on first launch — and then **verifies it by running it**,
+  so "the files are there" is never mistaken for "the engine works".
 - **Searches GGUF models on Hugging Face** and tells you, per quantization,
   whether it fits fully on your GPU, splits with the CPU, or is CPU-only.
 - **Chats locally**, with streaming, markdown, code highlighting and history on
@@ -51,6 +52,8 @@ running as your user can read it.
 
 ## Next
 
+- [What's new](/guide/whats-new) — what changed in the version you would
+  download today.
 - [Install](/guide/install) — one line, or the installer by hand.
 - [First run](/guide/first-run) — hardware detection and the engine download.
 - [The coding agent](/guide/harness) — the DeepSeek Harness, installed and run

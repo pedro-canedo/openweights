@@ -49,11 +49,23 @@ const en = {
   ],
   hwLink: "First run",
 
+  engineKicker: "Engine",
+  engineTitle: "Verified, not assumed",
+  engineBody: "The llama.cpp the app uses lives in a folder of its own, isolated from anything you have installed. Shortly after startup OpenWeights runs that binary and reads the build it reports back — which is what separates \u201cthe files are there\u201d from \u201cthe engine works\u201d. A CUDA package missing its runtime DLLs passes any file check and only fails when you load a model.",
+  engineRows: [
+    ["Ready", "It ran, and answered with the build this release expects"],
+    ["Update available", "The disk has another build — this release was tested against a different one"],
+    ["Wrong variant", "Your GPU or driver changed since the install"],
+    ["Won't run", "The files are there and the executable does not start"],
+  ],
+  engineNote: "Old builds left behind are listed with their size and a button to reclaim the space — the one in use is never touched.",
+  engineLink: "First run",
+
   harnessKicker: "Agent work",
   harnessTitle: "A real harness, one click away",
-  harnessBody: "OpenWeights does not ship a chat-with-tools of its own. When you want work done, it hands your models to an external coding agent — pre-configured with every provider and model the app knows, key by environment variable, never on the command line. The DeepSeek Harness is installed and managed by the app itself, in an isolated folder with a portable Node, and opens in a window of its own.",
+  harnessBody: "OpenWeights does not ship a chat-with-tools of its own. When you want work done, it hands your models to an external coding agent — pre-configured with every provider and model the app knows, key by environment variable, never on the command line. The DeepSeek Harness is installed and managed by the app itself, in an isolated folder with a portable Node, and runs embedded in the app — with its own screen for installing, starting, updating and removing.",
   harnessRows: [
-    ["DeepSeek Harness", "Installed, configured and opened by the app — one click"],
+    ["DeepSeek Harness", "Installed, configured and run by the app — with update checks"],
     ["Claude Code", "Launched against your local API, model already selected"],
     ["Aider", "Starts pointed at your API, model already selected"],
     ["OpenCode", "Same, through the environment variables it expects"],
@@ -72,6 +84,7 @@ const en = {
   endBody: "Installation, models and quantization, and the integrations.",
   endDocs: "Documentation",
   endRepo: "Source on GitHub",
+  endNews: "What's new in 0.16.0",
 };
 
 const ptBR = {
@@ -102,11 +115,23 @@ const ptBR = {
   ],
   hwLink: "Primeira execução",
 
+  engineKicker: "Motor",
+  engineTitle: "Verificado, não presumido",
+  engineBody: "O llama.cpp que o app usa mora numa pasta dele, isolado de qualquer coisa que você tenha instalado. Pouco depois de abrir, o OpenWeights executa esse binário e lê a build que ele responde \u2014 é o que separa \u201cos arquivos estão lá\u201d de \u201co motor funciona\u201d. Um pacote CUDA sem as DLLs do runtime passa em qualquer checagem de arquivo e só falha quando você carrega um modelo.",
+  engineRows: [
+    ["Pronto", "Executou e respondeu com a build que esta versão espera"],
+    ["Atualização disponível", "O disco tem outra build — esta versão foi testada com outra"],
+    ["Variante errada", "Sua placa ou o driver mudaram desde a instalação"],
+    ["Não executa", "Os arquivos estão lá e o executável não sobe"],
+  ],
+  engineNote: "Builds antigas que ficaram para trás aparecem com o tamanho e um botão que devolve o espaço — a que está em uso nunca é tocada.",
+  engineLink: "Primeira execução",
+
   harnessKicker: "Trabalho de agente",
   harnessTitle: "Um harness de verdade, a um clique",
-  harnessBody: "O OpenWeights não traz um chat-com-ferramentas próprio. Quando você quer trabalho feito, ele entrega os seus modelos a um agente de código externo — pré-configurado com todos os provedores e modelos que o app conhece, chave por variável de ambiente, nunca na linha de comando. O DeepSeek Harness é instalado e gerenciado pelo próprio app, numa pasta isolada com Node portátil, e abre em janela própria.",
+  harnessBody: "O OpenWeights não traz um chat-com-ferramentas próprio. Quando você quer trabalho feito, ele entrega os seus modelos a um agente de código externo — pré-configurado com todos os provedores e modelos que o app conhece, chave por variável de ambiente, nunca na linha de comando. O DeepSeek Harness é instalado e gerenciado pelo próprio app, numa pasta isolada com Node portátil, e roda embutido — com tela própria para instalar, subir, atualizar e remover.",
   harnessRows: [
-    ["DeepSeek Harness", "Instalado, configurado e aberto pelo próprio app — um clique"],
+    ["DeepSeek Harness", "Instalado, configurado e rodado pelo app — com verificação de atualização"],
     ["Claude Code", "Lançado contra a sua API local, com o modelo já escolhido"],
     ["Aider", "Sobe apontado para a sua API, com o modelo já escolhido"],
     ["OpenCode", "Idem, pelas variáveis de ambiente que ele espera"],
@@ -125,6 +150,7 @@ const ptBR = {
   endBody: "Instalação, modelos e quantização e as integrações.",
   endDocs: "Documentação",
   endRepo: "Código no GitHub",
+  endNews: "O que há de novo na 0.16.0",
 };
 
 const t = computed(() => (pt.value ? ptBR : en));
@@ -138,6 +164,7 @@ const links = computed(() =>
         guide: "/guia/",
         firstRun: "/guia/primeira-execucao",
         models: "/guia/modelos",
+        news: "/guia/novidades",
         harness: "/integracoes/api-local#abrir-em-um-harness",
         providers: "/integracoes/provedores",
       }
@@ -146,6 +173,7 @@ const links = computed(() =>
         guide: "/guide/",
         firstRun: "/guide/first-run",
         models: "/guide/models",
+        news: "/guide/whats-new",
         harness: "/integrations/local-api#open-in-a-harness",
         providers: "/integrations/providers",
       },
@@ -157,6 +185,23 @@ const links = computed(() =>
     <!-- ------------------------------------------------------------ hero -->
     <header class="ow-hero">
       <div>
+        <!-- A marca antes do nome: é ela que a pessoa vai reconhecer na
+             barra de tarefas depois de instalar. Dois arquivos porque o anel
+             prata do ícone desaparece sobre fundo branco. -->
+        <img
+          class="ow-hero__mark ow-hero__mark--dark"
+          :src="withBase('/mark.svg')"
+          alt=""
+          width="64"
+          height="64"
+        />
+        <img
+          class="ow-hero__mark ow-hero__mark--light"
+          :src="withBase('/mark-light.svg')"
+          alt=""
+          width="64"
+          height="64"
+        />
         <h1 class="ow-hero__name">OpenWeights</h1>
         <p class="ow-hero__tagline">{{ t.tagline }}</p>
         <p class="ow-hero__lede">{{ t.lede }}</p>
@@ -174,6 +219,9 @@ const links = computed(() =>
         </ul>
       </div>
 
+      <!-- A fita da marca, do roxo ao ciano, fechando o hero: a única cor
+           grande da página, e ainda assim com 3px de altura. -->
+      <div class="ow-ribbon ow-hero__ribbon" aria-hidden="true" />
     </header>
 
     <!-- -------------------------------------------------------- hardware -->
@@ -196,8 +244,31 @@ const links = computed(() =>
       </table>
     </section>
 
+    <!-- ----------------------------------------------------------- motor -->
+    <section id="engine" class="ow-section ow-section--split ow-section--reverse">
+      <div class="ow-section__lead">
+        <p class="ow-kicker">
+          <OwIcon name="shield" :size="14" />{{ t.engineKicker }}
+        </p>
+        <h2>{{ t.engineTitle }}</h2>
+        <p class="ow-body">{{ t.engineBody }}</p>
+        <p class="ow-note">{{ t.engineNote }}</p>
+        <a class="ow-link" :href="href(links.firstRun)">
+          {{ t.engineLink }}<OwIcon name="arrowRight" :size="14" />
+        </a>
+      </div>
+      <table class="ow-table">
+        <tbody>
+          <tr v-for="row in t.engineRows" :key="row[0]">
+            <th scope="row">{{ row[0] }}</th>
+            <td>{{ row[1] }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
     <!-- --------------------------------------------------------- modelos -->
-    <section id="models" class="ow-section ow-section--split ow-section--reverse">
+    <section id="models" class="ow-section ow-section--split">
       <div class="ow-section__lead">
         <p class="ow-kicker">
           <OwIcon name="model" :size="14" />{{ t.modelsKicker }}
@@ -288,6 +359,10 @@ const links = computed(() =>
       <div class="ow-actions">
         <a class="ow-btn ow-btn--primary" :href="href(links.guide)">
           {{ t.endDocs }}
+        </a>
+        <a class="ow-btn" :href="href(links.news)">
+          {{ t.endNews }}
+          <OwIcon name="arrowRight" :size="14" />
         </a>
         <a class="ow-btn" href="https://github.com/pedro-canedo/openweights">
           {{ t.endRepo }}
