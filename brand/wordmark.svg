@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 100">
+  <defs>
+    <linearGradient id="prataBaixo" gradientUnits="userSpaceOnUse" x1="29.99" y1="11.94" x2="44.13" y2="91.48">
+      <stop offset="0" stop-color="#757575"/>
+      <stop offset="0.46" stop-color="#6b6d73"/>
+      <stop offset="1" stop-color="#434b5d"/>
+    </linearGradient>
+    <linearGradient id="fitaBaixo" gradientUnits="userSpaceOnUse" x1="16.87" y1="91.14" x2="87.16" y2="34.29">
+      <stop offset="0" stop-color="#3d2e7f"/>
+      <stop offset="0.34" stop-color="#2d357f"/>
+      <stop offset="0.6" stop-color="#1e457f"/>
+      <stop offset="0.84" stop-color="#006c7e"/>
+      <stop offset="1" stop-color="#1e757f"/>
+    </linearGradient>
+    <linearGradient id="prata" gradientUnits="userSpaceOnUse" x1="29.99" y1="11.94" x2="44.13" y2="91.48">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.46" stop-color="#e9effb"/>
+      <stop offset="1" stop-color="#93a4cb"/>
+    </linearGradient>
+    <linearGradient id="fita" gradientUnits="userSpaceOnUse" x1="16.87" y1="91.14" x2="87.16" y2="34.29">
+      <stop offset="0" stop-color="#7b5cff"/>
+      <stop offset="0.34" stop-color="#5a6bff"/>
+      <stop offset="0.6" stop-color="#3d8bff"/>
+      <stop offset="0.84" stop-color="#00d8fc"/>
+      <stop offset="1" stop-color="#3debff"/>
+    </linearGradient>
+    <linearGradient id="nome" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#00d8fc"/>
+      <stop offset="1" stop-color="#7b5cff"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <path d="M67.11 21.66 A35.35 35.35 0 0 0 19.78 71.53" fill="none" stroke="url(#prataBaixo)" stroke-width="16.13" stroke-linecap="butt" stroke-linejoin="round"/>
+    <path d="M71.14 14.67 L81.88 20.88 L63.08 28.64 Z" fill="url(#prataBaixo)"/>
+    <path d="M19.78 71.53 C23.16 76.73 20.91 93.19 24.62 89.49 C28.33 85.79 44.78 42.71 49.43 41.94 C54.08 41.16 57.25 83.67 61.84 83.29 C66.42 82.90 78.03 53.65 86.13 38.84" fill="none" stroke="url(#fitaBaixo)" stroke-width="16.13" stroke-linecap="butt" stroke-linejoin="round"/>
+    <path d="M67.11 20.21 A35.35 35.35 0 0 0 19.78 70.08" fill="none" stroke="url(#prata)" stroke-width="16.13" stroke-linecap="butt" stroke-linejoin="round"/>
+    <path d="M71.14 13.23 L81.88 19.43 L63.08 27.19 Z" fill="url(#prata)"/>
+    <path d="M19.78 70.08 C23.16 75.28 20.91 91.74 24.62 88.04 C28.33 84.34 44.78 41.27 49.43 40.49 C54.08 39.71 57.25 82.23 61.84 81.84 C66.42 81.45 78.03 52.21 86.13 37.39" fill="none" stroke="url(#fita)" stroke-width="16.13" stroke-linecap="butt" stroke-linejoin="round"/>
+    <path d="M79.41 2.00 L85.20 5.34 L79.41 8.69 L73.62 5.34 Z" fill="#00d8fc"/>
+    <path d="M73.62 5.34 L79.41 8.69 L79.41 13.85 L73.62 10.51 Z" fill="#00859c"/>
+    <path d="M79.41 8.69 L85.20 5.34 L85.20 10.51 L79.41 13.85 Z" fill="#005664"/>
+    <path d="M65.97 13.29 L72.79 17.23 L65.97 21.17 L59.15 17.23 Z" fill="#7b5cff"/>
+    <path d="M59.15 17.23 L65.97 21.17 L65.97 27.37 L59.15 23.43 Z" fill="#4c399e"/>
+    <path d="M65.97 21.17 L72.79 17.23 L72.79 23.43 L65.97 27.37 Z" fill="#312466"/>
+    <path d="M87.16 14.32 L93.99 18.26 L87.16 22.20 L80.34 18.26 Z" fill="#4c6bff"/>
+    <path d="M80.34 18.26 L87.16 22.20 L87.16 28.41 L80.34 24.47 Z" fill="#2f429e"/>
+    <path d="M87.16 22.20 L93.99 18.26 L93.99 24.47 L87.16 28.41 Z" fill="#1e2a66"/>
+    <path d="M69.07 26.53 L77.14 31.19 L69.07 35.84 L61.01 31.19 Z" fill="#18aeff"/>
+    <path d="M61.01 31.19 L69.07 35.84 L69.07 43.08 L61.01 38.42 Z" fill="#0e6b9e"/>
+    <path d="M69.07 35.84 L77.14 31.19 L77.14 38.42 L69.07 43.08 Z" fill="#094566"/>
+  </g>
+  <text x="118" y="68" font-family="Segoe UI, system-ui, sans-serif" font-size="54" font-weight="600" letter-spacing="-1"><tspan fill="#ffffff">Open</tspan><tspan fill="url(#nome)">Weights</tspan></text>
+</svg>

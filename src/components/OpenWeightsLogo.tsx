@@ -1,27 +1,38 @@
 // Identidade OpenWeights.
 //
-// A marca é um monograma O+W: um anel ABERTO embaixo — o "open", o modelo que
-// dá para enxergar por dentro — cuja perna esquerda desce e vira o primeiro
-// traço de um "W". O braço direito do W sobe alto, saindo do anel. Cortando
-// os dois na diagonal, um raio: o peso atravessando a máquina.
+// A marca é um monograma O+W: um anel prata ABERTO — o "open", o modelo que
+// dá para enxergar por dentro — que desce pela esquerda e, sem emenda, vira
+// uma fita serpenteando como um W, do roxo ao ciano. Do braço direito se
+// soltam quatro cubos: os pesos saindo do modelo.
 //
-// A mesma geometria vive em scripts/gen_icons.py, que gera os ícones do app,
-// o favicon e os arquivos de marca. Quem mexer aqui precisa mexer lá.
+// A geometria não mora aqui: vem de brandArt.ts, gerado por
+// scripts/gen_icons.py junto com os ícones do app e o favicon. Assim a marca
+// da barra lateral e a do instalador não podem divergir — para mudar a
+// forma, mexa no script e rode `python3 scripts/gen_icons.py`.
 //
-// O prata e o raio são da marca, não do tema: o anel e o W usam
-// `currentColor` para acompanhar o texto onde estiverem, e só o raio carrega
-// a cor fixa — é ele que identifica a marca em qualquer fundo.
+// A única liberdade que a UI toma é o anel: em vez do prata fixo do ícone,
+// ele usa `currentColor`, para ficar claro no tema escuro e escuro no tema
+// claro — como as duas versões da folha de identidade.
 
-/** Anel aberto: começa na perna esquerda, sobe e desce até a perna direita. */
-const RING = "M35.3 51.4 A16.7 16.7 0 1 1 60.3 50.7";
-/** O W, começando onde a perna esquerda do anel termina. */
-const W = "M29.5 53 L42 79 L51 55 L60 79 L80 40";
-/** O raio, uma agulha das pontas finas ao meio grosso. */
-const BOLT = "M12 76 L51.1 58.9 L89 39 L49.9 56.1 Z";
-const STROKE = 7.6;
+import { useId } from "react";
+
+import { BRAND_PAINTS, BRAND_PIECES, type BrandStop } from "./brandArt";
+
+/** O relevo do anel: em 24px ninguém vê, e no tema claro uma sombra prata
+ *  clarearia em vez de escurecer. O anel da UI é chapado. */
+const SEM_RELEVO = new Set(["prataBaixo"]);
+
+/** O anel seguindo o texto, com o mesmo degradê do ícone. */
+const ANEL: BrandStop[] = [
+  { at: 0, color: "currentColor" },
+  { at: 1, color: "color-mix(in srgb, currentColor 58%, var(--lr-bg))" },
+];
 
 /** Monograma; a altura vem do className. */
 export function OwMark({ className = "h-7" }: { className?: string }) {
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const url = (nome: string) => `url(#${uid}-${nome})`;
+
   return (
     <svg
       viewBox="0 0 100 100"
@@ -29,19 +40,55 @@ export function OwMark({ className = "h-7" }: { className?: string }) {
       aria-hidden="true"
       preserveAspectRatio="xMidYMid meet"
     >
-      <g
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={STROKE}
-        strokeLinecap="butt"
-        strokeLinejoin="round"
-      >
-        <path d={RING} />
-        <path d={W} />
-      </g>
-      {/* O raio vem por cima e corta as duas letras, como no ícone. */}
-      <path d={BOLT} fill="#6d6dff" />
+      <defs>
+        {Object.entries(BRAND_PAINTS).map(([nome, tinta]) => {
+          if (!("stops" in tinta) || SEM_RELEVO.has(nome)) return null;
+          const stops = nome === "prata" ? ANEL : tinta.stops;
+          return (
+            <linearGradient
+              key={nome}
+              id={`${uid}-${nome}`}
+              gradientUnits="userSpaceOnUse"
+              x1={tinta.x1}
+              y1={tinta.y1}
+              x2={tinta.x2}
+              y2={tinta.y2}
+            >
+              {stops.map((s, i) => (
+                <stop key={i} offset={s.at} stopColor={s.color} />
+              ))}
+            </linearGradient>
+          );
+        })}
+      </defs>
+      {BRAND_PIECES.filter((p) => !SEM_RELEVO.has(p.paint)).map((p, i) => {
+        const tinta = BRAND_PAINTS[p.paint];
+        const cor = "solid" in tinta ? tinta.solid : url(p.paint);
+        return p.kind === "stroke" ? (
+          <path
+            key={i}
+            d={p.d}
+            fill="none"
+            stroke={cor}
+            strokeWidth={p.w}
+            strokeLinecap="butt"
+            strokeLinejoin="round"
+          />
+        ) : (
+          <path key={i} d={p.d} fill={cor} />
+        );
+      })}
     </svg>
+  );
+}
+
+/** O nome, com "Weights" na fita da marca — ciano à esquerda, roxo à direita,
+ *  como no logotipo. */
+function OwNome() {
+  return (
+    <span>
+      Open<span className="brand-word">Weights</span>
+    </span>
   );
 }
 
@@ -51,10 +98,8 @@ export function OwWordmark({ className = "" }: { className?: string }) {
     <span
       className={`inline-flex select-none items-center gap-2 font-semibold tracking-tight ${className}`}
     >
-      <OwMark className="h-[1.35em] w-auto shrink-0" />
-      <span>
-        Open<span className="text-dim">Weights</span>
-      </span>
+      <OwMark className="h-[1.45em] w-auto shrink-0" />
+      <OwNome />
     </span>
   );
 }
@@ -66,9 +111,7 @@ export function OwLockup({ className = "" }: { className?: string }) {
       className={`inline-flex select-none flex-col items-center gap-3 font-semibold tracking-tight ${className}`}
     >
       <OwMark className="h-[2.6em] w-auto" />
-      <span>
-        Open<span className="text-dim">Weights</span>
-      </span>
+      <OwNome />
     </span>
   );
 }

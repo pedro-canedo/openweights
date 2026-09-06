@@ -39,7 +39,7 @@ export default function TelemetryChart({
     const host = hostRef.current;
     if (!host) return;
 
-    const accent = cssVar("--lr-accent") || "#7c5cff";
+    const accent = cssVar("--lr-accent") || "#7b5cff";
     const dim = cssVar("--lr-dim") || "#8b93a5";
     const edge = cssVar("--lr-edge") || "#232a38";
 
