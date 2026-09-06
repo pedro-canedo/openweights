@@ -185,19 +185,42 @@ fn tamanho_recursivo(dir: &Path) -> u64 {
 
 /// A build que o binário reporta, extraída da saída do `--version`.
 ///
-/// O llama-server imprime `version: 10441 (0a1b2c3)` — em `stderr` em umas
-/// builds, em `stdout` em outras, daí a busca nas duas.
+/// A saída de verdade (b10441, Windows) é:
+///
+/// ```text
+/// version: 0.1.0-dev (build 10441, commit 0177dcc73)
+/// built with Clang 20.1.8 for Windows x86_64
+/// ```
+///
+/// O número que importa é o do `build`, não o que vem depois de `version:` —
+/// ali mora um `0.1.0-dev` que o projeto não incrementa. Ler o primeiro
+/// número depois de `version:` devolvia **0** para todo mundo, e o card do
+/// motor acusava "instalado, mas não executa" em máquina com motor perfeito.
+/// Daí a ordem: `build` primeiro; `version:` só vale quando o que vem depois
+/// dele é a build inteira (formato antigo, `version: 10441 (hash)`).
+///
+/// Sai em `stderr` numa build e em `stdout` noutra, daí a busca nas duas.
 pub fn parse_reported_build(saida: &str) -> Option<u64> {
-    for linha in saida.lines() {
-        let baixo = linha.to_ascii_lowercase();
-        for marca in ["version:", "build:", "build ="] {
-            if let Some(p) = baixo.find(marca) {
-                let resto = linha[p + marca.len()..].trim_start();
-                let numero: String = resto.chars().take_while(|c| c.is_ascii_digit()).collect();
-                if let Ok(n) = numero.parse::<u64>() {
-                    return Some(n);
-                }
-            }
+    let baixo = saida.to_ascii_lowercase();
+
+    // `build 10441`, `build: 10441`, `build = 10441`.
+    for (i, _) in baixo.match_indices("build") {
+        let resto = baixo[i + "build".len()..].trim_start_matches([' ', ':', '=']);
+        let numero: String = resto.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(n) = numero.parse::<u64>() {
+            return Some(n);
+        }
+    }
+
+    // Formato antigo: `version: 10441 (hash)`. Um `version: 0.1.0-dev` não
+    // conta — número seguido de ponto é versão semântica, não build.
+    for (i, _) in baixo.match_indices("version:") {
+        let resto = baixo[i + "version:".len()..].trim_start();
+        let numero: String = resto.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if !resto[numero.len()..].starts_with('.')
+            && let Ok(n) = numero.parse::<u64>()
+        {
+            return Some(n);
         }
     }
     None
@@ -406,16 +429,26 @@ mod tests {
         std::fs::write(caminho, vec![b'x'; bytes]).unwrap();
     }
 
-    /// A saída REAL do `llama-server --version` — se o formato mudar, é aqui
-    /// que se descobre, e não numa tela dizendo "motor quebrado" para um
-    /// motor perfeito.
+    /// A saída REAL do `llama-server --version`, copiada de uma execução de
+    /// verdade da b10441 no Windows.
+    ///
+    /// Este teste nasceu com um formato que eu SUPUS (`version: 10441
+    /// (hash)`), passou, e mesmo assim o app dizia "instalado, mas não
+    /// executa" numa máquina com o motor perfeito: o que vem depois de
+    /// `version:` é `0.1.0-dev`, e o parser lia zero.
     #[test]
     fn the_build_number_comes_from_the_binarys_own_output() {
-        let real = "version: 10441 (3f7c9d2a)\nbuilt with MSVC 19.44 for x64\n";
+        let real = "version: 0.1.0-dev (build 10441, commit 0177dcc73)\n\
+                    built with Clang 20.1.8 for Windows x86_64\n";
         assert_eq!(parse_reported_build(real), Some(10441));
 
-        // Variante que imprime `build:` em vez de `version:`.
+        // O formato antigo, que ainda pode vir de uma build de terceiro.
+        assert_eq!(parse_reported_build("version: 9911 (abc)"), Some(9911));
         assert_eq!(parse_reported_build("build: 9911 (abc)"), Some(9911));
+        assert_eq!(parse_reported_build("build = 9911"), Some(9911));
+
+        // `0.1.0-dev` sozinho não é build nenhuma.
+        assert_eq!(parse_reported_build("version: 0.1.0-dev"), None);
 
         // Ruído sem número de build não vira versão inventada.
         assert_eq!(
