@@ -18,7 +18,11 @@ use lr_types::{GpuVendor, HardwareProfile};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+mod check;
 mod manager;
+pub use check::{
+    EngineCheck, InstalledRuntime, PruneResult, Verdict, check, prune, scan_installed,
+};
 pub use manager::{RuntimeEvent, RuntimeManager, RuntimeState};
 
 /// Tag da release do llama.cpp homologada para esta versão do app.

@@ -1,20 +1,25 @@
+// Ajustes: cinco coisas, três naturezas diferentes.
+//
+// A tela vinha empilhando tema, idioma, token do Hugging Face, motor de IA e
+// hardware como se fossem cinco itens equivalentes — e não são. Tema e idioma
+// se resolvem em um clique e nunca mais; o token é uma credencial que a
+// pessoa cola uma vez; o motor é a peça de que o app inteiro depende, e o
+// hardware não é ajuste nenhum, é informação.
+//
+// A ordem aqui é a da importância: o que pode estar quebrado primeiro (o
+// motor), depois o que se conecta (Hugging Face), depois as preferências, e
+// por último a máquina — que não se ajusta, se consulta.
+
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  ensureRuntime,
-  getHardwareProfile,
-  getRuntimeStatus,
-  getSetting,
-  onRuntimeEvent,
-  setSetting,
-} from "../lib/api";
+import { getHardwareProfile, getSetting, setSetting } from "../lib/api";
 import { invoke, isTauri } from "../lib/tauri";
 import { formatBytes } from "../lib/format";
 import { navigate } from "../lib/nav";
-import type { HardwareProfile, RuntimeEvent, RuntimeState } from "../lib/types";
-
-const row =
-  "flex items-center justify-between gap-4 rounded-xl border border-edge bg-panel px-5 py-4";
+import type { HardwareProfile } from "../lib/types";
+import { Card, Page, Row, StatusDot } from "../components/ui/Shell";
+import { CopyValue } from "../components/ui/Copy";
+import EngineCard from "../components/settings/EngineCard";
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
@@ -45,151 +50,126 @@ export default function Settings() {
     i18n.changeLanguage(lng);
   }
 
+  const select =
+    "rounded-lg border border-edge bg-panel2 px-3 py-1.5 text-sm outline-none focus:border-accent";
+
   return (
-    <div className="mx-auto max-w-4xl px-8 py-8">
-      <h1 className="text-xl font-semibold">{t("settings.title")}</h1>
+    <Page title={t("settings.title")} subtitle={t("settings.subtitle")}>
+      <EngineCard />
 
-      <div className="mt-6 flex flex-col gap-3">
-        <div className={row}>
-          <span className="text-sm">{t("settings.theme")}</span>
-          <select
-            value={theme}
-            onChange={(e) => applyTheme(e.target.value)}
-            className="rounded-lg border border-edge bg-panel2 px-3 py-1.5 text-sm outline-none"
-          >
-            <option value="dark">{t("settings.dark")}</option>
-            <option value="light">{t("settings.light")}</option>
-          </select>
+      <HfTokenCard />
+
+      <Card title={t("settings.prefs")} hint={t("settings.prefsHint")}>
+        <div className="mt-3 divide-y divide-edge">
+          <Row label={t("settings.theme")}>
+            <select
+              value={theme}
+              onChange={(e) => applyTheme(e.target.value)}
+              className={select}
+            >
+              <option value="dark">{t("settings.dark")}</option>
+              <option value="light">{t("settings.light")}</option>
+            </select>
+          </Row>
+          <Row label={t("settings.language")}>
+            <select
+              value={i18n.language}
+              onChange={(e) => applyLanguage(e.target.value)}
+              className={select}
+            >
+              <option value="pt-BR">Português (Brasil)</option>
+              <option value="en">English</option>
+            </select>
+          </Row>
         </div>
+      </Card>
 
-        <div className={row}>
-          <span className="text-sm">{t("settings.language")}</span>
-          <select
-            value={i18n.language}
-            onChange={(e) => applyLanguage(e.target.value)}
-            className="rounded-lg border border-edge bg-panel2 px-3 py-1.5 text-sm outline-none"
-          >
-            <option value="pt-BR">Português (Brasil)</option>
-            <option value="en">English</option>
-          </select>
-        </div>
-
-        <HfTokenRow />
-        <RuntimeRow />
-        <HardwareCard profile={profile} modelsDir={paths?.modelsDir} />
-      </div>
-    </div>
+      <HardwareCard profile={profile} modelsDir={paths?.modelsDir} />
+    </Page>
   );
 }
 
-function HfTokenRow() {
+/**
+ * O token do Hub.
+ *
+ * O campo sozinho não dizia se havia token gravado — `type="password"` com
+ * valor preenchido parece igual a vazio de longe. Agora o estado vem antes
+ * do campo, e a troca é explícita.
+ */
+function HfTokenCard() {
   const { t } = useTranslation();
   const [token, setToken] = useState("");
+  const [gravado, setGravado] = useState(false);
+  const [editando, setEditando] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    getSetting("hf_token").then((v) => setToken(v ?? ""));
+    getSetting("hf_token").then((v) => {
+      setToken(v ?? "");
+      setGravado(!!v);
+    });
   }, []);
 
   async function save() {
     await setSetting("hf_token", token.trim());
+    setGravado(!!token.trim());
+    setEditando(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
 
   return (
-    <div className="rounded-xl border border-edge bg-panel px-5 py-4">
-      <div className="text-sm">{t("settings.hfToken")}</div>
-      <div className="mt-1 text-[12px] text-dim">{t("settings.hfTokenHint")}</div>
-      <div className="mt-3 flex gap-2">
-        <input
-          type="password"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          placeholder="hf_..."
-          className="flex-1 rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent"
-        />
-        <button
-          onClick={save}
-          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
-        >
-          {saved ? "✓" : t("common.save")}
-        </button>
+    <Card
+      title={t("settings.hfToken")}
+      hint={t("settings.hfTokenHint")}
+      action={
+        gravado && !editando ? (
+          <button
+            type="button"
+            onClick={() => setEditando(true)}
+            className="rounded-lg border border-edge px-3 py-1.5 text-[12px] text-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            {t("settings.hfTokenChange")}
+          </button>
+        ) : undefined
+      }
+    >
+      <div className="mt-3 flex items-center gap-2.5">
+        <StatusDot tone={gravado ? "ok" : "off"} />
+        <span className="text-sm">
+          {gravado ? t("settings.hfTokenSet") : t("settings.hfTokenNone")}
+        </span>
+        {saved && <span className="text-[12px] text-ok">✓</span>}
       </div>
-    </div>
-  );
-}
 
-function RuntimeRow() {
-  const { t } = useTranslation();
-  const [runtime, setRuntime] = useState<RuntimeState | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState<RuntimeEvent | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getRuntimeStatus().then(setRuntime).catch(() => {});
-  }, []);
-
-  async function install() {
-    setBusy(true);
-    setError(null);
-    const un = await onRuntimeEvent(setProgress);
-    try {
-      setRuntime(await ensureRuntime());
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      un();
-      setBusy(false);
-      setProgress(null);
-    }
-  }
-
-  return (
-    <div className="rounded-xl border border-edge bg-panel px-5 py-4">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="text-sm">{t("settings.runtime")}</div>
-          <div className="mt-1 text-[12px] text-dim">
-            {runtime
-              ? `${runtime.tag} · ${runtime.variant} · ${
-                  runtime.installed
-                    ? t("settings.runtimeInstalled")
-                    : t("settings.runtimeMissing")
-                }`
-              : t("common.loading")}
-          </div>
-        </div>
-        <button
-          onClick={install}
-          disabled={busy}
-          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {busy ? t("common.loading") : t("settings.runtimeInstall")}
-        </button>
-      </div>
-      {progress?.kind === "progress" && progress.totalBytes > 0 && (
-        <div className="mt-3">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-panel2">
-            <div
-              className="h-full rounded-full bg-accent transition-[width]"
-              style={{
-                width: `${(progress.receivedBytes / progress.totalBytes) * 100}%`,
-              }}
-            />
-          </div>
-          <div className="mt-1 text-[11px] text-dim">
-            {formatBytes(progress.receivedBytes)} /{" "}
-            {formatBytes(progress.totalBytes)} — {progress.asset}
-          </div>
+      {(!gravado || editando) && (
+        <div className="mt-3 flex gap-2">
+          <input
+            type="password"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder="hf_..."
+            className="flex-1 rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent"
+          />
+          <button
+            onClick={() => void save()}
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
+          >
+            {t("common.save")}
+          </button>
         </div>
       )}
-      {error && <div className="mt-2 text-[12px] text-bad">{error}</div>}
-    </div>
+    </Card>
   );
 }
 
+/**
+ * A máquina, como o app a enxerga.
+ *
+ * É o que explica as decisões das outras telas — a variante do motor, a
+ * quantização recomendada, quanto contexto cabe. Por isso mostra o que
+ * decide (VRAM, driver, AVX), e não uma ficha técnica completa.
+ */
 function HardwareCard({
   profile,
   modelsDir,
@@ -198,42 +178,85 @@ function HardwareCard({
   modelsDir?: string;
 }) {
   const { t } = useTranslation();
+
+  if (!profile) {
+    return (
+      <Card title={t("settings.hardware")}>
+        <p className="mt-3 text-[13px] text-dim">{t("common.loading")}</p>
+      </Card>
+    );
+  }
+
   return (
-    <div className="rounded-xl border border-edge bg-panel px-5 py-4">
-      <div className="text-sm font-medium">{t("settings.hardware")}</div>
-      {profile ? (
-        <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-1.5 text-[13px] text-dim">
-          <span>
-            CPU: {profile.cpuName} ({profile.cpuCores} cores
-            {profile.avx512 ? ", AVX-512" : profile.avx2 ? ", AVX2" : ""})
-          </span>
-          <span>RAM: {formatBytes(profile.ramTotalBytes)}</span>
-          {profile.gpus.map((g, i) => (
-            <span key={i} className="col-span-2">
-              GPU: {g.name} — {formatBytes(g.vramTotalBytes)} VRAM
-              {g.isIntegrated ? " (integrada)" : ""}
-              {g.driverVersion ? ` · driver ${g.driverVersion}` : ""}
-            </span>
-          ))}
-          {profile.gpus.length === 0 && (
-            <span className="col-span-2">{t("status.noGpu")}</span>
-          )}
-          {modelsDir && (
-            <span className="col-span-2">
-              {t("settings.modelsDir")}: {modelsDir}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={() => navigate("server")}
-            className="col-span-2 mt-1 text-left text-accent hover:underline"
-          >
-            {t("settings.clusterLink")}
-          </button>
+    <Card
+      title={t("settings.hardware")}
+      hint={t("settings.hardwareHint")}
+      action={
+        <button
+          type="button"
+          onClick={() => navigate("server", { serverTab: "network" })}
+          className="rounded-lg border border-edge px-3 py-1.5 text-[12px] text-dim transition-colors hover:border-accent hover:text-ink"
+        >
+          {t("settings.clusterLink")}
+        </button>
+      }
+    >
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <Bloco
+          titulo={profile.cpuName}
+          linhas={[
+            t("settings.hw.cores", { n: profile.cpuCores }),
+            profile.avx512 ? "AVX-512" : profile.avx2 ? "AVX2" : "SSE",
+            t("settings.hw.ram", { size: formatBytes(profile.ramTotalBytes) }),
+          ]}
+        />
+        {profile.gpus.map((g, i) => (
+          <Bloco
+            key={i}
+            titulo={g.name}
+            linhas={[
+              t("settings.hw.vram", { size: formatBytes(g.vramTotalBytes) }),
+              g.driverVersion
+                ? t("settings.hw.driver", { v: g.driverVersion })
+                : null,
+              g.isIntegrated ? t("settings.hw.integrated") : null,
+            ]}
+          />
+        ))}
+        {profile.gpus.length === 0 && (
+          <Bloco titulo={t("status.noGpu")} linhas={[t("settings.hw.cpuOnly")]} />
+        )}
+      </div>
+
+      {modelsDir && (
+        <div className="mt-4 border-t border-edge pt-3">
+          <div className="text-[11px] text-dim">{t("settings.modelsDir")}</div>
+          <div className="mt-1">
+            <CopyValue value={modelsDir} className="max-w-full" />
+          </div>
         </div>
-      ) : (
-        <div className="mt-3 text-[13px] text-dim">{t("common.loading")}</div>
       )}
+    </Card>
+  );
+}
+
+function Bloco({
+  titulo,
+  linhas,
+}: {
+  titulo: string;
+  linhas: (string | null)[];
+}) {
+  return (
+    <div className="rounded-lg border border-edge bg-panel2/40 p-3">
+      <div className="truncate text-sm" title={titulo}>
+        {titulo}
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] text-dim">
+        {linhas.filter(Boolean).map((l, i) => (
+          <span key={i}>{l}</span>
+        ))}
+      </div>
     </div>
   );
 }

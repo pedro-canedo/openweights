@@ -157,6 +157,41 @@ impl Layout {
     }
 }
 
+/// A versão que está REALMENTE instalada, lida do `package.json` do pacote.
+///
+/// Existe porque o status vinha respondendo com a versão *pinada* — a que
+/// esta build do app instalaria — mesmo quando o disco tinha outra. Quem
+/// atualizava o OpenWeights lia "0.1.2" na tela e continuava rodando a
+/// 0.1.1-rc.2 do disco, sem nada que indicasse a diferença.
+pub fn versao_instalada(layout: &Layout) -> Option<String> {
+    let texto = std::fs::read_to_string(layout.pacote().join("package.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&texto).ok()?;
+    Some(v.get("version")?.as_str()?.to_string())
+}
+
+/// A última versão publicada no registry do npm — informação, não cobrança:
+/// a versão que o app instala é pinada e promovida depois de teste.
+///
+/// `None` em qualquer falha (sem rede, registry fora, resposta estranha): a
+/// tela funciona sem isto.
+pub async fn versao_no_npm() -> Option<String> {
+    #[derive(serde::Deserialize)]
+    struct Dist {
+        version: String,
+    }
+    let http = lr_fetch::client(concat!("OpenWeights/", env!("CARGO_PKG_VERSION"))).ok()?;
+    let resp = http
+        .get(format!("https://registry.npmjs.org/{NPM_PACKAGE}/latest"))
+        .timeout(Duration::from_secs(6))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    resp.json::<Dist>().await.ok().map(|d| d.version)
+}
+
 /// Resolve o script do CLI pelo campo `bin` do `package.json` do pacote —
 /// aceita as duas formas do npm (string ou objeto `{ "dsh": "caminho" }`).
 fn bin_do_manifesto(pacote: &Path) -> Option<PathBuf> {

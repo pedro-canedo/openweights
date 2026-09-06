@@ -10,6 +10,7 @@
 // para saber o que dizer no botão.
 
 import {
+  dshCheck,
   dshInstall,
   dshOpenPanel,
   dshStart,
@@ -17,6 +18,7 @@ import {
   dshStop,
   dshUninstall,
   onProviderEvent,
+  type DshCheck,
   type DshStatus,
   type ProviderEvent,
 } from "./providers";
@@ -27,6 +29,13 @@ export type HarnessBusy = "install" | "start" | "stop" | "uninstall" | null;
 
 export interface HarnessState {
   status: DshStatus | null;
+  /** Resultado da última verificação de atualização; `null` antes da
+   *  primeira. Mora no store, e não na tela, para sobreviver a sair e voltar
+   *  — a consulta ao registry do npm não precisa acontecer de novo a cada
+   *  visita. */
+  check: DshCheck | null;
+  /** Uma verificação em curso. */
+  checking: boolean;
   busy: HarnessBusy;
   progress: ProviderEvent | null;
   log: string[];
@@ -37,6 +46,8 @@ export interface HarnessState {
 
 let state: HarnessState = {
   status: null,
+  check: null,
+  checking: false,
   busy: null,
   progress: null,
   log: [],
@@ -95,6 +106,26 @@ export async function refreshStatus(force = false): Promise<void> {
 }
 
 /**
+ * "Tem atualização?" — comparação com a versão que esta build instala, mais
+ * uma olhada no registry do npm.
+ *
+ * Chamada ao abrir a tela do harness. Falha em silêncio: sem rede, a
+ * comparação local (disco × build) ainda vale, e ela é a que gera
+ * providência.
+ */
+export async function verificarAtualizacao(): Promise<void> {
+  if (state.checking) return;
+  set({ checking: true });
+  try {
+    set({ check: await dshCheck() });
+  } catch {
+    // sem backend, sem rede: a tela segue com o que já sabe
+  } finally {
+    set({ checking: false });
+  }
+}
+
+/**
  * Roda uma operação do harness com progresso e log ao vivo no store.
  *
  * A assinatura de eventos é aberta por operação (e não uma vez para sempre)
@@ -137,7 +168,13 @@ async function comEventos(
   return ok;
 }
 
-export const instalar = () => comEventos("install", dshInstall);
+export const instalar = async () => {
+  const ok = await comEventos("install", dshInstall);
+  // A versão no disco mudou: a pendência que a tela mostra tem de sumir
+  // sozinha, sem depender de a pessoa clicar em "verificar" de novo.
+  if (ok) await verificarAtualizacao();
+  return ok;
+};
 
 export const parar = () => comEventos("stop", dshStop);
 

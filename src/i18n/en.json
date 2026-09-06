@@ -354,7 +354,21 @@
     "uninstall": "Uninstall",
     "uninstallWarning": "This deletes the harness install. You can keep or also delete the sessions and credentials created inside it.",
     "uninstallAll": "Delete everything",
-    "uninstallKeepData": "Delete but keep the data"
+    "uninstallKeepData": "Delete but keep the data",
+    "update": {
+      "title": "Update",
+      "hint": "The harness is installed in an app folder; the version is pinned by each OpenWeights release.",
+      "check": "Check",
+      "checking": "Checking…",
+      "onDisk": "Installed on disk",
+      "shipped": "Shipped with this app version",
+      "npm": "Latest published on npm",
+      "pendingBadge": "update pending",
+      "pendingShort": "update to {{version}}",
+      "pendingBody": "You have {{installed}} installed and this app version ships {{pinned}}. Updating reinstalls the package in the app folder — your sessions stay where they are.",
+      "apply": "Update now",
+      "npmNote": "The project has already published {{version}} on npm. The app installs the version that passed our tests — updating OpenWeights brings the next one."
+    }
   },
   "server": {
     "title": "Local Server",
@@ -544,7 +558,42 @@
       "docs": "docs",
       "open": "Open",
       "installHint": "To install for good: {{cmd}}"
-    }
+    },
+    "tabs": {
+      "overview": "Overview",
+      "performance": "Performance",
+      "network": "Network",
+      "advanced": "Advanced"
+    },
+    "header": {
+      "noModel": "No model loaded",
+      "tps": "{{n}} tokens/s",
+      "lanOn": "open to the local network",
+      "keyStale": "new key pending — restart"
+    },
+    "guide": {
+      "title": "How to use it",
+      "subtitle": "Three steps for another program to talk to your models.",
+      "dismiss": "Dismiss",
+      "step1": "Start the server",
+      "step1Hint": "It's the button at the top of this screen.",
+      "step2": "Copy the address",
+      "step3": "Paste it into the app that will use it",
+      "step3Hint": "Claude Code, Cursor, Zed — or anything that takes an OpenAI-compatible API."
+    },
+    "use": {
+      "title": "Use it in another app",
+      "hint": "Coding agents that open already pointed at this server.",
+      "examplesHint": "The same address in curl and Python, ready to paste.",
+      "openaiLabel": "curl — OpenAI API",
+      "anthropicLabel": "curl — Claude (Anthropic) API",
+      "pythonLabel": "Python — OpenAI SDK"
+    },
+    "network": {
+      "title": "Address and access",
+      "hint": "Which port the server answers on, and who can reach it."
+    },
+    "logsHint": "Raw llama-server output, for when something won't start."
   },
   "settings": {
     "title": "Settings",
@@ -553,16 +602,62 @@
     "light": "Light",
     "language": "Language",
     "hardware": "Your hardware",
-    "redetect": "Re-detect",
     "modelsDir": "Models folder",
     "hfToken": "Hugging Face token (optional)",
     "hfTokenHint": "Doubles search limits and unlocks gated models. Create a free token at huggingface.co/settings/tokens.",
     "runtime": "AI engine (llama.cpp)",
-    "runtimeInstalled": "installed",
-    "runtimeMissing": "not installed",
-    "runtimeInstall": "Install / update",
-    "version": "Version",
-    "clusterLink": "Extra GPU on the network — open Local Server"
+    "clusterLink": "Extra GPU on the network — open Local Server",
+    "subtitle": "App preferences, credentials, and the engine that runs your models.",
+    "prefs": "Preferences",
+    "prefsHint": "They apply to the whole app.",
+    "hfTokenSet": "Token saved",
+    "hfTokenNone": "No token — search works, with a lower limit",
+    "hfTokenChange": "Change",
+    "hardwareHint": "This reading is where the engine variant and the quantization advice come from.",
+    "hw": {
+      "cores": "{{n}} cores",
+      "ram": "{{size}} RAM",
+      "vram": "{{size}} VRAM",
+      "driver": "driver {{v}}",
+      "integrated": "integrated",
+      "cpuOnly": "models will run on the CPU"
+    },
+    "engine": {
+      "hint": "Installed inside the app, isolated from any llama.cpp you may have on your system.",
+      "check": "Check",
+      "checking": "Checking…",
+      "checkingLong": "Checking the engine…",
+      "install": "Install / update",
+      "reinstall": "Reinstall",
+      "expected": "Expected by this version",
+      "onDisk": "On disk",
+      "reported": "The engine answered",
+      "size": "Size",
+      "folder": "Folder",
+      "none": "nothing installed",
+      "extracting": "Extracting {{asset}}…",
+      "leftovers": "{{n}} old build(s) taking up {{size}}",
+      "clean": "Clean up",
+      "cleanConfirm": "Confirm cleanup?",
+      "pruned": "{{size}} freed.",
+      "prunedPartial": "{{size}} freed; {{n}} folder(s) wouldn't go (in use).",
+      "upstream": "llama.cpp is already at {{tag}}. The app uses the build that passed our tests — updating OpenWeights brings the next one.",
+      "verdict": {
+        "ready": "Engine ready",
+        "notInstalled": "Engine not installed",
+        "updateAvailable": "Engine update available",
+        "variantChanged": "The installed engine isn't the one for this machine",
+        "broken": "The engine is installed but won't run"
+      },
+      "advice": {
+        "ready": "We just ran the engine and it answered with the expected build.",
+        "notInstalled": "Install it to chat with local models — about 1.8 GB, once.",
+        "updateAvailable": "This app version was tested against a different build. Update before loading models.",
+        "variantChanged": "Your GPU or driver changed since the install. Download the right variant so you don't run slower than you have to.",
+        "broken": "The files are there, but the executable won't start — usually part of the package is missing. Reinstalling fixes it."
+      },
+      "navAlert": "The AI engine needs attention"
+    }
   },
   "onboarding": {
     "welcome": "Welcome to OpenWeights",
@@ -788,7 +883,15 @@
       "tools": "tools",
       "pin": "Pin",
       "pinned": "Pinned",
-      "noneFound": "No model matches these filters."
+      "noneFound": "No model matches these filters.",
+      "keySet": "Key saved",
+      "keyNone": "No key — you can browse the catalog, not chat",
+      "catalog": "Catalog",
+      "catalogHint": "Pin the models you use: only pinned ones show up in the chat picker.",
+      "pinnedCount": "{{n}} pinned",
+      "onlyPinned": "Pinned only",
+      "showing": "Showing {{n}} of {{total}} — narrow the search to see the rest.",
+      "total": "{{n}} models."
     },
     "nineRouter": {
       "title": "9router",
@@ -830,7 +933,10 @@
       "lanWarning": "With this on, any device on your network reaches your models without a password. Only enable on a trusted network.",
       "routesTitle": "Active addresses",
       "noRoutes": "No provider running. Start the local server or 9router."
-    }
+    },
+    "on": "up",
+    "off": "off",
+    "readyCount": "{{n}} of {{total}} sources ready to answer."
   },
   "flags": {
     "control": {

@@ -263,11 +263,28 @@ export interface DshStatus {
   port: number;
   /** URL da UI web quando no ar — é o que a janela do painel carrega. */
   panelUrl: string | null;
+  /** A versão que está no disco — vazio quando nada instalado. */
   version: string;
+  /** A versão que esta build do aplicativo instala. */
+  pinnedVersion: string;
+  /** Disco e build divergem: atualizar o harness é a providência. */
+  updatePending: boolean;
+}
+
+/** "Tem atualização?" — inclui a ida ao registry do npm, então demora. */
+export interface DshCheck {
+  installed: boolean;
+  version: string;
+  pinnedVersion: string;
+  updatePending: boolean;
+  latestNpm: string | null;
+  npmNewer: boolean;
 }
 
 export const dshStatus = (): Promise<DshStatus> =>
   invoke<DshStatus>("dsh_status");
+
+export const dshCheck = (): Promise<DshCheck> => invoke<DshCheck>("dsh_check");
 
 export const dshInstall = (): Promise<DshStatus> =>
   invoke<DshStatus>("dsh_install");

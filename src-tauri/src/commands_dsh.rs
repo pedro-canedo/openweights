@@ -48,8 +48,29 @@ pub struct DshStatus {
     pub port: Option<u16>,
     /// URL do painel, quando está no ar.
     pub panel_url: Option<String>,
-    /// Versão pinada quando instalado; vazio quando não.
+    /// A versão que está no disco — lida do `package.json` do pacote, não a
+    /// que esta build instalaria. Vazio quando não há nada instalado.
     pub version: String,
+    /// A versão que esta build do app instala.
+    pub pinned_version: String,
+    /// O disco tem uma versão diferente da que esta build instala: há
+    /// atualização pendente, e ela vem de atualizar o OpenWeights.
+    pub update_pending: bool,
+}
+
+/// Verificação de atualização do harness — inclui a ida ao registry do npm,
+/// que o `dsh_status` (chamado a cada refresh de tela) não pode pagar.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DshCheck {
+    pub installed: bool,
+    pub version: String,
+    pub pinned_version: String,
+    pub update_pending: bool,
+    /// A última publicada no npm, quando a consulta funcionou.
+    pub latest_npm: Option<String>,
+    /// O npm está à frente da versão que o app pina.
+    pub npm_newer: bool,
 }
 
 pub(crate) fn layout(state: &AppState) -> Layout {
@@ -78,12 +99,44 @@ async fn status_atual(state: &AppState) -> DshStatus {
         running: guard.is_some(),
         port,
         panel_url: port.map(|p| format!("http://127.0.0.1:{p}")),
-        version: if instalado {
-            lr_dshhost::PINNED_DSH.to_string()
-        } else {
-            String::new()
-        },
+        version: versao_no_disco(&l),
+        pinned_version: lr_dshhost::PINNED_DSH.to_string(),
+        update_pending: instalado && versao_no_disco(&l) != lr_dshhost::PINNED_DSH,
     }
+}
+
+/// A versão instalada, ou vazio. Cai na pinada quando o pacote está lá e o
+/// `package.json` não se deixa ler — dizer "0.0.0" seria pior que dizer a
+/// versão que provavelmente é.
+fn versao_no_disco(l: &Layout) -> String {
+    if !l.instalado() {
+        return String::new();
+    }
+    lr_dshhost::versao_instalada(l).unwrap_or_else(|| lr_dshhost::PINNED_DSH.to_string())
+}
+
+/// "Tem atualização?" — a pergunta que a tela do harness faz ao abrir e no
+/// botão de verificar.
+#[tauri::command]
+pub async fn dsh_check(state: State<'_, AppState>) -> CmdResult<DshCheck> {
+    let l = layout(&state);
+    let instalado = l.instalado();
+    let version = versao_no_disco(&l);
+    let pinned = lr_dshhost::PINNED_DSH.to_string();
+    let latest_npm = lr_dshhost::versao_no_npm().await;
+    // Comparação textual de propósito: a ordem de precedência do semver com
+    // pré-lançamento (`0.1.1-rc.2` < `0.1.1`) não cabe num `>` ingênuo, e um
+    // palpite errado aqui vira uma tela dizendo "desatualizado" para quem
+    // está em dia. Diferente é diferente; quem decide o que fazer é a pessoa.
+    let npm_newer = latest_npm.as_deref().is_some_and(|v| v != pinned);
+    Ok(DshCheck {
+        update_pending: instalado && version != pinned,
+        installed: instalado,
+        version,
+        pinned_version: pinned,
+        latest_npm,
+        npm_newer,
+    })
 }
 
 #[tauri::command]

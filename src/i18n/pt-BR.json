@@ -354,7 +354,21 @@
     "uninstall": "Desinstalar",
     "uninstallWarning": "Isto apaga a instalação do harness. Você pode manter ou apagar também as sessões e credenciais criadas dentro dele.",
     "uninstallAll": "Apagar tudo",
-    "uninstallKeepData": "Apagar e manter os dados"
+    "uninstallKeepData": "Apagar e manter os dados",
+    "update": {
+      "title": "Atualização",
+      "hint": "O harness é instalado numa pasta do aplicativo; a versão vem fixada em cada versão do OpenWeights.",
+      "check": "Verificar",
+      "checking": "Verificando…",
+      "onDisk": "Instalado no disco",
+      "shipped": "Trazido por esta versão do app",
+      "npm": "Última publicada no npm",
+      "pendingBadge": "atualização pendente",
+      "pendingShort": "atualizar para {{version}}",
+      "pendingBody": "Você tem a {{installed}} instalada e esta versão do aplicativo traz a {{pinned}}. Atualizar reinstala o pacote na pasta do app — as suas sessões continuam onde estão.",
+      "apply": "Atualizar agora",
+      "npmNote": "O projeto já publicou a {{version}} no npm. O aplicativo instala a versão que passou pelos nossos testes — atualizar o OpenWeights traz a próxima."
+    }
   },
   "server": {
     "title": "Servidor Local",
@@ -544,7 +558,42 @@
       "docs": "docs",
       "open": "Abrir",
       "installHint": "Para instalar de vez: {{cmd}}"
-    }
+    },
+    "tabs": {
+      "overview": "Visão geral",
+      "performance": "Desempenho",
+      "network": "Rede",
+      "advanced": "Avançado"
+    },
+    "header": {
+      "noModel": "Nenhum modelo carregado",
+      "tps": "{{n}} tokens/s",
+      "lanOn": "aberto para a rede local",
+      "keyStale": "chave nova pendente — reinicie"
+    },
+    "guide": {
+      "title": "Como usar",
+      "subtitle": "Três passos para outro programa conversar com os seus modelos.",
+      "dismiss": "Não mostrar",
+      "step1": "Ligue o servidor",
+      "step1Hint": "É o botão no topo desta tela.",
+      "step2": "Copie o endereço",
+      "step3": "Cole no aplicativo que vai usar",
+      "step3Hint": "Claude Code, Cursor, Zed — ou qualquer coisa que aceite uma API compatível com OpenAI."
+    },
+    "use": {
+      "title": "Usar em outro app",
+      "hint": "Agentes de código que abrem já apontados para este servidor.",
+      "examplesHint": "O mesmo endereço em curl e em Python, prontos para colar.",
+      "openaiLabel": "curl — API OpenAI",
+      "anthropicLabel": "curl — API Claude (Anthropic)",
+      "pythonLabel": "Python — SDK da OpenAI"
+    },
+    "network": {
+      "title": "Endereço e acesso",
+      "hint": "Em que porta o servidor atende e quem alcança essa porta."
+    },
+    "logsHint": "A saída bruta do llama-server, para quando algo não sobe."
   },
   "settings": {
     "title": "Configurações",
@@ -553,16 +602,62 @@
     "light": "Claro",
     "language": "Idioma",
     "hardware": "Seu hardware",
-    "redetect": "Detectar novamente",
     "modelsDir": "Pasta de modelos",
     "hfToken": "Token do Hugging Face (opcional)",
     "hfTokenHint": "Dobra o limite de buscas e libera modelos com licença. Crie um token gratuito em huggingface.co/settings/tokens.",
     "runtime": "Motor de IA (llama.cpp)",
-    "runtimeInstalled": "instalado",
-    "runtimeMissing": "não instalado",
-    "runtimeInstall": "Instalar / atualizar",
-    "version": "Versão",
-    "clusterLink": "GPU extra na rede — abrir Servidor local"
+    "clusterLink": "GPU extra na rede — abrir Servidor local",
+    "subtitle": "Preferências do aplicativo, credenciais e o motor que roda os seus modelos.",
+    "prefs": "Preferências",
+    "prefsHint": "Valem para o aplicativo inteiro.",
+    "hfTokenSet": "Token gravado",
+    "hfTokenNone": "Sem token — a busca funciona, com limite menor",
+    "hfTokenChange": "Trocar",
+    "hardwareHint": "É desta leitura que saem a variante do motor e as recomendações de quantização.",
+    "hw": {
+      "cores": "{{n}} núcleos",
+      "ram": "{{size}} de RAM",
+      "vram": "{{size}} de VRAM",
+      "driver": "driver {{v}}",
+      "integrated": "integrada",
+      "cpuOnly": "os modelos vão rodar na CPU"
+    },
+    "engine": {
+      "hint": "Instalado dentro do aplicativo, isolado de qualquer llama.cpp que você tenha no sistema.",
+      "check": "Verificar",
+      "checking": "Verificando…",
+      "checkingLong": "Verificando o motor…",
+      "install": "Instalar / atualizar",
+      "reinstall": "Reinstalar",
+      "expected": "Esperado por esta versão",
+      "onDisk": "No disco",
+      "reported": "O motor respondeu",
+      "size": "Tamanho",
+      "folder": "Pasta",
+      "none": "nada instalado",
+      "extracting": "Extraindo {{asset}}…",
+      "leftovers": "{{n}} build(s) antiga(s) ocupando {{size}}",
+      "clean": "Limpar",
+      "cleanConfirm": "Confirmar limpeza?",
+      "pruned": "{{size}} liberados.",
+      "prunedPartial": "{{size}} liberados; {{n}} pasta(s) não saíram (em uso).",
+      "upstream": "O llama.cpp já está na {{tag}}. O aplicativo usa a build que passou pelos nossos testes — atualizar o OpenWeights traz a próxima.",
+      "verdict": {
+        "ready": "Motor pronto",
+        "notInstalled": "Motor não instalado",
+        "updateAvailable": "Atualização do motor disponível",
+        "variantChanged": "O motor instalado não é o desta máquina",
+        "broken": "O motor está instalado, mas não executa"
+      },
+      "advice": {
+        "ready": "Executamos o motor agora e ele respondeu com a build esperada.",
+        "notInstalled": "Instale para conversar com modelos locais — cerca de 1,8 GB, uma vez só.",
+        "updateAvailable": "Esta versão do aplicativo foi testada com outra build. Atualize antes de carregar modelos.",
+        "variantChanged": "Sua placa ou o driver mudaram desde a instalação. Baixe a variante certa para não rodar mais devagar do que precisa.",
+        "broken": "Os arquivos estão lá, mas o executável não sobe — normalmente falta parte do pacote. Reinstalar resolve."
+      },
+      "navAlert": "O motor de IA precisa de atenção"
+    }
   },
   "onboarding": {
     "welcome": "Bem-vindo ao OpenWeights",
@@ -788,7 +883,15 @@
       "tools": "ferramentas",
       "pin": "Fixar",
       "pinned": "Fixado",
-      "noneFound": "Nenhum modelo com esses filtros."
+      "noneFound": "Nenhum modelo com esses filtros.",
+      "keySet": "Chave gravada",
+      "keyNone": "Sem chave — dá para ver o catálogo, não para conversar",
+      "catalog": "Catálogo",
+      "catalogHint": "Fixe os modelos que você usa: só os fixados aparecem no seletor do chat.",
+      "pinnedCount": "{{n}} fixados",
+      "onlyPinned": "Só fixados",
+      "showing": "Mostrando {{n}} de {{total}} — refine a busca para ver o resto.",
+      "total": "{{n}} modelos."
     },
     "nineRouter": {
       "title": "9router",
@@ -830,7 +933,10 @@
       "lanWarning": "Com isto ligado, qualquer aparelho da sua rede alcança seus modelos sem senha. Ligue só em rede de confiança.",
       "routesTitle": "Endereços ativos",
       "noRoutes": "Nenhum provedor no ar. Inicie o servidor local ou o 9router."
-    }
+    },
+    "on": "no ar",
+    "off": "desligado",
+    "readyCount": "{{n}} de {{total}} fontes prontas para atender."
   },
   "flags": {
     "control": {

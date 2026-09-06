@@ -57,7 +57,6 @@ import {
   triTo,
 } from "../form/controls";
 import FlagControl, { RequirementBadges } from "../form/FlagControl";
-import HarnessLauncher from "./HarnessLauncher";
 
 const CTX_CHIPS = [8192, 16384, 32768, 65536];
 
@@ -1003,12 +1002,6 @@ export default function EngineConfigSection({
         </div>
       )}
 
-      {/* abrir num harness externo */}
-      <HarnessLauncher
-        model={selected}
-        loaded={state === "loaded"}
-        running={running}
-      />
     </div>
   );
 }

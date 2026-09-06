@@ -74,6 +74,26 @@ pub async fn runtime_ensure(
         .map_err(err_str)
 }
 
+/// Verificação funcional do motor: o que está no disco, se ele executa e se
+/// é a build que esta versão do app espera.
+///
+/// Roda `llama-server --version` de verdade — é o único jeito de separar
+/// "os arquivos estão lá" de "o motor funciona", e a diferença entre os dois
+/// é um pacote CUDA sem as DLLs do cudart ao lado.
+#[tauri::command]
+pub async fn runtime_check(state: State<'_, AppState>) -> CmdResult<lr_runtime::EngineCheck> {
+    let variant = lr_runtime::select_variant(&state.profile);
+    Ok(lr_runtime::check(&state.data_dir, variant).await)
+}
+
+/// Apaga as builds do motor que o app não usa mais. A que está em uso nunca
+/// entra na conta.
+#[tauri::command]
+pub fn runtime_prune(state: State<'_, AppState>) -> lr_runtime::PruneResult {
+    let variant = lr_runtime::select_variant(&state.profile);
+    lr_runtime::prune(&state.data_dir, variant)
+}
+
 // -------------------------------------------------------------- modelos ---
 
 #[tauri::command]

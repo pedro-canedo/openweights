@@ -3,6 +3,8 @@
 
 import type {
   ChatRow,
+  EngineCheck,
+  PruneResult,
   DownloadStatus,
   LocalModel,
   MessageRow,
@@ -34,6 +36,36 @@ export async function runtimeStatus(): Promise<RuntimeState> {
 export async function ensureRuntime(): Promise<RuntimeState> {
   await delay(800);
   return runtimeStatus();
+}
+
+export async function runtimeCheck(): Promise<EngineCheck> {
+  await delay(600);
+  return {
+    expectedTag: "b10441",
+    expectedVariant: "cuda13",
+    verdict: "ready",
+    detail: null,
+    reportedBuild: 10441,
+    probeMs: 780,
+    active: {
+      tag: "b10441",
+      variant: "cuda13",
+      variantDir: "cuda-13.3",
+      dir: "C:/fake/runtimes/b10441/cuda-13.3",
+      sizeBytes: 1_820_000_000,
+      hasServer: true,
+      hasRpc: true,
+    },
+    others: [],
+    reclaimableBytes: 0,
+    upstreamTag: "b10502",
+    upstreamNewer: true,
+  };
+}
+
+export async function runtimePrune(): Promise<PruneResult> {
+  await delay(400);
+  return { freedBytes: 0, failed: [] };
 }
 
 const MODELS: ModelSummary[] = [

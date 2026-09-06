@@ -64,17 +64,13 @@ export default function HarnessLauncher({
   };
 
   return (
-    <div className="mt-5 border-t border-edge pt-4">
-      <div className="text-sm font-medium">{t("server.harness.title")}</div>
-      <p className="mt-0.5 text-[11px] leading-relaxed text-dim">
-        {t("server.harness.subtitle")}
-      </p>
+    <div>
       {!loaded && (
         <p className="mt-1 text-[11px] leading-relaxed text-dim">
           {t("server.harness.needLoaded")}
         </p>
       )}
-      <div className="mt-3 flex flex-col gap-2">
+      <div className="flex flex-col gap-2">
         {list.map((h) => (
           <div
             key={h.id}

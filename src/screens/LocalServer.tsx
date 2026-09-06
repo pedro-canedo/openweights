@@ -1,4 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+// Servidor Local: uma faixa de estado que não rola, e quatro abas.
+//
+// A tela nasceu como uma pilha de onze cards de peso idêntico — status,
+// conectar, estatísticas, porta, motor, especulação, benchmark, energia,
+// flags, cluster, exemplos, logs. Tudo estava lá, e era exatamente esse o
+// problema: quem só quer ligar o servidor e colar o endereço no Cursor
+// atravessava cinco cards de ajuste fino para chegar ao terceiro; quem veio
+// mexer numa flag rolava a tela inteira toda vez.
+//
+// A divisão segue a pergunta que a pessoa traz:
+//
+// - **Visão geral** — "ligou? como eu uso isto?"
+// - **Desempenho** — "está rápido? dá para melhorar?"
+// - **Rede** — "quem mais alcança este servidor?"
+// - **Avançado** — "preciso mexer no que o app decidiu por mim."
+//
+// O estado do servidor fica fora das abas, grudado no topo: ele é premissa
+// das quatro.
+
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   getHardwareProfile,
@@ -6,12 +25,16 @@ import {
   getSetting,
   onServerLog,
   onServerStatus,
+  serveStats,
   setSetting,
   startServer,
   stopServer,
 } from "../lib/api";
+import { routerModels } from "../lib/flags";
+import { takePendingServerTab } from "../lib/nav";
 import type { ServerStatus } from "../lib/types";
 import { Chips, NumChips, Select } from "../components/form/controls";
+import { Card, Collapse, Page, Tabs, useTab, type TabDef } from "../components/ui/Shell";
 import BenchHistoryCard from "../components/server/BenchHistoryCard";
 import SpecCard from "../components/server/SpecCard";
 import PowerCard from "../components/server/PowerCard";
@@ -20,11 +43,18 @@ import ConnectCard from "../components/server/ConnectCard";
 import EngineConfigSection from "../components/server/EngineConfigSection";
 import GlobalFlagsCard from "../components/server/GlobalFlagsCard";
 import ServeStatsCard from "../components/server/ServeStatsCard";
+import ServerHeader from "../components/server/ServerHeader";
+import GettingStarted, { CHAVE_GUIA } from "../components/server/GettingStarted";
+import UseElsewhere from "../components/server/UseElsewhere";
 
 const MAX_LOG_LINES = 500;
 
+/** De quanto em quanto tempo a faixa do topo relê modelo e velocidade. */
+const RESUMO_MS = 10_000;
+
 export default function LocalServer() {
   const { t } = useTranslation();
+  const [tab, setTab] = useTab("ow.server.tab", "overview");
   const [status, setStatus] = useState<ServerStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +65,26 @@ export default function LocalServer() {
   // Modelo em foco na configuração do motor — o histórico de benchmark
   // logo abaixo mede e lista exatamente este.
   const [selectedModel, setSelectedModel] = useState("");
+  // O que a faixa do topo mostra: o modelo que o Router tem carregado e a
+  // velocidade média do que já foi servido nesta sessão.
+  const [loadedModel, setLoadedModel] = useState<string | null>(null);
+  const [genTps, setGenTps] = useState<number | null>(null);
+  const [served, setServed] = useState(false);
+  const [guideHidden, setGuideHidden] = useState(() => {
+    try {
+      return localStorage.getItem(CHAVE_GUIA) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  // Quem chegou por um botão de outra tela ("Ajustar para esta máquina",
+  // "GPU extra na rede") vem buscar uma coisa específica: a aba lembrada
+  // cede a vez para a aba que a navegação pediu.
+  useEffect(() => {
+    const pedida = takePendingServerTab();
+    if (pedida) setTab(pedida);
+  }, [setTab]);
 
   useEffect(() => {
     let un: (() => void) | undefined;
@@ -58,7 +108,40 @@ export default function LocalServer() {
     };
   }, []);
 
-  async function toggle() {
+  // O resumo da faixa. Roda mesmo com o servidor parado: "já serviu alguma
+  // coisa alguma vez" é o que decide se o guia de três passos ainda aparece,
+  // e isso não pode depender de o motor estar de pé agora.
+  useEffect(() => {
+    let alive = true;
+    const ler = () => {
+      serveStats(null)
+        .then((d) => {
+          if (!alive) return;
+          setGenTps(d.session.avgGenTps ?? d.allTime.avgGenTps);
+          setServed(d.allTime.totalTokens > 0);
+        })
+        .catch(() => {});
+      if (status?.running) {
+        routerModels()
+          .then((ms) => {
+            if (alive) {
+              setLoadedModel(ms.find((m) => m.state === "loaded")?.id ?? null);
+            }
+          })
+          .catch(() => {});
+      } else {
+        setLoadedModel(null);
+      }
+    };
+    ler();
+    const id = window.setInterval(ler, RESUMO_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [status?.running]);
+
+  const toggle = useCallback(async () => {
     setBusy(true);
     setError(null);
     try {
@@ -73,76 +156,99 @@ export default function LocalServer() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [status?.running]);
+
+  const running = !!status?.running;
+  const abas: TabDef[] = [
+    { id: "overview", label: t("server.tabs.overview") },
+    { id: "performance", label: t("server.tabs.performance") },
+    { id: "network", label: t("server.tabs.network") },
+    { id: "advanced", label: t("server.tabs.advanced") },
+  ];
 
   return (
-    <div className="mx-auto max-w-4xl px-8 py-8">
-      <h1 className="text-xl font-semibold">{t("server.title")}</h1>
-      <p className="mt-1 text-sm text-dim">{t("server.subtitle")}</p>
-
-      <div className="mt-6 flex items-center gap-3 rounded-xl border border-edge bg-panel p-5">
-        <span
-          className={`h-2.5 w-2.5 rounded-full ${status?.running ? "bg-ok" : "bg-dim"}`}
-        />
-        <span className="text-sm">
-          {status?.running ? t("server.running") : t("server.stopped")}
-        </span>
-        {status?.running && status.baseUrl && (
-          <CopyField value={status.baseUrl} />
-        )}
-        <button
-          onClick={() => void toggle()}
-          disabled={busy || !status}
-          className="ml-auto rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-        >
-          {busy
-            ? t("common.loading")
-            : status?.running
-              ? t("server.stop")
-              : t("server.start")}
-        </button>
-      </div>
-      {error && <div className="mt-2 text-[12px] text-bad">{error}</div>}
-
-      <ConnectCard status={status} apiKey={apiKey} onApiKeyChange={setApiKey} />
-      <ServeStatsCard running={!!status?.running} />
-      <ServerConfig running={!!status?.running} />
-      <EngineConfigSection
-        running={!!status?.running}
-        hasGpu={hasGpu}
-        selected={selectedModel}
-        onSelect={setSelectedModel}
+    <Page title={t("server.title")} subtitle={t("server.subtitle")}>
+      <ServerHeader
+        status={status}
+        busy={busy}
+        onToggle={() => void toggle()}
+        model={loadedModel}
+        genTps={genTps}
+        error={error}
       />
-      <SpecCard model={selectedModel} />
-      <BenchHistoryCard model={selectedModel} running={!!status?.running} />
-      <PowerCard />
-      <GlobalFlagsCard running={!!status?.running} />
-      <ClusterPanel />
-      {status?.baseUrl && <Examples baseUrl={status.baseUrl} apiKey={apiKey} />}
-      <Logs />
-    </div>
+
+      <Tabs tabs={abas} value={tab} onChange={setTab} />
+
+      {tab === "overview" && (
+        <>
+          {!guideHidden && !served && (
+            <GettingStarted
+              running={running}
+              baseUrl={status?.baseUrl ?? null}
+              served={served}
+              onDismiss={() => {
+                setGuideHidden(true);
+                try {
+                  localStorage.setItem(CHAVE_GUIA, "1");
+                } catch {
+                  // sem armazenamento: o guia volta na próxima visita
+                }
+              }}
+            />
+          )}
+          <ConnectCard
+            status={status}
+            apiKey={apiKey}
+            onApiKeyChange={setApiKey}
+          />
+          <UseElsewhere
+            baseUrl={status?.baseUrl ?? null}
+            apiKey={apiKey}
+            model={loadedModel ?? selectedModel}
+            loaded={loadedModel != null}
+            running={running}
+          />
+          <ServeStatsCard running={running} />
+        </>
+      )}
+
+      {tab === "performance" && (
+        <>
+          <EngineConfigSection
+            running={running}
+            hasGpu={hasGpu}
+            selected={selectedModel}
+            onSelect={setSelectedModel}
+          />
+          <SpecCard model={selectedModel} />
+          <BenchHistoryCard model={selectedModel} running={running} />
+          <PowerCard />
+        </>
+      )}
+
+      {tab === "network" && (
+        <>
+          <ServerConfig running={running} />
+          <ClusterPanel />
+        </>
+      )}
+
+      {tab === "advanced" && (
+        <>
+          <GlobalFlagsCard running={running} />
+          <Logs />
+        </>
+      )}
+    </Page>
   );
 }
 
-function CopyField({ value }: { value: string }) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      onClick={() => {
-        navigator.clipboard.writeText(value).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        });
-      }}
-      className="rounded-lg border border-edge bg-panel2 px-3 py-1.5 font-mono text-[12px] text-dim hover:text-ink"
-      title={t("server.copy")}
-    >
-      {value} {copied ? "✓" : "⧉"}
-    </button>
-  );
-}
-
+/**
+ * Porta, acesso pela rede e os dois números que dividem a placa.
+ *
+ * Continua sendo um formulário com botão de salvar — mudar a porta de um
+ * servidor no ar por acidente seria pior que um clique a mais.
+ */
 function ServerConfig({ running }: { running: boolean }) {
   const { t } = useTranslation();
   const [port, setPort] = useState("11711");
@@ -178,8 +284,8 @@ function ServerConfig({ running }: { running: boolean }) {
   }));
 
   return (
-    <div className="mt-4 rounded-xl border border-edge bg-panel p-5">
-      <div className="grid grid-cols-2 gap-4">
+    <Card title={t("server.network.title")} hint={t("server.network.hint")}>
+      <div className="mt-4 grid grid-cols-2 gap-4">
         <div className="col-span-2">
           <div className={label}>{t("server.port")}</div>
           <div className="mt-1">
@@ -195,6 +301,22 @@ function ServerConfig({ running }: { running: boolean }) {
               LM Studio ou o Ollama conectam sem mexer em nada. */}
           <p className="mt-1 text-[11px] leading-relaxed text-dim">
             {t("server.connect.portHint")}
+          </p>
+        </div>
+        <div className="col-span-2">
+          <div className={label}>{t("server.lanAccess")}</div>
+          <div className="mt-1">
+            <Chips
+              value={lan ? "on" : "off"}
+              onChange={(v) => setLan(v === "on")}
+              options={[
+                { id: "off", label: t("server.fields.lanOff") },
+                { id: "on", label: t("server.fields.lanOn") },
+              ]}
+            />
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-dim">
+            {t("server.lanHint")}
           </p>
         </div>
         <div>
@@ -227,22 +349,6 @@ function ServerConfig({ running }: { running: boolean }) {
             {t("server.parallelHint")}
           </p>
         </div>
-        <div className="col-span-2">
-          <div className={label}>{t("server.lanAccess")}</div>
-          <div className="mt-1">
-            <Chips
-              value={lan ? "on" : "off"}
-              onChange={(v) => setLan(v === "on")}
-              options={[
-                { id: "off", label: t("server.fields.lanOff") },
-                { id: "on", label: t("server.fields.lanOn") },
-              ]}
-            />
-          </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-dim">
-            {t("server.lanHint")}
-          </p>
-        </div>
       </div>
       <div className="mt-4 flex items-center gap-3">
         <button
@@ -255,70 +361,14 @@ function ServerConfig({ running }: { running: boolean }) {
           <span className="text-[11px] text-warn">{t("server.applyHint")}</span>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
-function Examples({ baseUrl, apiKey }: { baseUrl: string; apiKey: string }) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState<string | null>(null);
-
-  // Com chave definida, os exemplos já saem prontos para colar — o curl
-  // ganha o cabeçalho Bearer e o python usa a chave real.
-  const curl = `curl ${baseUrl}/v1/chat/completions \\
-  -H "Content-Type: application/json" \\${apiKey ? `\n  -H "Authorization: Bearer ${apiKey}" \\` : ""}
-  -d '{"model": "SEU-MODELO", "messages": [{"role": "user", "content": "Olá!"}]}'`;
-
-  // API Anthropic nativa do llama-server: a raiz + /v1/messages, body mínimo
-  // (model, max_tokens, messages). O header de auth do lado Anthropic é o
-  // x-api-key — o servidor aceita este e o Bearer.
-  const curlClaude = `curl ${baseUrl}/v1/messages \\
-  -H "Content-Type: application/json" \\${apiKey ? `\n  -H "x-api-key: ${apiKey}" \\` : ""}
-  -d '{"model": "SEU-MODELO", "max_tokens": 512, "messages": [{"role": "user", "content": "Olá!"}]}'`;
-
-  const python = `from openai import OpenAI
-
-client = OpenAI(base_url="${baseUrl}/v1", api_key="${apiKey || "local"}")
-resp = client.chat.completions.create(
-    model="SEU-MODELO",
-    messages=[{"role": "user", "content": "Olá!"}],
-)
-print(resp.choices[0].message.content)`;
-
-  const block = (name: string, code: string) => (
-    <div className="relative mt-2">
-      <pre className="overflow-x-auto rounded-lg border border-edge bg-panel2 p-3 font-mono text-[11.5px] leading-relaxed text-dim">
-        {code}
-      </pre>
-      <button
-        onClick={() => {
-          navigator.clipboard.writeText(code).then(() => {
-            setCopied(name);
-            setTimeout(() => setCopied(null), 1200);
-          });
-        }}
-        className="absolute right-2 top-2 rounded-md border border-edge bg-panel px-2 py-1 text-[11px] text-dim hover:text-ink"
-      >
-        {copied === name ? t("server.copied") : t("server.copy")}
-      </button>
-    </div>
-  );
-
-  return (
-    <div className="mt-4 rounded-xl border border-edge bg-panel p-5">
-      <div className="text-sm font-medium">{t("server.exampleTitle")}</div>
-      {block("curl", curl)}
-      {block("claude", curlClaude)}
-      {block("python", python)}
-    </div>
-  );
-}
-
+/** O log do motor, em bruto — fechado até alguém precisar dele. */
 function Logs() {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
   const [lines, setLines] = useState<string[]>([]);
-  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let un: (() => void) | undefined;
@@ -339,29 +389,35 @@ function Logs() {
     };
   }, []);
 
-  useEffect(() => {
-    if (open) bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [lines, open]);
-
   return (
-    <div className="mt-4 rounded-xl border border-edge bg-panel">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center justify-between px-5 py-3 text-sm"
-      >
-        {t("server.logs")}
-        <span className="text-dim">{open ? "▾" : "▸"}</span>
-      </button>
-      {open && (
-        <div className="max-h-64 overflow-y-auto border-t border-edge px-4 py-2 font-mono text-[11px] leading-relaxed text-dim">
-          {lines.length ? (
-            lines.map((l, i) => <div key={i}>{l}</div>)
-          ) : (
-            <div>—</div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-      )}
+    <Collapse
+      title={t("server.logs")}
+      hint={t("server.logsHint")}
+      badge={
+        lines.length > 0 ? (
+          <span className="rounded-full bg-panel2 px-1.5 py-0.5 text-[10px] text-dim">
+            {lines.length}
+          </span>
+        ) : undefined
+      }
+    >
+      <LogLines lines={lines} />
+    </Collapse>
+  );
+}
+
+function LogLines({ lines }: { lines: string[] }) {
+  // O rolar automático segue a última linha enquanto o bloco estiver aberto.
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    el?.scrollTo({ top: el.scrollHeight });
+  }, [el, lines]);
+  return (
+    <div
+      ref={setEl}
+      className="max-h-64 overflow-y-auto font-mono text-[11px] leading-relaxed text-dim"
+    >
+      {lines.length ? lines.map((l, i) => <div key={i}>{l}</div>) : <div>—</div>}
     </div>
   );
 }

@@ -307,7 +307,7 @@ export function ClusterChip() {
   return (
     <button
       type="button"
-      onClick={() => navigate("server")}
+      onClick={() => navigate("server", { serverTab: "network" })}
       className="rounded-md border border-edge px-2 py-0.5 text-[11px] text-dim hover:text-ink"
       title={t("server.cluster.title")}
     >

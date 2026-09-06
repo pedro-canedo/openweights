@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { onNavigate, type Screen } from "./lib/nav";
+import { engineStore, motorPedeAtencao, verificarMotor } from "./lib/engine";
 import StatusBar from "./components/StatusBar";
 import DownloadsPanel from "./components/DownloadsPanel";
 import GenerationPanel from "./components/GenerationPanel";
@@ -53,6 +54,20 @@ export default function App() {
   });
 
   useEffect(() => onNavigate(setScreen), []);
+
+  // O motor é verificado uma vez por sessão, um pouco depois da abertura —
+  // o `--version` sobe o executável e carrega os backends do ggml, e isso
+  // não pode disputar a partida do app. Quem ficou com uma build antiga no
+  // disco (atualizou o OpenWeights, o llama.cpp continuou o de antes)
+  // descobre pelo ponto no item de Ajustes, e não no meio de uma conversa.
+  const motor = useSyncExternalStore(engineStore.subscribe, engineStore.get);
+  useEffect(() => {
+    const id = window.setTimeout(() => void verificarMotor(), 3000);
+    return () => window.clearTimeout(id);
+  }, []);
+  const avisos: Partial<Record<Screen, boolean>> = {
+    settings: motorPedeAtencao(motor),
+  };
 
   useEffect(() => {
     try {
@@ -153,18 +168,30 @@ export default function App() {
                     : "text-dim hover:bg-panel2/60 hover:text-ink"
                 }`}
               >
-                <svg
-                  className="h-4.5 w-4.5 shrink-0"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  viewBox="0 0 24 24"
-                >
-                  <path d={icons[s]} />
-                </svg>
+                <span className="relative shrink-0">
+                  <svg
+                    className="h-4.5 w-4.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d={icons[s]} />
+                  </svg>
+                  {/* Recolhida, o ponto no ícone é o único aviso possível. */}
+                  {avisos[s] && recolhida && (
+                    <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-warn" />
+                  )}
+                </span>
                 {!recolhida && t(`nav.${s}`)}
+                {avisos[s] && !recolhida && (
+                  <span
+                    className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warn"
+                    title={t("settings.engine.navAlert")}
+                  />
+                )}
               </button>
             ))}
           </div>

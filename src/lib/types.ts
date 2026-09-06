@@ -79,6 +79,55 @@ export interface RuntimeState {
   rpcReady?: boolean;
 }
 
+/** Um pacote do motor achado no disco (espelho de `InstalledRuntime`). */
+export interface InstalledRuntime {
+  tag: string;
+  variant: BackendVariant | null;
+  variantDir: string;
+  dir: string;
+  sizeBytes: number;
+  hasServer: boolean;
+  hasRpc: boolean;
+}
+
+/**
+ * O que a verificação do motor concluiu.
+ *
+ * `ready` é o único caso em que o `llama-server` foi executado e respondeu —
+ * os outros quatro são situações diferentes com providências diferentes, e
+ * por isso não se resumem a um booleano "instalado".
+ */
+export type EngineVerdict =
+  | "ready"
+  | "notInstalled"
+  | "updateAvailable"
+  | "variantChanged"
+  | "broken";
+
+/** Relatório da verificação funcional do motor (espelho de `EngineCheck`). */
+export interface EngineCheck {
+  expectedTag: string;
+  expectedVariant: BackendVariant;
+  verdict: EngineVerdict;
+  /** Causa técnica, quando existe — vai para o `title`, não para a frase. */
+  detail: string | null;
+  /** A build que o próprio executável reportou. */
+  reportedBuild: number | null;
+  /** Quanto o `--version` demorou. */
+  probeMs: number | null;
+  active: InstalledRuntime | null;
+  others: InstalledRuntime[];
+  reclaimableBytes: number;
+  upstreamTag: string | null;
+  upstreamNewer: boolean;
+}
+
+/** O que a limpeza de builds antigas conseguiu fazer. */
+export interface PruneResult {
+  freedBytes: number;
+  failed: string[];
+}
+
 export type RuntimeEvent =
   | { kind: "progress"; asset: string; receivedBytes: number; totalBytes: number }
   | { kind: "extracting"; asset: string }

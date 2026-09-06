@@ -12,6 +12,8 @@ import type {
   ModelSummary,
   PresetRow,
   QuantsView,
+  EngineCheck,
+  PruneResult,
   RuntimeEvent,
   RuntimeState,
   ServerProps,
@@ -42,6 +44,20 @@ export const ensureRuntime = () =>
 
 export const onRuntimeEvent = (h: (e: RuntimeEvent) => void) =>
   listen<RuntimeEvent>("runtime", h);
+
+/**
+ * Verificação funcional do motor: o que está no disco, se executa e se é a
+ * build que esta versão do app espera.
+ *
+ * Roda o `llama-server --version` de verdade, então demora — segundos numa
+ * placa fria. Quem chama mostra que está verificando.
+ */
+export const runtimeCheck = () =>
+  isTauri ? invoke<EngineCheck>("runtime_check") : mocks.runtimeCheck();
+
+/** Apaga as builds do motor que o app não usa mais. */
+export const runtimePrune = () =>
+  isTauri ? invoke<PruneResult>("runtime_prune") : mocks.runtimePrune();
 
 // -------------------------------------------------------------- modelos ---
 
