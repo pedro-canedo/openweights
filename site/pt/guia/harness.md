@@ -24,6 +24,19 @@ com o OpenWeights. Remover é um botão na mesma tela — com a escolha de apaga
 também as sessões e credenciais criadas lá dentro.
 :::
 
+## Atualização
+
+A versão do harness vem fixada em cada versão do OpenWeights. Toda vez que você
+abre a tela, o app compara o que está instalado no disco com o que esta versão
+traz — e a versão mostrada é a que o `package.json` do pacote diz, não a que o
+app instalaria. Quando as duas divergem, aparece **atualização pendente** com o
+botão que resolve; atualizar reinstala o pacote na pasta do app e não mexe nas
+suas sessões.
+
+O card também mostra a última versão publicada no npm, como informação: o app
+instala a versão que passou pelos nossos testes, e a próxima chega com a
+próxima atualização do OpenWeights.
+
 ## O que ele já sabe sobre os seus modelos
 
 Você não configura provedor, não cola endereço nem copia chave. A cada vez que

@@ -3,26 +3,43 @@
 **Local Server** exposes an OpenAI-compatible API so other apps can use the
 model you already have loaded.
 
+## How the screen is laid out
+
+At the top, pinned while you scroll, sits the server state: running or stopped,
+the address with a copy button, the loaded model and the generation speed. The
+rest comes in four tabs:
+
+| Tab | What's in it |
+|---|---|
+| **Overview** | Connect (address, key, connection test), use it in another app, and what has been served so far |
+| **Performance** | Configure llama.cpp, measured speculation, benchmark history and GPU power |
+| **Network** | Port, local-network access, concurrent models, conversations at once and extra GPU on the network |
+| **Advanced** | Global flags and the server log |
+
+On the first visit, Overview opens with three steps — start it, copy the
+address, paste it into the app that will use it. They disappear on their own
+once the server answers its first request.
+
 ## Starting it
 
-Set the port, press **Start**, and the address appears with a copy button.
-Everything below applies at start time — change a setting and the engine has to
-be stopped and started again for it to take effect. The screen says so.
+Press **Start** at the top and the address appears with a copy button. The
+network settings live in the **Network** tab and apply at start time — change
+one and the engine has to be stopped and started again. The screen says so.
 
 | Setting | What it does |
 |---|---|
 | **Port** | Where it listens |
 | **Allow access from local network** | Other devices on your network can reach the API |
-| **API key** | Optional; when set, requests must present it |
+| **API key** | Optional; when set, requests must present it (it lives in Connect, under Overview) |
 | **Concurrent models** | With 1, switching models unloads the previous one — what most GPUs can take. Above that, models stay loaded together and may not fit in video memory |
 | **Conversations at once** | Each simultaneous conversation takes a slice of the context window. With 1, the window you ask for is the window you get |
 
-The screen also shows the server log.
+The server log lives in the **Advanced** tab.
 
 ## Configuring llama.cpp
 
-Right below the server settings sits **Configure llama.cpp**: the **per-model**
-load configuration, in the same place where the model gets loaded.
+The **Performance** tab holds **Configure llama.cpp**: the **per-model** load
+configuration, in the same place where the model gets loaded.
 
 Pick a model from your library and the section shows what the file declares —
 whether it is MoE, whether it ships an **MTP head**, whether it has a vision
@@ -118,13 +135,14 @@ says which.
 
 ### Global flags
 
-A separate card holds the flags that apply to **every** model. Process flags
+In the **Advanced** tab, a card holds the flags that apply to **every** model. Process flags
 become `llama-server` arguments; the rest go into the INI's `[*]` section, and a
 model's own setting always wins over the global one.
 
 ## Open in a harness
 
-The **Open in a harness** section hands your models to an external coding
+Under **Overview**, the **Use it in another app** card hands your models to an
+external coding
 agent pointed at your local API — one click, no endpoint to configure by hand.
 This is also where agent work lives now: the app has no chat-with-tools of its
 own.

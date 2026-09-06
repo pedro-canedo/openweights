@@ -24,6 +24,19 @@ when OpenWeights does. Removing it is a button on the same screen — with the
 choice of also deleting the sessions and credentials created inside it.
 :::
 
+## Updating
+
+The harness version is pinned by each OpenWeights release. Every time you open
+the screen, the app compares what is installed on disk with what this release
+ships — and the version shown is the one the package's own `package.json`
+reports, not the one the app would install. When the two differ, an **update
+pending** badge appears with the button that resolves it; updating reinstalls
+the package in the app folder and leaves your sessions alone.
+
+The card also shows the latest version published on npm, as information: the
+app installs the version that passed our tests, and the next one arrives with
+the next OpenWeights update.
+
 ## What it already knows about your models
 
 You do not configure a provider, paste a base URL or copy an API key. Every

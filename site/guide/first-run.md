@@ -29,6 +29,16 @@ CUDA runtime comes straight from the llama.cpp release, on your machine, subject
 to the [NVIDIA CUDA EULA](https://docs.nvidia.com/cuda/eula/) — the OpenWeights
 installer does not redistribute NVIDIA libraries.
 
+That engine belongs to **the app**: it lives in an app folder, isolated from any
+llama.cpp you may already have on your system. Shortly after startup the app
+checks it on its own — it runs the binary and reads the build it reports, which
+is what separates "the files are there" from "the engine works". If something
+needs attention (an old build after an OpenWeights update, the wrong variant
+because your GPU or driver changed, an incomplete package), a dot shows up on
+the **Settings** item in the sidebar, and the engine card there says what to do
+in one sentence. Old builds left behind are listed with their size and a button
+to reclaim the space.
+
 ## 3. Your first model
 
 From **Discover**, search for a model (`qwen`, `llama`, `gemma`…) and open it.

@@ -4,8 +4,9 @@
 answered? Your own machine is the default and needs nothing here. The rest of
 the screen is for when you want something else.
 
-The status list at the top always says which sources are ready and, for the ones
-that are not, why.
+At the top, one card per source says which are ready and, for the ones that are
+not, why — and clicking a card takes you straight to the tab where that gets
+resolved.
 
 ## OpenRouter
 
@@ -13,8 +14,10 @@ Hundreds of models behind one key.
 
 The **catalogue is public** — you can browse it, with price per million tokens,
 context size and whether the model supports tools, before deciding anything. The
-key is only needed to actually chat. Filter to free models only, search by name
-or id, and pin the ones you use so they sit at the top of the model selector.
+key is only needed to actually chat. Filter to free models only or to what you
+have already pinned, search by name or id, and pin the ones you use: **only
+pinned models show up in the chat's model picker**, and the card says how many
+those are and how many models the current filter found.
 
 With a key set, the screen shows what you have spent and your credit limit.
 

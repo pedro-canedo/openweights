@@ -3,26 +3,43 @@
 O **Servidor Local** expõe uma API compatível com a OpenAI para outros apps
 usarem o modelo que você já tem carregado.
 
+## Como a tela se organiza
+
+No topo, sempre visível enquanto você rola, fica o estado do servidor: ligado ou
+parado, o endereço com botão de copiar, o modelo carregado e a velocidade de
+geração. O resto vem em quatro abas:
+
+| Aba | O que tem |
+|---|---|
+| **Visão geral** | Conectar (endereço, chave, teste de conexão), abrir em outro app e o que já foi servido |
+| **Desempenho** | Configurar o llama.cpp, especulação medida, histórico de benchmark e energia da GPU |
+| **Rede** | Porta, acesso pela rede local, modelos simultâneos, conversas ao mesmo tempo e GPU extra na rede |
+| **Avançado** | Flags globais e o log do servidor |
+
+Na primeira visita, a Visão geral abre com três passos — ligar, copiar o
+endereço, colar no app que vai usar. Eles somem sozinhos quando o servidor
+atende a primeira requisição.
+
 ## Ligando
 
-Escolha a porta, aperte **Iniciar**, e o endereço aparece com um botão de copiar.
-Tudo abaixo vale no momento de iniciar — mudar um ajuste exige parar e iniciar o
-motor de novo. A tela diz isso.
+Aperte **Iniciar** no topo e o endereço aparece com um botão de copiar. Os
+ajustes de rede ficam na aba **Rede**, e valem no momento de iniciar — mudar um
+deles exige parar e iniciar o motor de novo. A tela diz isso.
 
 | Ajuste | O que faz |
 |---|---|
 | **Porta** | Onde ele escuta |
 | **Permitir acesso da rede local** | Outros aparelhos da sua rede alcançam a API |
-| **Chave de API** | Opcional; quando definida, as requisições precisam apresentá-la |
+| **Chave de API** | Opcional; quando definida, as requisições precisam apresentá-la (fica em Conectar, na Visão geral) |
 | **Modelos simultâneos** | Com 1, trocar de modelo descarrega o anterior — o que a maioria das GPUs aguenta. Acima disso, os modelos ficam carregados juntos e podem não caber na memória de vídeo |
 | **Conversas ao mesmo tempo** | Cada conversa simultânea leva uma fatia da janela de contexto. Com 1, a janela que você pediu é a janela que você tem |
 
-A tela também mostra o log do servidor.
+O log do servidor fica na aba **Avançado**.
 
 ## Configurar o llama.cpp
 
-Logo abaixo dos ajustes do servidor fica **Configurar llama.cpp**: a
-configuração de carga **por modelo**, no mesmo lugar onde o modelo é carregado.
+Na aba **Desempenho** fica **Configurar llama.cpp**: a configuração de carga
+**por modelo**, no mesmo lugar onde o modelo é carregado.
 
 Escolha um modelo da sua biblioteca e a seção mostra o que o arquivo declara —
 se é MoE, se traz **cabeça MTP**, se tem projetor de visão, até que janela foi
@@ -118,14 +135,15 @@ esquentando durante ela, ou quando não há nada comparável antes. A tela diz q
 
 ### Flags globais
 
-Um cartão à parte guarda as flags que valem para **todos** os modelos. As de
+Na aba **Avançado**, um cartão guarda as flags que valem para **todos** os
+modelos. As de
 processo viram argumentos do `llama-server`; as demais entram na seção `[*]` do
 INI, e a configuração própria de um modelo sempre vence a global.
 
 ## Abrir em um harness
 
-A seção **Abrir em um harness** entrega os seus modelos a um agente de código
-externo apontado para a sua API local — um clique, sem configurar endpoint na
+Na **Visão geral**, o cartão **Usar em outro app** entrega os seus modelos a um
+agente de código externo apontado para a sua API local — um clique, sem configurar endpoint na
 mão. É aqui que o trabalho de agente mora agora: o app não tem um
 chat-com-ferramentas próprio.
 

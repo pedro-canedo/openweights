@@ -28,6 +28,16 @@ pacote. O runtime CUDA vem direto da release do llama.cpp, na sua máquina,
 sujeito à [EULA do CUDA da NVIDIA](https://docs.nvidia.com/cuda/eula/) — o
 instalador do OpenWeights não redistribui bibliotecas da NVIDIA.
 
+Esse motor é **do aplicativo**: fica numa pasta dele, isolado de qualquer
+llama.cpp que você já tenha no sistema. Pouco depois de abrir, o app o verifica
+sozinho — executa o binário e lê a build que ele reporta, o que separa "os
+arquivos estão lá" de "o motor funciona". Se algo pede providência (build
+antiga depois de uma atualização do OpenWeights, variante errada porque a placa
+ou o driver mudaram, pacote incompleto), aparece um ponto no item
+**Configurações** da barra lateral, e lá o card do motor diz o que fazer em uma
+frase. Builds antigas que ficaram para trás aparecem com o tamanho e um botão
+para devolver o espaço.
+
 ## 3. Seu primeiro modelo
 
 Em **Descobrir**, busque um modelo (`qwen`, `llama`, `gemma`…) e abra. A lista

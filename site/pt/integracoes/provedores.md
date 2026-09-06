@@ -4,8 +4,8 @@ A tela **Fontes de modelo** responde a uma pergunta: onde suas conversas são
 respondidas? A sua própria máquina é o padrão e não precisa de nada aqui. O
 resto da tela é para quando você quer outra coisa.
 
-A lista de status no topo sempre diz quais fontes estão prontas e, para as que
-não estão, por quê.
+No topo, um cartão por fonte diz quais estão prontas e, para as que não estão,
+por quê — e clicar no cartão leva direto à aba onde aquilo se resolve.
 
 ## OpenRouter
 
@@ -14,8 +14,9 @@ Centenas de modelos atrás de uma chave só.
 O **catálogo é público** — você pode navegar por ele, com preço por milhão de
 tokens, tamanho de contexto e se o modelo suporta ferramentas, antes de decidir
 qualquer coisa. A chave só é necessária para conversar de verdade. Filtre só os
-gratuitos, busque por nome ou id, e fixe os que você usa para eles ficarem no
-topo do seletor de modelos.
+gratuitos ou só os que você já fixou, busque por nome ou id, e fixe os que usa:
+**só os fixados aparecem no seletor de modelos do chat**, e o card diz quantos
+são e quantos modelos o filtro atual encontrou.
 
 Com a chave definida, a tela mostra quanto você gastou e seu limite de crédito.
 

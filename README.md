@@ -50,6 +50,15 @@ Windows, macOS and Linux.
   candidate and can measure real tokens/s instead of trusting the estimate.
 - 🔌 **OpenAI-compatible API** — other apps point at `localhost` and use the same
   model.
+- 🩺 **The engine is verified, not assumed** — the app's llama.cpp lives in an
+  app folder, isolated from whatever you have on your system. Shortly after
+  startup the app **runs** the binary and reads the build it reports: that is
+  what separates "the files are there" from "the engine works" (a CUDA package
+  missing its DLLs passes any file check and fails on the first model load). An
+  old build after an update, the wrong variant because your GPU changed, an
+  incomplete package — each case gets one sentence and one button, and the
+  builds left behind are listed with their size and the option to reclaim the
+  space.
 - 🎚️ **Every llama.cpp knob, visually** — MTP speculation, RoPE/YaRN, KV cache,
   cache reuse and the rest: the flags that matter carry a label and a hint, and
   **every other flag is read from your installed binary**, so an engine update
