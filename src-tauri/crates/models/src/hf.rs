@@ -1,5 +1,6 @@
 //! Cliente HTTP da API do Hugging Face Hub.
 
+use crate::card::card_em_markdown;
 use crate::{HF_BASE, ModelCaps, ModelSummary, ModelsError, RepoFile};
 use serde::{Deserialize, Serialize};
 
@@ -267,12 +268,13 @@ impl HfClient {
         resp.json::<BaseConfig>().await.ok()
     }
 
-    /// O README do repositório, sem o cabeçalho YAML.
+    /// O README do repositório, sem o cabeçalho YAML e já em Markdown puro.
     ///
     /// É o texto que o autor escreveu sobre o modelo — na tela de descoberta,
     /// a única fonte de "o que é isto" que não seja o nome do arquivo. Vem do
     /// `raw`, não da API: o cartão inteiro renderizado seria HTML, e aqui o
-    /// que se quer é o Markdown.
+    /// que se quer é o Markdown. O que vem do `raw` ainda é Markdown MISTURADO
+    /// com HTML — `card_em_markdown` resolve essa parte (ver `card.rs`).
     pub async fn readme(&self, repo_id: &str) -> Result<String, ModelsError> {
         let url = format!("{HF_BASE}/{repo_id}/raw/main/README.md");
         let resp = self.auth(self.http.get(&url)).send().await?;
@@ -283,10 +285,13 @@ impl HfClient {
             s => return Err(ModelsError::Api(format!("README retornou HTTP {s}"))),
         }
         let texto = resp.text().await?;
-        Ok(sem_frontmatter(&texto)
+        // Corta antes de traduzir: o custo da tradução é o do que vai à tela,
+        // não o do cartão de 400 KB que alguns autores publicam.
+        let cortado: String = sem_frontmatter(&texto)
             .chars()
             .take(MAX_README_CHARS)
-            .collect())
+            .collect();
+        Ok(card_em_markdown(&cortado))
     }
 
     /// Lista os arquivos (com tamanhos) de um repositório.

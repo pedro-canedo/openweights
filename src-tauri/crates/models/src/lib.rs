@@ -16,6 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
+mod card;
 mod download;
 mod gguf_local;
 mod hf;

@@ -35,6 +35,16 @@ const components: Components = {
       {children}
     </a>
   ),
+  // Cartão de modelo vem cheio de badge e de gráfico de benchmark: o badge
+  // fica na linha do texto, e o gráfico não passa da altura de uma tela.
+  img: ({ src, alt }) => (
+    <img
+      src={typeof src === "string" ? src : undefined}
+      alt={alt ?? ""}
+      loading="lazy"
+      className="my-1 inline-block max-h-80 rounded"
+    />
+  ),
   ul: ({ children }) => (
     <ul className="my-2 list-disc space-y-1 pl-6">{children}</ul>
   ),
