@@ -84,7 +84,7 @@ const en = {
   endBody: "Installation, models and quantization, and the integrations.",
   endDocs: "Documentation",
   endRepo: "Source on GitHub",
-  endNews: "What's new in 0.16.0",
+  endNews: "What's new",
 };
 
 const ptBR = {
@@ -150,7 +150,7 @@ const ptBR = {
   endBody: "Instalação, modelos e quantização e as integrações.",
   endDocs: "Documentação",
   endRepo: "Código no GitHub",
-  endNews: "O que há de novo na 0.16.0",
+  endNews: "O que há de novo",
 };
 
 const t = computed(() => (pt.value ? ptBR : en));

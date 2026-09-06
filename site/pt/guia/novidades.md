@@ -4,6 +4,19 @@ A lista completa de versões, com os instaladores, fica no
 [GitHub](https://github.com/pedro-canedo/openweights/releases). Esta página
 conta o que mudou no app que você baixaria hoje.
 
+## 0.16.1 — a verificação do motor lia o número errado
+
+Corrige um erro da 0.16.0 que aparecia para todo mundo: o card do motor dizia
+**"o motor está instalado, mas não executa"** mesmo com o llama.cpp rodando um
+modelo naquele instante.
+
+A saída do `llama-server --version` é
+`version: 0.1.0-dev (build 10441, commit 0177dcc73)`, e a verificação lia o
+primeiro número depois de `version:` — o zero do `0.1.0-dev`. Como a pasta se
+chama `b10441` e o binário "respondia" build 0, a conclusão era divergência
+entre pasta e conteúdo. O número agora vem do `build`, que é onde ele sempre
+esteve.
+
 ## 0.16.0 — as telas ganham forma, e o motor passa a ser conferido
 
 ### O motor é verificado, não presumido

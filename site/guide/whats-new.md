@@ -4,6 +4,18 @@ The full list of releases, with installers, lives on
 [GitHub](https://github.com/pedro-canedo/openweights/releases). This page
 covers what changed in the app you would download today.
 
+## 0.16.1 — the engine check read the wrong number
+
+Fixes a 0.16.0 bug that showed up for everyone: the engine card said **"the
+engine is installed but won't run"** even while llama.cpp was serving a model.
+
+The output of `llama-server --version` is
+`version: 0.1.0-dev (build 10441, commit 0177dcc73)`, and the check read the
+first number after `version:` — the zero in `0.1.0-dev`. Since the folder is
+named `b10441` and the binary "answered" build 0, the verdict was a mismatch
+between folder and contents. The number now comes from `build`, which is where
+it always was.
+
 ## 0.16.0 — the screens gained shape, and the engine gets checked
 
 ### The engine is verified, not assumed
