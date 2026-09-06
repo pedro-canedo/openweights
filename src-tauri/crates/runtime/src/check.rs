@@ -288,6 +288,23 @@ fn classifica(
     probe: Option<Result<(u64, u64), String>>,
 ) -> (Verdict, Option<String>, Option<u64>, Option<u64>) {
     match (active, probe) {
+        // Rodou, mas se identificou como outra build: a pasta diz uma coisa e
+        // o binário diz outra. Acontece quando uma extração é interrompida por
+        // cima de outra, e é justamente o caso que nenhuma checagem de arquivo
+        // pega — a pasta tem o nome certo e o conteúdo errado.
+        (Some(r), Some(Ok((build, ms))))
+            if tag_number(&r.tag).is_some_and(|esperada| esperada != build) =>
+        {
+            (
+                Verdict::Broken,
+                Some(format!(
+                    "a pasta {} traz um binário que se diz build {build}",
+                    r.tag
+                )),
+                Some(build),
+                Some(ms),
+            )
+        }
         (Some(_), Some(Ok((build, ms)))) => (Verdict::Ready, None, Some(build), Some(ms)),
         (Some(_), Some(Err(e))) => (Verdict::Broken, Some(e), None, None),
         // A pasta existe sem o executável dentro: extração interrompida.
@@ -499,10 +516,16 @@ mod tests {
     fn each_situation_gets_its_own_verdict() {
         let ativo = Some(pacote(PINNED_TAG, "cuda-13.3", true));
 
-        // Rodou e reportou a build: pronto.
-        let (v, d, build, ms) = classifica(&ativo, &[], Some(Ok((10_441, 820))));
+        // Rodou e reportou a build da própria pasta: pronto.
+        let build_da_pasta = tag_number(PINNED_TAG).expect("a tag pinada é bNNNNN");
+        let (v, d, build, ms) = classifica(&ativo, &[], Some(Ok((build_da_pasta, 820))));
         assert_eq!(v, Verdict::Ready);
-        assert_eq!((d, build, ms), (None, Some(10_441), Some(820)));
+        assert_eq!((d, build, ms), (None, Some(build_da_pasta), Some(820)));
+
+        // Rodou, e se disse outra build: a pasta e o binário discordam.
+        let (v, d, ..) = classifica(&ativo, &[], Some(Ok((9_001, 500))));
+        assert_eq!(v, Verdict::Broken);
+        assert!(d.is_some_and(|m| m.contains("9001")));
 
         // Os arquivos estão lá e o executável não roda.
         let (v, d, ..) = classifica(&ativo, &[], Some(Err("cudart64_13.dll".into())));
