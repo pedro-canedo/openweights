@@ -224,11 +224,7 @@ async fn probe_build(dir: &Path) -> Result<(u64, u64), String> {
         .stderr(std::process::Stdio::piped())
         .current_dir(dir)
         .kill_on_drop(true);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt as _;
-        cmd.creation_flags(0x0800_0000);
-    }
+    lr_proc::no_window(&mut cmd);
     let saida = tokio::time::timeout(PROBE_TIMEOUT, cmd.output())
         .await
         .map_err(|_| format!("{} não respondeu em {PROBE_TIMEOUT:?}", server_exe_name()))?

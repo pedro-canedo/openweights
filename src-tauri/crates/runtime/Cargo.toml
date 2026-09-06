@@ -8,6 +8,9 @@ description = "Baixa, verifica e seleciona os binários prebuilt do llama.cpp"
 [dependencies]
 lr_types.workspace = true
 lr_fetch = { path = "../fetch" }
+# Uma janela de console piscando por causa de um `--version` seria pior que
+# não verificar: o spawn passa pelo helper do projeto, como todos os outros.
+lr_proc = { path = "../proc" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
