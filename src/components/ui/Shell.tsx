@@ -14,7 +14,7 @@
 // - `Card` — o contêiner único; título opcional, uma linha de explicação em
 //   linguagem comum e um canto para a ação principal.
 // - `Collapse` — o que é técnico começa fechado, sem sumir.
-// - `StatusDot` / `Stat` — estado e número, ditos do mesmo jeito em toda parte.
+// - `StatusDot` / `Row` — estado e par rótulo-valor, ditos do mesmo jeito.
 //
 // Nada aqui sabe o que é um servidor ou um provedor: são caixas.
 
@@ -186,7 +186,9 @@ export function Card({
           {action && <div className="shrink-0">{action}</div>}
         </div>
       )}
-      {!title && hint && (
+      {/* Sem cabeçalho nenhum, a explicação abre o card sozinha — e não pode
+          sair duas vezes quando existe `action` sem `title`. */}
+      {!title && !action && hint && (
         <p className="max-w-2xl text-[12px] leading-relaxed text-dim">{hint}</p>
       )}
       {children}
@@ -258,36 +260,6 @@ export function StatusDot({ tone, pulse }: { tone: Tone; pulse?: boolean }) {
       )}
       <span className={`relative inline-flex h-2.5 w-2.5 rounded-full ${COR[tone]}`} />
     </span>
-  );
-}
-
-/** Um número com rótulo. O número vem primeiro porque é o que se procura. */
-export function Stat({
-  label,
-  value,
-  hint,
-  brand,
-}: {
-  label: string;
-  value: ReactNode;
-  hint?: string;
-  /** Destaca o número na cor da marca: usar em um por bloco, no máximo. */
-  brand?: boolean;
-}) {
-  return (
-    <div className="min-w-0">
-      <div
-        className={`truncate text-lg font-semibold tabular-nums ${
-          brand ? "brand-text" : "text-ink"
-        }`}
-        title={hint}
-      >
-        {value}
-      </div>
-      <div className="mt-0.5 truncate text-[11px] text-dim" title={hint}>
-        {label}
-      </div>
-    </div>
   );
 }
 
