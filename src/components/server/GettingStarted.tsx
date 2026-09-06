@@ -10,7 +10,7 @@
 // requisição de qualquer cliente — a partir daí ele é ruído. Quem dispensar
 // antes disso dispensa de vez: a escolha fica no `localStorage`.
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { CopyButton } from "../ui/Copy";
 
@@ -56,6 +56,7 @@ function Passo({
   );
 }
 
+/** O passo 2 marcado significa "eu copiei", e não "havia o que copiar". */
 export default function GettingStarted({
   running,
   baseUrl,
@@ -69,6 +70,7 @@ export default function GettingStarted({
   onDismiss: () => void;
 }) {
   const { t } = useTranslation();
+  const [copiado, setCopiado] = useState(false);
 
   return (
     <section className="mt-4 rounded-xl border border-accent/30 bg-panel p-5">
@@ -97,12 +99,16 @@ export default function GettingStarted({
         />
         <Passo
           n={2}
-          feito={running && !!baseUrl}
+          feito={copiado}
           titulo={t("server.guide.step2")}
           detalhe={baseUrl ?? undefined}
           acao={
             baseUrl ? (
-              <CopyButton value={baseUrl} label={t("server.copy")} />
+              <CopyButton
+                value={baseUrl}
+                label={t("server.copy")}
+                onCopied={() => setCopiado(true)}
+              />
             ) : undefined
           }
         />

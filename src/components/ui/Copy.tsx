@@ -8,11 +8,12 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 /** Copia e diz que copiou, por um segundo. */
-function useCopy() {
+function useCopy(onCopied?: () => void) {
   const [copied, setCopied] = useState(false);
   const copy = (texto: string) => {
     void navigator.clipboard.writeText(texto).then(() => {
       setCopied(true);
+      onCopied?.();
       setTimeout(() => setCopied(false), 1200);
     });
   };
@@ -51,13 +52,17 @@ export function CopyButton({
   value,
   label,
   className = "",
+  onCopied,
 }: {
   value: string;
   label?: ReactNode;
   className?: string;
+  /** Para quem precisa saber que a pessoa copiou de fato — o guia de três
+   *  passos só pode marcar "copie o endereço" quando isso aconteceu. */
+  onCopied?: () => void;
 }) {
   const { t } = useTranslation();
-  const { copied, copy } = useCopy();
+  const { copied, copy } = useCopy(onCopied);
   return (
     <button
       type="button"
