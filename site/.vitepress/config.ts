@@ -14,12 +14,14 @@ const enSidebar = [
     items: [
       { text: "What OpenWeights is", link: "/guide/" },
       { text: "What's new", link: "/guide/whats-new" },
+      { text: "Changelog", link: "/guide/changelog" },
       { text: "Install", link: "/guide/install" },
       { text: "First run", link: "/guide/first-run" },
       { text: "Models and quantization", link: "/guide/models" },
       { text: "Chat", link: "/guide/chat" },
       { text: "Chat performance", link: "/guide/performance" },
       { text: "The coding agent", link: "/guide/harness" },
+      { text: "Troubleshooting", link: "/guide/troubleshooting" },
     ],
   },
   {
@@ -28,6 +30,8 @@ const enSidebar = [
       { text: "Local API server", link: "/integrations/local-api" },
       { text: "Extra GPU on the network", link: "/integrations/cluster" },
       { text: "External model sources", link: "/integrations/providers" },
+      { text: "API reference", link: "/integrations/api-reference" },
+      { text: "Configuration reference", link: "/integrations/configuration" },
     ],
   },
   {
@@ -45,12 +49,14 @@ const ptSidebar = [
     items: [
       { text: "O que é o OpenWeights", link: "/pt/guia/" },
       { text: "Novidades", link: "/pt/guia/novidades" },
+      { text: "Changelog", link: "/pt/guia/changelog" },
       { text: "Instalação", link: "/pt/guia/instalacao" },
       { text: "Primeira execução", link: "/pt/guia/primeira-execucao" },
       { text: "Modelos e quantização", link: "/pt/guia/modelos" },
       { text: "Chat", link: "/pt/guia/chat" },
       { text: "Desempenho no chat", link: "/pt/guia/desempenho" },
       { text: "O agente de código", link: "/pt/guia/harness" },
+      { text: "Solução de problemas", link: "/pt/guia/solucao-de-problemas" },
     ],
   },
   {
@@ -59,6 +65,8 @@ const ptSidebar = [
       { text: "Servidor de API local", link: "/pt/integracoes/api-local" },
       { text: "GPU extra na rede", link: "/pt/integracoes/cluster" },
       { text: "Fontes externas de modelo", link: "/pt/integracoes/provedores" },
+      { text: "Referência da API", link: "/pt/integracoes/referencia-api" },
+      { text: "Referência de configuração", link: "/pt/integracoes/configuracao" },
     ],
   },
   {

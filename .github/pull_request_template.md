@@ -14,3 +14,6 @@
 - [ ] `cargo fmt --all --check` is clean
 - [ ] Behaviour changes come with a test that **fails without the fix**
 - [ ] New i18n keys landed in **both** `pt-BR.json` and `en.json`
+- [ ] Documentation follows the change: a page under `site/` **and** its
+      counterpart under `site/pt/`, both in the sidebar
+- [ ] `npm run docs` is clean (parity, sidebar, versioned links)
