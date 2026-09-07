@@ -4,6 +4,22 @@ A lista completa de versões, com os instaladores, fica no
 [GitHub](https://github.com/pedro-canedo/openweights/releases). Esta página
 conta o que mudou no app que você baixaria hoje.
 
+## 0.17.0 — chat mais fluido e configurações comparáveis
+
+Conversas longas usam histórico virtualizado, o streaming atualiza a tela a cada
+50 ms e o destaque de código espera a resposta terminar. Cancelar preserva o
+texto parcial. Gerações em segundo plano deixam de atualizar todas as conversas.
+
+Fases de espera e métricas persistidas distinguem fila, carregamento,
+raciocínio e resposta visível. A fila local respeita a capacidade configurada;
+títulos automáticos têm prioridade menor e entrada limitada.
+
+**Servidor Local → Desempenho** compara a configuração atual com um candidato
+do advisor, com aquecimento e três repetições por configuração. O resultado
+mostra variação, não recomenda ganhos inconclusivos e oferece aplicar/restaurar.
+Veja o [fluxo e os limites das medições](./desempenho). Esta versão não promete
+aumento de velocidade do motor de inferência.
+
 ## 0.16.1 — a verificação do motor lia o número errado
 
 Corrige um erro da 0.16.0 que aparecia para todo mundo: o card do motor dizia

@@ -1,11 +1,10 @@
 // Jobs de geração em fundo: o stream vive aqui, não no Chat.
 // Trocar de tela/conversa não aborta — só o botão Parar (por chatId).
 
-import { addMessage, listChats, renameChat } from "./api";
+import { addMessage, listChats, renameChat, getSetting, getModelProfile } from "./api";
 import { chatStore } from "./chatStore";
 import {
   ensureEndpoint,
-  ensureServer,
   errorMessage,
   listLoadedModels,
   matchServerModel,
@@ -22,7 +21,16 @@ import type { ChatParams } from "./types";
 
 export type JobState = "queued" | "running" | "done" | "error";
 
+export type GenerationPhase = "queued" | "preparing" | "loading" | "waiting" | "generating" | "done" | "error";
+export interface GenerationMetrics {
+  runId: string; phase: GenerationPhase; queueMs: number | null;
+  firstTokenMs: number | null; firstAnswerMs: number | null; totalMs: number | null;
+  promptTokens: number | null; cachedTokens: number | null; promptTps: number | null;
+  thinkingMs: number | null;
+}
 export interface GenerationJob {
+  createdAt: number;
+  metrics: GenerationMetrics;
   id: string;
   chatId: number;
   model: string;
@@ -61,27 +69,48 @@ interface InternalJob {
   abort: AbortController;
   opts: StartGenerationOpts;
   retries: number;
+  published: GenerationJob;
+  timer?: ReturnType<typeof setTimeout>;
+  retryAt: number;
+  executing: boolean;
 }
 
-const MAX_RETRIES = 8;
+const MAX_RETRIES = 3;
 const deletedChats = new Set<number>();
 const internals = new Map<number, InternalJob>();
 
 let snap: GenerationSnapshot = { jobs: [] };
 const listeners = new Set<() => void>();
 
-function emit(): void {
-  snap = { jobs: [...internals.values()].map((j) => j.public) };
-  for (const fn of listeners) fn();
+const chatListeners = new Map<number, Set<() => void>>();
+let summaryKey = "";
+let paused = false;
+let pumping = false;
+let pumpAgain = false;
+const titles: Array<() => Promise<void>> = [];
+let titleAbort: AbortController | null = null;
+function emit(chatId?: number): void {
+  if (chatId != null) for (const fn of chatListeners.get(chatId) ?? []) fn();
+  const rows = [...internals.values()].map(j => j.published);
+  const key = JSON.stringify(rows.map(j => [j.id, j.state, j.model, j.error, j.unsaved]));
+  if (key !== summaryKey) {
+    summaryKey = key; snap = { jobs: rows };
+    for (const fn of listeners) fn();
+  }
 }
-
-function patch(chatId: number, p: Partial<GenerationJob>): void {
+function publish(chatId: number): void {
+  const row = internals.get(chatId);
+  if (!row) return;
+  clearTimeout(row.timer); row.timer = undefined;
+  row.published = row.public; emit(chatId);
+}
+function patch(chatId: number, p: Partial<GenerationJob>, deferred = false): void {
   const row = internals.get(chatId);
   if (!row) return;
   row.public = { ...row.public, ...p };
-  emit();
+  if (!deferred) publish(chatId);
+  else row.timer ??= setTimeout(() => publish(chatId), 50);
 }
-
 function canPersist(chatId: number): boolean {
   return !deletedChats.has(chatId);
 }
@@ -99,46 +128,11 @@ function cleanTitle(raw: string): string {
     .slice(0, 80);
 }
 
-function isAbortError(e: unknown): boolean {
-  return (
-    (e instanceof DOMException && e.name === "AbortError") ||
-    (e instanceof Error && e.name === "AbortError")
-  );
-}
-
 function isRetryable(e: unknown): boolean {
   const msg = errorMessage(e);
   return /HTTP 503|HTTP 529|no slot|slots? (full|busy)|unavailable|loading|try again/i.test(
     msg,
   );
-}
-
-function runningJobs(chatId?: number): boolean {
-  for (const j of internals.values()) {
-    if (j.public.chatId === chatId) continue;
-    if (j.public.state === "running") return true;
-  }
-  return false;
-}
-
-function runningModels(): Set<string> {
-  const out = new Set<string>();
-  for (const j of internals.values()) {
-    if (j.public.state === "running") out.add(j.public.model);
-  }
-  return out;
-}
-
-/** Fila só se o modelo é novo e já estamos no teto de modelos distintos. */
-function mustQueue(model: string, loaded: string[], max: number): boolean {
-  if (loaded.some((id) => id === model || matchServerModel(model, [id]) === id)) {
-    return false;
-  }
-  if ([...runningModels()].some((m) => matchServerModel(model, [m]) === m)) {
-    return false;
-  }
-  const distinct = new Set<string>([...runningModels(), ...loaded]);
-  return distinct.size >= max;
 }
 
 async function autoTitle(
@@ -148,6 +142,7 @@ async function autoTitle(
   history: ChatMessage[],
   assistantText: string,
   headers?: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<void> {
   try {
     const raw = await completeOnce({
@@ -155,19 +150,20 @@ async function autoTitle(
       headers,
       model,
       messages: [
-        ...history,
-        { role: "assistant", content: assistantText },
+        ...history.filter(m => m.role === "user").slice(0, 1).map(m => ({ role: "user", content: typeof m.content === "string" ? m.content.slice(0, 1200) : "Conversa com imagem" })),
+        { role: "assistant", content: assistantText.slice(0, 1200) },
         {
           role: "user",
           content:
             "Gere um título curto (máximo 5 palavras) para a conversa acima. Responda apenas o título.",
         },
       ],
+      signal,
       maxTokens: 24,
       temperature: 0.3,
     });
     const title = cleanTitle(raw);
-    if (!title || deletedChats.has(chatId)) return;
+    if (!title || signal?.aborted || deletedChats.has(chatId)) return;
     await renameChat(chatId, title);
     void listChats()
       .then(chatStore.setChats)
@@ -213,6 +209,7 @@ async function persistAssistant(
         genTokens,
         genMs,
         model,
+        internals.get(chatId)?.public.metrics ?? null,
       );
       if (id > 0) {
         patch(chatId, { unsaved: false });
@@ -227,366 +224,181 @@ async function persistAssistant(
   return undefined;
 }
 
-/**
- * Parar durante a preparação (subir servidor / listar modelos): não há fetch
- * em voo para o AbortController cancelar, então encerramos o job na mão —
- * senão ele fica preso em "running" e a conversa nunca destrava.
- */
-function finishIfAborted(chatId: number): boolean {
-  const row = internals.get(chatId);
-  if (!row || !row.abort.signal.aborted) return false;
-  patch(chatId, { state: "done", loadingModel: false });
-  return true;
+let pumpTimer: ReturnType<typeof setTimeout> | undefined;
+function schedulePump(delay = 0): void {
+  if (pumpTimer != null) return;
+  pumpTimer = setTimeout(() => { pumpTimer = undefined; void pump(); }, delay);
 }
-
-async function runJob(chatId: number): Promise<void> {
-  const row = internals.get(chatId);
-  if (!row || row.public.state === "running") return;
-  if (row.abort.signal.aborted) {
-    internals.delete(chatId);
-    emit();
-    pump();
-    return;
-  }
-
-  patch(chatId, {
-    state: "running",
-    loadingModel: true,
-    error: undefined,
-    startedAt: performance.now(),
-    thinkStartedAt: null,
-    answerStartedAt: null,
-    thinkingMs: null,
-    genMs: null,
-  });
-
-  let firstReasonAt = 0;
-  let lastReasonAt = 0;
-  let slowTimer = 0;
-  // Voltou para a fila: quem acorda este job é o término do job concorrente
-  // (ou o `schedulePump` abaixo) — chamar `pump()` aqui seria um ping-pong.
-  let requeued = false;
-
+async function pump(): Promise<void> {
+  if (paused) return;
+  if (pumping) { pumpAgain = true; return; }
+  pumping = true;
+  try {
+    const queued = [...internals.values()].filter(j => j.public.state === "queued" && !j.executing && !j.abort.signal.aborted && j.retryAt <= performance.now());
+    const localQueued = queued.some(j => splitModelRef(j.opts.model).provider === "local");
+    const configured = localQueued ? Number(await getSetting("server_parallel").catch(() => null)) : 1;
+    const max = localQueued ? await modelsMax() : 1;
+    const slots = Number.isFinite(configured) && configured >= 1 ? configured : 1;
+    if (paused) return;
+    for (const row of queued) {
+      if (internals.get(row.opts.chatId) !== row || row.abort.signal.aborted) continue;
+      if (splitModelRef(row.opts.model).provider === "local") {
+        const running = [...internals.values()].filter(j => j.executing && splitModelRef(j.opts.model).provider === "local");
+        const names = new Set(running.map(j => j.opts.model));
+        const profile = await getModelProfile(row.opts.model).catch(() => null);
+        const capacity = profile?.parallel ?? slots;
+        if (paused || row.abort.signal.aborted) continue;
+        if (titleAbort || running.filter(j => j.opts.model === row.opts.model).length >= Math.max(1, capacity)) continue;
+        if (!names.has(row.opts.model) && names.size >= max) continue;
+      }
+      row.executing = true;
+      void runJob(row);
+    }
+    if (!paused && !titleAbort && ![...internals.values()].some(j => j.executing || j.public.state === "queued")) {
+      const title = titles.shift();
+      if (title) {
+        titleAbort = new AbortController();
+        void title().finally(() => { titleAbort = null; schedulePump(); });
+      }
+    }
+  } finally { pumping = false; if (pumpAgain) { pumpAgain = false; schedulePump(); } }
+}
+async function runJob(row: InternalJob): Promise<void> {
+  const chatId = row.opts.chatId;
+  const now = performance.now();
+  patch(chatId, { state: "running", startedAt: now, metrics: { ...row.public.metrics, phase: "preparing", queueMs: now - row.public.createdAt } });
+  const cancelled = () => row.abort.signal.aborted || internals.get(chatId) !== row;
+  let stopStatus = () => {};
   try {
     const { provider, baseUrl, headers } = await ensureEndpoint(row.opts.model);
-    if (finishIfAborted(chatId)) return;
-
-    // Fila, projetor de visão e casamento de nome pertencem ao Router local:
-    // só ele carrega e descarrega modelo na placa, e só ele publica a entrada
-    // "(visão)". Um provedor remoto serve qualquer id a qualquer momento —
-    // aplicar essas regras nele inventaria uma restrição que não existe.
-    let resolved: string;
+    if (cancelled()) return;
+    let resolved = splitModelRef(row.opts.model).model;
     if (provider === "local") {
-      const loaded = await listLoadedModels(baseUrl);
-      const max = await modelsMax();
-      if (finishIfAborted(chatId)) return;
-
-      // Mensagem com imagem vai para a entrada que carrega o projetor de
-      // visão, quando ela existe. É o próprio roteador que troca entre as
-      // duas, então o projetor só ocupa a placa quando há imagem.
-      const temImagem = row.opts.messages.some(
-        (m) =>
-          Array.isArray(m.content) &&
-          m.content.some((parte) => parte.type === "image_url"),
-      );
-      const pedido = temImagem
-        ? visionModelFor(row.opts.model, loaded)
-        : row.opts.model;
-      resolved = matchServerModel(pedido, loaded);
-      if (runningJobs(chatId) && mustQueue(resolved, loaded, max)) {
-        requeued = true;
-        patch(chatId, {
-          state: "queued",
-          model: resolved,
-          loadingModel: false,
-          startedAt: null,
-        });
-        // Corrida: o job concorrente pode ter terminado (e chamado `pump()`)
-        // entre o teste acima e este patch — sem re-agendar, este job ficaria
-        // órfão na fila para sempre.
-        if (!runningJobs()) schedulePump();
+      const loaded = await listLoadedModels(baseUrl, headers, row.abort.signal);
+      if (cancelled()) return;
+      const image = row.opts.messages.some(m => Array.isArray(m.content) && m.content.some(p => p.type === "image_url"));
+      resolved = matchServerModel(image ? visionModelFor(row.opts.model, loaded) : row.opts.model, loaded);
+    }
+    // Sem evento confirmado do motor, espera não significa carregamento.
+    patch(chatId, { metrics: { ...row.public.metrics, phase: "waiting" } });
+    if (provider === "local") {
+      let stopped = false;
+      let timer: ReturnType<typeof setTimeout>;
+      const poll = async () => {
+        if (stopped || cancelled() || row.public.metrics.firstTokenMs != null) return;
+        try {
+          const response = await fetch(`${baseUrl}/models`, { headers, signal: AbortSignal.any([row.abort.signal, AbortSignal.timeout(2000)]) });
+          if (response.ok) {
+            const data = await response.json() as { data?: { id: string; status?: { value?: string } }[] };
+            const state = data.data?.find(m => m.id === resolved)?.status?.value;
+            if (!stopped && !cancelled() && row.public.metrics.firstTokenMs == null) {
+              const phase = state === "loading" ? "loading" : "waiting";
+              if (row.public.metrics.phase !== phase) patch(chatId, { loadingModel: phase === "loading", metrics: { ...row.public.metrics, phase } });
+            }
+          }
+        } catch { /* A observação não pode derrubar o stream. */ }
+        if (!stopped) timer = setTimeout(() => void poll(), 500);
+      };
+      timer = setTimeout(() => void poll(), 500);
+      stopStatus = () => { stopped = true; clearTimeout(timer); };
+    }
+    const delta = (text: string, reasoning: boolean) => {
+      if (cancelled()) return;
+      const at = performance.now();
+      const cur = row.public;
+      const metrics = { ...cur.metrics, phase: "generating" as const, firstTokenMs: cur.metrics.firstTokenMs ?? at - cur.createdAt };
+      if (!reasoning) metrics.firstAnswerMs ??= at - cur.createdAt;
+      patch(chatId, {
+        content: reasoning ? cur.content : cur.content + text,
+        reasoning: reasoning ? cur.reasoning + text : cur.reasoning,
+        thinkStartedAt: reasoning ? cur.thinkStartedAt ?? at : cur.thinkStartedAt,
+        answerStartedAt: reasoning ? cur.answerStartedAt : cur.answerStartedAt ?? at,
+        thinkingMs: cur.thinkStartedAt != null && cur.answerStartedAt == null ? at - cur.thinkStartedAt : cur.thinkingMs,
+        genMs: !reasoning ? at - (cur.answerStartedAt ?? at) : cur.genMs,
+        metrics,
+        loadingModel: false,
+      }, true);
+    };
+    const result = await streamChat({ baseUrl, headers, model: resolved, messages: row.opts.messages, params: row.opts.params,
+      signal: row.abort.signal, onDelta: d => delta(d, false), onReasoningDelta: d => delta(d, true) });
+    if (cancelled()) return;
+    patch(chatId, { content: result.content, reasoning: result.reasoning, thinkingMs: result.thinkingMs,
+      tokensPerSec: result.tokensPerSec, genTokens: result.genTokens, genMs: result.genMs,
+      metrics: { ...row.public.metrics, promptTokens: result.promptTokens, cachedTokens: result.cachedTokens, promptTps: result.promptTps, thinkingMs: result.thinkingMs } });
+    if (row.opts.autoTitle) titles.push(async () => {
+      if (deletedChats.has(chatId)) return;
+      await autoTitle(chatId, baseUrl, resolved, row.opts.messages, result.content, headers, titleAbort?.signal);
+    });
+  } catch (err) {
+    if (!cancelled()) {
+      if (!row.public.content && !row.public.reasoning && isRetryable(err) && row.retries < MAX_RETRIES) {
+        row.retries++;
+        row.retryAt = performance.now() + 1000 * row.retries;
+        patch(chatId, { state: "queued", metrics: { ...row.public.metrics, phase: "queued" } });
         return;
       }
-    } else {
-      resolved = splitModelRef(row.opts.model).model;
-    }
-
-    // O histórico guarda a referência COM o prefixo: reabrir a conversa
-    // precisa saber de que provedor veio a resposta, não só o nome do modelo.
-    const referencia = provider === "local" ? resolved : row.opts.model;
-
-    patch(chatId, { model: resolved });
-
-    slowTimer = window.setTimeout(
-      () => patch(chatId, { loadingModel: true }),
-      2000,
-    );
-
-    const result = await streamChat({
-      baseUrl,
-      headers,
-      model: resolved,
-      messages: row.opts.messages,
-      params: row.opts.params,
-      signal: row.abort.signal,
-      onDelta: (delta) => {
-        window.clearTimeout(slowTimer);
-        const cur = internals.get(chatId);
-        if (!cur) return;
-        const now = performance.now();
-        const answerStartedAt = cur.public.answerStartedAt ?? now;
-        const thinkOrigin =
-          cur.public.thinkStartedAt ?? cur.public.startedAt ?? firstReasonAt;
-        patch(chatId, {
-          content: cur.public.content + delta,
-          loadingModel: false,
-          answerStartedAt,
-          genMs: Math.round(now - answerStartedAt),
-          thinkingMs:
-            thinkOrigin > 0
-              ? Math.round(answerStartedAt - thinkOrigin)
-              : cur.public.thinkingMs,
-        });
-      },
-      onReasoningDelta: (delta) => {
-        const now = performance.now();
-        if (firstReasonAt === 0) firstReasonAt = now;
-        lastReasonAt = now;
-        window.clearTimeout(slowTimer);
-        const cur = internals.get(chatId);
-        if (!cur) return;
-        const thinkStartedAt = cur.public.thinkStartedAt ?? now;
-        patch(chatId, {
-          reasoning: cur.public.reasoning + delta,
-          loadingModel: false,
-          thinkStartedAt,
-          thinkingMs: Math.round(now - thinkStartedAt),
-        });
-      },
-      // tok/s ao vivo: sem isto a métrica só aparecia no fim do stream.
-      onTokensPerSec: (tps) => patch(chatId, { tokensPerSec: tps }),
-    });
-
-    window.clearTimeout(slowTimer);
-    const thinkingMs =
-      result.thinkingMs ??
-      (firstReasonAt > 0 ? Math.round(lastReasonAt - firstReasonAt) : null);
-    const rowId = await persistAssistant(
-      chatId,
-      result.content,
-      result.reasoning,
-      result.tokensPerSec,
-      result.genTokens,
-      result.genMs,
-      referencia,
-    );
-    patch(chatId, {
-      state: "done",
-      content: result.content,
-      reasoning: result.reasoning,
-      thinkingMs,
-      tokensPerSec: result.tokensPerSec,
-      genTokens: result.genTokens,
-      genMs: result.genMs,
-      loadingModel: false,
-      rowId,
-    });
-    if (row.opts.autoTitle && canPersist(chatId)) {
-      void autoTitle(
-        chatId,
-        baseUrl,
-        resolved,
-        row.opts.messages,
-        result.content,
-        headers,
-      );
-    }
-  } catch (err) {
-    window.clearTimeout(slowTimer);
-    // `signal.aborted` cobre o Parar que chegou durante uma etapa que não é
-    // o fetch (subir servidor, listar modelos): o erro que borbulha ali não
-    // é AbortError, mas o usuário cancelou — não é falha para exibir.
-    if (isAbortError(err) || row.abort.signal.aborted) {
-      const cur = internals.get(chatId);
-      const text = cur?.public.content ?? "";
-      const reasoning = cur?.public.reasoning ?? "";
-      const now = performance.now();
-      const thinkingMs =
-        cur?.public.thinkingMs ??
-        (firstReasonAt > 0 ? Math.round(lastReasonAt - firstReasonAt) : null);
-      const genMs =
-        cur?.public.genMs ??
-        (cur?.public.answerStartedAt != null
-          ? Math.round(now - cur.public.answerStartedAt)
-          : null);
-      const rowId = await persistAssistant(
-        chatId,
-        text,
-        reasoning,
-        cur?.public.tokensPerSec ?? null,
-        null,
-        genMs,
-        cur?.public.model ?? null,
-      );
-      if (cur) {
-        patch(chatId, {
-          state: "done",
-          thinkingMs,
-          genMs,
-          loadingModel: false,
-          rowId,
-        });
-      }
-    } else if (isRetryable(err) && row.retries < MAX_RETRIES) {
-      row.retries += 1;
-      requeued = true;
-      patch(chatId, { state: "queued", loadingModel: false, startedAt: null });
-      if (!runningJobs(chatId)) schedulePump(2000);
-    } else {
-      const detail = errorMessage(err);
-      const cur = internals.get(chatId);
-      if (cur && (cur.public.content || cur.public.reasoning)) {
-        const rowId = await persistAssistant(
-          chatId,
-          cur.public.content,
-          cur.public.reasoning,
-          cur.public.tokensPerSec,
-          null,
-          null,
-          cur.public.model ?? null,
-        );
-        patch(chatId, { state: "error", error: detail, loadingModel: false, rowId });
-      } else {
-        patch(chatId, { state: "error", error: detail, loadingModel: false });
-      }
+      patch(chatId, { error: errorMessage(err) });
     }
   } finally {
-    window.clearTimeout(slowTimer);
-    if (!requeued) pump();
+    stopStatus();
+    if (internals.get(chatId) === row && row.public.state !== "queued") {
+      const metrics = { ...row.public.metrics, phase: row.public.error ? "error" as const : "done" as const, totalMs: performance.now() - row.public.createdAt };
+      patch(chatId, { metrics });
+      const cur = row.public;
+      const rowId = await persistAssistant(chatId, cur.content, cur.reasoning, cur.tokensPerSec, cur.genTokens, cur.genMs, row.opts.model);
+      patch(chatId, { state: cur.error ? "error" : "done", loadingModel: false, rowId });
+    }
+    row.executing = false;
+    schedulePump();
+    if (row.public.state === "queued") setTimeout(() => schedulePump(), Math.max(0, row.retryAt - performance.now()));
   }
 }
-
-function pickNext(): InternalJob | null {
-  const queued = [...internals.values()].filter((j) => j.public.state === "queued");
-  if (queued.length === 0) return null;
-  const running = runningModels();
-  const same = queued.find((j) => running.has(j.public.model));
-  return same ?? queued[0];
-}
-
-let pumpTimer = 0;
-
-/**
- * Um único `pump()` atrasado por vez. Serve às corridas em que ninguém mais
- * vai acordar a fila (job concorrente terminou cedo demais, retry de 503).
- */
-function schedulePump(delayMs = 250): void {
-  if (pumpTimer) return;
-  pumpTimer = window.setTimeout(() => {
-    pumpTimer = 0;
-    pump();
-  }, delayMs);
-}
-
-function pump(): void {
-  const next = pickNext();
-  if (!next) return;
-  void (async () => {
-    const session = await ensureServer().catch(() => null);
-    const loaded = session ? await listLoadedModels(session.baseUrl) : [];
-    const max = await modelsMax();
-    const model = matchServerModel(next.opts.model, loaded);
-    // Ainda no teto de modelos: só arrisca se não há mais nada rodando
-    // (senão o job espera o término do concorrente, que chama `pump()`).
-    if (mustQueue(model, loaded, max) && runningJobs()) return;
-    void runJob(next.public.chatId);
-  })();
-}
-
 export const generationStore = {
-  subscribe(fn: () => void): () => void {
-    listeners.add(fn);
-    return () => {
-      listeners.delete(fn);
-    };
+  subscribe(fn: () => void) { listeners.add(fn); return () => { listeners.delete(fn); }; },
+  get: () => snap,
+  subscribeChat(chatId: number | null, fn: () => void) {
+    if (chatId == null) return () => {};
+    const set = chatListeners.get(chatId) ?? new Set<() => void>();
+    chatListeners.set(chatId, set); set.add(fn);
+    return () => { set.delete(fn); if (!set.size) chatListeners.delete(chatId); };
   },
-  get(): GenerationSnapshot {
-    return snap;
-  },
-  jobFor(chatId: number | null): GenerationJob | undefined {
-    if (chatId == null) return undefined;
-    return internals.get(chatId)?.public;
-  },
-  activeJobs(): GenerationJob[] {
-    return snap.jobs.filter((j) => j.state === "queued" || j.state === "running");
-  },
-  isBusy(chatId: number | null): boolean {
-    const j = this.jobFor(chatId);
-    return j != null && (j.state === "queued" || j.state === "running");
+  jobFor(chatId: number | null) { return chatId == null ? undefined : internals.get(chatId)?.published; },
+  activeJobs() { return [...internals.values()].map(j => j.published).filter(j => j.state === "queued" || j.state === "running"); },
+  isBusy(chatId: number | null) { const j = this.jobFor(chatId); return j?.state === "queued" || j?.state === "running"; },
+  // Trava síncrona antes do primeiro await da comparação.
+  acquireBenchmark() {
+    if (paused || titleAbort || [...internals.values()].some(j => j.executing || j.public.state === "queued")) throw new Error("engine-busy:chat");
+    paused = true;
+    return () => { paused = false; schedulePump(); };
   },
   start(opts: StartGenerationOpts): boolean {
-    if (deletedChats.has(opts.chatId)) return false;
-    const existing = internals.get(opts.chatId);
-    if (existing && (existing.public.state === "queued" || existing.public.state === "running")) {
-      return false;
-    }
-    const id = `${opts.chatId}-${Date.now()}`;
-    const row: InternalJob = {
-      abort: new AbortController(),
-      retries: 0,
-      opts,
-      public: {
-        id,
-        chatId: opts.chatId,
-        model: opts.model,
-        state: "queued",
-        content: "",
-        reasoning: "",
-        thinkingMs: null,
-        tokensPerSec: null,
-        genTokens: null,
-        genMs: null,
-        loadingModel: false,
-        startedAt: null,
-        thinkStartedAt: null,
-        answerStartedAt: null,
-      },
-    };
-    internals.set(opts.chatId, row);
-    emit();
-    void runJob(opts.chatId);
-    return true;
+    if (deletedChats.has(opts.chatId) || this.isBusy(opts.chatId)) return false;
+    titleAbort?.abort();
+    const id = crypto.randomUUID();
+    const job: GenerationJob = { id, chatId: opts.chatId, model: opts.model, state: "queued", content: "", reasoning: "", thinkingMs: null,
+      tokensPerSec: null, genTokens: null, genMs: null, loadingModel: false, startedAt: null, thinkStartedAt: null, answerStartedAt: null,
+      createdAt: performance.now(), metrics: { runId: id, phase: "queued", queueMs: null, firstTokenMs: null, firstAnswerMs: null, totalMs: null, promptTokens: null, cachedTokens: null, promptTps: null, thinkingMs: null } };
+    internals.set(opts.chatId, { public: job, published: job, opts, abort: new AbortController(), retries: 0, retryAt: 0, executing: false });
+    emit(opts.chatId); schedulePump(); return true;
   },
-  cancel(chatId: number | null): void {
-    if (chatId == null) return;
-    const row = internals.get(chatId);
+  cancel(chatId: number | null) {
+    const row = chatId == null ? undefined : internals.get(chatId);
     if (!row) return;
-    if (row.public.state === "queued") {
-      internals.delete(chatId);
-      emit();
-      pump();
-      return;
+    row.abort.abort(); publish(row.opts.chatId);
+    if (!row.executing) {
+      patch(row.opts.chatId, { state: "done", metrics: { ...row.public.metrics, phase: "done", totalMs: performance.now() - row.public.createdAt } });
+      schedulePump();
     }
-    // Em "running" o abort corta o fetch; se o stream ainda nem começou
-    // (subindo servidor/modelo), `finishIfAborted` fecha o job na sequência.
-    row.abort.abort();
   },
-  dismiss(chatId: number): void {
+  dismiss(chatId: number) {
     const row = internals.get(chatId);
-    if (!row) return;
-    if (row.public.state === "queued" || row.public.state === "running") return;
-    internals.delete(chatId);
-    emit();
+    if (!row || row.executing || this.isBusy(chatId)) return;
+    clearTimeout(row.timer); internals.delete(chatId); emit(chatId);
   },
-  markDeleted(chatId: number): void {
+  markDeleted(chatId: number) {
     deletedChats.add(chatId);
     const row = internals.get(chatId);
-    if (!row) return;
-    row.abort.abort();
-    internals.delete(chatId);
-    emit();
-    // Excluir a conversa some com o job sem passar pelo `finally` do runJob:
-    // sem este pump, um job em fila esperando por ele ficaria parado.
-    pump();
+    row?.abort.abort(); clearTimeout(row?.timer);
+    internals.delete(chatId); emit(chatId); schedulePump();
   },
 };

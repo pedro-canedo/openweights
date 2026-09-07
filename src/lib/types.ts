@@ -321,6 +321,7 @@ export interface ChatRow {
 }
 
 export interface MessageRow {
+  metrics?: import("./generationStore").GenerationMetrics | null;
   id: number;
   chatId: number;
   role: string;

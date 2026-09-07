@@ -868,6 +868,9 @@ pub async fn server_start(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<ServerStatusView> {
+    if crate::comparison::active() {
+        return Err("engine-busy:benchmark".into());
+    }
     start_engine(&app, &state).await
 }
 
@@ -1021,6 +1024,9 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
 
 #[tauri::command]
 pub async fn server_stop(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    if crate::comparison::active() {
+        return Err("engine-busy:benchmark".into());
+    }
     stop_engine(&app, &state).await
 }
 
@@ -1142,6 +1148,9 @@ pub async fn server_restart(
     state: State<'_, AppState>,
     force: Option<bool>,
 ) -> CmdResult<ServerStatusView> {
+    if crate::comparison::active() {
+        return Err("engine-busy:benchmark".into());
+    }
     restart_engine(&app, &state, force.unwrap_or(false)).await
 }
 
@@ -1237,6 +1246,9 @@ pub(crate) fn save_profile(
     model: &str,
     mut perfil: lr_types::tuning::ModelProfile,
 ) -> CmdResult<lr_types::tuning::ModelProfile> {
+    if crate::comparison::active() {
+        return Err("engine-busy:benchmark".into());
+    }
     if let Some(ctx) = perfil.ctx {
         perfil.ctx = Some(clamp_ctx(ctx));
     }
@@ -1378,6 +1390,7 @@ pub fn message_add(
     gen_tokens: Option<i64>,
     gen_ms: Option<i64>,
     model: Option<String>,
+    metrics: Option<lr_store::GenerationMetrics>,
 ) -> CmdResult<i64> {
     // A configuração não vem da tela: ela é lida aqui, do que está gravado
     // para este modelo. Assim o carimbo nunca discorda do que o motor
@@ -1390,7 +1403,7 @@ pub fn message_add(
 
     state
         .store
-        .add_message(
+        .add_message_with_metrics(
             chat_id,
             &role,
             &content,
@@ -1399,8 +1412,8 @@ pub fn message_add(
             gen_ms,
             modelo,
             chave.as_deref(),
-            // `run_id` é herança do modo agente removido: fica NULL sempre.
-            None,
+            metrics.as_ref().map(|m| m.run_id.as_str()),
+            metrics.as_ref(),
         )
         .map_err(err_str)
 }
@@ -1448,6 +1461,9 @@ pub fn settings_get(state: State<'_, AppState>, key: String) -> CmdResult<Option
 
 #[tauri::command]
 pub async fn settings_set(state: State<'_, AppState>, key: String, value: String) -> CmdResult<()> {
+    if crate::comparison::active() && key.starts_with("server_") {
+        return Err("engine-busy:benchmark".into());
+    }
     state.store.set_setting(&key, &value).map_err(err_str)?;
     if key == "hf_token" {
         let token = (!value.is_empty()).then_some(value);

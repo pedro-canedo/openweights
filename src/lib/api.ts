@@ -326,6 +326,7 @@ export const addMessage = (
   /** Modelo que gerou a resposta: o backend usa para carimbar a
    *  configuração vigente, e é o que torna os tokens/s comparáveis depois. */
   model: string | null = null,
+  metrics: import("./generationStore").GenerationMetrics | null = null,
 ) =>
   isTauri
     ? invoke<number>("message_add", {
@@ -336,6 +337,7 @@ export const addMessage = (
         genTokens,
         genMs,
         model,
+        metrics,
       })
     : Promise.resolve(mocks.nextMessageId());
 

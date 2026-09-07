@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Mutex;
 
+pub mod comparison;
 pub mod engine_presets;
 pub mod mcp;
 pub mod memory;
@@ -35,9 +36,26 @@ pub struct ChatRow {
     pub params_json: Option<String>,
 }
 
+/// Métricas opcionais de uma geração; duração medida no cliente, tokens no motor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerationMetrics {
+    pub run_id: String,
+    pub phase: String,
+    pub queue_ms: Option<f64>,
+    pub first_token_ms: Option<f64>,
+    pub first_answer_ms: Option<f64>,
+    pub total_ms: Option<f64>,
+    pub prompt_tokens: Option<u64>,
+    pub cached_tokens: Option<u64>,
+    pub prompt_tps: Option<f64>,
+    pub thinking_ms: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageRow {
+    pub metrics: Option<GenerationMetrics>,
     pub id: i64,
     pub chat_id: i64,
     pub role: String,
@@ -137,11 +155,13 @@ impl Store {
         // Coluna do antigo modo agente: fica pelo dado antigo (e para bancos
         // novos nascerem com o mesmo esquema), mas ninguém mais a preenche.
         ensure_column(&conn, "messages", "run_id", "TEXT")?;
+        ensure_column(&conn, "messages", "metrics_json", "TEXT")?;
         // Com que modelo e com que configuração esta resposta foi gerada.
         // É a medição passiva de desempenho: os tokens/s já eram gravados,
         // faltava saber a que configuração eles pertencem.
         ensure_column(&conn, "messages", "model_id", "TEXT")?;
         ensure_column(&conn, "messages", "profile_key", "TEXT")?;
+        comparison::init(&conn)?;
         mcp::init(&conn)?;
         memory::init(&conn)?;
         // Depois das outras: a migração da janela por modelo lê `settings`.
@@ -275,10 +295,39 @@ impl Store {
         // Execução do agente que gerou a resposta (`None` no chat comum).
         run_id: Option<&str>,
     ) -> Result<i64, StoreError> {
+        self.add_message_with_metrics(
+            chat_id,
+            role,
+            content,
+            tokens_per_sec,
+            gen_tokens,
+            gen_ms,
+            model_id,
+            profile_key,
+            run_id,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_message_with_metrics(
+        &self,
+        chat_id: i64,
+        role: &str,
+        content: &str,
+        tokens_per_sec: Option<f64>,
+        gen_tokens: Option<i64>,
+        gen_ms: Option<i64>,
+        model_id: Option<&str>,
+        profile_key: Option<&str>,
+        // Execução do agente que gerou a resposta (`None` no chat comum).
+        run_id: Option<&str>,
+        metrics: Option<&GenerationMetrics>,
+    ) -> Result<i64, StoreError> {
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO messages (chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, model_id, profile_key, run_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO messages (chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, model_id, profile_key, run_id, metrics_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![
                 chat_id,
                 role,
@@ -289,7 +338,8 @@ impl Store {
                 gen_ms,
                 model_id,
                 profile_key,
-                run_id
+                run_id,
+                metrics.and_then(|m| serde_json::to_string(m).ok())
             ],
         )?;
         Ok(conn.last_insert_rowid())
@@ -298,7 +348,7 @@ impl Store {
     pub fn list_messages(&self, chat_id: i64) -> Result<Vec<MessageRow>, StoreError> {
         let conn = self.conn();
         let mut stmt = conn.prepare(
-            "SELECT id, chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, run_id
+            "SELECT id, chat_id, role, content, created_at, tokens_per_sec, gen_tokens, gen_ms, run_id, metrics_json
              FROM messages WHERE chat_id = ?1 ORDER BY id",
         )?;
         let rows = stmt
@@ -313,6 +363,9 @@ impl Store {
                     gen_tokens: r.get(6)?,
                     gen_ms: r.get(7)?,
                     run_id: r.get(8)?,
+                    metrics: r
+                        .get::<_, Option<String>>(9)?
+                        .and_then(|s| serde_json::from_str(&s).ok()),
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
@@ -399,6 +452,45 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generation_metrics_round_trip_without_changing_legacy_messages() {
+        let s = Store::open_in_memory().unwrap();
+        let chat = s.create_chat("test", None).unwrap();
+        s.add_message(chat, "user", "old", None, None, None, None, None, None)
+            .unwrap();
+        let metrics = GenerationMetrics {
+            run_id: "run-1".into(),
+            phase: "done".into(),
+            queue_ms: Some(2.5),
+            first_token_ms: Some(31.0),
+            first_answer_ms: Some(90.0),
+            total_ms: Some(200.0),
+            prompt_tokens: Some(100),
+            cached_tokens: Some(50),
+            prompt_tps: Some(300.0),
+            thinking_ms: Some(59.0),
+        };
+        s.add_message_with_metrics(
+            chat,
+            "assistant",
+            "new",
+            Some(20.0),
+            Some(3),
+            Some(150),
+            Some("model"),
+            None,
+            Some("run-1"),
+            Some(&metrics),
+        )
+        .unwrap();
+        let messages = s.list_messages(chat).unwrap();
+        assert!(messages[0].metrics.is_none());
+        let saved = messages[1].metrics.as_ref().unwrap();
+        assert_eq!(saved.queue_ms, Some(2.5));
+        assert_eq!(saved.cached_tokens, Some(50));
+        assert_eq!(messages[1].run_id.as_deref(), Some("run-1"));
+    }
 
     /// Um pânico segurando a conexão não pode condenar o banco: o processo
     /// precisa continuar gravando — é assim que o fim de um run vira registro

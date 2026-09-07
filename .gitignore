@@ -10,3 +10,11 @@ graphify-out/
 *.deb
 *.rpm
 settings.local.json
+
+# Saídas locais dos benchmarks/verificação (os scripts e testes são versionados).
+baseline-render.json
+improved-render.json
+inference-bench*.json
+chat-check.png
+ui-check.png
+test-results/

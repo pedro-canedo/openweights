@@ -6,11 +6,12 @@
 
 import {
   useEffect,
-  useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import { Virtuoso } from "react-virtuoso";
+import type { GenerationMetrics } from "../../lib/generationStore";
 import { useTranslation } from "react-i18next";
 import { speechStore } from "../../lib/speech";
 import Markdown from "./Markdown";
@@ -18,6 +19,8 @@ import ThinkingBlock from "./ThinkingBlock";
 import { formatDuration } from "../../lib/format";
 
 export interface UiMessage {
+  metrics?: GenerationMetrics;
+  createdAt?: number;
   role: "user" | "assistant";
   content: string;
   tokensPerSec: number | null;
@@ -119,24 +122,9 @@ export default function MessageList({
   onDeleteMsg?: (index: number) => void;
 }) {
   const { t, i18n } = useTranslation();
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const stickRef = useRef(true);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const speaking = useSyncExternalStore(speechStore.subscribe, speechStore.get);
   const canSpeak = speechStore.available();
-  const now = useNow(generating);
-
-  const onScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
-    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-  };
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
-  }, [messages, generating, loadingModel]);
-
   // Sair da conversa cala a voz: ninguém espera que ela continue falando de
   // outra tela.
   useEffect(() => () => speechStore.stop(), []);
@@ -159,21 +147,9 @@ export default function MessageList({
     if (lastUserIdx >= 0 && lastAssistantIdx >= 0) break;
   }
 
-  const liveTimes = (m: UiMessage, live: boolean) => {
+  const liveTimes = (m: UiMessage, _live: boolean) => {
     let thinkingMs = m.thinkingMs ?? null;
     let genMs = m.genMs ?? null;
-    if (live) {
-      if (m.answerStartedAt != null) {
-        genMs = Math.round(now - m.answerStartedAt);
-        const thinkOrigin = m.thinkStartedAt ?? m.startedAt;
-        if (thinkOrigin != null) {
-          thinkingMs = Math.round(m.answerStartedAt - thinkOrigin);
-        }
-      } else {
-        const origin = m.thinkStartedAt ?? m.startedAt;
-        if (origin != null) thinkingMs = Math.round(now - origin);
-      }
-    }
     return { thinkingMs, genMs };
   };
 
@@ -277,25 +253,18 @@ export default function MessageList({
     );
   };
 
-  const last = messages[messages.length - 1];
-  // A bolha do assistente já mostra o próprio indicador enquanto o 1º token
-  // não chega; sem esta checagem apareceriam dois "carregando" na tela.
-  const waitingFirstToken =
-    generating &&
-    last?.role === "assistant" &&
-    last.content === "" &&
-    !last.reasoning;
-
   return (
-    <div
-      ref={scrollRef}
-      onScroll={onScroll}
-      className="min-h-0 flex-1 overflow-y-auto"
-    >
-      <div className="mx-auto flex max-w-3xl flex-col gap-4 px-6 py-6">
-        {messages.map((m, i) =>
-          m.role === "user" ? (
+    <Virtuoso
+      className="min-h-0 flex-1"
+      data={messages}
+      initialTopMostItemIndex={Math.max(0, messages.length - 1)}
+      followOutput={atBottom => atBottom ? "auto" : false}
+      atBottomThreshold={48}
+      increaseViewportBy={200}
+      itemContent={(i, m) => <div className="mx-auto flex max-w-3xl flex-col px-6 py-2">
+          {m.role === "user" ? (
             <div key={i} className="group flex max-w-[80%] flex-col self-end">
+              {m.images?.map((image, index) => <img key={index} src={image.dataUrl} alt={image.name} loading="lazy" className="mb-2 max-h-64 max-w-full rounded-xl object-contain" />)}
               <div className="rounded-2xl rounded-br-sm bg-accent px-4 py-2.5 text-sm whitespace-pre-wrap text-white select-text">
                 {m.content}
               </div>
@@ -313,16 +282,7 @@ export default function MessageList({
                 i === messages.length - 1 ? (
                 <div className="flex items-center gap-2 py-1 text-sm text-dim">
                   <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-                  {loadingModel
-                    ? t("chat.loadingModel")
-                    : m.startedAt == null
-                      ? t("jobs.queued")
-                      : t("chat.generatingTimer", {
-                          time: formatDuration(
-                            liveTimes(m, true).thinkingMs ??
-                              now - m.startedAt,
-                          ),
-                        })}
+                  <Waiting message={m} />
                 </div>
               ) : (
                 <>
@@ -340,7 +300,7 @@ export default function MessageList({
                       }
                     />
                   )}
-                  {m.content !== "" && <Markdown text={m.content} />}
+                  {m.content !== "" && <Markdown text={m.content} streaming={generating && i === messages.length - 1} />}
                   {/* Nunca um buraco: uma resposta sem texto e sem
                       raciocínio precisa DIZER que veio vazia, senão parece
                       que a mensagem sumiu. */}
@@ -370,19 +330,32 @@ export default function MessageList({
                   })()}
                 </>
               )}
+              {m.metrics && !generating && <RunMetrics metrics={m.metrics} />}
               {actionBar(m, i)}
             </div>
-          ),
-        )}
-
-        {(loadingModel && !waitingFirstToken && messages.length === 0) ||
-        (generating && last?.role === "user") ? (
-          <div className="flex items-center gap-2 py-1 text-sm text-dim">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-accent" />
-            {loadingModel ? t("chat.loadingModel") : t("chat.generating")}
-          </div>
-        ) : null}
-      </div>
-    </div>
+          )}
+      </div>}
+    />
   );
+}
+
+function Waiting({ message }: { message: UiMessage }) {
+  const { t } = useTranslation();
+  const now = useNow(true);
+  return <span role="status">{t(`generation.${message.metrics?.phase ?? "waiting"}`)} · {formatDuration(now - (message.createdAt ?? message.startedAt ?? now))}</span>;
+}
+function RunMetrics({ metrics }: { metrics: GenerationMetrics }) {
+  const { t } = useTranslation();
+  const time = (v: number | null) => v == null ? t("generation.unavailable") : formatDuration(v);
+  return <details className="mt-1 text-xs text-dim">
+    <summary>{t("generation.metrics")}</summary>
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 py-2">
+      <dt>{t("generation.firstToken")}</dt><dd>{time(metrics.firstTokenMs)}</dd>
+      <dt>{t("generation.firstAnswer")}</dt><dd>{time(metrics.firstAnswerMs)}</dd>
+      <dt>{t("generation.queue")}</dt><dd>{time(metrics.queueMs)}</dd>
+      <dt>{t("generation.total")}</dt><dd>{time(metrics.totalMs)}</dd>
+      <dt>{t("generation.prompt")}</dt><dd>{metrics.promptTokens ?? t("generation.unavailable")}</dd>
+      <dt>{t("generation.cache")}</dt><dd>{metrics.cachedTokens ?? t("generation.unavailable")}</dd>
+    </dl>
+  </details>;
 }

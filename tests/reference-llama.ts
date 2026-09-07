@@ -1,10 +1,12 @@
+// Frozen inference baseline: src/lib/llama.ts from v0.16.1 (e598a5c), MIT.
+// Only import paths are adjusted. Used exclusively by tests/inference.html.
 // Comunicação DIRETA do webview com o llama-server local via fetch/SSE.
 // Decisão de arquitetura: tokens NUNCA passam pelo IPC do Tauri — o CSP já
 // permite http://127.0.0.1:*. No navegador (dev sem Tauri) usamos um mock
 // que "digita" uma resposta falsa para desenvolver a UI.
 
-import { isTauri } from "./tauri";
-import type { ChatParams, EffortLevel } from "./types";
+import { isTauri } from "../src/lib/tauri";
+import type { ChatParams, EffortLevel } from "../src/lib/types";
 
 /** Parte de conteúdo multimodal no formato OpenAI (aceito pelo llama-server com --mmproj). */
 export type ContentPart =
@@ -42,9 +44,9 @@ export interface StreamChatResult {
   /** Raciocínio do modelo (vazio quando o modelo não é "thinking"). */
   reasoning: string;
   tokensPerSec: number | null;
-  /** Tokens informados pelo servidor; ausente quando não informado. */
+  /** Tokens gerados (timings do servidor ou estimativa por chunks). */
   genTokens: number | null;
-  /** Duração de geração informada pelo servidor. */
+  /** Duração da geração em ms (timings do servidor ou estimativa). */
   genMs: number | null;
   /** Tempo entre o primeiro e o último delta de raciocínio, em ms. */
   thinkingMs: number | null;
@@ -156,9 +158,7 @@ interface SseDelta {
 
 /** Forma mínima de um chunk SSE do endpoint OpenAI-compatible. */
 interface SseChunk {
-  choices?: { delta?: SseDelta; finish_reason?: string | null }[];
-  error?: { message?: string };
-  usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };
+  choices?: { delta?: SseDelta }[];
   timings?: {
     predicted_n?: number;
     predicted_ms?: number;
@@ -223,12 +223,12 @@ async function streamReal({
   params,
   onDelta,
   onReasoningDelta,
+  onTokensPerSec,
 }: StreamChatOptions): Promise<StreamChatResult> {
   const body: Record<string, unknown> = {
     model,
     messages: withSystemPrompt(messages, params),
     stream: true,
-    stream_options: { include_usage: true },
   };
   if (params) {
     body.temperature = params.temperature;
@@ -255,8 +255,12 @@ async function streamReal({
   let buffer = "";
   let content = "";
   let reasoning = "";
+  let chunks = 0;
+  let firstTokenAt = 0;
+  let lastTokenAt = 0;
   let firstReasonAt = 0;
   let lastReasonAt = 0;
+  let lastStatsAt = 0;
   let serverTps: number | null = null;
   let serverTokens: number | null = null;
   let serverMs: number | null = null;
@@ -266,7 +270,6 @@ async function streamReal({
   let serverCachedTokens: number | null = null;
   let serverPromptTps: number | null = null;
   let done = false;
-  let finished = false;
 
   const emitText = (t: string) => {
     content += t;
@@ -294,14 +297,6 @@ async function streamReal({
       chunk = JSON.parse(payload) as SseChunk;
     } catch {
       return; // linha parcial/ruído — ignora
-    }
-    if (chunk.error) throw new Error(chunk.error.message ?? "stream error");
-    if (chunk.choices?.some(c => c.finish_reason != null)) finished = true;
-    if (chunk.usage) {
-      const u = chunk.usage;
-      if (typeof u.completion_tokens === "number") serverTokens = u.completion_tokens;
-      if (typeof u.prompt_tokens === "number") serverPromptTokens = u.prompt_tokens;
-      if (typeof u.prompt_tokens_details?.cached_tokens === "number") serverCachedTokens = u.prompt_tokens_details.cached_tokens;
     }
     const timings = chunk.timings;
     if (timings) {
@@ -331,6 +326,22 @@ async function streamReal({
     const gotText = typeof textDelta === "string" && textDelta.length > 0;
     if (gotReason) emitReasoning(reasonDelta);
     if (gotText) splitter.feed(textDelta);
+    if (gotReason || gotText) {
+      const now = performance.now();
+      if (chunks === 0) firstTokenAt = now;
+      lastTokenAt = now;
+      chunks += 1;
+      // Estimativa ao vivo para a StatusBar e para a linha da mensagem (~4 Hz).
+      if (chunks > 1 && now - lastStatsAt > 250) {
+        lastStatsAt = now;
+        const elapsed = (now - firstTokenAt) / 1000;
+        if (elapsed > 0) {
+          const live = (chunks - 1) / elapsed;
+          setGen({ tokensPerSec: live });
+          onTokensPerSec?.(live);
+        }
+      }
+    }
   };
 
   try {
@@ -357,11 +368,19 @@ async function streamReal({
     }
   }
   splitter.flush();
-  if (!done && !finished) throw new Error("stream ended before completion");
 
-  const tokensPerSec = serverTps;
-  const genTokens = serverTokens;
-  const genMs = serverMs;
+  // Métricas: timings do servidor com fallback estimado.
+  let tokensPerSec: number | null = serverTps;
+  if (tokensPerSec == null && chunks > 1 && firstTokenAt > 0) {
+    const elapsed = (lastTokenAt - firstTokenAt) / 1000;
+    tokensPerSec = elapsed > 0 ? (chunks - 1) / elapsed : null;
+  }
+  const genTokens = serverTokens ?? (chunks > 0 ? chunks : null);
+  const genMs =
+    serverMs ??
+    (chunks > 0 && firstTokenAt > 0
+      ? Math.round(lastTokenAt - firstTokenAt)
+      : null);
   const thinkingMs =
     firstReasonAt > 0 ? Math.max(0, Math.round(lastReasonAt - firstReasonAt)) : null;
 
@@ -483,10 +502,10 @@ print(resp.choices[0].message.content)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function streamMock({
-  onTokensPerSec,
   signal,
   onDelta,
   onReasoningDelta,
+  onTokensPerSec,
 }: StreamChatOptions): Promise<StreamChatResult> {
   await sleep(400); // latência fake de "carregar o modelo"
 

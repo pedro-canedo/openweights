@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="UTF-8"></head><body><script type="module">
+window.__TAURI_INTERNALS__ = {};
+const current = await import('/src/lib/llama.ts');
+const previous = await import('/tests/reference-llama.ts');
+window.measureInference = async (which) => {
+  const start = performance.now();
+  let first = null;
+  const mark = () => { first ??= performance.now() - start; };
+  const output = await ({current, previous}[which]).streamChat({
+    baseUrl: 'http://127.0.0.1:14820', model: 'test',
+    messages: [{role: 'user', content: 'Write a TypeScript function to sum positive numbers, with tests.'}],
+    params: {temperature: 0, topP: 1, topK: 1, maxTokens: 128, systemPrompt: '', effort:'low'},
+    signal: AbortSignal.timeout(180000), onDelta: mark, onReasoningDelta: mark,
+  });
+  return {firstTokenMs:first, totalMs:performance.now()-start, tokensPerSec:output.tokensPerSec, genTokens:output.genTokens};
+};
+</script></body></html>

@@ -4,7 +4,7 @@
 // e auto-título em background. A mensagem do usuário é gravada ANTES de a
 // geração começar (o backend conta com ela para montar o histórico).
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import {
   addMessage,
@@ -162,6 +162,8 @@ function rowToUi(r: MessageRow): UiMessage {
     reasoning: reasoning || undefined,
     genTokens: r.genTokens,
     genMs: r.genMs,
+    metrics: r.metrics ?? undefined,
+    thinkingMs: r.metrics?.thinkingMs,
   };
 }
 
@@ -207,7 +209,7 @@ function mergeLoaded(
     const i = incoming.findLastIndex((m) => m.role === "assistant");
     if (i >= 0) {
       const next = incoming.slice();
-      next[i] = { ...loaded, thinkingMs: snapshot.thinkingMs };
+      next[i] = { ...loaded, thinkingMs: snapshot.thinkingMs, metrics: loaded.metrics ?? snapshot.metrics };
       return next;
     }
   }
@@ -248,16 +250,17 @@ export default function Chat() {
     chatStore.subscribe,
     chatStore.get,
   );
-  const genSnap = useSyncExternalStore(
-    generationStore.subscribe,
-    generationStore.get,
-  );
+
 
   // Sair do Chat DESMONTA esta tela (App renderiza por condicional): sem
   // semear o id daqui, voltar de "Meus Modelos" abria uma conversa em branco
   // e as mensagens pareciam ter sumido. O `chatStore` é a memória.
   const [activeChatId, setActiveChatId] = useState<number | null>(
     () => chatStore.get().activeId,
+  );
+  const job = useSyncExternalStore(
+    useCallback((fn: () => void) => generationStore.subscribeChat(activeChatId, fn), [activeChatId]),
+    useCallback(() => generationStore.jobFor(activeChatId), [activeChatId]),
   );
   const [messages, setMessages] = useState<UiMessage[]>([]);
   const [models, setModels] = useState<string[] | null>(null);
@@ -379,6 +382,7 @@ export default function Chat() {
               thinkingMs: jobSnap.thinkingMs,
               genTokens: jobSnap.genTokens,
               genMs: jobSnap.genMs,
+              metrics: jobSnap.metrics,
             }
           : undefined;
       setMessages((prev) => mergeLoaded(ui, sameChat ? prev : [], snapshot));
@@ -471,7 +475,6 @@ export default function Chat() {
     }
   };
 
-  const job = genSnap.jobs.find((j) => j.chatId === activeChatId);
   const generating =
     job != null && (job.state === "running" || job.state === "queued");
   const loadingModel = job?.loadingModel ?? false;
@@ -505,6 +508,8 @@ export default function Chat() {
         genTokens: job.genTokens,
         genMs: job.genMs,
         startedAt: job.startedAt,
+        createdAt: job.createdAt,
+        metrics: job.metrics,
         thinkStartedAt: job.thinkStartedAt,
         answerStartedAt: job.answerStartedAt,
         error: Boolean(job.error && !job.content && !job.reasoning),
@@ -526,6 +531,7 @@ export default function Chat() {
           : job.content,
       tokensPerSec: job.tokensPerSec,
       rowId: job.rowId,
+      metrics: job.metrics,
       reasoning: job.reasoning || undefined,
       thinkingMs: job.thinkingMs,
       genTokens: job.genTokens,
@@ -840,6 +846,7 @@ export default function Chat() {
               <MessageList
                 messages={displayMessages}
                 generating={generating}
+                key={activeChatId ?? "new"}
                 loadingModel={loadingModel}
                 onRegenerate={() => void regenerate()}
                 onEditResend={startEdit}

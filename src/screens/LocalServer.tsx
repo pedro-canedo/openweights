@@ -35,6 +35,7 @@ import { takePendingServerTab } from "../lib/nav";
 import type { ServerStatus } from "../lib/types";
 import { Chips, NumChips, Select } from "../components/form/controls";
 import { Card, Collapse, Page, Tabs, useTab, type TabDef } from "../components/ui/Shell";
+import ComparisonCard from "../components/server/ComparisonCard";
 import BenchHistoryCard from "../components/server/BenchHistoryCard";
 import SpecCard from "../components/server/SpecCard";
 import PowerCard from "../components/server/PowerCard";
@@ -220,6 +221,7 @@ export default function LocalServer() {
             selected={selectedModel}
             onSelect={setSelectedModel}
           />
+          <ComparisonCard model={selectedModel} />
           <SpecCard model={selectedModel} />
           <BenchHistoryCard model={selectedModel} running={running} />
           <PowerCard />

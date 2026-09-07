@@ -4,6 +4,22 @@ The full list of releases, with installers, lives on
 [GitHub](https://github.com/pedro-canedo/openweights/releases). This page
 covers what changed in the app you would download today.
 
+## 0.17.0 — smoother chat and comparable configurations
+
+Long conversations are virtualized, streaming updates are batched at 50 ms,
+and code highlighting waits until the answer finishes. Cancelling keeps the
+partial response. Background generations no longer refresh every conversation.
+
+Explicit waiting phases and persistent run metrics distinguish queue time,
+model loading, reasoning and visible answers. Local work respects the configured
+capacity; automatic titles have lower priority and use bounded input.
+
+**Local Server → Performance** can now compare the current configuration with
+an advisor candidate using warmup and three repetitions per configuration.
+Results include ranges, an inconclusive verdict for noisy measurements, and
+explicit apply/restore actions. See [Chat performance](./performance) for the
+workflow and measurement limits. This release does not claim faster model inference.
+
 ## 0.16.1 — the engine check read the wrong number
 
 Fixes a 0.16.0 bug that showed up for everyone: the engine card said **"the

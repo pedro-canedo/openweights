@@ -2,8 +2,10 @@
 // highlighter em cache de módulo). Enquanto o shiki carrega — ou durante o
 // streaming — mostramos um <pre> simples como fallback.
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+export const StreamingContext = createContext(false);
 
 // Cache de módulo: o bundle do shiki só é baixado uma vez, sob demanda.
 // bundle/web = só linguagens comuns na web (o pacote completo tem ~200
@@ -25,10 +27,13 @@ export default function CodeBlock({
   lang: string;
 }) {
   const { t } = useTranslation();
+  const streaming = useContext(StreamingContext);
   const [html, setHtml] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    if (streaming) return;
+    setHtml(null);
     let cancelled = false;
     // Pequeno debounce: durante o streaming o código muda a cada delta.
     const timer = window.setTimeout(async () => {
@@ -51,7 +56,7 @@ export default function CodeBlock({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [code, lang]);
+  }, [code, lang, streaming]);
 
   const copy = () => {
     void navigator.clipboard.writeText(code).then(() => {
@@ -73,7 +78,7 @@ export default function CodeBlock({
           {copied ? t("server.copied") : t("server.copy")}
         </button>
       </div>
-      {html ? (
+      {html && !streaming ? (
         <div
           className="text-[13px] leading-relaxed [&_pre]:overflow-x-auto [&_pre]:p-3"
           // HTML gerado localmente pelo shiki a partir do texto do modelo.

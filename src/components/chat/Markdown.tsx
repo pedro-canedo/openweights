@@ -5,7 +5,7 @@
 import { memo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import CodeBlock from "./CodeBlock";
+import CodeBlock, { StreamingContext } from "./CodeBlock";
 
 const components: Components = {
   // O CodeBlock já renderiza o próprio <pre>; evita <div> dentro de <pre>.
@@ -88,13 +88,13 @@ const components: Components = {
 };
 
 /** memo: evita re-renderizar mensagens antigas a cada delta do streaming. */
-const Markdown = memo(function Markdown({ text }: { text: string }) {
+const Markdown = memo(function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
   return (
-    <div className="text-sm">
+    <StreamingContext.Provider value={streaming}><div className="text-sm">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {text}
       </ReactMarkdown>
-    </div>
+    </div></StreamingContext.Provider>
   );
 });
 

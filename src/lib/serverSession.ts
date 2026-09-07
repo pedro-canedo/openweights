@@ -38,7 +38,11 @@ export function errorMessage(e: unknown): string {
  * Quem chama PRECISA tratar: sem isso o job de geração fica preso em
  * "running" para sempre.
  */
-export async function ensureServer(): Promise<ServerSession> {
+let starting: Promise<ServerSession> | null = null;
+export function ensureServer(): Promise<ServerSession> {
+  return starting ??= startSession().finally(() => { starting = null; });
+}
+async function startSession(): Promise<ServerSession> {
   let status = await getServerStatus().catch(() => null);
   if (!status || !status.running || !status.baseUrl) {
     status = await startServer().catch((e) => {
@@ -85,9 +89,10 @@ export async function ensureEndpoint(modelRef: string): Promise<EndpointSession>
 }
 
 /** Ids atualmente servidos pelo Router (`GET /v1/models`). Nunca lança. */
-export async function listLoadedModels(baseUrl: string): Promise<string[]> {
+export async function listLoadedModels(baseUrl: string, headers?: Record<string, string>, signal?: AbortSignal): Promise<string[]> {
   try {
-    const res = await fetch(`${baseUrl}/v1/models`);
+    const timeout = AbortSignal.timeout(5000);
+    const res = await fetch(`${baseUrl}/v1/models`, { headers, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
     if (!res.ok) return [];
     const json = (await res.json()) as { data?: { id: string }[] };
     return (json.data ?? []).map((d) => d.id);

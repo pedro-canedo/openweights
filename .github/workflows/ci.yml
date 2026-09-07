@@ -41,6 +41,17 @@ jobs:
       - name: Typecheck and build frontend
         run: npm run build
 
+      - name: Frontend streaming, queue and cancellation tests
+        run: npm test
+
+      - name: Install browser for UI tests
+        if: runner.os == 'Linux'
+        run: npx playwright install --with-deps chromium
+
+      - name: Chat and performance UI tests
+        if: runner.os == 'Linux'
+        run: npm run test:e2e
+
       - name: Cargo check
         working-directory: src-tauri
         run: cargo check --workspace --locked

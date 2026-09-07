@@ -9,6 +9,7 @@ mod commands_harness;
 mod commands_power;
 mod commands_providers;
 mod commands_tuning;
+mod comparison;
 mod desktop_host;
 mod serve_stats;
 mod spec_bench;
@@ -151,6 +152,9 @@ fn main() {
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,
+            comparison::compare_run,
+            comparison::compare_apply,
+            comparison::compare_latest,
             commands_tuning::tune_bench,
             commands_tuning::tune_bench_cancel,
             commands_tuning::tune_sweep,

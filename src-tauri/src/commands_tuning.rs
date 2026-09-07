@@ -358,6 +358,9 @@ pub async fn tune_apply(
     profile: ModelProfile,
     force: Option<bool>,
 ) -> CmdResult<TuneApplied> {
+    if crate::comparison::active() {
+        return Err("engine-busy:benchmark".into());
+    }
     let anterior = profile_for(&state, &model);
     let mut novo = profile;
     if novo.source == ProfileSource::Manual {
@@ -445,7 +448,7 @@ static MEDINDO: AtomicBool = AtomicBool::new(false);
 pub(crate) fn medindo() -> bool {
     MEDINDO.load(Ordering::SeqCst)
 }
-static CANCELAR: AtomicBool = AtomicBool::new(false);
+pub(crate) static CANCELAR: AtomicBool = AtomicBool::new(false);
 
 /// Progresso de uma medição, para a tela não ficar olhando um spinner mudo.
 #[derive(Serialize, Clone)]
@@ -747,7 +750,15 @@ pub fn tune_bench_cancel() {
 }
 
 /// Libera a trava mesmo quando a medição sai por erro ou `?`.
-struct MedindoGuard;
+pub(crate) struct MedindoGuard;
+
+pub(crate) fn begin_measurement() -> Result<MedindoGuard, String> {
+    if MEDINDO.swap(true, Ordering::SeqCst) {
+        return Err("engine-busy:benchmark".into());
+    }
+    CANCELAR.store(false, Ordering::SeqCst);
+    Ok(MedindoGuard)
+}
 
 impl Drop for MedindoGuard {
     fn drop(&mut self) {
@@ -1090,6 +1101,9 @@ pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
             continue;
         }
         if let Some(mut perfil) = auto_profile_for(state, &dir, &a, cluster.as_ref()).await {
+            if MEDINDO.load(Ordering::SeqCst) {
+                break;
+            }
             let anterior = crate::commands::profile_for(state, &a.name);
             // A memória manda na memória; a especulação que já foi medida
             // continua valendo.
