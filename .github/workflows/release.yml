@@ -36,7 +36,44 @@ permissions:
   contents: write
 
 jobs:
+  # Antes da matriz, de propósito. Uma tag com versão desalinhada ou sem notas
+  # falha em ~30 segundos, sem gastar três runners e sem deixar um rascunho
+  # sujo no GitHub para alguém apagar à mão. Não precisa de Rust nem de
+  # `npm ci`: os scripts usam só a stdlib do Node.
+  portao:
+    name: Portão de release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      corpo: ${{ steps.notas.outputs.corpo }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Versão alinhada e documentação presente
+        run: node scripts/release-gate.mjs
+
+      - name: Paridade da documentação
+        run: node scripts/docs-parity.mjs
+
+      # O corpo do release sai de `docs/releases/<versão>.md`, a mesma fonte do
+      # CHANGELOG e da página de changelog do site. O delimitador é esquisito de
+      # propósito: precisa ser algo que o texto nunca contenha.
+      - name: Corpo do release
+        id: notas
+        run: |
+          {
+            echo "corpo<<FIM_DO_CORPO_DO_RELEASE"
+            node scripts/release-notes.mjs --body
+            echo "FIM_DO_CORPO_DO_RELEASE"
+          } >> "$GITHUB_OUTPUT"
+
   bundle:
+    needs: portao
     strategy:
       fail-fast: false
       matrix:
@@ -128,17 +165,7 @@ jobs:
           # `v0.0.0-dev` e é descartável.
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.0.0-dev' }}
           releaseName: OpenWeights ${{ github.ref_type == 'tag' && github.ref_name || 'v0.0.0-dev' }}
-          releaseBody: |
-            Installers below. **No binary is signed** — your system will warn you:
-
-            - **Windows**: on "Windows protected your PC" → *More info* → *Run anyway*.
-            - **macOS**: on macOS 15+, try to open it once and then allow it in
-              *System Settings → Privacy & Security → Open Anyway*; on macOS 14 or
-              older, right-click the app → *Open*. From the Terminal, this settles
-              it: `xattr -dr com.apple.quarantine /Applications/OpenWeights.app`.
-
-            On first launch the app downloads the llama.cpp runtime that matches
-            your GPU (a few hundred MB) — that is why the installer is small.
+          releaseBody: ${{ needs.portao.outputs.corpo }}
           releaseDraft: true
           prerelease: false
           args: --target ${{ matrix.target }}

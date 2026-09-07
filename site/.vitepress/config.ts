@@ -8,6 +8,10 @@ import { defineConfig } from "vitepress";
 // próprio, isto vira "/" e o CNAME entra em `public/`.
 const base = "/openweights/";
 
+// Endereço público, para o sitemap e para as tags sociais: og:image e og:url
+// exigem URL absoluta — um caminho relativo não vira preview em rede nenhuma.
+const site = "https://pedro-canedo.github.io";
+
 const enSidebar = [
   {
     text: "Getting started",
@@ -87,6 +91,10 @@ export default defineConfig({
   cleanUrls: true,
   ignoreDeadLinks: false,
 
+  // Sem sitemap, um site de 36 páginas depende de o buscador tropeçar em cada
+  // link. Com ele, o buscador recebe a lista.
+  sitemap: { hostname: `${site}${base}` },
+
   head: [
     ["link", { rel: "icon", type: "image/svg+xml", href: `${base}icon.svg` }],
     ["meta", { name: "theme-color", content: "#7b5cff" }],
@@ -99,7 +107,19 @@ export default defineConfig({
         content: "Models. Your machine. Your rules.",
       },
     ],
-    ["meta", { property: "og:image", content: `${base}logo-1024.png` }],
+    ["meta", { property: "og:image", content: `${site}${base}logo-1024.png` }],
+    ["meta", { property: "og:url", content: `${site}${base}` }],
+    ["meta", { property: "og:site_name", content: "OpenWeights" }],
+    ["meta", { name: "twitter:card", content: "summary_large_image" }],
+    ["meta", { name: "twitter:title", content: "OpenWeights" }],
+    [
+      "meta",
+      {
+        name: "twitter:description",
+        content: "Models. Your machine. Your rules.",
+      },
+    ],
+    ["meta", { name: "twitter:image", content: `${site}${base}logo-1024.png` }],
   ],
 
   locales: {

@@ -1,0 +1,47 @@
+# Links externos que apodreceram.
+#
+# Não roda no PR e não roda no release, de propósito. Um link que quebra
+# porque o site do outro mudou não é defeito do commit de ninguém: travar um
+# PR por causa disso é o jeito mais rápido de transformar a checagem em ruído
+# que todo mundo aprende a ignorar. E rede instável não pode segurar uma tag.
+#
+# O que É bloqueante mora no `docs-parity.mjs`: a regra de que link para
+# arquivo versionado aponta para a tag, não para o `main`. Essa dá para
+# verificar offline, hoje, ANTES de virar 404 — que é o único momento em que
+# consertar sai barato.
+#
+# Aqui a saída é uma issue, que alguém resolve quando puder.
+
+name: Links
+
+on:
+  schedule:
+    # 03:00 em Brasília: ninguém esperando o resultado.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  externos:
+    name: Links externos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: lycheeverse/lychee-action@v2
+        id: lychee
+        with:
+          args: >-
+            --cache --max-cache-age 1d
+            'site/**/*.md' 'docs/**/*.md' '*.md'
+          fail: false
+
+      - uses: peter-evans/create-issue-from-file@v5
+        if: steps.lychee.outputs.exit_code != 0
+        with:
+          title: Links quebrados na documentação
+          content-filepath: ./lychee/out.md
+          labels: docs

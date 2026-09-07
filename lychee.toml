@@ -1,0 +1,23 @@
+# Configuração do verificador de links (lychee).
+#
+# Aceita 403 e 429: são bloqueio de bot e limite de taxa, não link quebrado.
+# Tratar isso como falha é o caminho mais curto para o time ignorar o
+# verificador — e um verificador ignorado é pior que nenhum, porque dá a
+# impressão de que alguém está olhando.
+
+accept = ["200..=299", "403", "429"]
+max_retries = 3
+retry_wait_time = 5
+timeout = 20
+max_concurrency = 8
+no_progress = true
+
+exclude = [
+  # Redireciona para a tag mais nova; o destino muda a cada release.
+  "^https://github\\.com/pedro-canedo/openweights/releases/latest",
+  # Endereços do servidor local, com porta que o leitor substitui.
+  "^http://127\\.0\\.0\\.1",
+  "^http://localhost",
+  # Formulário privado de advisory: exige sessão autenticada.
+  "^https://github\\.com/pedro-canedo/openweights/security/advisories/new",
+]
