@@ -105,7 +105,12 @@ cargo fmt --all --check
 - **The UI is bilingual**: new keys go into `src/i18n/pt-BR.json` **and**
   `en.json`, always both.
 - **This site is bilingual too**: a page under `site/` gets its counterpart
-  under `site/pt/`.
+  under `site/pt/`, in the same commit — `npm run docs` fails the build
+  otherwise.
+
+The full version, including how release notes are written once and where each
+kind of documentation lives, is in
+[CONTRIBUTING.md](https://github.com/pedro-canedo/openweights/blob/main/CONTRIBUTING.md).
 
 ## The docs site
 
@@ -117,3 +122,8 @@ npm run dev
 
 It is a VitePress site; pages are Markdown. `npm run build` renders it, and
 pushing to `main` publishes it.
+
+Two checks run before publication and fail the build rather than warn:
+`npm run i18n` for the interface strings and `npm run docs` for the pages —
+parity between languages, the same heading structure, presence in the sidebar,
+and links to versioned files pointing at a tag instead of `main`.

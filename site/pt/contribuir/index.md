@@ -105,7 +105,11 @@ cargo fmt --all --check
 - **A interface é bilíngue**: chaves novas entram em `src/i18n/pt-BR.json` **e**
   `en.json`, sempre nos dois.
 - **Este site também é bilíngue**: uma página em `site/` ganha a contraparte em
-  `site/pt/`.
+  `site/pt/`, no mesmo commit — o `npm run docs` quebra o build se não ganhar.
+
+A versão completa, incluindo como as notas de release são escritas uma vez só e
+onde mora cada tipo de documentação, está no
+[CONTRIBUTING.md](https://github.com/pedro-canedo/openweights/blob/main/CONTRIBUTING.md).
 
 ## O site de documentação
 
@@ -117,3 +121,10 @@ npm run dev
 
 É um site VitePress; as páginas são Markdown. `npm run build` renderiza, e um
 push na `main` publica.
+
+
+Duas checagens rodam antes da publicação e quebram o build em vez de avisar: o
+`npm run i18n` para os textos da interface e o `npm run docs` para as páginas —
+paridade entre os idiomas, a mesma estrutura de títulos, presença na barra
+lateral, e link para arquivo versionado apontando para uma tag em vez do
+`main`.

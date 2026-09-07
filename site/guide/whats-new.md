@@ -1,8 +1,9 @@
 # What's new
 
-The full list of releases, with installers, lives on
-[GitHub](https://github.com/pedro-canedo/openweights/releases). This page
-covers what changed in the app you would download today.
+This page covers what changed in the app you would download today, and why.
+The full history of every version is in the [changelog](/guide/changelog);
+installers live on
+[GitHub](https://github.com/pedro-canedo/openweights/releases).
 
 ## 0.17.0 — smoother chat and comparable configurations
 

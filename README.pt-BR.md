@@ -199,6 +199,13 @@ Convenções do projeto, em uma linha cada:
   correção não prova nada.
 - A interface é bilíngue: chaves novas entram em `src/i18n/pt-BR.json` **e** em
   `en.json`, sempre nas duas.
+- A documentação também é bilíngue: uma página em `site/` ganha a contraparte em
+  `site/pt/`, no mesmo commit.
+
+O guia completo — incluindo como as notas de release são escritas uma vez só e
+onde mora cada tipo de documentação — está no
+[CONTRIBUTING.md](CONTRIBUTING.md). Relatos de segurança e as limitações
+conhecidas por decisão estão no [SECURITY.md](SECURITY.md).
 
 ### Sobre suas chaves de API
 

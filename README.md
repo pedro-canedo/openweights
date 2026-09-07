@@ -247,6 +247,12 @@ Project conventions, one line each:
   the fix proves nothing.
 - The UI is bilingual: new keys go into `src/i18n/pt-BR.json` **and** `en.json`,
   always both.
+- The documentation is bilingual too: a page under `site/` gets its counterpart
+  under `site/pt/`, in the same commit.
+
+The full guide — including how release notes are written once and where each
+kind of documentation lives — is in [CONTRIBUTING.md](CONTRIBUTING.md). Security
+reports and the known limitations by design are in [SECURITY.md](SECURITY.md).
 
 ### About your API keys
 
