@@ -67,7 +67,7 @@ npm run tauri dev
 ```
 
 ::: tip The first build is slow
-It compiles ~500 Rust crates: 5 to 15 minutes. The ones after are incremental
+It compiles hundreds of Rust crates: 5 to 15 minutes. The ones after are incremental
 (seconds).
 :::
 
@@ -79,7 +79,7 @@ It compiles ~500 Rust crates: 5 to 15 minutes. The ones after are incremental
 | `npm run tauri build` | The production installer |
 | `npm run build` | Type check + frontend-only build |
 | `npm run dev` | UI in the browser with mocked data, no Rust |
-| `cd src-tauri && cargo test --workspace` | Rust tests (~960 of them) |
+| `cd src-tauri && cargo test --workspace` | Rust tests (hundreds of them) |
 
 ## Before opening a PR
 

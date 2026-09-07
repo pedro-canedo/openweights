@@ -133,7 +133,7 @@ A run is left without a delta when the engine version changed, when the card was
 heating up during it, or when there is nothing comparable before it. The screen
 says which.
 
-### Global flags
+## Global flags
 
 In the **Advanced** tab, a card holds the flags that apply to **every** model. Process flags
 become `llama-server` arguments; the rest go into the INI's `[*]` section, and a

@@ -46,7 +46,7 @@ knows:
 - **Local Server** — every model your llama.cpp router serves, each with its
   real context window.
 - **OpenRouter** — your favourites, when the provider is on and has a key.
-- **9Router** — its catalogue, when it is installed and running.
+- **9router** — its catalogue, when it is installed and running.
 
 API keys never enter that file. It names environment variables, and the values
 go only into the harness process — so a file someone reads later has no secret
@@ -61,9 +61,9 @@ anything else; the app reads that line and offers exactly those.
 
 This matters more than it sounds. Asked for something open-ended, a reasoning
 model at its highest setting can spend its **entire output budget thinking** and
-stop before writing a single file. On a Qwen3.8 27B, measured on the same
-question: the low level produces around 600 characters of reasoning, the
-highest produces nearly 6,000 — ten times more. Turning it down is often the
+stop before writing a single file. Measured on a reasoning model with such a
+template, on the same question: the low level produces around 600 characters of
+reasoning, the highest produces nearly 6,000 — ten times more. Turning it down is often the
 difference between an answer and a truncated draft.
 
 **Off** really turns thinking off, not down.

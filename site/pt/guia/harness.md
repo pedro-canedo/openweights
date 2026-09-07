@@ -46,7 +46,7 @@ o harness sobe, o app escreve a configuração dele com tudo que conhece:
   cada um com a janela de contexto real.
 - **OpenRouter** — os seus favoritos, quando o provedor está ligado e tem
   chave.
-- **9Router** — o catálogo dele, quando está instalado e no ar.
+- **9router** — o catálogo dele, quando está instalado e no ar.
 
 Chave de API nunca entra nesse arquivo. Ele nomeia variáveis de ambiente, e os
 valores vão só para o processo do harness — então um arquivo que alguém leia
@@ -61,9 +61,9 @@ outro; o app lê essa linha e oferece exatamente aqueles.
 
 Isso pesa mais do que parece. Diante de um pedido aberto, um modelo de
 raciocínio no nível mais alto consegue gastar o **orçamento inteiro de saída
-pensando** e parar antes de escrever o primeiro arquivo. Num Qwen3.8 27B,
-medido na mesma pergunta: o nível baixo produz cerca de 600 caracteres de
-raciocínio, o mais alto quase 6 000 — dez vezes mais. Baixar o esforço é, com
+pensando** e parar antes de escrever o primeiro arquivo. Medido num modelo de
+raciocínio com esse template, na mesma pergunta: o nível baixo produz cerca de
+600 caracteres de raciocínio, o mais alto quase 6 000 — dez vezes mais. Baixar o esforço é, com
 frequência, a diferença entre uma resposta e um rascunho cortado.
 
 **Desligado** desliga o raciocínio de verdade, não o reduz.

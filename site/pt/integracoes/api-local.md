@@ -133,7 +133,7 @@ Uma corrida fica sem delta quando a versão do motor mudou, quando a placa estav
 esquentando durante ela, ou quando não há nada comparável antes. A tela diz qual
 é o caso.
 
-### Flags globais
+## Flags globais
 
 Na aba **Avançado**, um cartão guarda as flags que valem para **todos** os
 modelos. As de

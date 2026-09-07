@@ -56,5 +56,7 @@ running as your user can read it.
   download today.
 - [Install](/guide/install) — one line, or the installer by hand.
 - [First run](/guide/first-run) — hardware detection and the engine download.
+- [Chat performance](/guide/performance) — the waiting phases, and how to
+  compare two configurations honestly.
 - [The coding agent](/guide/harness) — the DeepSeek Harness, installed and run
   by the app, pre-configured with your models.

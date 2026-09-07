@@ -36,7 +36,7 @@ body:
     attributes:
       label: OpenWeights version
       description: Shown in the bottom-left corner of the window.
-      placeholder: "v0.1.0"
+      placeholder: "vX.Y.Z"
     validations:
       required: true
 

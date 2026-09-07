@@ -15,14 +15,20 @@ site/                 This documentation site (VitePress)
 | Crate | What it owns |
 |---|---|
 | `types` | Types shared across crates, serialized to the frontend in `camelCase` |
-| `store` | Local SQLite: chats, messages, presets and settings |
+| `store` | Local SQLite: chats, messages, presets, settings and the configuration comparisons |
 | `engine` | Inference engines. The main one is llama.cpp's llama-server in **Router mode**: one process that loads, unloads and swaps models according to the `model` field of each request |
 | `runtime` | Picks the right llama.cpp build for the machine, downloads it from a pinned GitHub release, verifies and extracts it |
 | `hw` | Hardware detection at startup, plus live telemetry at 1–2 Hz |
 | `models` | Hugging Face Hub client for GGUF files, and the download manager |
 | `advisor` | Estimates the memory each GGUF file needs and grades it against your hardware — the green/yellow/grey verdict |
-| `providers`, `ninerouter`, `dshhost`, `gateway`, `nodejs` | External model sources, the local router, the managed DeepSeek Harness, the single entry point, the portable Node |
-| `proc`, `fetch` | Long-lived child process supervision, and HTTP |
+| `cluster` | llama.cpp RPC cluster: one host and one worker on the local network |
+| `providers` | LLM providers: the remote catalogue (OpenRouter) and endpoint resolution |
+| `ninerouter` | Installs, supervises and removes 9router in isolation |
+| `dshhost` | Installs, supervises and configures the DeepSeek Harness (dsh) in isolation |
+| `gateway` | Single entry point (a local Traefik) for the LLM providers |
+| `nodejs` | Portable Node.js runtime, isolated from the system's Node |
+| `proc` | Long-lived child process supervision: process tree, Job Object and free port |
+| `fetch` | Downloads, verifies by SHA256 and extracts release packages in an atomic install |
 
 ## Router mode
 

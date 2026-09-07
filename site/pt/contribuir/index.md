@@ -67,7 +67,7 @@ npm run tauri dev
 ```
 
 ::: tip A primeira compilação é lenta
-Ela compila ~500 crates Rust: de 5 a 15 minutos. As seguintes são incrementais
+Ela compila centenas de crates Rust: de 5 a 15 minutos. As seguintes são incrementais
 (segundos).
 :::
 
@@ -79,7 +79,7 @@ Ela compila ~500 crates Rust: de 5 a 15 minutos. As seguintes são incrementais
 | `npm run tauri build` | O instalador de produção |
 | `npm run build` | Checagem de tipos + build só do frontend |
 | `npm run dev` | Interface no navegador com dados simulados, sem Rust |
-| `cd src-tauri && cargo test --workspace` | Testes Rust (~960 deles) |
+| `cd src-tauri && cargo test --workspace` | Testes Rust (centenas deles) |
 
 ## Antes de abrir um PR
 

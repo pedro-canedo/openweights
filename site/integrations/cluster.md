@@ -31,7 +31,8 @@ up to date, the cluster has everything it needs.
 
 ## Turning it on
 
-The panel lives in **Local Server**, under the server settings.
+The panel lives in **Local Server → Network**, next to the other
+network settings.
 
 **Offer GPU on the network** is off by default, on both machines. Nothing is
 announced and no port is opened until you turn it on — turning it on is the

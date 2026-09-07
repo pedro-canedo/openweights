@@ -82,5 +82,6 @@ here.
 
 - [Models and quantization](/guide/models) — how to read the colours.
 - [Chat](/guide/chat) — the conversation screen, parameters and attachments.
+- [Chat performance](/guide/performance) — why an answer took that long.
 - [The coding agent](/guide/harness) — when you want work done, not just
   answers.

@@ -54,6 +54,7 @@ const en = {
   engineBody: "The llama.cpp the app uses lives in a folder of its own, isolated from anything you have installed. Shortly after startup OpenWeights runs that binary and reads the build it reports back — which is what separates \u201cthe files are there\u201d from \u201cthe engine works\u201d. A CUDA package missing its runtime DLLs passes any file check and only fails when you load a model.",
   engineRows: [
     ["Ready", "It ran, and answered with the build this release expects"],
+    ["Not installed", "First run, or the folder was deleted"],
     ["Update available", "The disk has another build — this release was tested against a different one"],
     ["Wrong variant", "Your GPU or driver changed since the install"],
     ["Won't run", "The files are there and the executable does not start"],
@@ -120,6 +121,7 @@ const ptBR = {
   engineBody: "O llama.cpp que o app usa mora numa pasta dele, isolado de qualquer coisa que você tenha instalado. Pouco depois de abrir, o OpenWeights executa esse binário e lê a build que ele responde \u2014 é o que separa \u201cos arquivos estão lá\u201d de \u201co motor funciona\u201d. Um pacote CUDA sem as DLLs do runtime passa em qualquer checagem de arquivo e só falha quando você carrega um modelo.",
   engineRows: [
     ["Pronto", "Executou e respondeu com a build que esta versão espera"],
+    ["Não instalado", "Primeira execução, ou a pasta foi apagada"],
     ["Atualização disponível", "O disco tem outra build — esta versão foi testada com outra"],
     ["Variante errada", "Sua placa ou o driver mudaram desde a instalação"],
     ["Não executa", "Os arquivos estão lá e o executável não sobe"],

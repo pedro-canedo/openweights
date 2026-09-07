@@ -59,5 +59,7 @@ máquina, mas um programa rodando como seu usuário consegue ler.
 - [Instalação](/pt/guia/instalacao) — uma linha, ou o instalador na mão.
 - [Primeira execução](/pt/guia/primeira-execucao) — detecção de hardware e o
   download do motor.
+- [Desempenho no chat](/pt/guia/desempenho) — as fases de espera, e como
+  comparar duas configurações com honestidade.
 - [O agente de código](/pt/guia/harness) — o DeepSeek Harness, instalado e
   rodado pelo app, pré-configurado com os seus modelos.

@@ -32,7 +32,8 @@ atualizado, o cluster já tem tudo de que precisa.
 
 ## Ligando
 
-O painel fica em **Servidor local**, abaixo das configurações do servidor.
+O painel fica em **Servidor Local → Rede**, junto das outras
+configurações de rede.
 
 **Oferecer GPU na rede** vem desligado nas duas máquinas. Nada é anunciado e
 nenhuma porta é aberta até você ligar — ligar *é* o consentimento. Faça isso nas

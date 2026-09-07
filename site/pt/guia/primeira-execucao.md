@@ -81,5 +81,6 @@ aqui.
 
 - [Modelos e quantização](/pt/guia/modelos) — como ler as cores.
 - [Chat](/pt/guia/chat) — a tela de conversa, parâmetros e anexos.
+- [Desempenho no chat](/pt/guia/desempenho) — por que a resposta demorou.
 - [O agente de código](/pt/guia/harness) — quando você quer trabalho feito,
   não só resposta.

@@ -47,5 +47,5 @@ fragments/s reduced median React render CPU from 2,688.6 ms to 241.0 ms in three
 runs (91.0%). This measures the frontend fixture, not an increase in model
 tokens/s. Real inference must be measured separately on the same hardware,
 runtime build, model and configuration. See the repository's
-[validation record](https://github.com/pedro-canedo/openweights/blob/main/docs/performance-0.17.0.md)
+[validation record](https://github.com/pedro-canedo/openweights/blob/v0.17.0/docs/performance-0.17.0.md)
 for methodology and limitations.
