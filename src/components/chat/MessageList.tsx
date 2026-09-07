@@ -186,12 +186,11 @@ export default function MessageList({
   };
 
   const actionBar = (m: UiMessage, i: number) => {
-    if (generating) return null;
     const isLastUser = i === lastUserIdx;
     const isLastAssistant = i === lastAssistantIdx;
     return (
       <div
-        className={`mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 ${
+        className={`mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 ${generating ? "invisible pointer-events-none" : ""} ${
           m.role === "user" ? "justify-end" : ""
         }`}
       >

@@ -19,10 +19,14 @@ test("chat generates, exposes run details, and cancels without losing text", asy
 test("long histories stay virtualized and reading position survives streaming", async ({ page }) => {
   await page.goto("/tests/render.html");
   await page.waitForFunction(() => !!(window as any).startRenderBench);
+  // Virtuoso applies its initial bottom position after measuring rows. Scroll
+  // only once that placement is visible, as a reader would do.
+  await expect(page.getByText("Mensagem 499", { exact: true })).toBeVisible();
   expect(await page.locator("body *").count()).toBeLessThan(500);
   const scroller = page.locator('[data-virtuoso-scroller="true"]');
   await scroller.evaluate(el => { el.scrollTop = 1000; });
   await page.waitForTimeout(200);
+  expect(await scroller.evaluate(el => el.scrollTop)).toBeLessThan(2000);
   await page.evaluate(() => (window as any).startRenderBench(5));
   await page.waitForTimeout(300);
   const top = await scroller.evaluate(el => el.scrollTop);

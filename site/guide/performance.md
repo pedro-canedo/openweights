@@ -43,8 +43,8 @@ running. You can leave the screen and return to cancel an ongoing test.
 ## Measurement scope
 
 The Windows development benchmark with 500 history messages and 100 synthetic
-fragments/s reduced median React render CPU from 2,688.6 ms to 170.7 ms in three
-runs (93.7%). This measures the frontend fixture, not an increase in model
+fragments/s reduced median React render CPU from 2,688.6 ms to 241.0 ms in three
+runs (91.0%). This measures the frontend fixture, not an increase in model
 tokens/s. Real inference must be measured separately on the same hardware,
 runtime build, model and configuration. See the repository's
 [validation record](https://github.com/pedro-canedo/openweights/blob/main/docs/performance-0.17.0.md)

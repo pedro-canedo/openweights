@@ -38,6 +38,6 @@ conclusão, erro e cancelamento imediatos. O destaque de código é feito ao
 terminar. Parar preserva a resposta parcial e as métricas registradas.
 
 No cenário sintético Windows com 500 mensagens e 100 fragmentos/s, a mediana
-de CPU de renderização React caiu de 2.688,6 ms para 170,7 ms em três rodadas
-(93,7%). Isso mede a interface em desenvolvimento, não ganho de tokens/s.
+de CPU de renderização React caiu de 2.688,6 ms para 241,0 ms em três rodadas
+(91,0%). Isso mede a interface em desenvolvimento, não ganho de tokens/s.
 Veja a [metodologia e limitações](https://github.com/pedro-canedo/openweights/blob/main/docs/performance-0.17.0.md).

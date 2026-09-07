@@ -12,10 +12,13 @@ The unit test verifies the actual store's publication limit separately.
 | Version | Render CPU samples (ms) | Median (ms) | DOM nodes |
 | --- | --- | --- | --- |
 | 0.16.1, batch 1 | 2757.3, 2576.1, 2688.6 | 2688.6 | 4278 |
-| 0.17.0, batch 5 | 199.0, 170.7, 147.1 | 170.7 | 161 |
+| 0.17.0, batch 5 | 353.6, 241.0, 195.9 | 241.0 | 140 (settled runs) |
 
-The median reduction is 93.7%. This is render CPU in a synthetic development
+The median reduction is 91.0%. This is render CPU in a synthetic development
 fixture, not total application CPU, a release WebView profile, or model tokens/s.
+The first post-stream DOM snapshot occurred before virtualization settled;
+its transient 31-node count is excluded from the settled DOM column. All three
+CPU samples, including that slower first run, are retained in the median.
 Reproduce with `npm run dev` and `npm run bench:render -- result.json 5`.
 For the old baseline, use the v0.16.1 MessageList dependencies and batch 1.
 
