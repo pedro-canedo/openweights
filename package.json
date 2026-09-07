@@ -15,8 +15,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/i18n-parity.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/i18n-parity.mjs && node scripts/docs-parity.mjs && tsc --noEmit && vite build",
     "i18n": "node scripts/i18n-parity.mjs",
+    "docs": "node scripts/docs-parity.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run src",

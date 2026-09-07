@@ -15,6 +15,7 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "docs/releases/**"
       - ".github/workflows/docs.yml"
   # Permite republicar sem commit — útil depois de mexer nas configurações do
   # Pages no próprio GitHub.
@@ -50,6 +51,13 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: site/package-lock.json
+
+      # Este workflow dispara em push direto para `main`, que não passa por PR
+      # nenhum — sem esta checagem aqui, uma página órfã ou sem par em português
+      # seria publicada sem ninguém ver.
+      - name: Paridade da documentação
+        working-directory: .
+        run: node scripts/docs-parity.mjs
 
       - run: npm ci
       - run: npm run build

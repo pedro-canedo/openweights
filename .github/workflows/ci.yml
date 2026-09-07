@@ -72,3 +72,25 @@ jobs:
       - name: Cargo clippy
         working-directory: src-tauri
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  # Fora da matriz de propósito: a documentação é a mesma nos três sistemas, e
+  # este job não precisa de Rust nem de `npm ci` — os scripts usam só a stdlib
+  # do Node. São ~15 segundos, e falham antes de a matriz terminar de compilar.
+  docs:
+    name: Documentação
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # Paridade EN↔PT, cobertura da barra lateral e links versionados.
+      - name: Paridade da documentação
+        run: node scripts/docs-parity.mjs
+
+      # O CHANGELOG é gerado de `docs/releases/`; aqui só se confere que ele
+      # está em dia. Regravar vem do humano, como o `cargo fmt --check`.
+      - name: CHANGELOG em dia com docs/releases/
+        run: node scripts/release-notes.mjs --changelog --check
