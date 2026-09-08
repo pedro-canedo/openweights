@@ -26,7 +26,7 @@ impl Drop for ActiveGuard {
         ACTIVE.store(false, Ordering::SeqCst);
     }
 }
-const WORKLOAD: &str = "interactive-code-v2-short-long-temp0-seed42-cacheoff-128";
+const WORKLOAD: &str = "interactive-code-v3-varied-long-temp0-seed42-cacheoff-128";
 const PROMPT: &str = "Refactor the following Rust function using iterators. Explain edge cases and provide tests.\nfn sum_positive(values: &[i32]) -> i64 { let mut sum = 0i64; for value in values { if *value > 0 { sum += *value as i64; } } sum }";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -238,6 +238,58 @@ pub(crate) fn config_key(cfg: &ServerConfig) -> String {
     format!("{:x}", hash.finish())
 }
 
+/// Prompt longo com conteúdo VARIADO, e não o mesmo parágrafo repetido.
+///
+/// Repetir o texto literalmente parecia inofensivo e não era: com a
+/// especulação por n-grama ligada — que é o padrão de quem tem um modelo com
+/// cabeça MTP — o rascunho encontra a continuação dentro do próprio prompt e
+/// acerta quase sempre. A taxa de geração sobe várias vezes, e o que a
+/// medição registra é a repetitividade do texto de teste, não a velocidade do
+/// modelo. Foi assim que uma mesma máquina apareceu com 129 tok/s aqui e 31
+/// no chat, com o mesmo modelo e o mesmo perfil.
+///
+/// Cada bloco muda de nome, de tipo e de números. O tamanho continua
+/// proporcional à janela, que é o motivo de o prompt longo existir.
+fn long_prompt(blocos: usize) -> String {
+    if blocos <= 1 {
+        return PROMPT.to_string();
+    }
+    // Quatro CORPOS diferentes, não quatro nomes para o mesmo corpo: variar
+    // só o identificador deixaria `for value in values { if *value > limit {`
+    // repetido em todos os blocos, e é justamente uma sequência dessas que o
+    // n-grama copia.
+    const CORPOS: [&str; 4] = [
+        "fn {nome}(values: &[{t}], limit: {t}) -> {t} {{ let mut acc = {n} as {t}; \
+         for value in values {{ if *value > limit {{ acc += *value; }} }} acc }}",
+        "fn {nome}(rows: &[({t}, {t})]) -> Vec<{t}> {{ let mut out = Vec::new(); \
+         let mut i = 0; while i < rows.len() {{ out.push(rows[i].0 - rows[i].1); i += {n}; }} out }}",
+        "fn {nome}(text: &str) -> std::collections::BTreeMap<char, usize> {{ \
+         let mut m = std::collections::BTreeMap::new(); for c in text.chars() {{ \
+         *m.entry(c).or_insert(0) += {n}; }} m }}",
+        "fn {nome}(items: &mut Vec<{t}>) -> Option<{t}> {{ items.sort(); \
+         let mid = items.len() / 2; items.get(mid).copied().map(|v| v * {n} as {t}) }}",
+    ];
+    const TIPOS: [&str; 4] = ["i32", "i64", "u32", "f64"];
+    const TAREFAS: [&str; 4] = [
+        "refactor it using iterators and explain the edge cases",
+        "find the bug, then write the test that would have caught it",
+        "rewrite it to avoid allocation and justify the trade-off",
+        "document the invariants and what breaks if they are violated",
+    ];
+    (0..blocos)
+        .map(|i| {
+            let t = TIPOS[i % TIPOS.len()];
+            let nome = format!("step_{i}");
+            let corpo = CORPOS[i % CORPOS.len()]
+                .replace("{nome}", &nome)
+                .replace("{t}", t)
+                .replace("{n}", &(i % 7 + 1).to_string());
+            let tarefa = TAREFAS[(i / TIPOS.len()) % TAREFAS.len()];
+            format!("Task {i}: {tarefa}.\n{corpo}\n\n")
+        })
+        .collect()
+}
+
 async fn sample(
     client: &reqwest::Client,
     cfg: &ServerConfig,
@@ -250,7 +302,7 @@ async fn sample(
     let mut generation_ms = 0.0;
     let mut prompt_ms = 0.0;
     for repetitions in [1, (ctx as usize / 256).clamp(1, 32)] {
-        let content = PROMPT.repeat(repetitions);
+        let content = long_prompt(repetitions);
         let response: Value = client.post(format!("{}/v1/chat/completions", cfg.connect_url()))
             .bearer_auth(cfg.api_key.as_deref().unwrap_or_default())
             .json(&json!({"model": model, "messages": [{"role":"user","content":content}], "temperature":0, "seed":42, "max_tokens":128, "stream":false, "cache_prompt":false}))
@@ -692,6 +744,59 @@ fn selected_arm(
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// O prompt longo não pode ser o curto repetido.
+    ///
+    /// Com a especulação por n-grama ligada, um texto que se repete deixa o
+    /// rascunho copiar a continuação do próprio prompt: a taxa de geração
+    /// sobe várias vezes e a medição passa a descrever o texto de teste em
+    /// vez da máquina. A propriedade que impede isso é não haver bloco
+    /// idêntico a outro — e é ela que o teste fixa, não o texto escolhido.
+    #[test]
+    fn the_long_prompt_does_not_feed_the_draft_its_own_repetition() {
+        let longo = long_prompt(32);
+        assert!(
+            longo.len() > PROMPT.len() * 8,
+            "o prompt longo tem de ser longo"
+        );
+
+        let blocos: Vec<&str> = longo
+            .split("\n\n")
+            .filter(|b| !b.trim().is_empty())
+            .collect();
+        assert_eq!(blocos.len(), 32);
+        let unicos: std::collections::HashSet<&&str> = blocos.iter().collect();
+        assert_eq!(
+            unicos.len(),
+            blocos.len(),
+            "há blocos repetidos literalmente"
+        );
+
+        // Blocos diferentes não bastam: se todos tivessem a MESMA forma e só
+        // trocassem o identificador, o miolo `for value in values { if ...`
+        // continuaria repetido, e é uma sequência dessas que o n-grama copia.
+        // O que se cobra aqui é variedade de FORMA.
+        let corpos: std::collections::HashSet<String> = blocos
+            .iter()
+            .filter_map(|b| b.lines().find(|l| l.starts_with("fn ")))
+            // Fora o nome e os literais, o que sobra é o esqueleto.
+            .map(|l| {
+                l.split(|c: char| c.is_ascii_digit() || c == '_')
+                    .collect::<String>()
+            })
+            .collect();
+        assert!(
+            corpos.len() >= 4,
+            "só {} esqueleto(s) diferente(s) em 32 blocos",
+            corpos.len()
+        );
+
+        // Uma repetição literal do prompt curto é exatamente o que não pode
+        // voltar por descuido.
+        assert!(!longo.contains(&PROMPT.repeat(2)));
+        // Um bloco só continua sendo o prompt de sempre.
+        assert_eq!(long_prompt(1), PROMPT);
+    }
+
     #[test]
     fn candidate_does_not_trade_context_or_precision_for_speed() {
         let base = ModelProfile {
