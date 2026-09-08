@@ -39,6 +39,14 @@ never changes; the verdict now comes from asking the gate itself. And a missing
 token, a revoked token and an unaccepted licence — three different problems —
 stopped sharing one sentence.
 
+Icons stopped being text characters. Thirty glyphs — `✓ × ▾ ▸ ♥ ↓ ↑ ↗ ⚠ ⧉ → •
+⭐` — were standing in for icons across sixteen files, which meant the system's
+installed fonts, not the app, decided their shape and weight. They are now line
+pictograms drawn on one grid with one stroke weight. Where the drawing carries
+the meaning on its own — the arrow that tells a download rate from an upload
+one, the heart that says a number is likes — it is announced to screen readers
+instead of hidden.
+
 ## 0.17.0 — smoother chat and comparable configurations
 
 Long conversations are virtualized, streaming updates are batched at 50 ms,

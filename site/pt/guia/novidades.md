@@ -39,6 +39,14 @@ nunca muda; agora o veredito vem de perguntar ao próprio portão. E token
 ausente, token revogado e licença não aceita — três problemas diferentes —
 deixaram de dividir a mesma frase.
 
+Os ícones deixaram de ser caracteres de texto. Trinta glifos — `✓ × ▾ ▸ ♥ ↓ ↑
+↗ ⚠ ⧉ → • ⭐` — faziam papel de ícone em dezesseis arquivos, o que deixava a
+fonte instalada no sistema, e não o app, decidir a forma e o peso de cada um.
+Agora são pictogramas de linha, desenhados num grid só e com um traço só. Onde
+o desenho carrega o sentido sozinho — a seta que distingue taxa de download da
+de upload, o coração que diz que o número é de curtidas — ele é anunciado ao
+leitor de tela em vez de escondido.
+
 ## 0.17.0 — chat mais fluido e configurações comparáveis
 
 Conversas longas usam histórico virtualizado, o streaming atualiza a tela a cada

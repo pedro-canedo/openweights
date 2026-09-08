@@ -10,7 +10,7 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
-## [0.18.0] — 2026-09-07
+## [0.18.0] — 2026-09-08
 
 - **Optimize for my computer**, under My Models → Tune and Local Server →
   Performance. The app installs the optional engine when compatible, then
@@ -26,6 +26,9 @@ published releases and the version commits, and are kept as history.
   token to paste. Users who already accepted a licence stop seeing the gate
   warning, and a missing token, a revoked token and an unaccepted licence each
   get their own message and action.
+- No icon in the app is a text character any more. The thirty glyphs standing
+  in for icons (`✓ × ▾ ▸ ♥ ↓ ↑ ↗ ⚠ ⧉ → • ⭐`) became line pictograms with a
+  single stroke weight that no longer depends on the fonts the system has.
 - Browsable version history on the site, a troubleshooting page, and reference
   pages for the local API and for llama.cpp configuration.
 - Release notes are now written once: the GitHub release, the tag message and
