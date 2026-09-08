@@ -818,6 +818,65 @@ pub(crate) fn profile_for(state: &AppState, name: &str) -> Option<lr_types::tuni
     None
 }
 
+/// O motor em uso, já resolvido contra o disco.
+///
+/// A escolha fica gravada, mas o pacote opcional pode sumir entre uma sessão e
+/// outra (limpeza de dados, reinstalação, pasta apagada à mão). Ler a
+/// preferência sem conferir deixaria o app preso num executável inexistente: o
+/// servidor não sobe, o modelo não carrega e não há tela para desfazer. O
+/// oficial é o fundo do poço, e é sempre ele quando o opcional não está lá.
+pub(crate) fn selected_engine(state: &AppState) -> lr_types::tuning::EngineSource {
+    let stored = state
+        .store
+        .get_setting("active_engine")
+        .ok()
+        .flatten()
+        .as_deref()
+        == Some("moeCache");
+    if stored && state.runtime_mgr.experimental_state().installed {
+        lr_types::tuning::EngineSource::MoeCache
+    } else {
+        lr_types::tuning::EngineSource::Official
+    }
+}
+
+pub(crate) fn active_runtime(state: &AppState) -> lr_runtime::RuntimeState {
+    if selected_engine(state) == lr_types::tuning::EngineSource::MoeCache {
+        state.runtime_mgr.experimental_state()
+    } else {
+        state
+            .runtime_mgr
+            .state(lr_runtime::select_variant(&state.profile))
+    }
+}
+
+pub(crate) fn select_engine(
+    state: &AppState,
+    engine: lr_types::tuning::EngineSource,
+) -> CmdResult<()> {
+    if engine == lr_types::tuning::EngineSource::MoeCache {
+        if !lr_runtime::experimental::supported(&state.profile)
+            || !state.runtime_mgr.experimental_state().installed
+        {
+            return Err("optimization-runtime-incompatible".into());
+        }
+        if state.cluster.measure_args_now().is_some() {
+            return Err("optimization-cluster-active".into());
+        }
+    }
+    state
+        .store
+        .set_setting(
+            "active_engine",
+            if engine == lr_types::tuning::EngineSource::MoeCache {
+                "moeCache"
+            } else {
+                "official"
+            },
+        )
+        .map_err(err_str)
+}
+
 /// Sufixo do id da entrada que carrega o projetor de visão.
 ///
 /// Visão sob demanda sem recarregar nada na hora: o motor recebe DUAS
@@ -834,9 +893,21 @@ pub(crate) fn router_preset_entries(state: &AppState) -> Vec<lr_engine::PresetEn
     use lr_types::tuning::VisionMode;
 
     let mut preset_models: Vec<lr_engine::PresetEntry> = Vec::new();
+    // Uma leitura só: `selected_engine` confere o pacote opcional no disco, e
+    // repetir isso por modelo transformaria a montagem do preset em dezenas de
+    // idas ao sistema de arquivos.
+    let engine = selected_engine(state);
 
     for a in lr_models::scan_local(&state.models_dir) {
-        let perfil = profile_for(state, &a.name);
+        let mut perfil = profile_for(state, &a.name);
+        // The router has one executable. A fork profile is never sent to an
+        // official router while another model is selected.
+        if engine == lr_types::tuning::EngineSource::Official
+            && let Some(ref mut p) = perfil
+        {
+            p.engine = None;
+            p.moe_cache_slots = None;
+        }
         let mut entry = lr_engine::PresetEntry::new(a.name.clone(), a.primary_path.clone());
         if let Some(p) = &perfil {
             for (chave, valor) in p.to_ini_extras() {
@@ -989,10 +1060,7 @@ pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
 /// — o bloco copiável da tela não pode virar vazamento de segredo.
 pub(crate) async fn preview_server_config(state: &AppState) -> lr_engine::ServerConfig {
     let prefs = server_prefs(state);
-    let variant = lr_runtime::select_variant(&state.profile);
-    let exe = state
-        .runtime_mgr
-        .state(variant)
+    let exe = active_runtime(state)
         .server_exe
         .unwrap_or_else(|| std::path::PathBuf::from("llama-server"));
     let mut cfg = lr_engine::ServerConfig::new(exe, state.models_dir.clone(), prefs.port);
@@ -1023,10 +1091,7 @@ pub async fn server_start(
 }
 
 pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult<ServerStatusView> {
-    let runtime = {
-        let variant = lr_runtime::select_variant(&state.profile);
-        state.runtime_mgr.state(variant)
-    };
+    let runtime = active_runtime(state);
     let extra = state.cluster.host_extra_args().await;
     let exe = runtime
         .server_exe

@@ -1,0 +1,91 @@
+name: Optional MoE runtime
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+        description: Publish verified packages for the app
+permissions:
+  contents: read
+concurrency:
+  group: moe-runtime-b46f7f7a436f-v1
+  cancel-in-progress: false
+env:
+  MOE_REVISION: b46f7f7a436f990932d3da3ec53380e2b9effc89
+  MOE_TAG: moe-runtime-b46f7f7a436f-v1
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: GenerelSchwerz/llama.cpp
+          ref: b46f7f7a436f990932d3da3ec53380e2b9effc89
+          path: engine-source
+      - uses: ./engine-source/.github/actions/windows-setup-cuda
+        with:
+          cuda_version: '13.3'
+          cuda_arch: x64
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake -S engine-source -B engine-build -DGGML_CUDA=ON -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF '-DCMAKE_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120'
+          if ($LASTEXITCODE) { throw 'Configure failed' }
+          cmake --build engine-build --config Release --parallel 3 --target llama-server llama-bench llama-fit-params
+          if ($LASTEXITCODE) { throw 'Build failed' }
+      - name: Package and smoke test
+        shell: pwsh
+        run: python scripts/package-moe-runtime.py engine-source engine-build/bin/Release output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moe-windows
+          path: output/*
+  linux:
+    runs-on: ubuntu-24.04
+    container: nvidia/cuda:13.3.0-devel-ubuntu24.04
+    steps:
+      - name: Dependencies
+        run: apt-get update && apt-get install -y git cmake build-essential python3 libgomp1
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: GenerelSchwerz/llama.cpp
+          ref: b46f7f7a436f990932d3da3ec53380e2b9effc89
+          path: engine-source
+      - name: Build
+        run: |
+          cmake -S engine-source -B engine-build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF '-DCMAKE_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120' '-DCMAKE_BUILD_RPATH=$ORIGIN' '-DCMAKE_INSTALL_RPATH=$ORIGIN'
+          cmake --build engine-build --parallel 3 --target llama-server llama-bench llama-fit-params
+      - name: Package and smoke test
+        run: python3 scripts/package-moe-runtime.py engine-source engine-build/bin output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moe-linux
+          path: output/*
+  publish:
+    if: inputs.publish
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: moe-*
+          merge-multiple: true
+          path: output
+      - name: Publish immutable runtime release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # A tag é imutável, mas uma publicação parcial (um dos dois sistemas
+          # falhou) precisa de caminho de volta: reenviar os anexos na release
+          # que já existe, em vez de deixar a tag travada.
+          if gh release view "$MOE_TAG" >/dev/null 2>&1; then
+            gh release upload "$MOE_TAG" output/* --clobber
+          else
+            gh release create "$MOE_TAG" output/* --target "$GITHUB_SHA" --prerelease --title 'Optional MoE runtime' --notes "CUDA 13.3 runtime built from GenerelSchwerz/llama.cpp at $MOE_REVISION. Experimental; install through OpenWeights."
+          fi

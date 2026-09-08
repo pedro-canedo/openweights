@@ -25,7 +25,7 @@ mod oauth;
 pub use download::{
     DownloadEvent, DownloadManager, DownloadRequest, DownloadState, DownloadStatus, download_id,
 };
-pub use gguf_local::{LocalGgufMeta, read_local_meta};
+pub use gguf_local::{LocalGgufMeta, expert_slot_bytes, read_local_meta};
 pub use hf::{BaseConfig, GgufRepoMeta, HfAccess, HfClient, HfIdentity, HfWhoami, SortBy};
 pub use local::{LocalArtifact, scan_local};
 pub use oauth::{HfSession, Login, OauthClient, refresh as oauth_refresh};

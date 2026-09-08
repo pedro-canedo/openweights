@@ -95,10 +95,10 @@ pub struct RuntimeState {
 
 /// Gerencia a instalação dos runtimes em `<data_dir>/runtimes/`.
 pub struct RuntimeManager {
-    data_dir: PathBuf,
+    pub(crate) data_dir: PathBuf,
     /// Serializa instalações concorrentes (reentrada do comando, remount do
     /// webview): duas extrações no mesmo destino se atropelariam.
-    install_lock: tokio::sync::Mutex<()>,
+    pub(crate) install_lock: tokio::sync::Mutex<()>,
 }
 
 impl RuntimeManager {

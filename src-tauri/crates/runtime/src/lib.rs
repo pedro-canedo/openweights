@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 mod check;
+pub mod experimental;
 mod manager;
 pub use check::{
     EngineCheck, InstalledRuntime, PruneResult, Verdict, check, prune, scan_installed,

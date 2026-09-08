@@ -11,6 +11,7 @@ mod commands_providers;
 mod commands_tuning;
 mod comparison;
 mod desktop_host;
+mod optimization;
 mod serve_stats;
 mod spec_bench;
 mod state;
@@ -157,6 +158,8 @@ fn main() {
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,
             comparison::compare_run,
+            optimization::optimize_run,
+            optimization::optimize_prepare_model,
             comparison::compare_apply,
             comparison::compare_latest,
             commands_tuning::tune_bench,

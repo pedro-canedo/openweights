@@ -8,7 +8,7 @@
 
 import { getServerStatus, getSetting, startServer } from "./api";
 import { providerEndpoint, splitModelRef, type ProviderId } from "./providers";
-import { isTauri } from "./tauri";
+import { isTauri, invoke } from "./tauri";
 
 export interface ServerSession {
   /** URL conectável pela UI (nunca 0.0.0.0, mesmo em modo LAN). */
@@ -66,6 +66,7 @@ async function startSession(): Promise<ServerSession> {
 export async function ensureEndpoint(modelRef: string): Promise<EndpointSession> {
   const { provider } = splitModelRef(modelRef);
   if (provider === "local") {
+    if (isTauri) await invoke("optimize_prepare_model", { model: modelRef });
     // O auto-start vem PRIMEIRO — subir o llama-server se preciso é o
     // comportamento de sempre, e a chave só existe com o processo de pé.
     const { baseUrl } = await ensureServer();

@@ -211,6 +211,91 @@ fn read_u32<R: Read>(r: &mut R) -> Option<u32> {
     Some(u32::from_le_bytes(b))
 }
 
+/// Upper bound for one cached expert across every routed tensor in a shard.
+/// Uses file spans (including alignment), so new quantization types do not
+/// require a guessed bytes/parameter table. None means unverified geometry.
+pub fn expert_slot_bytes(path: &Path, experts: u32) -> Option<u64> {
+    if experts == 0 {
+        return None;
+    }
+    let mut r = BufReader::new(std::fs::File::open(path).ok()?);
+    let size = r.get_ref().metadata().ok()?.len();
+    let mut magic = [0u8; 4];
+    r.read_exact(&mut magic).ok()?;
+    if &magic != b"GGUF" || !matches!(read_u32(&mut r)?, 2 | 3) {
+        return None;
+    }
+    let tensors = read_u64(&mut r)?;
+    let kv = read_u64(&mut r)?;
+    if tensors > 100_000 || kv > MAX_KV {
+        return None;
+    }
+    let mut alignment = 32u64;
+    for _ in 0..kv {
+        let key = read_string(&mut r)?;
+        let kind = read_u32(&mut r)?;
+        if key == "general.alignment" && kind == 4 {
+            alignment = read_u32(&mut r)? as u64;
+            continue;
+        }
+        let bytes = match kind {
+            0 | 1 | 7 => 1,
+            2 | 3 => 2,
+            4..=6 => 4,
+            10..=12 => 8,
+            8 => {
+                skip_string(&mut r)?;
+                continue;
+            }
+            9 => {
+                skip_array(&mut r)?;
+                continue;
+            }
+            _ => return None,
+        };
+        r.seek(SeekFrom::Current(bytes)).ok()?;
+    }
+    if alignment == 0 || alignment > 1024 * 1024 {
+        return None;
+    }
+    let mut spans = Vec::new();
+    for _ in 0..tensors {
+        let name = read_string(&mut r)?;
+        let nd = read_u32(&mut r)?;
+        if !(1..=4).contains(&nd) {
+            return None;
+        }
+        let mut dims = Vec::new();
+        for _ in 0..nd {
+            dims.push(read_u64(&mut r)?);
+        }
+        let _kind = read_u32(&mut r)?;
+        let offset = read_u64(&mut r)?;
+        let routed = name.contains("_exps.weight") || name.contains("_chexps.weight");
+        // GGUF keeps the tensor dimensions in model order, which differs
+        // between exporters.  The expert axis is the dimension declared by
+        // the file's own expert count; requiring it to be present avoids
+        // guessing a layout while still accepting both common orderings.
+        if routed && (nd != 3 || !dims.contains(&(experts as u64))) {
+            return None;
+        }
+        spans.push((offset, routed));
+    }
+    let pos = r.stream_position().ok()?;
+    let data = pos.div_ceil(alignment).checked_mul(alignment)?;
+    let end = size.checked_sub(data)?;
+    spans.sort_unstable_by_key(|s| s.0);
+    spans.push((end, false));
+    let mut total = 0u64;
+    for pair in spans.windows(2) {
+        let bytes = pair[1].0.checked_sub(pair[0].0)?;
+        if pair[0].1 {
+            total = total.checked_add(bytes.div_ceil(experts as u64).checked_add(512)?)?;
+        }
+    }
+    Some(total)
+}
+
 fn read_u64<R: Read>(r: &mut R) -> Option<u64> {
     let mut b = [0u8; 8];
     r.read_exact(&mut b).ok()?;

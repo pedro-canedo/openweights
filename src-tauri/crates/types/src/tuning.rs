@@ -12,6 +12,14 @@
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EngineSource {
+    #[default]
+    Official,
+    MoeCache,
+}
+
 /// Tipo do KV cache. Comprimir troca um pouco de qualidade por memória, e é
 /// o botão que mais rende quando a janela é grande.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -267,6 +275,11 @@ pub enum ProfileSource {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelProfile {
+    /// Runtime selected by a measured optimization. Missing in legacy profiles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<EngineSource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moe_cache_slots: Option<u32>,
     /// Janela de contexto por conversa.
     pub ctx: Option<u32>,
     /// Camadas na GPU. É **resultado**, não botão: aparece na tela como
@@ -348,6 +361,12 @@ impl ModelProfile {
         // de fora de propósito: "recomendado" e "manual" com os mesmos
         // valores rendem igual.
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        if self.engine == Some(EngineSource::MoeCache) {
+            for b in b"engine=moe-cache" {
+                hash ^= *b as u64;
+                hash = hash.wrapping_mul(0x100_0000_01b3);
+            }
+        }
         for (k, v) in self.to_ini_extras() {
             for b in k.bytes().chain(b"=".iter().copied()).chain(v.bytes()) {
                 hash ^= b as u64;
@@ -486,6 +505,16 @@ impl ModelProfile {
         if self.ctx.is_some() && self.ngl.is_some() && !out.iter().any(|(k, _)| k == "fit") {
             out.push(("fit".to_string(), "off".to_string()));
         }
+        // Fork options can never leak into the official runtime. The cache
+        // is per expert tensor, not a byte budget, and is outside --fit.
+        out.retain(|(k, _)| !k.starts_with("moe-expert-cache"));
+        if self.engine == Some(EngineSource::MoeCache)
+            && let Some(slots) = self.moe_cache_slots.filter(|n| *n > 0)
+        {
+            out.retain(|(k, _)| k != "fit" && k != "cpu-moe" && k != "n-cpu-moe");
+            out.push(("moe-expert-cache-size".into(), slots.to_string()));
+            out.push(("fit".into(), "off".into()));
+        }
         out
     }
 
@@ -509,6 +538,40 @@ impl ModelProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_requires_fork_and_cannot_be_overridden_by_fit_or_cpu_placement() {
+        let mut p = ModelProfile {
+            moe_cache_slots: Some(32),
+            extras: vec![
+                ("fit".into(), "on".into()),
+                ("moe-expert-cache-size".into(), "999".into()),
+            ],
+            ..Default::default()
+        };
+        assert!(
+            !p.to_ini_extras()
+                .iter()
+                .any(|(k, _)| k.starts_with("moe-expert-cache"))
+        );
+        p.engine = Some(EngineSource::MoeCache);
+        p.ncmoe = Some(48);
+        let ini: std::collections::HashMap<_, _> = p.to_ini_extras().into_iter().collect();
+        assert_eq!(ini["fit"], "off");
+        assert_eq!(ini["moe-expert-cache-size"], "32");
+        assert!(!ini.contains_key("n-cpu-moe"));
+    }
+
+    #[test]
+    fn legacy_profile_keeps_its_identity_and_engine_choice_changes_it() {
+        let old: ModelProfile = serde_json::from_str(r#"{"ctx":8192,"source":"manual"}"#).unwrap();
+        assert_eq!(old.engine, None);
+        let mut official = old.clone();
+        official.engine = Some(EngineSource::Official);
+        assert_eq!(old.key(), official.key());
+        official.engine = Some(EngineSource::MoeCache);
+        assert_ne!(old.key(), official.key());
+    }
 
     #[test]
     fn an_empty_profile_says_nothing_to_the_engine() {

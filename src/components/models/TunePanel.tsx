@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { navigate } from "../../lib/nav";
+import ComparisonCard from "../server/ComparisonCard";
 import type { TFunction } from "i18next";
 import { engineBusyReason } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
@@ -266,6 +267,7 @@ export default function TunePanel({
 
   return (
     <div className="rounded-xl border border-accent/40 bg-panel2 p-4">
+      <ComparisonCard model={model} />
       <div className="flex items-baseline gap-2">
         <span className="text-[13px] font-medium text-ink">
           {t("tune.title")}

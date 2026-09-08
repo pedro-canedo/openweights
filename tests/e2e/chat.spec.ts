@@ -40,5 +40,5 @@ test("comparison is discoverable and explains the desktop requirement", async ({
   await page.goto("/");
   await page.getByRole("button", { name: "Servidor Local", exact: true }).click();
   await page.getByRole("tab", { name: "Desempenho", exact: true }).click();
-  await expect(page.getByText("Testar uma configuração melhor", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Otimizar para meu computador", exact: true })).toBeVisible();
 });

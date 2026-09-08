@@ -3,9 +3,10 @@ import { generationStore } from "./generationStore";
 import type { ModelProfile } from "./tuning";
 
 export interface Distribution { median: number; min: number; max: number }
-export interface ComparisonArm { profile: ModelProfile; genTps: Distribution; promptTps: Distribution; totalMs: Distribution; gpuFreeBytes: number | null }
-export interface Comparison { model: string; workload: string; arms: ComparisonArm[]; inconclusive: boolean; applied: boolean }
-export interface ComparisonProgress { model: string; arm: number; sample: number }
+export interface RuntimeIdentity { source: "official" | "moeCache"; revision: string; backend: string; platform: string }
+export interface ComparisonArm { profile: ModelProfile; genTps: Distribution; promptTps: Distribution; totalMs: Distribution; gpuFreeBytes: number | null; peakRamBytes?: number | null; peakVramBytes?: number | null; runtime?: string; runtimeIdentity?: RuntimeIdentity }
+export interface Comparison { model: string; workload: string; arms: ComparisonArm[]; inconclusive: boolean; applied: boolean; winner?: number; warnings?: string[] }
+export interface ComparisonProgress { model: string; arm: number; sample: number; stage?: string }
 export const onComparisonProgress = (fn: (p: ComparisonProgress) => void) => listen<ComparisonProgress>("comparison-progress", fn);
 export const latestComparison = (model: string) => isTauri ? invoke<Comparison | null>("compare_latest", { model }) : Promise.resolve(null);
 
@@ -31,7 +32,7 @@ export async function runComparison(model: string): Promise<Comparison> {
     unlisten = await onComparisonProgress(progress => {
       if (progress.model === model) publish({ progress });
     });
-    return await invoke<Comparison>("compare_run", { model });
+    return await invoke<Comparison>("optimize_run", { model });
   } catch (error) {
     publish({ error: String(error) });
     throw error;

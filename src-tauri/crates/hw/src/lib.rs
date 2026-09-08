@@ -61,6 +61,17 @@ pub fn detect() -> HardwareProfile {
     }
 }
 
+/// Physical cores are a candidate, not a promise of better throughput.
+pub fn physical_cores() -> Option<usize> {
+    System::physical_core_count().filter(|n| *n > 0)
+}
+
+pub fn available_memory() -> u64 {
+    let mut sys = System::new();
+    sys.refresh_memory();
+    sys.available_memory()
+}
+
 /// A topologia da memória do sistema, por plataforma.
 ///
 /// No macOS a pergunta não se aplica do mesmo jeito: a memória é unificada, e

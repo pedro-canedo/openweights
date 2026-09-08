@@ -42,7 +42,7 @@ pub struct FlagCatalog {
 /// Curadas + dinâmicas, com degradação explícita quando o binário não ajuda.
 async fn full_catalog(state: &AppState) -> FlagCatalog {
     let variant = lr_runtime::select_variant(&state.profile);
-    let rt = state.runtime_mgr.state(variant);
+    let rt = crate::commands::active_runtime(state);
     let vname = format!("{variant:?}").to_lowercase();
 
     let help = match &rt.server_exe {
@@ -205,6 +205,7 @@ pub async fn router_load_model(
     state: State<'_, AppState>,
     model: String,
 ) -> CmdResult<ServerStatusView> {
+    crate::optimization::optimize_prepare_model(app.clone(), state.clone(), model.clone()).await?;
     let rodando = {
         let guard = state.server.lock().await;
         guard.as_ref().map(|s| s.is_spawned()).unwrap_or(false)
