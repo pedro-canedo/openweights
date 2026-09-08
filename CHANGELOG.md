@@ -10,6 +10,23 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.18.3] — 2026-09-08
+
+- **"Discover" works again after the Hub session expires.** A Hugging Face
+  login lasts hours; search, the README and the quantization list used the
+  token from when the window opened and never refreshed it. Once it expired,
+  the Hub answered 401 and the screen became "Something went wrong" — a public
+  catalogue hidden behind a stale session. All three now refresh the session
+  before asking, and search additionally retries without the token if it is
+  refused: the model list is public and does not depend on being signed in.
+- **The error card now says what went wrong.** "Something went wrong" with no
+  reason never reaches anyone who could fix it. There is now a technical
+  details section with the real message.
+
+Nothing needs redoing: anyone with an expired session sees the list again on
+opening this version. Signing in to Hugging Face is still only needed to
+download models behind an accepted licence.
+
 ## [0.18.2] — 2026-09-08
 
 - **Models kept in a subfolder are visible again.** Large Hugging Face

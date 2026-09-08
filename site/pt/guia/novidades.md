@@ -5,6 +5,22 @@ histórico completo de todas as versões está no
 [changelog](/pt/guia/changelog); os instaladores ficam no
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.18.3 — um catálogo público escondido atrás de uma sessão vencida
+
+O login do Hugging Face dura algumas horas. O **Descobrir**, o README do modelo
+e a lista de quantizações pegavam cada um o cliente montado quando a janela
+abriu, com token e tudo, e nunca o renovavam. Vencido esse token, o Hub
+respondia 401 e a tela inteira desabava em "Algo deu errado" — sendo que o
+catálogo de modelos é público e não precisa de token nenhum. Renovar a sessão
+antes de perguntar resolve; além disso, a busca agora repete sem token quando
+ele é recusado, para que uma sessão revogada também não esconda uma lista
+pública.
+
+O cartão de erro era parte do problema. Ele dizia "Algo deu errado" e jogava o
+motivo no console do navegador, onde ninguém olha. Agora traz um "detalhes
+técnicos" com a mensagem real — que foi justamente como este defeito apareceu,
+lendo um 401 que o app vinha engolindo.
+
 ## 0.18.2 — um modelo que sempre esteve lá, e um download que usa a linha
 
 Repositórios grandes do Hugging Face guardam cada quantização na sua pasta —

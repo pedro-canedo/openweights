@@ -5,6 +5,21 @@ The full history of every version is in the [changelog](/guide/changelog);
 installers live on
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.18.3 — a public catalogue was hiding behind an expired session
+
+A Hugging Face login lasts a few hours. **Discover**, the model README and the
+quantization list each took the client that was built when the window opened,
+token and all, and never refreshed it. Once that token expired the Hub answered
+401 and the whole screen collapsed into "Something went wrong" — even though
+the model catalogue is public and needs no token at all. Refreshing the session
+before asking fixes it; on top of that, search now retries anonymously if the
+token is refused, so a revoked session cannot hide a public list either.
+
+The error card was part of the problem. It said "Something went wrong" and
+dropped the reason into the browser console, where nobody looks. It now carries
+a technical details section with the actual message — which is how this bug was
+found in the first place, by reading a 401 the app had been swallowing.
+
 ## 0.18.2 — a model that was there all along, and a download that uses the line
 
 Large Hugging Face repositories keep each quantization in its own folder —
