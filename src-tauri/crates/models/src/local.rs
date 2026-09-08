@@ -1,7 +1,13 @@
 //! Biblioteca local: varre `<models_dir>` em busca de GGUFs baixados.
 //!
 //! Layout esperado: `<models_dir>/<author>/<repo>/<arquivo>.gguf`, com
-//! suporte a arquivos soltos na raiz (importados manualmente pelo usuário).
+//! suporte a arquivos soltos na raiz (importados manualmente pelo usuário)
+//! e a subpastas dentro do repositório.
+//!
+//! As subpastas não são um detalhe: repositórios grandes do Hugging Face
+//! guardam cada quantização na sua (`UD-Q2_K_XL/`, `UD-Q4_K_XL/`), o
+//! download preserva esse caminho, e uma varredura de dois níveis deixaria
+//! setenta gigabytes íntegros no disco sem aparecer em lugar nenhum.
 
 use crate::{RepoFile, group_artifacts, vision_projectors};
 use serde::Serialize;
@@ -26,7 +32,8 @@ pub struct LocalArtifact {
     pub files: Vec<PathBuf>,
 }
 
-/// Varre a biblioteca local (raiz + dois níveis de diretórios).
+/// Varre a biblioteca local: a raiz, cada `<autor>/<repo>` e as subpastas
+/// dentro dele.
 pub fn scan_local(models_dir: &Path) -> Vec<LocalArtifact> {
     let mut out = Vec::new();
     scan_dir(models_dir, "", &mut out);
@@ -47,12 +54,37 @@ pub fn scan_local(models_dir: &Path) -> Vec<LocalArtifact> {
                 continue;
             }
             let repo_id = format!("{author_name}/{}", repo.file_name().to_string_lossy());
-            scan_dir(&repo.path(), &repo_id, &mut out);
+            scan_tree(&repo.path(), &repo_id, PROFUNDIDADE_MAXIMA, &mut out);
         }
     }
 
     out.sort_by(|a, b| (&a.repo_id, &a.name).cmp(&(&b.repo_id, &b.name)));
     out
+}
+
+/// Quantos níveis descer DENTRO de um repositório.
+///
+/// Três cobre o que o Hub usa (uma pasta por quantização, às vezes com uma
+/// segunda dentro) sem transformar a varredura em caminhada pelo disco
+/// inteiro caso alguém aponte a biblioteca para uma pasta grande.
+const PROFUNDIDADE_MAXIMA: u32 = 3;
+
+/// Varre `dir` e suas subpastas, mantendo o `repo_id` do repositório: quem
+/// identifica o modelo é o arquivo, não a pasta de quantização em que ele mora.
+fn scan_tree(dir: &Path, repo_id: &str, restante: u32, out: &mut Vec<LocalArtifact>) {
+    scan_dir(dir, repo_id, out);
+    if restante == 0 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            scan_tree(&path, repo_id, restante - 1, out);
+        }
+    }
 }
 
 fn scan_dir(dir: &Path, repo_id: &str, out: &mut Vec<LocalArtifact>) {
@@ -118,6 +150,42 @@ mod tests {
                 .is_some_and(|p| p.ends_with("mmproj-F16.gguf")),
             "{:?}",
             achados[0].vision_projector
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// O caso real: `unsloth/Qwen3.8-Flash-Next-GGUF` guarda cada quantização
+    /// numa subpasta, o download preserva esse caminho, e a varredura de dois
+    /// níveis fazia 73 GB baixados sumirem da biblioteca.
+    #[test]
+    fn a_quantization_subfolder_is_still_part_of_its_repository() {
+        let dir = std::env::temp_dir().join(format!("lr-subdir-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let base = dir.join("unsloth/Flash-Next-GGUF");
+        touch(
+            &base.join("UD-Q2_K_XL/Flash-UD-Q2_K_XL-00001-of-00002.gguf"),
+            3,
+        );
+        touch(
+            &base.join("UD-Q2_K_XL/Flash-UD-Q2_K_XL-00002-of-00002.gguf"),
+            9,
+        );
+        touch(&base.join("UD-Q4_K_XL/Flash-UD-Q4_K_XL.gguf"), 20);
+
+        let arts = scan_local(&dir);
+        assert_eq!(arts.len(), 2, "{arts:?}");
+        // A pasta da quantização não vira repositório: quem identifica o
+        // modelo é o repo, e o nome do arquivo já carrega a quantização.
+        assert!(arts.iter().all(|a| a.repo_id == "unsloth/Flash-Next-GGUF"));
+        let dividido = arts
+            .iter()
+            .find(|a| a.name == "Flash-UD-Q2_K_XL.gguf")
+            .expect("shards agrupados dentro da subpasta");
+        assert_eq!(dividido.total_bytes, 12);
+        assert!(
+            dividido
+                .primary_path
+                .ends_with("UD-Q2_K_XL/Flash-UD-Q2_K_XL-00001-of-00002.gguf")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
