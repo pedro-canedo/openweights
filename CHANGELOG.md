@@ -18,14 +18,16 @@ published releases and the version commits, and are kept as history.
   model sat on disk, complete and invisible. Nothing needs downloading again:
   open **My Models** and it is there.
 - **Downloads now use the whole connection.** Shards of the same model download
-  together, and each large file is split into ranges with one connection each.
-  On a 206 Mbps line the same transfer went from 8 MB/s to peaks of 25.8 MB/s.
+  together, and each large file is split into ranges with one connection each,
+  over HTTP/1.1 — on HTTP/2 the ranges would share a single pipe again.
+  Measured end to end, the same file went from 41.9 s to 21.9 s, peaking at
+  51.5 MB/s.
 - Interrupted downloads still resume where they stopped, now range by range. A
   `.part` from an earlier version resumes in the old format rather than
   starting over.
 
 The gain depends on the distance to the server: anyone already saturating their
-line with a single connection will see little change. Files under 128 MB keep
+line with a single connection will see little change. Files under 16 MB keep
 using one connection, because splitting small ones costs more than it returns.
 
 ## [0.18.0] — 2026-09-08

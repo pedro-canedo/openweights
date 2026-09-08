@@ -23,11 +23,16 @@ over 20 MB/s when you ask in parallel. One TCP connection carries at most
 app opened one connection per file, and downloaded files one after another.
 
 Now the shards of a model download together, and each large file is split into
-ranges with a connection of its own. Measured end to end against the Hub, the
-same download peaked at 25.8 MB/s — about 98% of the line, against the 8 MB/s
-before — and the reassembled file's SHA256 matched the published one exactly.
-Files under 128 MB keep a single connection, because splitting a small file
-costs more in handshakes than the parallelism returns.
+ranges with a connection of its own. That last part came with a catch worth
+knowing: the CDN speaks HTTP/2, and over HTTP/2 an HTTP client multiplexes
+concurrent requests to the same host onto a *single* TCP connection — so eight
+ranges went right back to sharing one window, and the parallelism was
+decorative. Asking for HTTP/1.1 on the byte transfers is what made it real.
+
+Measured end to end against the Hub, the same 742 MiB file went from 41.9 s to
+21.9 s, peaking at 51.5 MB/s, and the reassembled file's SHA256 matched the
+published one exactly. Files under 16 MB keep a single connection, because a
+small file finishes before a fresh connection stops accelerating.
 
 ## 0.18.0 — one button decides the engine, the threads and the expert cache
 

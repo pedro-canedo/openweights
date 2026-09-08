@@ -23,11 +23,17 @@ máximo `janela ÷ tempo de ida e volta`, e a ida e volta até a CDN de LFS é d
 146 ms. O app abria uma conexão por arquivo, e baixava os arquivos em fila.
 
 Agora os shards de um modelo baixam juntos, e cada arquivo grande é dividido
-em faixas com uma conexão para cada. Medido de ponta a ponta contra o Hub, o
-mesmo download chegou a 25,8 MB/s — cerca de 98% da linha, contra os 8 MB/s de
-antes — e o SHA256 do arquivo remontado bateu exatamente com o publicado.
-Arquivos abaixo de 128 MB continuam com uma conexão só, porque dividir um
-arquivo pequeno custa mais em handshakes do que o paralelismo devolve.
+em faixas com uma conexão para cada. Essa última parte veio com uma armadilha
+que vale conhecer: a CDN fala HTTP/2, e sobre HTTP/2 um cliente HTTP multiplexa
+as requisições concorrentes ao mesmo host numa *única* conexão TCP — então as
+oito faixas voltavam a dividir a janela de uma só, e o paralelismo era enfeite.
+Exigir HTTP/1.1 na transferência dos bytes foi o que tornou tudo real.
+
+Medido de ponta a ponta contra o Hub, o mesmo arquivo de 742 MiB saiu de 41,9 s
+para 21,9 s, com pico de 51,5 MB/s, e o SHA256 do arquivo remontado bateu
+exatamente com o publicado. Arquivos abaixo de 16 MB continuam com uma conexão
+só, porque um arquivo pequeno acaba antes de a conexão nova parar de
+acelerar.
 
 ## 0.18.0 — um botão só decide o motor, as threads e o cache de especialistas
 
