@@ -5,6 +5,30 @@ histórico completo de todas as versões está no
 [changelog](/pt/guia/changelog); os instaladores ficam no
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.18.2 — um modelo que sempre esteve lá, e um download que usa a linha
+
+Repositórios grandes do Hugging Face guardam cada quantização na sua pasta —
+`UD-Q2_K_XL/`, `UD-Q4_K_XL/`. O download preservava esse caminho; a varredura
+da biblioteca parava um nível antes, em `<autor>/<repo>`. Então um modelo de
+73 GB podia terminar de baixar, ficar no disco com cada shard no tamanho exato
+que o Hub publica, e nunca aparecer em **Meus Modelos**. Nada avisava que ele
+estava lá. Excluir e baixar de novo daria no mesmo silêncio. A varredura agora
+entra nessas pastas, e o que já está no disco aparece na próxima abertura sem
+baixar nada de novo.
+
+O download também deixou de usar um cano só. Uma transferência de 73 GB
+andava a 8 MB/s numa linha de 206 Mbps, e não era limite do Hugging Face: a
+CDN entrega 20 MB/s quando se pede em paralelo. Uma conexão TCP carrega no
+máximo `janela ÷ tempo de ida e volta`, e a ida e volta até a CDN de LFS é de
+146 ms. O app abria uma conexão por arquivo, e baixava os arquivos em fila.
+
+Agora os shards de um modelo baixam juntos, e cada arquivo grande é dividido
+em faixas com uma conexão para cada. Medido de ponta a ponta contra o Hub, o
+mesmo download chegou a 25,8 MB/s — cerca de 98% da linha, contra os 8 MB/s de
+antes — e o SHA256 do arquivo remontado bateu exatamente com o publicado.
+Arquivos abaixo de 128 MB continuam com uma conexão só, porque dividir um
+arquivo pequeno custa mais em handshakes do que o paralelismo devolve.
+
 ## 0.18.0 — um botão só decide o motor, as threads e o cache de especialistas
 
 Ajustar um modelo com especialistas exigia saber que existe um fork do

@@ -5,6 +5,30 @@ The full history of every version is in the [changelog](/guide/changelog);
 installers live on
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.18.2 — a model that was there all along, and a download that uses the line
+
+Large Hugging Face repositories keep each quantization in its own folder —
+`UD-Q2_K_XL/`, `UD-Q4_K_XL/`. The downloader preserved that path; the library
+scan stopped one level short, at `<author>/<repo>`. So a 73 GB model could
+finish downloading, sit on disk with every shard at the exact size the Hub
+publishes, and never appear in **My Models**. Nothing said it was there.
+Deleting and downloading again would have produced the same silence. The scan
+now goes into those folders, and models already on disk show up on the next
+launch without re-downloading anything.
+
+Downloads also stopped using a single pipe. A 73 GB transfer was moving at
+8 MB/s on a 206 Mbps line, and it was not the Hugging Face end: the CDN hands
+over 20 MB/s when you ask in parallel. One TCP connection carries at most
+`window ÷ round-trip time`, and the round trip to the LFS CDN is 146 ms. The
+app opened one connection per file, and downloaded files one after another.
+
+Now the shards of a model download together, and each large file is split into
+ranges with a connection of its own. Measured end to end against the Hub, the
+same download peaked at 25.8 MB/s — about 98% of the line, against the 8 MB/s
+before — and the reassembled file's SHA256 matched the published one exactly.
+Files under 128 MB keep a single connection, because splitting a small file
+costs more in handshakes than the parallelism returns.
+
 ## 0.18.0 — one button decides the engine, the threads and the expert cache
 
 Tuning a mixture-of-experts model used to mean knowing that a llama.cpp fork

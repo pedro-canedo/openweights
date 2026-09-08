@@ -10,6 +10,24 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.18.2] — 2026-09-08
+
+- **Models kept in a subfolder are visible again.** Large Hugging Face
+  repositories put each quantization in its own folder (`UD-Q2_K_XL/`), the
+  downloader preserved that path, and the library stopped one level short. The
+  model sat on disk, complete and invisible. Nothing needs downloading again:
+  open **My Models** and it is there.
+- **Downloads now use the whole connection.** Shards of the same model download
+  together, and each large file is split into ranges with one connection each.
+  On a 206 Mbps line the same transfer went from 8 MB/s to peaks of 25.8 MB/s.
+- Interrupted downloads still resume where they stopped, now range by range. A
+  `.part` from an earlier version resumes in the old format rather than
+  starting over.
+
+The gain depends on the distance to the server: anyone already saturating their
+line with a single connection will see little change. Files under 128 MB keep
+using one connection, because splitting small ones costs more than it returns.
+
 ## [0.18.0] — 2026-09-08
 
 - **Optimize for my computer**, under My Models → Tune and Local Server →
