@@ -5,6 +5,32 @@ The full history of every version is in the [changelog](/guide/changelog);
 installers live on
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.18.4 — the download was freezing the whole machine
+
+Parallel downloading, added in 0.18.2, made transfers much faster and then
+started freezing everything: the app stopped responding, the pause button did
+nothing, and other applications froze along with it. Task Manager showed the
+whole bug on one line — **85 MB/s of disk with 0 Mbps of network**. The app was
+writing 85 megabytes a second without downloading anything.
+
+On NTFS, setting a file's length moves its end but not its *valid data length*.
+Writing into the middle afterwards makes the system physically zero everything
+in between first, so the new file cannot expose whatever was in those sectors.
+While downloads were sequential this never showed: the file grew byte by byte
+and the valid data length went with it. Pre-allocating and then writing from
+eight connections at once inverted that — each connection starts far into the
+file, and each one triggers a multi-gigabyte zeroing. The disk belongs to the
+whole system, so the whole system waited.
+
+Marking the file sparse tells NTFS the untouched regions are holes, and a hole
+needs no zeroing. Measured here on a 16 GiB file, writing 1 MiB at the 14 GB
+mark: 9.54 s before, 0.51 ms after.
+
+The status bar also stopped breaking. Written labels cost more width than the
+numbers they introduced, so on smaller screens "26 GB / 64 GB" split across two
+lines and the bar grew. Each meter now carries a pictogram and puts its name on
+hover.
+
 ## 0.18.3 — a public catalogue was hiding behind an expired session
 
 A Hugging Face login lasts a few hours. **Discover**, the model README and the

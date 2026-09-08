@@ -10,6 +10,25 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.18.4] — 2026-09-08
+
+- **Downloading a model no longer freezes the computer.** Since 0.18.2 the
+  downloader uses several parallel connections, and on Windows that exposed an
+  expensive NTFS detail: writing far into a freshly created file makes the
+  system physically zero everything before it. With eight connections starting
+  at once, that meant gigabytes of pointless writing — the app stopped
+  responding, the pause button did nothing, and other applications froze too,
+  because the disk belongs to the whole system. Marking the file sparse took
+  the same write from 9.54 s to 0.51 ms.
+- **The status bar fits on one line at any resolution.** The written labels
+  ("ENERGIA", "DISCO") took more room than the numbers themselves and pushed
+  the bar onto a second line on smaller screens. Each meter now has a
+  pictogram, with the name on hover.
+
+Anyone who saw the freeze disappear on its own was not imagining it: the
+zeroing happens once per file, on the first distant write, and then it is over.
+Downloads already in progress do not need restarting.
+
 ## [0.18.3] — 2026-09-08
 
 - **"Discover" works again after the Hub session expires.** A Hugging Face

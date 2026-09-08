@@ -5,6 +5,32 @@ histórico completo de todas as versões está no
 [changelog](/pt/guia/changelog); os instaladores ficam no
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.18.4 — o download estava travando a máquina inteira
+
+O download em paralelo, que chegou na 0.18.2, deixou as transferências muito
+mais rápidas e passou a travar tudo: o app parava de responder, o botão de
+pausa não fazia nada, e as outras aplicações travavam junto. O Gerenciador de
+Tarefas mostrava o defeito inteiro numa linha — **85 MB/s de disco com 0 Mbps
+de rede**. O app escrevia 85 megabytes por segundo sem baixar nada.
+
+No NTFS, definir o tamanho de um arquivo move o fim dele, mas não o *valid data
+length*. Escrever depois no meio faz o sistema zerar fisicamente tudo que vem
+antes, para o arquivo novo não expor o que havia naqueles setores. Enquanto o
+download era sequencial isso nunca aparecia: o arquivo crescia byte a byte e o
+valid data length ia junto. Pré-alocar e então escrever de oito conexões ao
+mesmo tempo inverteu o jogo — cada conexão começa longe do início, e cada uma
+dispara um zeramento de vários gigabytes. O disco é do sistema inteiro, então o
+sistema inteiro esperou.
+
+Marcar o arquivo como esparso diz ao NTFS que as regiões intocadas são buracos,
+e buraco não precisa ser zerado. Medido aqui num arquivo de 16 GiB, escrevendo
+1 MiB na marca de 14 GB: 9,54 s antes, 0,51 ms depois.
+
+A barra de status também parou de quebrar. Os nomes escritos custavam mais
+largura que os números que apresentavam, então em telas menores "26 GB / 64 GB"
+se partia em duas linhas e a barra crescia. Agora cada medidor traz um
+pictograma e guarda o nome para quando o ponteiro passar.
+
 ## 0.18.3 — um catálogo público escondido atrás de uma sessão vencida
 
 O login do Hugging Face dura algumas horas. O **Descobrir**, o README do modelo
