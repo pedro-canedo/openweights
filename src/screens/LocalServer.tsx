@@ -215,18 +215,19 @@ export default function LocalServer() {
       )}
 
       {tab === "performance" && (
-        <>
+        <div className="space-y-4">
           <EngineConfigSection
+            compact
             running={running}
             hasGpu={hasGpu}
             selected={selectedModel}
             onSelect={setSelectedModel}
           />
           <ComparisonCard model={selectedModel} />
-          <SpecCard model={selectedModel} />
           <BenchHistoryCard model={selectedModel} running={running} />
+          <SpecCard model={selectedModel} />
           <PowerCard />
-        </>
+        </div>
       )}
 
       {tab === "network" && (
