@@ -19,7 +19,8 @@ const PATHS = {
   // Copiar valor (endereço, chave, comando).
   copy: "M8 8h12v12H8zM8 8V6a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2h-2",
   // Abrir fora do app (Hugging Face, pasta no SO, harness).
-  external: "M14 5h5v5M10 14L19 5M19 13v5a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1h5",
+  external:
+    "M14 5h5v5M10 14L19 5M19 13v5a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1h5",
   // Download (contagem, botão, taxa de rede).
   download: "M12 4v11m0 0l-4-4m4 4l4-4M4 17v2a1 1 0 001 1h14a1 1 0 001-1v-2",
   // Upload / taxa de envio da rede.
@@ -30,6 +31,21 @@ const PATHS = {
   "arrow-right": "M4 12h16m0 0l-5-5m5 5l-5 5",
   // Aviso (qualidade divergente, suspeito térmico).
   alert: "M12 4L2.5 20h19L12 4zM12 10v4m0 3.5h.01",
+  // Barra de status. Em 14px o que distingue um pictograma do vizinho é a
+  // silhueta, não o detalhe: chip quadrado, módulo de memória deitado, placa
+  // com ventoinha, raio, cilindros empilhados. O nome de cada medidor está no
+  // `title`, que é o que responde quando a silhueta não basta.
+  // Quadrado com pinos nos quatro lados. Sem retângulo interno: em 14px o
+  // segundo contorno vira mancha e come a diferença para a memória.
+  cpu: "M7 7h10v10H7zM10 3v4m4-4v4m-4 10v4m4-4v4M3 10h4m-4 4h4m10-4h4m-4 4h4",
+  // Módulo deitado, com entalhe embaixo: a silhueta é larga e baixa, o
+  // oposto do quadrado da CPU.
+  memory: "M2 8h20v8H2zM6 11v2m4-2v2m4-2v2m4-2v2M10 16v2m4-2v2",
+  // Placa com ventoinha: o círculo grande é o que a separa do módulo de
+  // memória quando as duas têm 14 pixels de largura.
+  gpu: "M2 6h20v11H2zM9 11.5a3.5 3.5 0 107 0 3.5 3.5 0 10-7 0M5 9v6M6 20v-3m12 3v-3",
+  power: "M13 3L5 13h6l-1 8 8-10h-6z",
+  disk: "M4 7c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 7v10c0 1.7 3.6 3 8 3s8-1.3 8-3V7M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3",
 } as const satisfies Record<string, string>;
 
 export type IconName = keyof typeof PATHS;
@@ -71,7 +87,11 @@ export default function Icon({
 }
 
 /** Ponto de "modificado" do editor — CSS, não caractere. */
-export function DirtyDot({ className = "h-1.5 w-1.5" }: { className?: string }) {
+export function DirtyDot({
+  className = "h-1.5 w-1.5",
+}: {
+  className?: string;
+}) {
   return (
     <span
       aria-hidden="true"

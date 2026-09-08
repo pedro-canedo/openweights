@@ -17,5 +17,6 @@ improved-render.json
 inference-bench*.json
 chat-check.png
 ui-check.png
+statusbar-check.png
 test-results/
 .release-local/

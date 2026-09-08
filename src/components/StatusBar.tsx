@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { genStats } from "../lib/llama";
 import { formatBytes, formatCount } from "../lib/format";
 import MonitorPopover from "./monitor/MonitorPopover";
-import Icon from "./ui/Icon";
+import Icon, { type IconName } from "./ui/Icon";
 import { telemetryStore } from "./monitor/telemetryStore";
 import { ClusterChip } from "./server/ClusterPanel";
 import { getServerLive, type ServerLive } from "../lib/api";
@@ -21,20 +21,34 @@ function Meter({ percent }: { percent: number }) {
   );
 }
 
+/**
+ * Um medidor da barra: pictograma, barra e número.
+ *
+ * O nome do medidor sai da tela e vira `title` do ícone. Escrito por extenso,
+ * "ENERGIA" e "DISCO" custavam mais largura que o próprio número, e a barra
+ * inteira quebrava em duas linhas em telas menores — que é onde ela mais
+ * precisa caber. O ícone diz o suficiente de relance; o nome exato responde
+ * ao ponteiro do mouse, para quem precisar dele.
+ *
+ * `whitespace-nowrap` no número não é enfeite: sem ele "26 GB / 64 GB" quebra
+ * no meio e a barra ganha altura, empurrando o conteúdo da página.
+ */
 function Stat({
+  icon,
   label,
   percent,
   detail,
 }: {
+  icon: IconName;
   label: string;
   percent: number;
   detail: string;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-9 text-[11px] font-medium text-dim">{label}</span>
+    <div className="flex shrink-0 items-center gap-1.5" title={label}>
+      <Icon name={icon} className="h-3.5 w-3.5 text-dim" title={label} />
       <Meter percent={percent} />
-      <span className="min-w-16 text-[11px] tabular-nums text-dim">
+      <span className="whitespace-nowrap text-[11px] tabular-nums text-dim">
         {detail}
       </span>
     </div>
@@ -44,7 +58,10 @@ function Stat({
 export default function StatusBar() {
   const { t } = useTranslation();
   // Assinatura única de telemetria, compartilhada com o popover de monitor.
-  const tel = useSyncExternalStore(telemetryStore.subscribe, telemetryStore.get);
+  const tel = useSyncExternalStore(
+    telemetryStore.subscribe,
+    telemetryStore.get,
+  );
   const gen = useSyncExternalStore(genStats.subscribe, genStats.get);
   const [monitorOpen, setMonitorOpen] = useState(false);
   const monitorRef = useRef<HTMLDivElement>(null);
@@ -82,10 +99,11 @@ export default function StatusBar() {
   }, [monitorOpen]);
 
   return (
-    <footer className="flex h-9 shrink-0 items-center gap-6 border-t border-edge bg-panel px-4">
+    <footer className="flex h-9 shrink-0 items-center gap-4 overflow-hidden border-t border-edge bg-panel px-4">
       {tel ? (
         <>
           <Stat
+            icon="cpu"
             label={t("status.cpu")}
             percent={tel.cpuPercent}
             detail={`${tel.cpuPercent.toFixed(0)}%${
@@ -93,14 +111,16 @@ export default function StatusBar() {
             }`}
           />
           <Stat
+            icon="memory"
             label={t("status.ram")}
             percent={(tel.ramUsedBytes / tel.ramTotalBytes) * 100}
             detail={`${formatBytes(tel.ramUsedBytes)} / ${formatBytes(tel.ramTotalBytes)}`}
           />
           {tel.gpus.map((g, i) => (
-            <div key={i} className="flex items-center gap-6">
+            <div key={i} className="flex shrink-0 items-center gap-4">
               {g.utilPercent != null && (
                 <Stat
+                  icon="gpu"
                   label={t("status.gpu")}
                   percent={g.utilPercent}
                   detail={`${g.utilPercent.toFixed(0)}%${
@@ -115,15 +135,15 @@ export default function StatusBar() {
                   — esta carga é limitada por banda de memória. */}
               {g.powerW != null && (
                 <Stat
+                  icon="power"
                   label={t("status.power")}
-                  percent={
-                    g.powerLimitW ? (g.powerW / g.powerLimitW) * 100 : 0
-                  }
+                  percent={g.powerLimitW ? (g.powerW / g.powerLimitW) * 100 : 0}
                   detail={`${g.powerW} W${g.powerLimitW ? ` / ${g.powerLimitW} W` : ""}`}
                 />
               )}
               {g.vramUsedBytes != null && (
                 <Stat
+                  icon="memory"
                   label={t("status.vram")}
                   percent={(g.vramUsedBytes / g.vramTotalBytes) * 100}
                   detail={`${formatBytes(g.vramUsedBytes)} / ${formatBytes(g.vramTotalBytes)}`}
@@ -133,6 +153,7 @@ export default function StatusBar() {
           ))}
           {tel.diskUsedPct != null && (
             <Stat
+              icon="disk"
               label={t("status.disk")}
               percent={tel.diskUsedPct}
               detail={`${tel.diskUsedPct.toFixed(0)}%${
@@ -143,15 +164,24 @@ export default function StatusBar() {
             />
           )}
           {tel.netRxBytesPerSec != null && tel.netTxBytesPerSec != null && (
-            <div className="flex items-center gap-2">
-              <span className="w-9 text-[11px] font-medium text-dim">
-                {t("status.net")}
-              </span>
-              <span className="min-w-28 flex items-center gap-1 text-[11px] tabular-nums text-dim">
-                <Icon name="download" className="h-3 w-3" title={t("status.netDown")} />
+            <div
+              className="flex shrink-0 items-center gap-2 whitespace-nowrap text-[11px] tabular-nums text-dim"
+              title={t("status.net")}
+            >
+              <span className="flex items-center gap-1">
+                <Icon
+                  name="download"
+                  className="h-3.5 w-3.5"
+                  title={t("status.netDown")}
+                />
                 {formatBytes(tel.netRxBytesPerSec)}/s
-                <span className="mx-0.5">·</span>
-                <Icon name="upload" className="h-3 w-3" title={t("status.netUp")} />
+              </span>
+              <span className="flex items-center gap-1">
+                <Icon
+                  name="upload"
+                  className="h-3.5 w-3.5"
+                  title={t("status.netUp")}
+                />
                 {formatBytes(tel.netTxBytesPerSec)}/s
               </span>
             </div>
@@ -177,18 +207,20 @@ export default function StatusBar() {
         )}
         {/* Janela ocupada: a conta que decide quando a conversa vai começar a
             esquecer o começo. */}
-        {live?.ctxTotal != null && live.ctxUsed != null && live.ctxTotal > 0 && (
-          <span
-            title={t("status.contextTitle")}
-            className="flex items-center gap-2 text-[11px] tabular-nums text-dim"
-          >
-            <span className="font-medium">{t("status.context")}</span>
-            <Meter percent={(live.ctxUsed / live.ctxTotal) * 100} />
-            <span>
-              {formatCount(live.ctxUsed)} / {formatCount(live.ctxTotal)}
+        {live?.ctxTotal != null &&
+          live.ctxUsed != null &&
+          live.ctxTotal > 0 && (
+            <span
+              title={t("status.contextTitle")}
+              className="flex items-center gap-2 text-[11px] tabular-nums text-dim"
+            >
+              <span className="font-medium">{t("status.context")}</span>
+              <Meter percent={(live.ctxUsed / live.ctxTotal) * 100} />
+              <span>
+                {formatCount(live.ctxUsed)} / {formatCount(live.ctxTotal)}
+              </span>
             </span>
-          </span>
-        )}
+          )}
         <ClusterChip />
         {/* A velocidade do SERVIDOR vem primeiro: ela conta o harness e
             qualquer app externo, não só o chat daqui. */}
