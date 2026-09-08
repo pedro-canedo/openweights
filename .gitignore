@@ -18,3 +18,4 @@ inference-bench*.json
 chat-check.png
 ui-check.png
 test-results/
+.release-local/

@@ -10,6 +10,34 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.18.0] — 2026-09-07
+
+- **Optimize for my computer**, under My Models → Tune and Local Server →
+  Performance. The app installs the optional engine when compatible, then
+  measures the current profile, two thread counts and — for models with routed
+  experts — the engine with a GPU expert cache at 16, 32 and 64 slots. Warmup
+  discarded, three repetitions, short and long prompts, median with range,
+  observed memory. Nothing is applied automatically.
+- The official engine remains the default. The optional one is a pinned
+  revision, verified by SHA256 against the release and by running the binary
+  before use; with no published package the app stays on the official engine
+  and says so.
+- Gated model access: sign in to Hugging Face through the browser, with no
+  token to paste. Users who already accepted a licence stop seeing the gate
+  warning, and a missing token, a revoked token and an unaccepted licence each
+  get their own message and action.
+- Browsable version history on the site, a troubleshooting page, and reference
+  pages for the local API and for llama.cpp configuration.
+- Release notes are now written once: the GitHub release, the tag message and
+  the CHANGELOG all come from the same file.
+
+Optimization reserves the engine for a few minutes and the local API is
+unavailable during that time; avoid external clients and other GPU workloads.
+Manual profiles are preserved: applying stores the measured profile and
+"restore" brings the previous one back. The optional engine requires Windows or
+Linux x86-64 with CUDA; elsewhere the button measures official-engine
+configurations only.
+
 ## [0.17.0] — 2026-09-07
 
 - Smoother chat with virtualized history, 50 ms streaming updates and deferred

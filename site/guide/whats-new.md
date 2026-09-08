@@ -5,6 +5,40 @@ The full history of every version is in the [changelog](/guide/changelog);
 installers live on
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.18.0 — one button decides the engine, the threads and the expert cache
+
+Tuning a mixture-of-experts model used to mean knowing that a llama.cpp fork
+with a GPU expert cache exists, building it, guessing how many cache slots fit
+on the card, and comparing it against the official engine by hand. Almost
+nobody does that — and whoever does it once never redoes it after switching
+models.
+
+**Optimize for my computer** runs the whole cycle. It downloads the optional
+engine at a pinned revision, checks its identity and SHA256 against the
+release, runs the binary to prove it actually exposes the capabilities it
+claims, and only then measures: your current profile, two thread counts, and —
+when the GGUF declares routed experts — the fork without cache and with 16, 32
+and 64 slots. Warmup discarded, three repetitions, a short prompt and a long
+one, median with range, observed RAM and VRAM.
+
+The official engine stays the default, and the optional one is only considered
+when the model file itself says it has routed experts. Cache sizing reads the
+file's own geometry rather than a bytes-per-parameter table that would age with
+every new quantization; without that geometry the fork arm does not run, and
+says why. If the package has no published digest, the app refuses to execute an
+unverified binary and stays on the official engine.
+
+Nothing is applied on its own. Your manual profile is preserved, applying
+stores exactly what was measured, and hardware, engine or model file changing
+after the fact invalidates the evidence instead of silently applying it.
+
+Gated models also stopped asking for a pasted token: signing in to Hugging Face
+happens in the browser. Users who had already accepted a licence were seeing
+the "gate closed" warning forever, because it came from a repository field that
+never changes; the verdict now comes from asking the gate itself. And a missing
+token, a revoked token and an unaccepted licence — three different problems —
+stopped sharing one sentence.
+
 ## 0.17.0 — smoother chat and comparable configurations
 
 Long conversations are virtualized, streaming updates are batched at 50 ms,

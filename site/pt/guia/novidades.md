@@ -5,6 +5,40 @@ histórico completo de todas as versões está no
 [changelog](/pt/guia/changelog); os instaladores ficam no
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.18.0 — um botão só decide o motor, as threads e o cache de especialistas
+
+Ajustar um modelo com especialistas exigia saber que existe um fork do
+llama.cpp com cache de especialistas na GPU, compilá-lo, descobrir quantos
+slots cabem na placa e comparar à mão contra o motor oficial. Quase ninguém faz
+isso — e quem faz, faz uma vez e nunca refaz quando troca de modelo.
+
+**Otimizar para meu computador** faz o ciclo inteiro. Baixa o motor opcional
+numa revisão fixada, confere identidade e SHA256 contra a release, executa o
+binário para provar que ele expõe mesmo as capacidades que promete, e só então
+mede: o seu perfil atual, dois números de threads e — quando o GGUF declara
+especialistas roteados — o fork sem cache e com 16, 32 e 64 slots. Aquecimento
+descartado, três repetições, um prompt curto e um longo, mediana com faixa,
+RAM e VRAM observadas.
+
+O motor oficial continua sendo o padrão, e o opcional só é cogitado quando o
+arquivo do modelo diz que tem especialistas roteados. O dimensionamento do
+cache lê a geometria do próprio arquivo, em vez de uma tabela de
+bytes-por-parâmetro que envelheceria a cada quantização nova; sem essa
+geometria, o braço do fork não roda e diz por quê. Se o pacote não tiver digest
+publicado, o app se recusa a executar binário não verificado e segue no motor
+oficial.
+
+Nada é aplicado sozinho. Seu perfil manual é preservado, aplicar grava
+exatamente o que foi medido, e trocar de placa, de motor ou de arquivo do
+modelo depois invalida a evidência em vez de aplicá-la em silêncio.
+
+Modelos com licença também deixaram de pedir token colado: entrar no Hugging
+Face acontece no navegador. Quem já tinha aceitado a licença via o aviso de
+"portão fechado" para sempre, porque ele vinha de um campo do repositório que
+nunca muda; agora o veredito vem de perguntar ao próprio portão. E token
+ausente, token revogado e licença não aceita — três problemas diferentes —
+deixaram de dividir a mesma frase.
+
 ## 0.17.0 — chat mais fluido e configurações comparáveis
 
 Conversas longas usam histórico virtualizado, o streaming atualiza a tela a cada
