@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ModelSummary } from "../lib/types";
 import { searchModels, type SearchSort } from "../lib/api";
+import { errorMessage } from "../lib/serverSession";
 import ModelListItem from "../components/discover/ModelListItem";
 import ModelDetail from "../components/discover/ModelDetail";
 
@@ -43,7 +44,7 @@ export default function Discover() {
   const [debounced, setDebounced] = useState("");
   const [sort, setSort] = useState<SearchSort>("trending");
   const [results, setResults] = useState<ModelSummary[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState("");
   const [reload, setReload] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const seq = useRef(0);
@@ -58,7 +59,7 @@ export default function Discover() {
   useEffect(() => {
     const my = ++seq.current;
     setResults(null);
-    setFailed(false);
+    setFailed("");
     searchModels(debounced, sort)
       .then((r) => {
         if (seq.current !== my) return;
@@ -72,7 +73,10 @@ export default function Discover() {
       .catch((err) => {
         console.error(err);
         if (seq.current !== my) return;
-        setFailed(true);
+        // O motivo fica guardado: um "algo deu errado" sem o que deu errado
+        // não chega a quem poderia consertar, e foi assim que uma busca
+        // quebrada virou um cartão mudo na tela.
+        setFailed(errorMessage(err) || String(err) || "erro desconhecido");
         setResults([]);
         setSelectedId(null);
       });
@@ -117,6 +121,12 @@ export default function Discover() {
           {failed ? (
             <div className="mx-2 rounded-xl border border-dashed border-edge p-6 text-center">
               <p className="text-[13px] text-dim">{t("common.error")}</p>
+              <details className="mt-2 text-left text-[11px] text-dim">
+                <summary className="cursor-pointer text-center">
+                  {t("comparison.details")}
+                </summary>
+                <p className="mt-1 break-words">{failed}</p>
+              </details>
               <button
                 onClick={() => setReload((n) => n + 1)}
                 className="mt-3 rounded-lg border border-edge bg-panel px-3 py-1.5 text-[12px] font-medium text-ink transition-colors hover:border-accent"

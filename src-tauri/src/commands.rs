@@ -108,9 +108,11 @@ pub async fn models_search(
         Some("updated") => SortBy::Updated,
         _ => SortBy::Trending,
     };
-    state
-        .hf
-        .lock()
+    // `hf_pronto` e não `state.hf`: a sessão do login expira em horas, e o
+    // cliente guardado carrega o token de quando a janela abriu. Sem renovar,
+    // o Hub responde 401 e a tela inteira vira "algo deu errado" — um
+    // catálogo público escondido atrás de uma sessão vencida.
+    hf_pronto(&state)
         .await
         .search(&query, sort, 30)
         .await
@@ -275,9 +277,7 @@ async fn taxa_instantanea(state: &AppState, srv: &lr_engine::LlamaServer) -> Opt
 /// que tem uma.
 #[tauri::command]
 pub async fn models_readme(state: State<'_, AppState>, repo_id: String) -> CmdResult<String> {
-    state
-        .hf
-        .lock()
+    hf_pronto(&state)
         .await
         .readme(&repo_id)
         .await
@@ -508,26 +508,15 @@ pub async fn models_quants(
     params_total: Option<u64>,
     ctx_len: Option<u32>,
 ) -> CmdResult<QuantsView> {
-    let files = state
-        .hf
-        .lock()
-        .await
-        .repo_files(&repo_id)
-        .await
-        .map_err(err_str)?;
+    // Um cliente renovado uma vez, reusado nas quatro consultas desta tela.
+    let hf = hf_pronto(&state).await;
+    let files = hf.repo_files(&repo_id).await.map_err(err_str)?;
     let artifacts = lr_models::group_artifacts(&files);
     let projetores = lr_models::vision_projectors(&files);
 
     // A geometria do modelo vem do próprio Hugging Face quando ele a publica;
     // adivinhar por faixa de parâmetros era o que sobrava, não o que queríamos.
-    let publicado = state
-        .hf
-        .lock()
-        .await
-        .gguf_meta(&repo_id)
-        .await
-        .ok()
-        .flatten();
+    let publicado = hf.gguf_meta(&repo_id).await.ok().flatten();
     let params = params_total
         .or_else(|| publicado.as_ref().and_then(|m| m.params_total))
         .unwrap_or(8_000_000_000);
@@ -549,10 +538,7 @@ pub async fn models_quants(
     // de "não cabe" um arquivo que a máquina roda bem com os especialistas
     // na RAM.
     let geo = match publicado.as_ref() {
-        Some(m) if !m.tags.is_empty() => state
-            .hf
-            .lock()
-            .await
+        Some(m) if !m.tags.is_empty() => hf
             .base_config(&m.tags)
             .await
             .map(|c| geometria_do_config(&c))

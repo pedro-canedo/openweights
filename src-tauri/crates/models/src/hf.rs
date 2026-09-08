@@ -208,7 +208,18 @@ impl HfClient {
             }
         };
 
-        let resp = self.auth(self.http.get(&url)).send().await?;
+        let mut resp = self.auth(self.http.get(&url)).send().await?;
+        // Uma sessão recusada não pode cegar o catálogo. A lista de modelos é
+        // pública: o token só serve para ver repositório restrito, e mandá-lo
+        // expirado transforma "sua sessão venceu" em "Descobrir não funciona".
+        // Repetir sem ele custa uma requisição e devolve a tela.
+        if matches!(resp.status().as_u16(), 401 | 403) && self.token.is_some() {
+            log::warn!(
+                "busca recusou o token do Hub ({}); repetindo anônima",
+                resp.status()
+            );
+            resp = self.http.get(&url).send().await?;
+        }
         if !resp.status().is_success() {
             return Err(ModelsError::Api(format!(
                 "busca retornou HTTP {}",
