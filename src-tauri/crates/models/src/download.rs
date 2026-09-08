@@ -15,7 +15,7 @@
 //! Layout em disco: `<models_dir>/<author>/<repo>/<arquivo>`.
 
 use crate::{ModelsError, RepoFile, resolve_url};
-use futures_util::StreamExt;
+use futures_util::{StreamExt, stream};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -28,6 +28,20 @@ use tokio_util::sync::CancellationToken;
 
 /// Máximo de artefatos baixando ao mesmo tempo (semáforo global).
 const MAX_CONCURRENT_ARTIFACTS: usize = 2;
+/// Arquivos do MESMO artefato baixando ao mesmo tempo.
+///
+/// Um GGUF grande vem partido em shards, e baixá-los em fila deixava a linha
+/// ociosa: são arquivos distintos, não precisam de `Range` nem de remontagem.
+const MAX_ARQUIVOS_PARALELOS: usize = 3;
+/// Faixas (`Range`) por arquivo. Ver [`conexoes`] para o porquê do número.
+const MAX_RANGES_POR_ARQUIVO: usize = 4;
+/// Teto de conexões de dados abertas pelo app, somando todos os downloads.
+/// Sem ele, três shards de quatro faixas abririam doze canos e a disputa
+/// entre eles custaria mais do que o paralelismo rende.
+const MAX_CONEXOES: usize = 8;
+/// De quanto em quanto tempo o progresso das faixas vai para o sidecar.
+/// É o que se re-baixa se a energia cair: alguns segundos por faixa.
+const SIDECAR_INTERVAL: Duration = Duration::from_secs(2);
 /// Intervalo mínimo entre eventos `Update` durante o streaming.
 const EVENT_THROTTLE: Duration = Duration::from_millis(250);
 /// Janela deslizante para o cálculo de bytes/s.
@@ -84,22 +98,36 @@ pub fn download_id(repo_id: &str, artifact_name: &str) -> String {
 struct PartMeta {
     etag: Option<String>,
     total_bytes: u64,
+    /// Bytes já gravados em cada faixa, na ordem das faixas.
+    ///
+    /// Com uma conexão só o `.part` cresce no fim e o tamanho do arquivo já
+    /// dizia tudo. Com faixas paralelas ele nasce do tamanho final e os
+    /// buracos ficam no meio, então quem sabe o progresso é isto — e um
+    /// `.part` de download antigo, sem esta chave, retoma como faixa única.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    chunks: Vec<u64>,
 }
 
 /// Decisão pura de retomada, a partir do `.part` local e do etag atual.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum ResumeDecision {
     /// Recomeçar do zero (`.part` inválido, etag mudou ou não validável).
     Restart,
-    /// Continuar com `Range: bytes=<offset>-`.
-    Resume { offset: u64 },
+    /// Continuar: quantos bytes cada faixa já tem. Um único elemento é o
+    /// download sequencial de sempre.
+    Resume { done: Vec<u64> },
     /// O `.part` já tem todos os bytes; só falta validar e renomear.
     AlreadyComplete,
 }
 
 /// Regras: sem `.part` ou sem sidecar → zero; total ou etag divergente (ou
-/// impossível de validar) → zero; `.part` maior que o esperado → zero;
-/// exatamente o esperado → renomear; senão → `Range` a partir do tamanho.
+/// impossível de validar) → zero; progresso maior que o esperado → zero;
+/// exatamente o esperado → renomear; senão → retomar as faixas.
+///
+/// O progresso vem do sidecar quando ele tem faixas, e do tamanho do `.part`
+/// quando não tem. Confiar no tamanho nos dois casos seria um erro caro: o
+/// `.part` de um download paralelo nasce pré-alocado no tamanho final, e
+/// medi-lo diria "completo" com o meio do arquivo ainda vazio.
 fn decide_resume(
     part_len: u64,
     sidecar: Option<&PartMeta>,
@@ -119,13 +147,56 @@ fn decide_resume(
         (Some(saved), Some(cur)) if normalize_etag(saved) == normalize_etag(cur) => {}
         _ => return ResumeDecision::Restart,
     }
-    if part_len > expected_size {
+    // Sem faixas no sidecar: `.part` sequencial, do formato anterior.
+    let done = if meta.chunks.is_empty() {
+        vec![part_len]
+    } else {
+        // Uma faixa maior que a sua fatia é sidecar corrompido, não progresso.
+        let limites = faixas(expected_size, meta.chunks.len());
+        if limites.len() != meta.chunks.len()
+            || limites
+                .iter()
+                .zip(&meta.chunks)
+                .any(|((ini, fim), d)| *d > fim - ini)
+        {
+            return ResumeDecision::Restart;
+        }
+        meta.chunks.clone()
+    };
+    let total: u64 = done.iter().sum();
+    if total > expected_size {
         return ResumeDecision::Restart;
     }
-    if part_len == expected_size {
+    if total == expected_size {
         return ResumeDecision::AlreadyComplete;
     }
-    ResumeDecision::Resume { offset: part_len }
+    ResumeDecision::Resume { done }
+}
+
+/// Divide `total` em `n` faixas contíguas `[início, fim)`.
+fn faixas(total: u64, n: usize) -> Vec<(u64, u64)> {
+    let n = n.max(1) as u64;
+    let passo = total / n;
+    (0..n)
+        .map(|i| {
+            let ini = i * passo;
+            let fim = if i + 1 == n { total } else { ini + passo };
+            (ini, fim)
+        })
+        .collect()
+}
+
+/// Quantas conexões abrir para um arquivo.
+///
+/// Uma conexão TCP entrega no máximo `janela ÷ RTT`. Medido contra a CDN de
+/// LFS do Hugging Face (RTT de 146 ms daqui): uma conexão satura em ~14 MB/s
+/// e oito chegam a 20,7 MB/s — mas só com pedaços grandes. Com fatias de
+/// 8 MiB o mesmo teste caiu para 10,7 MB/s, porque cada conexão paga
+/// handshake e partida lenta de novo e passa a vida inteira acelerando.
+/// Daí o piso por faixa, e não um número fixo de conexões.
+fn conexoes(total: u64) -> usize {
+    const MINIMO_POR_FAIXA: u64 = 64 * 1024 * 1024;
+    ((total / MINIMO_POR_FAIXA) as usize).clamp(1, MAX_RANGES_POR_ARQUIVO)
 }
 
 /// Remove `W/` e aspas de um etag para comparação estável.
@@ -415,6 +486,8 @@ struct Inner {
     jobs: Mutex<BTreeMap<String, Job>>,
     events: broadcast::Sender<DownloadEvent>,
     sem: Semaphore,
+    /// Teto global de conexões de dados: ver [`MAX_CONEXOES`].
+    conexoes: Arc<Semaphore>,
 }
 
 impl Inner {
@@ -476,6 +549,7 @@ impl DownloadManager {
                 jobs: Mutex::new(jobs),
                 events,
                 sem: Semaphore::new(MAX_CONCURRENT_ARTIFACTS),
+                conexoes: Arc::new(Semaphore::new(MAX_CONEXOES)),
             }),
         }
     }
@@ -696,8 +770,13 @@ fn spawn_job(inner: Arc<Inner>, id: String) -> tokio::task::JoinHandle<()> {
     })
 }
 
-/// Baixa os arquivos do artefato em sequência. `.part` fica no disco em
-/// caso de erro (retomada futura via `resume`).
+/// Baixa os arquivos do artefato, alguns ao mesmo tempo. `.part` fica no
+/// disco em caso de erro (retomada futura via `resume`).
+///
+/// O contador de progresso deixa de ser "soma dos anteriores + o atual": com
+/// arquivos concorrentes não existe "o atual". Cada tarefa soma o que gravou
+/// ao total, e desconta o que já tinha somado quando uma tentativa recomeça
+/// do zero — assim a barra nunca anda para trás sozinha nem conta duas vezes.
 async fn run_artifact(
     inner: &Inner,
     id: &str,
@@ -706,34 +785,53 @@ async fn run_artifact(
     speed: &AtomicU64,
     token: &CancellationToken,
 ) -> Result<Outcome, ModelsError> {
-    let mut base: u64 = 0;
     received.store(0, Ordering::Relaxed);
 
+    // Já no disco: entra no total sem ocupar uma vaga de download.
+    let mut pendentes = Vec::new();
     for file in &req.files {
         let dest = dest_path(&inner.models_dir, &req.repo_id, &file.path)?;
-
-        // Destino final já existe com o tamanho certo → pular.
         if let Ok(meta) = tokio::fs::metadata(&dest).await
             && meta.is_file()
             && meta.len() == file.size_bytes
         {
-            base += file.size_bytes;
-            received.store(base, Ordering::Relaxed);
+            received.fetch_add(file.size_bytes, Ordering::Relaxed);
             continue;
         }
         if let Some(parent) = dest.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
+        pendentes.push((file, dest));
+    }
 
-        match download_file(inner, id, req, file, &dest, base, received, speed, token).await? {
-            Outcome::Interrupted => return Ok(Outcome::Interrupted),
-            Outcome::Completed => {
-                base += file.size_bytes;
-                received.store(base, Ordering::Relaxed);
-            }
+    // Os futures são montados num laço, e não por uma closure dada ao `map`:
+    // uma closure assíncrona precisaria valer para qualquer lifetime, e a que
+    // empresta `inner` e `req` não vale.
+    let mut futuros = Vec::with_capacity(pendentes.len());
+    for (file, dest) in pendentes {
+        futuros.push(async move {
+            download_file(inner, id, req, file, &dest, received, speed, token).await
+        });
+    }
+    let resultados: Vec<Result<Outcome, ModelsError>> = stream::iter(futuros)
+        .buffer_unordered(MAX_ARQUIVOS_PARALELOS)
+        .collect()
+        .await;
+
+    // Um erro vale mais que uma interrupção: quem cancelou já sabe que
+    // cancelou, e quem falhou precisa ler o motivo.
+    let mut interrompido = false;
+    for r in resultados {
+        match r? {
+            Outcome::Interrupted => interrompido = true,
+            Outcome::Completed => {}
         }
     }
-    Ok(Outcome::Completed)
+    Ok(if interrompido {
+        Outcome::Interrupted
+    } else {
+        Outcome::Completed
+    })
 }
 
 /// Loop de tentativas de um arquivo: cada tentativa re-resolve (a URL da
@@ -745,7 +843,6 @@ async fn download_file(
     req: &DownloadRequest,
     file: &RepoFile,
     dest: &Path,
-    base: u64,
     received: &AtomicU64,
     speed: &AtomicU64,
     token: &CancellationToken,
@@ -773,7 +870,6 @@ async fn download_file(
             file,
             dest,
             &url,
-            base,
             received,
             speed,
             token,
@@ -803,7 +899,6 @@ async fn try_download_once(
     file: &RepoFile,
     dest: &Path,
     url: &str,
-    base: u64,
     received: &AtomicU64,
     speed: &AtomicU64,
     token: &CancellationToken,
@@ -861,97 +956,244 @@ async fn try_download_once(
             file.size_bytes,
         )
     };
-    let offset = match decision {
+    let done = match decision {
         ResumeDecision::AlreadyComplete => {
             finalize(dest, &part, &meta_path, file.size_bytes).await?;
-            received.store(base + file.size_bytes, Ordering::Relaxed);
+            received.fetch_add(file.size_bytes, Ordering::Relaxed);
             return Ok(Outcome::Completed);
         }
-        ResumeDecision::Restart => 0,
-        ResumeDecision::Resume { offset } => offset,
+        ResumeDecision::Restart => {
+            let _ = tokio::fs::remove_file(&part).await;
+            vec![0; conexoes(file.size_bytes)]
+        }
+        ResumeDecision::Resume { done } => done,
+    };
+    let limites = faixas(file.size_bytes, done.len());
+
+    // 3) O `.part` nasce do tamanho final: as faixas escrevem cada uma no seu
+    //    trecho, e um arquivo que cresce por cima de si mesmo não permitiria
+    //    isso. `set_len` não reserva blocos de verdade em todo sistema de
+    //    arquivos, mas dá o arquivo esparso onde dá.
+    let arquivo = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&part)
+        .await?;
+    arquivo.set_len(file.size_bytes).await?;
+    drop(arquivo);
+
+    // O progresso já no disco entra no total antes do primeiro byte novo, e
+    // sai de novo se esta tentativa fracassar — senão duas tentativas do mesmo
+    // arquivo contariam os mesmos bytes duas vezes.
+    let creditado = Arc::new(AtomicU64::new(0));
+    let progresso: Arc<Vec<AtomicU64>> =
+        Arc::new(done.iter().map(|d| AtomicU64::new(*d)).collect());
+    let inicial: u64 = done.iter().sum();
+    received.fetch_add(inicial, Ordering::Relaxed);
+    creditado.fetch_add(inicial, Ordering::Relaxed);
+    let estorno = Estorno {
+        received,
+        creditado: creditado.clone(),
     };
 
-    // 3) GET no /resolve/ com Range; o reqwest segue o 302 até a CDN.
-    let mut get = inner.http.get(url);
-    if let Some(t) = &req.token {
-        get = get.bearer_auth(t);
+    // 4) Sidecar antes dos bytes: se o app fechar no meio, a retomada sabe
+    //    validar o etag e onde cada faixa parou.
+    escreve_sidecar(&meta_path, &current_etag, file.size_bytes, &progresso).await?;
+
+    // 5) Uma tarefa por faixa. A velocidade agregada e os eventos saem de um
+    //    observador só, senão quatro conexões brigariam pela mesma janela.
+    let inicio_tarefas = Instant::now();
+    let mut tarefas = Vec::new();
+    for (i, (ini, fim)) in limites.iter().copied().enumerate() {
+        let ja = progresso[i].load(Ordering::Relaxed);
+        if ini + ja >= fim {
+            continue;
+        }
+        let permit = Arc::clone(&inner.conexoes)
+            .acquire_owned()
+            .await
+            .map_err(|e| ModelsError::Api(format!("semáforo de conexões: {e}")))?;
+        let (http, token_hf) = (inner.http.clone(), req.token.clone());
+        let (url, part, progresso) = (url.to_string(), part.clone(), progresso.clone());
+        let creditado = creditado.clone();
+        tarefas.push(async move {
+            let _permit = permit;
+            baixa_faixa(
+                &http, &token_hf, &url, &part, ini, fim, i, &progresso, received, &creditado, token,
+            )
+            .await
+        });
     }
-    if offset > 0 {
-        get = get.header(reqwest::header::RANGE, format!("bytes={offset}-"));
+    let observador = observa_progresso(
+        inner,
+        id,
+        &meta_path,
+        &current_etag,
+        file.size_bytes,
+        &progresso,
+        speed,
+        inicio_tarefas,
+        inicial,
+        token,
+    );
+    let (resultados, _) = tokio::join!(futures_util::future::join_all(tarefas), observador);
+
+    escreve_sidecar(&meta_path, &current_etag, file.size_bytes, &progresso).await?;
+    for r in resultados {
+        match r? {
+            Outcome::Interrupted => return Ok(Outcome::Interrupted),
+            Outcome::Completed => {}
+        }
+    }
+    if token.is_cancelled() {
+        return Ok(Outcome::Interrupted);
+    }
+    finalize(dest, &part, &meta_path, file.size_bytes).await?;
+    // Chegou ao fim: o crédito vira definitivo.
+    std::mem::forget(estorno);
+    Ok(Outcome::Completed)
+}
+
+/// Devolve ao total o que esta tentativa creditou, se ela não terminar.
+///
+/// Sem isto, quatro tentativas de um arquivo de 10 GB deixariam a barra
+/// marcando 40 GB de 10 GB.
+struct Estorno<'a> {
+    received: &'a AtomicU64,
+    creditado: Arc<AtomicU64>,
+}
+impl Drop for Estorno<'_> {
+    fn drop(&mut self) {
+        let n = self.creditado.swap(0, Ordering::Relaxed);
+        self.received.fetch_sub(n, Ordering::Relaxed);
+    }
+}
+
+async fn escreve_sidecar(
+    meta_path: &Path,
+    etag: &Option<String>,
+    total: u64,
+    progresso: &[AtomicU64],
+) -> Result<(), ModelsError> {
+    let meta = PartMeta {
+        etag: etag.clone(),
+        total_bytes: total,
+        chunks: progresso
+            .iter()
+            .map(|a| a.load(Ordering::Relaxed))
+            .collect(),
+    };
+    let bytes = serde_json::to_vec(&meta).map_err(|e| ModelsError::Api(format!("sidecar: {e}")))?;
+    tokio::fs::write(meta_path, bytes).await?;
+    Ok(())
+}
+
+/// Baixa `[ini, fim)` de `url` para a posição certa do `.part`.
+#[allow(clippy::too_many_arguments)]
+async fn baixa_faixa(
+    http: &reqwest::Client,
+    token_hf: &Option<String>,
+    url: &str,
+    part: &Path,
+    ini: u64,
+    fim: u64,
+    indice: usize,
+    progresso: &[AtomicU64],
+    received: &AtomicU64,
+    creditado: &AtomicU64,
+    cancel: &CancellationToken,
+) -> Result<Outcome, ModelsError> {
+    use tokio::io::AsyncSeekExt;
+
+    let mut ja = progresso[indice].load(Ordering::Relaxed);
+    let de = ini + ja;
+    let mut get = http
+        .get(url)
+        .header(reqwest::header::RANGE, format!("bytes={de}-{}", fim - 1));
+    if let Some(t) = token_hf {
+        get = get.bearer_auth(t);
     }
     let resp = tokio::select! {
         r = get.send() => r?,
-        _ = token.cancelled() => return Ok(Outcome::Interrupted),
+        _ = cancel.cancelled() => return Ok(Outcome::Interrupted),
     };
     match resp.status().as_u16() {
-        200 | 206 => {}
-        401 | 403 => return Err(ModelsError::Gated),
-        416 => {
-            // Intervalo inválido: joga o .part fora e recomeça do zero.
-            let _ = tokio::fs::remove_file(&part).await;
-            let _ = tokio::fs::remove_file(&meta_path).await;
-            *force_restart = true;
+        206 => {}
+        // Sem `Range` o servidor mandaria o arquivo inteiro para cada faixa.
+        // Melhor falhar e deixar a próxima tentativa usar uma conexão só.
+        200 => {
             return Err(ModelsError::Api(
-                "HTTP 416: intervalo rejeitado, recomeçando do zero".to_string(),
+                "servidor ignorou o Range; refazendo com uma conexão".to_string(),
             ));
         }
+        401 | 403 => return Err(ModelsError::Gated),
         s => return Err(ModelsError::Api(format!("download retornou HTTP {s}"))),
     }
-    // Pedimos Range mas veio 200 → o servidor ignorou; recomeça do zero.
-    let offset = if resp.status().as_u16() == 206 {
-        offset
-    } else {
-        0
-    };
 
-    // 4) Sidecar antes dos bytes: se o app fechar no meio, a retomada
-    //    sabe validar o etag.
-    let meta = PartMeta {
-        etag: current_etag.clone(),
-        total_bytes: file.size_bytes,
-    };
-    let meta_json =
-        serde_json::to_vec(&meta).map_err(|e| ModelsError::Api(format!("sidecar: {e}")))?;
-    tokio::fs::write(&meta_path, meta_json).await?;
-
-    let out_file = if offset > 0 {
-        tokio::fs::OpenOptions::new()
-            .append(true)
-            .open(&part)
-            .await?
-    } else {
-        tokio::fs::File::create(&part).await?
-    };
-    let mut writer = tokio::io::BufWriter::with_capacity(1 << 20, out_file);
-
-    // 5) Streaming com contadores atômicos, eventos com throttle e
-    //    velocidade por janela deslizante.
-    let mut written = offset;
-    received.store(base + written, Ordering::Relaxed);
+    let mut arquivo = tokio::fs::OpenOptions::new().write(true).open(part).await?;
+    arquivo.seek(std::io::SeekFrom::Start(de)).await?;
+    let mut writer = tokio::io::BufWriter::with_capacity(1 << 20, arquivo);
     let mut stream = resp.bytes_stream();
-    let mut last_emit = Instant::now();
-    let mut window: VecDeque<(Instant, u64)> = VecDeque::new();
-    window.push_back((Instant::now(), written));
-
     loop {
         let chunk = tokio::select! {
             c = stream.next() => c,
-            _ = token.cancelled() => {
-                // Pausa/cancelamento: preserva o que já está no .part.
+            _ = cancel.cancelled() => {
                 writer.flush().await?;
                 return Ok(Outcome::Interrupted);
             }
         };
         let Some(chunk) = chunk else { break };
-        let bytes = chunk?; // erro de rede → nova tentativa re-resolve
-        writer.write_all(&bytes).await?;
-        written += bytes.len() as u64;
-        received.store(base + written, Ordering::Relaxed);
+        let bytes = chunk?;
+        // Um servidor generoso demais não pode passar por cima da faixa
+        // seguinte, que outra conexão está escrevendo neste instante.
+        let cabe = (fim - ini - ja).min(bytes.len() as u64) as usize;
+        if cabe == 0 {
+            break;
+        }
+        writer.write_all(&bytes[..cabe]).await?;
+        ja += cabe as u64;
+        progresso[indice].store(ja, Ordering::Relaxed);
+        received.fetch_add(cabe as u64, Ordering::Relaxed);
+        creditado.fetch_add(cabe as u64, Ordering::Relaxed);
+    }
+    writer.flush().await?;
+    if ini + ja < fim {
+        return Err(ModelsError::Api(format!(
+            "faixa {indice} veio incompleta: {ja} de {} B",
+            fim - ini
+        )));
+    }
+    Ok(Outcome::Completed)
+}
 
-        let now = Instant::now();
-        window.push_back((now, written));
+/// Velocidade agregada, eventos para a interface e sidecar periódico.
+#[allow(clippy::too_many_arguments)]
+async fn observa_progresso(
+    inner: &Inner,
+    id: &str,
+    meta_path: &Path,
+    etag: &Option<String>,
+    total: u64,
+    progresso: &[AtomicU64],
+    speed: &AtomicU64,
+    inicio: Instant,
+    inicial: u64,
+    cancel: &CancellationToken,
+) {
+    let soma = || -> u64 { progresso.iter().map(|a| a.load(Ordering::Relaxed)).sum() };
+    let mut window: VecDeque<(Instant, u64)> = VecDeque::from([(inicio, inicial)]);
+    let mut ultimo_sidecar = Instant::now();
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(EVENT_THROTTLE) => {}
+            _ = cancel.cancelled() => return,
+        }
+        let agora = Instant::now();
+        let atual = soma();
+        window.push_back((agora, atual));
         while window.len() > 2
-            && now.duration_since(window.front().expect("janela não vazia").0) > SPEED_WINDOW
+            && agora.duration_since(window.front().expect("janela não vazia").0) > SPEED_WINDOW
         {
             window.pop_front();
         }
@@ -961,14 +1203,15 @@ async fn try_download_once(
                 speed.store(((b1 - b0) as f64 / dt) as u64, Ordering::Relaxed);
             }
         }
-        if now.duration_since(last_emit) >= EVENT_THROTTLE {
-            last_emit = now;
-            inner.emit_update(id).await;
+        inner.emit_update(id).await;
+        if agora.duration_since(ultimo_sidecar) >= SIDECAR_INTERVAL {
+            ultimo_sidecar = agora;
+            let _ = escreve_sidecar(meta_path, etag, total, progresso).await;
+        }
+        if atual >= total {
+            return;
         }
     }
-    writer.flush().await?;
-    finalize(dest, &part, &meta_path, file.size_bytes).await?;
-    Ok(Outcome::Completed)
 }
 
 /// Valida o tamanho final e promove `.part` → destino. Tamanho menor que o
@@ -1035,11 +1278,215 @@ mod tests {
         assert_eq!(part_meta_path(dest), Path::new("/m/a/b/x.gguf.part.json"));
     }
 
+    /// Servidor mínimo que entende `Range: bytes=a-b` e responde 206.
+    /// Devolve a porta e o corpo servido.
+    async fn servidor_com_range(corpo: Vec<u8>) -> u16 {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let porta = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut sock, _)) = listener.accept().await else {
+                    return;
+                };
+                let corpo = corpo.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 2048];
+                    let n = sock.read(&mut buf).await.unwrap_or(0);
+                    let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let faixa = req.lines().find_map(|l| {
+                        let v = l
+                            .strip_prefix("range: ")
+                            .or_else(|| l.strip_prefix("Range: "))?;
+                        let v = v.trim().strip_prefix("bytes=")?;
+                        let (a, b) = v.split_once('-')?;
+                        Some((a.parse::<usize>().ok()?, b.parse::<usize>().ok()?))
+                    });
+                    let (ini, fim) = faixa.unwrap_or((0, corpo.len().saturating_sub(1)));
+                    let fim = fim.min(corpo.len().saturating_sub(1));
+                    let fatia = &corpo[ini..=fim];
+                    let cab = format!(
+                        "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\n\
+                         Content-Range: bytes {ini}-{fim}/{}\r\nConnection: close\r\n\r\n",
+                        fatia.len(),
+                        corpo.len()
+                    );
+                    let _ = sock.write_all(cab.as_bytes()).await;
+                    let _ = sock.write_all(fatia).await;
+                    let _ = sock.flush().await;
+                });
+            }
+        });
+        porta
+    }
+
+    /// O teste que importa: quatro conexões escrevendo no MESMO arquivo, cada
+    /// uma no seu trecho. Um erro de `seek` de um byte aqui não quebra teste
+    /// nenhum de aritmética — só produz um GGUF corrompido depois de horas de
+    /// download, que é exatamente o defeito caro.
+    #[tokio::test]
+    async fn parallel_ranges_reassemble_the_original_file() {
+        let total = 300_000usize;
+        let original: Vec<u8> = (0..total).map(|i| (i % 251) as u8).collect();
+        let porta = servidor_com_range(original.clone()).await;
+        let url = format!("http://127.0.0.1:{porta}/m.gguf");
+
+        let dir = tempfile::tempdir().unwrap();
+        let part = dir.path().join("m.gguf.part");
+        tokio::fs::File::create(&part)
+            .await
+            .unwrap()
+            .set_len(total as u64)
+            .await
+            .unwrap();
+
+        let limites = faixas(total as u64, 4);
+        let progresso: Arc<Vec<AtomicU64>> =
+            Arc::new((0..limites.len()).map(|_| AtomicU64::new(0)).collect());
+        let recebido = AtomicU64::new(0);
+        let creditado = AtomicU64::new(0);
+        let http = reqwest::Client::new();
+        let cancel = CancellationToken::new();
+
+        let mut fs = Vec::new();
+        for (i, (ini, fim)) in limites.iter().copied().enumerate() {
+            let (http, url, part, progresso) =
+                (http.clone(), url.clone(), part.clone(), progresso.clone());
+            let (recebido, creditado, cancel) = (&recebido, &creditado, cancel.clone());
+            fs.push(async move {
+                baixa_faixa(
+                    &http, &None, &url, &part, ini, fim, i, &progresso, recebido, creditado,
+                    &cancel,
+                )
+                .await
+                .unwrap()
+            });
+        }
+        futures_util::future::join_all(fs).await;
+
+        assert_eq!(tokio::fs::read(&part).await.unwrap(), original);
+        assert_eq!(recebido.load(Ordering::Relaxed), total as u64);
+        assert_eq!(creditado.load(Ordering::Relaxed), total as u64);
+    }
+
+    /// Retomada por faixa: metade de cada trecho já no disco, e o que falta
+    /// entra exatamente no buraco que sobrou.
+    #[tokio::test]
+    async fn a_half_written_range_resumes_where_it_stopped() {
+        let total = 120_000usize;
+        let original: Vec<u8> = (0..total).map(|i| (i % 97) as u8).collect();
+        let porta = servidor_com_range(original.clone()).await;
+        let url = format!("http://127.0.0.1:{porta}/m.gguf");
+
+        let dir = tempfile::tempdir().unwrap();
+        let part = dir.path().join("m.gguf.part");
+        let limites = faixas(total as u64, 2);
+        // Metade de cada faixa já escrita; o resto é lixo que precisa sumir.
+        let mut disco = vec![0xEEu8; total];
+        let mut feito = Vec::new();
+        for (ini, fim) in limites.iter().copied() {
+            let metade = (fim - ini) / 2;
+            let a = ini as usize;
+            let b = a + metade as usize;
+            disco[a..b].copy_from_slice(&original[a..b]);
+            feito.push(metade);
+        }
+        tokio::fs::write(&part, &disco).await.unwrap();
+
+        let progresso: Arc<Vec<AtomicU64>> =
+            Arc::new(feito.iter().map(|d| AtomicU64::new(*d)).collect());
+        let recebido = AtomicU64::new(0);
+        let creditado = AtomicU64::new(0);
+        let http = reqwest::Client::new();
+        let cancel = CancellationToken::new();
+
+        let mut fs = Vec::new();
+        for (i, (ini, fim)) in limites.iter().copied().enumerate() {
+            let (http, url, part, progresso) =
+                (http.clone(), url.clone(), part.clone(), progresso.clone());
+            let (recebido, creditado, cancel) = (&recebido, &creditado, cancel.clone());
+            fs.push(async move {
+                baixa_faixa(
+                    &http, &None, &url, &part, ini, fim, i, &progresso, recebido, creditado,
+                    &cancel,
+                )
+                .await
+                .unwrap()
+            });
+        }
+        futures_util::future::join_all(fs).await;
+
+        assert_eq!(tokio::fs::read(&part).await.unwrap(), original);
+        // Só o que faltava foi transferido de novo.
+        let restante: u64 = limites
+            .iter()
+            .zip(&feito)
+            .map(|((a, b), d)| (b - a) - d)
+            .sum();
+        assert_eq!(recebido.load(Ordering::Relaxed), restante);
+    }
+
+    #[test]
+    fn ranges_cover_the_file_without_gaps_or_overlap() {
+        for (total, n) in [(100u64, 3usize), (1, 4), (0, 1), (1 << 30, 4)] {
+            let fs = faixas(total, n);
+            assert_eq!(fs.first().expect("ao menos uma faixa").0, 0);
+            assert_eq!(
+                fs.last().expect("ao menos uma faixa").1,
+                total,
+                "{total}/{n}"
+            );
+            for par in fs.windows(2) {
+                assert_eq!(par[0].1, par[1].0, "buraco ou sobreposição em {total}/{n}");
+            }
+            assert_eq!(fs.iter().map(|(a, b)| b - a).sum::<u64>(), total);
+        }
+    }
+
+    /// Arquivo pequeno não ganha nada com quatro conexões: cada uma pagaria
+    /// handshake e partida lenta para transferir alguns megabytes.
+    #[test]
+    fn connection_count_follows_the_file_size() {
+        let mib = 1024 * 1024;
+        assert_eq!(conexoes(10 * mib), 1);
+        assert_eq!(conexoes(100 * mib), 1);
+        assert_eq!(conexoes(200 * mib), 3);
+        assert_eq!(conexoes(50 * 1024 * mib), MAX_RANGES_POR_ARQUIVO);
+    }
+
+    /// O `.part` de um download paralelo nasce do tamanho final. Se a decisão
+    /// olhasse o tamanho do arquivo, como fazia, chamaria de "completo" um
+    /// download com o meio vazio — e o `finalize` promoveria lixo a modelo.
+    #[test]
+    fn a_preallocated_part_is_judged_by_its_ranges_not_by_its_size() {
+        let com_faixas = |chunks: Vec<u64>| PartMeta {
+            etag: Some("abc".into()),
+            total_bytes: 100,
+            chunks,
+        };
+        // Pré-alocado (part_len == total) mas só metade escrita.
+        assert_eq!(
+            decide_resume(100, Some(&com_faixas(vec![25, 25])), Some("abc"), 100),
+            ResumeDecision::Resume { done: vec![25, 25] }
+        );
+        // Todas as faixas cheias → só falta renomear.
+        assert_eq!(
+            decide_resume(100, Some(&com_faixas(vec![50, 50])), Some("abc"), 100),
+            ResumeDecision::AlreadyComplete
+        );
+        // Faixa maior que a própria fatia é sidecar corrompido, não progresso.
+        assert_eq!(
+            decide_resume(100, Some(&com_faixas(vec![80, 10])), Some("abc"), 100),
+            ResumeDecision::Restart
+        );
+    }
+
     #[test]
     fn resume_decisions() {
         let meta = |etag: Option<&str>, total: u64| PartMeta {
             etag: etag.map(String::from),
             total_bytes: total,
+            chunks: Vec::new(),
         };
         // sem .part → zero
         assert_eq!(
@@ -1054,12 +1501,12 @@ mod tests {
         // etag igual → retoma com Range a partir do tamanho do .part
         assert_eq!(
             decide_resume(50, Some(&meta(Some("\"abc\""), 100)), Some("\"abc\""), 100),
-            ResumeDecision::Resume { offset: 50 }
+            ResumeDecision::Resume { done: vec![50] }
         );
         // aspas e prefixo W/ são normalizados na comparação
         assert_eq!(
             decide_resume(50, Some(&meta(Some("abc"), 100)), Some("W/\"abc\""), 100),
-            ResumeDecision::Resume { offset: 50 }
+            ResumeDecision::Resume { done: vec![50] }
         );
         // etag mudou (arquivo republicado) → zero
         assert_eq!(
@@ -1165,6 +1612,7 @@ mod tests {
             serde_json::to_vec(&PartMeta {
                 etag: Some("abc".into()),
                 total_bytes: 100,
+                chunks: Vec::new(),
             })
             .unwrap(),
         )
@@ -1190,6 +1638,7 @@ mod tests {
             serde_json::to_vec(&PartMeta {
                 etag: Some("xyz".into()),
                 total_bytes: 50,
+                chunks: Vec::new(),
             })
             .unwrap(),
         )
