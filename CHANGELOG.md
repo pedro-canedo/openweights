@@ -25,6 +25,15 @@ published releases and the version commits, and are kept as history.
   the bar onto a second line on smaller screens. Each meter now has a
   pictogram, with the name on hover.
 
+- **The performance history says which model the series belongs to**, and each
+  row becomes a button that returns to that configuration. Older measurements
+  stay as text: they stored the configuration's label, not the configuration
+  itself, and applying an approximation would be worse than offering no button.
+- **An inconclusive optimization no longer offers "restore".** When the run
+  concludes your current configuration is already the best, nothing was
+  applied — yet the screen offered to undo a change that never happened. The
+  previous run's verdict also stops showing next to a new run's progress.
+
 Anyone who saw the freeze disappear on its own was not imagining it: the
 zeroing happens once per file, on the first distant write, and then it is over.
 Downloads already in progress do not need restarting.

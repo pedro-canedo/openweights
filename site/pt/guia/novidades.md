@@ -31,6 +31,14 @@ largura que os números que apresentavam, então em telas menores "26 GB / 64 GB
 se partia em duas linhas e a barra crescia. Agora cada medidor traz um
 pictograma e guarda o nome para quando o ponteiro passar.
 
+Duas coisas menores na mesma versão. A tabela do histórico de desempenho
+sempre filtrou por modelo, mas nunca disse qual — e um número de geração não
+significa nada sem o modelo que o produziu, que foi como 32 tokens/s numa
+tabela e 143 em outra tela puderam parecer uma contradição. Cada linha também
+virou um botão que volta àquela configuração, para quando uma mudança sai pior.
+E uma otimização que termina sem vencedor deixa de oferecer "restaurar": nada
+foi aplicado, então não há o que desfazer.
+
 ## 0.18.3 — um catálogo público escondido atrás de uma sessão vencida
 
 O login do Hugging Face dura algumas horas. O **Descobrir**, o README do modelo

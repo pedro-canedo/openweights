@@ -31,6 +31,14 @@ numbers they introduced, so on smaller screens "26 GB / 64 GB" split across two
 lines and the bar grew. Each meter now carries a pictogram and puts its name on
 hover.
 
+Two smaller things in the same release. The performance history table always
+filtered by model, but never said which one — and a generation figure means
+nothing without the model that produced it, which is how 32 tokens/s in one
+table and 143 in another screen could look like a contradiction. Each row also
+became a button that returns to that configuration, for the times a change
+turns out worse. And an optimization that ends without a winner stops offering
+"restore": nothing was applied, so there is nothing to undo.
+
 ## 0.18.3 — a public catalogue was hiding behind an expired session
 
 A Hugging Face login lasts a few hours. **Discover**, the model README and the
