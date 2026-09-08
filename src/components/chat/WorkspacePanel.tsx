@@ -23,6 +23,7 @@ import {
 import type { WorkspaceFile } from "../../lib/types";
 import PreviewPane, { canShowCode, previewKind } from "./PreviewPane";
 import FileIcon, { FolderIcon } from "./FileIcon";
+import Icon, { DirtyDot } from "../ui/Icon";
 
 function folderName(dir: string): string {
   const parts = dir.replace(/[\\/]+$/, "").split(/[\\/]/);
@@ -497,8 +498,11 @@ function FileTree({
                 style={{ paddingLeft: 8 + depth * 12 }}
                 className="flex w-full items-center gap-1.5 py-1 pr-2 text-left text-[12px] text-dim hover:bg-panel2 hover:text-ink"
               >
-                <span className="w-3 shrink-0 text-[10px]">
-                  {closed ? "▸" : "▾"}
+                <span className="flex w-3 shrink-0 text-dim">
+                  <Icon
+                    name={closed ? "chevron-right" : "chevron-down"}
+                    className="h-3 w-3"
+                  />
                 </span>
                 <FolderIcon open={!closed} />
                 <span className="truncate">{node.name}</span>
@@ -592,7 +596,7 @@ export function WorkspaceExplorer() {
               title={t("workspace.remove")}
               className="flex h-5 w-5 items-center justify-center rounded text-dim hover:bg-bad/20 hover:text-bad"
             >
-              ×
+              <Icon name="close" className="h-3 w-3" />
             </button>
           </>
         )}
@@ -602,7 +606,7 @@ export function WorkspaceExplorer() {
           title={t("workspace.closeExplorer")}
           className="flex h-5 w-5 items-center justify-center rounded text-dim hover:text-ink"
         >
-          ▸
+          <Icon name="chevron-right" className="h-3.5 w-3.5" />
         </button>
       </div>
 
@@ -764,9 +768,9 @@ function WorkspaceEditor() {
       <div className="flex h-[min(86vh,820px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-edge bg-[#1e1e1e] shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
         <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
           <FileIcon name={fileName} className="h-4 w-4" />
-          <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-white/90">
-            {openPath}
-            {dirty ? " •" : ""}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-mono text-[12px] text-white/90">
+            <span className="min-w-0 truncate">{openPath}</span>
+            {dirty && <DirtyDot />}
           </span>
           {/* Arquivo visualizável: o mesmo toggle código | prévia da prévia,
               para os dois lados da moeda ficarem a um clique de distância. */}
@@ -806,7 +810,7 @@ function WorkspaceEditor() {
             title={t("common.close")}
             className="flex h-6 w-6 items-center justify-center rounded text-white/50 hover:bg-white/10 hover:text-white"
           >
-            ×
+            <Icon name="close" className="h-3.5 w-3.5" />
           </button>
         </div>
 

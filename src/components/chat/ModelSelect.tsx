@@ -1,5 +1,5 @@
 // Seletor combinado de modelo + esforço, no estilo do picker do composer:
-// gatilho "Nome Alto ▾", lista de modelos e esforço / mais modelos no rodapé.
+// gatilho "Nome + esforço", lista de modelos e esforço / mais modelos no rodapé.
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";

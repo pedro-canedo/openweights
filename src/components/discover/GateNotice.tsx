@@ -15,6 +15,7 @@
 
 import { useTranslation } from "react-i18next";
 import type { AccessReport } from "../../lib/types";
+import Icon from "../ui/Icon";
 
 export default function GateNotice({
   report,
@@ -99,11 +100,12 @@ export default function GateNotice({
           <button
             onClick={onOpenHub}
             disabled={ocupado}
-            className={`rounded-lg border border-edge bg-panel px-3 py-1.5 text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 rounded-lg border border-edge bg-panel px-3 py-1.5 text-xs font-medium transition-colors ${
               ocupado ? "cursor-default text-dim" : "text-ink hover:border-accent"
             }`}
           >
-            {t("discover.gate.accept")} ↗
+            {t("discover.gate.accept")}
+            <Icon name="external" className="h-3 w-3" />
           </button>
         )}
 

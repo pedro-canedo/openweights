@@ -9,6 +9,7 @@ import { deletePreset, listPresets, savePreset } from "../../lib/api";
 import type { ChatParams, PresetRow } from "../../lib/types";
 import { sanitizeChatParams } from "../../lib/types";
 import { navigate } from "../../lib/nav";
+import Icon from "../ui/Icon";
 
 function Slider({
   label,
@@ -204,9 +205,10 @@ export default function ParamsPanel({
         <button
           type="button"
           onClick={() => navigate("server", { serverModel: model })}
-          className="self-start rounded-lg border border-edge px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-accent hover:text-ink"
+          className="flex items-center gap-1.5 self-start rounded-lg border border-edge px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-accent hover:text-ink"
         >
-          {t("chat.engine.configureLink")} →
+          {t("chat.engine.configureLink")}
+          <Icon name="arrow-right" className="h-3 w-3" />
         </button>
       )}
 

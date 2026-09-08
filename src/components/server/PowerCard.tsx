@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import Icon from "../ui/Icon";
 import { gpuPowerSet, gpuPowerStatus, type GpuPower } from "../../lib/power";
 import { chipClass } from "../form/controls";
 
@@ -95,7 +96,9 @@ export default function PowerCard() {
               .join(" · ")}
           </span>
         </span>
-        <span className="shrink-0 text-dim">{aberto ? "▾" : "▸"}</span>
+        <span className="shrink-0 text-dim">
+          <Icon name={aberto ? "chevron-down" : "chevron-right"} />
+        </span>
       </button>
 
       {aberto && (

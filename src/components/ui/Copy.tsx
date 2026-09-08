@@ -6,6 +6,7 @@
 
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import Icon from "./Icon";
 
 /** Copia e diz que copiou, por um segundo. */
 function useCopy(onCopied?: () => void) {
@@ -40,8 +41,8 @@ export function CopyValue({
       className={`group inline-flex max-w-full items-center gap-2 rounded-lg border border-edge bg-panel2 px-3 py-1.5 font-mono text-[12px] text-dim transition-colors hover:border-accent hover:text-ink ${className}`}
     >
       <span className="truncate">{value}</span>
-      <span className={copied ? "text-ok" : "text-dim"}>
-        {copied ? "✓" : "⧉"}
+      <span className={`flex ${copied ? "text-ok" : "text-dim"}`}>
+        <Icon name={copied ? "check" : "copy"} className="h-3.5 w-3.5" />
       </span>
     </button>
   );

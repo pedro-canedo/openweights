@@ -22,6 +22,7 @@ import {
 import { routerModels } from "../../lib/flags";
 import { errorMessage } from "../../lib/serverSession";
 import type { ServerStatus } from "../../lib/types";
+import Icon from "../ui/Icon";
 
 type TestResult =
   | { kind: "ok"; n: number }
@@ -409,8 +410,9 @@ export default function ConnectCard({
           {testing ? t("common.loading") : t("server.connect.test")}
         </button>
         {test?.kind === "ok" && (
-          <span className="text-[11px] text-ok">
-            ✓ {t("server.connect.testOk", { n: test.n })}
+          <span className="flex items-center gap-1 text-[11px] text-ok">
+            <Icon name="check" className="h-3 w-3" />
+            {t("server.connect.testOk", { n: test.n })}
           </span>
         )}
         {test?.kind === "authStale" && (
@@ -441,9 +443,10 @@ function CopyChip({ value }: { value: string }) {
           setTimeout(() => setCopied(false), 1200);
         });
       }}
-      className="rounded-lg border border-edge bg-panel2 px-3 py-1.5 font-mono text-[12px] text-dim hover:text-ink"
+      className="flex items-center gap-2 rounded-lg border border-edge bg-panel2 px-3 py-1.5 font-mono text-[12px] text-dim hover:text-ink"
     >
-      {value} {copied ? "✓" : "⧉"}
+      <span className="min-w-0 truncate">{value}</span>
+      <Icon name={copied ? "check" : "copy"} className="h-3.5 w-3.5" />
     </button>
   );
 }

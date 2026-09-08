@@ -13,6 +13,7 @@
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { CopyButton } from "../ui/Copy";
+import Icon from "../ui/Icon";
 
 /** Onde mora a dispensa do guia. */
 export const CHAVE_GUIA = "ow.server.guide.hidden";
@@ -39,7 +40,11 @@ function Passo({
             : "border border-edge text-dim"
         }`}
       >
-        {feito ? "✓" : n}
+        {feito ? (
+          <Icon name="check" className="h-3 w-3" />
+        ) : (
+          n
+        )}
       </span>
       <span className="min-w-0 flex-1">
         <span className={`text-sm ${feito ? "text-dim" : "text-ink"}`}>

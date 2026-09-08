@@ -23,6 +23,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import Icon from "./Icon";
 
 // ---------------------------------------------------------------- página ---
 
@@ -230,7 +231,9 @@ export function Collapse({
             </span>
           )}
         </span>
-        <span className="ml-auto shrink-0 text-dim">{open ? "▾" : "▸"}</span>
+        <span className="ml-auto shrink-0 text-dim">
+          <Icon name={open ? "chevron-down" : "chevron-right"} className="h-3.5 w-3.5" />
+        </span>
       </button>
       {open && <div className="border-t border-edge px-5 py-4">{children}</div>}
     </section>

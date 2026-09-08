@@ -46,6 +46,7 @@ import GlobalFlagsCard from "../components/server/GlobalFlagsCard";
 import ServeStatsCard from "../components/server/ServeStatsCard";
 import ServerHeader from "../components/server/ServerHeader";
 import GettingStarted, { CHAVE_GUIA } from "../components/server/GettingStarted";
+import Icon from "../components/ui/Icon";
 import UseElsewhere from "../components/server/UseElsewhere";
 
 const MAX_LOG_LINES = 500;
@@ -355,9 +356,10 @@ function ServerConfig({ running }: { running: boolean }) {
       <div className="mt-4 flex items-center gap-3">
         <button
           onClick={() => void save()}
-          className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
+          className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
         >
-          {saved ? "✓" : t("common.save")}
+          {saved && <Icon name="check" className="h-3.5 w-3.5" />}
+          {t("common.save")}
         </button>
         {running && (
           <span className="text-[11px] text-warn">{t("server.applyHint")}</span>

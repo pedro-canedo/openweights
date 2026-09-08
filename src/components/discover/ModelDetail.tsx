@@ -19,6 +19,7 @@ import { getModelQuants, hfLogin, modelReadme, startDownload } from "../../lib/a
 import { formatAgo, formatBytes, formatCount, formatParams } from "../../lib/format";
 import Markdown from "../chat/Markdown";
 import AuthorAvatar from "./AuthorAvatar";
+import Icon from "../ui/Icon";
 import { useHfAccess } from "../../lib/hfAccess";
 import CapBadges from "./CapBadges";
 import GateNotice from "./GateNotice";
@@ -243,18 +244,21 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
           </div>
           <button
             onClick={() => void abrirNoHub(model.id)}
-            className="shrink-0 rounded-lg border border-edge px-3 py-2 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-ink"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-edge px-3 py-2 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-ink"
           >
-            {t("discover.openOnHf")} ↗
+            {t("discover.openOnHf")}
+            <Icon name="external" className="h-3 w-3" />
           </button>
         </header>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
-          <span className="rounded-lg border border-edge bg-panel2/60 px-2.5 py-1 text-[11px] tabular-nums text-dim">
-            ↓ {formatCount(model.downloads)}
+          <span className="flex items-center gap-1.5 rounded-lg border border-edge bg-panel2/60 px-2.5 py-1 text-[11px] tabular-nums text-dim">
+            <Icon name="download" className="h-3 w-3" title={t("discover.downloads")} />
+            {formatCount(model.downloads)}
           </span>
-          <span className="rounded-lg border border-edge bg-panel2/60 px-2.5 py-1 text-[11px] tabular-nums text-dim">
-            ♥ {formatCount(model.likes)}
+          <span className="flex items-center gap-1.5 rounded-lg border border-edge bg-panel2/60 px-2.5 py-1 text-[11px] tabular-nums text-dim">
+            <Icon name="heart" className="h-3 w-3" title={t("discover.likes")} />
+            {formatCount(model.likes)}
           </span>
           {atualizado && (
             <span className="rounded-lg border border-edge bg-panel2/60 px-2.5 py-1 text-[11px] text-dim">

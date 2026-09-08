@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import FileIcon from "./FileIcon";
+import Icon from "../ui/Icon";
 
 const HTML_EXTS = ["html", "htm"];
 const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp"];
@@ -155,7 +156,7 @@ export default function PreviewPane({
           title={t("common.close")}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-dim hover:bg-panel2 hover:text-ink"
         >
-          ×
+          <Icon name="close" className="h-3.5 w-3.5" />
         </button>
       </div>
 

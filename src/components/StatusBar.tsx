@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { genStats } from "../lib/llama";
 import { formatBytes, formatCount } from "../lib/format";
 import MonitorPopover from "./monitor/MonitorPopover";
+import Icon from "./ui/Icon";
 import { telemetryStore } from "./monitor/telemetryStore";
 import { ClusterChip } from "./server/ClusterPanel";
 import { getServerLive, type ServerLive } from "../lib/api";
@@ -146,8 +147,11 @@ export default function StatusBar() {
               <span className="w-9 text-[11px] font-medium text-dim">
                 {t("status.net")}
               </span>
-              <span className="min-w-28 text-[11px] tabular-nums text-dim">
-                ↓ {formatBytes(tel.netRxBytesPerSec)}/s · ↑{" "}
+              <span className="min-w-28 flex items-center gap-1 text-[11px] tabular-nums text-dim">
+                <Icon name="download" className="h-3 w-3" title={t("status.netDown")} />
+                {formatBytes(tel.netRxBytesPerSec)}/s
+                <span className="mx-0.5">·</span>
+                <Icon name="upload" className="h-3 w-3" title={t("status.netUp")} />
                 {formatBytes(tel.netTxBytesPerSec)}/s
               </span>
             </div>

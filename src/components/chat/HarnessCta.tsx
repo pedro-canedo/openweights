@@ -11,6 +11,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { harnessStore, refreshStatus } from "../../lib/harness";
 import { navigate } from "../../lib/nav";
+import Icon from "../ui/Icon";
 
 function irParaOHarness() {
   navigate("harness");
@@ -63,7 +64,7 @@ export function HarnessComposerButton() {
       className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-edge px-3 text-xs text-dim transition-colors hover:border-accent hover:text-ink"
     >
       <span>{t("chat.harness.agent")}</span>
-      <span aria-hidden="true">⧉</span>
+      <Icon name="external" className="h-3 w-3" />
     </button>
   );
 }

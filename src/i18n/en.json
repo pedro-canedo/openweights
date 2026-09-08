@@ -22,7 +22,9 @@
     "net": "NET",
     "power": "POWER",
     "context": "CONTEXT",
-    "contextTitle": "Context window in use on the active slot"
+    "contextTitle": "Context window in use on the active slot",
+    "netDown": "Download rate",
+    "netUp": "Upload rate"
   },
   "badge": {
     "fullGpu": "Runs fully on GPU",
@@ -87,7 +89,9 @@
       "tools": "Tools",
       "reasoning": "Reasoning",
       "none": "none declared"
-    }
+    },
+    "downloads": "Downloads",
+    "likes": "Likes"
   },
   "downloadsPanel": {
     "title": "Downloads",
@@ -846,7 +850,7 @@
       "delta": "Δ%",
       "best": "Best measurement in this series",
       "current": "current",
-      "suspect": "⚠ thermal",
+      "suspect": "thermal",
       "build": "b{{n}}",
       "usage": "Real usage",
       "usageSamples_one": "average of {{count}} chat response",
@@ -858,7 +862,8 @@
       "engineUpdated": "engine updated — not comparable",
       "noBaseline": "no baseline to compare against",
       "powerChanged": "The card's power limit changed between the two runs — the difference may come from the watts, not the configuration.",
-      "powerLimit": "The card's power limit during this run"
+      "powerLimit": "The card's power limit during this run",
+      "bestBadge": "best"
     },
     "sweep": {
       "title": "Curve",

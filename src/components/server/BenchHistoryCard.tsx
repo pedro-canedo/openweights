@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import Icon from "../ui/Icon";
 import { engineBusyReason, getHardwareProfile, getModelProfile } from "../../lib/api";
 import { errorMessage } from "../../lib/serverSession";
 import { listen } from "../../lib/tauri";
@@ -236,9 +237,9 @@ export default function BenchHistoryCard({
     );
   };
 
-  const badge = (cls: string, texto: string, title?: string) => (
+  const badge = (cls: string, texto: React.ReactNode, title?: string) => (
     <span
-      className={`rounded-full border px-1.5 py-0.5 text-[10px] ${cls}`}
+      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] ${cls}`}
       title={title}
     >
       {texto}
@@ -253,7 +254,9 @@ export default function BenchHistoryCard({
         className="flex w-full items-center justify-between px-5 py-3 text-sm"
       >
         {t("tune.history.title")}
-        <span className="text-dim">{open ? "▾" : "▸"}</span>
+        <span className="text-dim">
+          <Icon name={open ? "chevron-down" : "chevron-right"} />
+        </span>
       </button>
       {open && (
         <div className="border-t border-edge px-5 py-4">
@@ -372,7 +375,7 @@ export default function BenchHistoryCard({
                                 r.profileKey === data.bestProfileKey &&
                                 badge(
                                   "border-warn/40 bg-warn/10 text-warn",
-                                  "⭐",
+                                  t("tune.history.bestBadge"),
                                   t("tune.history.best"),
                                 )}
                               {data != null &&
@@ -385,7 +388,10 @@ export default function BenchHistoryCard({
                               {r.suspect &&
                                 badge(
                                   "border-warn/40 bg-warn/10 text-warn",
-                                  t("tune.history.suspect"),
+                                  <>
+                                    <Icon name="alert" className="h-3 w-3" />
+                                    {t("tune.history.suspect")}
+                                  </>,
                                   t("tune.benchSuspect"),
                                 )}
                               {badge(

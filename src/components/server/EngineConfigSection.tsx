@@ -57,6 +57,7 @@ import {
   triTo,
 } from "../form/controls";
 import FlagControl, { RequirementBadges } from "../form/FlagControl";
+import Icon from "../ui/Icon";
 
 const CTX_CHIPS = [8192, 16384, 32768, 65536];
 
@@ -496,10 +497,11 @@ export default function EngineConfigSection({
                       setPresets(await enginePresetsList()),
                     )
                   }
-                  className="ml-0.5 px-1 text-[11px] text-dim hover:text-bad"
+                  className="ml-0.5 flex px-1 text-[11px] text-dim hover:text-bad"
                   title={t("server.enginePresets.delete")}
+                  aria-label={t("server.enginePresets.delete")}
                 >
-                  ×
+                  <Icon name="close" className="h-3 w-3" />
                 </button>
               )}
             </span>
@@ -743,10 +745,10 @@ export default function EngineConfigSection({
       <button
         type="button"
         onClick={() => setMore((v) => !v)}
-        className="mt-4 self-start text-[11px] text-dim transition-colors hover:text-ink"
+        className="mt-4 flex items-center gap-1 self-start text-[11px] text-dim transition-colors hover:text-ink"
       >
         {t("chat.engine.more")}
-        {more ? " ▾" : " ▸"}
+        <Icon name={more ? "chevron-down" : "chevron-right"} className="h-3 w-3" />
       </button>
 
       {more && (
@@ -894,10 +896,11 @@ export default function EngineConfigSection({
                 <button
                   type="button"
                   onClick={() => setExtra(k, null)}
-                  className="text-dim hover:text-bad"
+                  className="flex text-dim hover:text-bad"
                   title={t("server.engineConfig.remove")}
+                  aria-label={t("server.engineConfig.remove")}
                 >
-                  ×
+                  <Icon name="close" className="h-3 w-3" />
                 </button>
               </span>
             ))}
@@ -948,7 +951,9 @@ export default function EngineConfigSection({
           className="flex items-center justify-between text-sm"
         >
           {t("server.engineConfig.preview")}
-          <span className="text-dim">{previewOpen ? "▾" : "▸"}</span>
+          <span className="text-dim">
+            <Icon name={previewOpen ? "chevron-down" : "chevron-right"} />
+          </span>
         </button>
         {previewOpen && preview && (
           <div className="relative">

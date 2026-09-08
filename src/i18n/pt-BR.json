@@ -22,7 +22,9 @@
     "net": "REDE",
     "power": "ENERGIA",
     "context": "CONTEXTO",
-    "contextTitle": "Janela de contexto ocupada no slot em uso"
+    "contextTitle": "Janela de contexto ocupada no slot em uso",
+    "netDown": "Taxa de download",
+    "netUp": "Taxa de upload"
   },
   "badge": {
     "fullGpu": "Roda 100% na GPU",
@@ -87,7 +89,9 @@
       "tools": "Ferramentas",
       "reasoning": "Raciocínio",
       "none": "nenhuma declarada"
-    }
+    },
+    "downloads": "Downloads",
+    "likes": "Curtidas"
   },
   "downloadsPanel": {
     "title": "Downloads",
@@ -846,7 +850,7 @@
       "delta": "Δ%",
       "best": "Melhor medição desta série",
       "current": "atual",
-      "suspect": "⚠ térmico",
+      "suspect": "térmico",
       "build": "b{{n}}",
       "usage": "Uso real",
       "usageSamples_one": "média de {{count}} resposta do chat",
@@ -858,7 +862,8 @@
       "engineUpdated": "engine atualizado — não comparável",
       "noBaseline": "sem base de comparação",
       "powerChanged": "O limite de energia da placa mudou entre as duas medições — a diferença pode vir dos watts, não da configuração.",
-      "powerLimit": "Limite de energia da placa nesta medição"
+      "powerLimit": "Limite de energia da placa nesta medição",
+      "bestBadge": "melhor"
     },
     "sweep": {
       "title": "Curva",

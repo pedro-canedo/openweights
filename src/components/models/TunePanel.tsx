@@ -11,6 +11,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { navigate } from "../../lib/nav";
+import Icon from "../ui/Icon";
 import ComparisonCard from "../server/ComparisonCard";
 import type { TFunction } from "i18next";
 import { engineBusyReason } from "../../lib/api";
@@ -278,10 +279,11 @@ export default function TunePanel({
         <button
           type="button"
           onClick={() => navigate("server", { serverModel: model })}
-          className="rounded px-1 text-[11px] text-dim hover:text-ink"
+          className="flex items-center gap-1 rounded px-1 text-[11px] text-dim hover:text-ink"
           title={t("chat.engine.configureLink")}
         >
-          {t("tune.fullConfig")} →
+          {t("tune.fullConfig")}
+          <Icon name="arrow-right" className="h-3 w-3" />
         </button>
         <button
           type="button"
@@ -433,7 +435,12 @@ export default function TunePanel({
                         : t("tune.spec.type.none")}
                       {/* Rápido e errado não é rápido: o selo diz se a
                           resposta continuou a mesma. */}
-                      {a.quality === "diverged" && ` ⚠ ${t("tune.spec.quality.diverged")}`}
+                      {a.quality === "diverged" && (
+                        <span className="ml-1 inline-flex items-center gap-1">
+                          <Icon name="alert" className="h-3 w-3" />
+                          {t("tune.spec.quality.diverged")}
+                        </span>
+                      )}
                       {": "}
                       {a.byPrompt
                         .map(

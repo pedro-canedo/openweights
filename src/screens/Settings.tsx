@@ -25,6 +25,7 @@ import { formatBytes } from "../lib/format";
 import { navigate } from "../lib/nav";
 import type { HardwareProfile, HfWhoami } from "../lib/types";
 import { Card, Page, Row, StatusDot } from "../components/ui/Shell";
+import Icon from "../components/ui/Icon";
 import { CopyValue } from "../components/ui/Copy";
 import EngineCard from "../components/settings/EngineCard";
 
@@ -194,7 +195,11 @@ function HfTokenCard() {
             {t("settings.hfTokenChecking")}
           </span>
         )}
-        {saved && <span className="text-[12px] text-ok">✓</span>}
+        {saved && (
+          <span className="flex text-ok" role="status">
+            <Icon name="check" className="h-3.5 w-3.5" title={t("common.saved")} />
+          </span>
+        )}
         {gravado && who !== null && !entrando && (
           <button
             type="button"

@@ -17,6 +17,7 @@ import {
   type GlobalFlag,
 } from "../../lib/flags";
 import FlagControl from "../form/FlagControl";
+import Icon from "../ui/Icon";
 import { Chips } from "../form/controls";
 
 const SETTING = "server_extra_flags";
@@ -143,7 +144,9 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
         className="flex w-full items-center justify-between px-5 py-3 text-sm"
       >
         {t("server.globalFlags.title")}
-        <span className="text-dim">{open ? "▾" : "▸"}</span>
+        <span className="text-dim">
+          <Icon name={open ? "chevron-down" : "chevron-right"} />
+        </span>
       </button>
       {open && (
         <div className="border-t border-edge px-5 py-4">
@@ -162,9 +165,11 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
                   <button
                     type="button"
                     onClick={() => persist(flags.filter((x) => x.key !== f.key))}
-                    className="text-dim hover:text-bad"
+                    className="flex text-dim hover:text-bad"
+                    title={t("server.engineConfig.remove")}
+                    aria-label={t("server.engineConfig.remove")}
                   >
-                    ×
+                    <Icon name="close" className="h-3 w-3" />
                   </button>
                 </span>
               ))}
@@ -242,9 +247,11 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
                     <button
                       type="button"
                       onClick={() => persistEnv(envs.filter((x) => x.key !== e.key))}
-                      className="text-dim hover:text-bad"
+                      className="flex text-dim hover:text-bad"
+                      title={t("server.engineConfig.remove")}
+                      aria-label={t("server.engineConfig.remove")}
                     >
-                      ×
+                      <Icon name="close" className="h-3 w-3" />
                     </button>
                   </span>
                 ))}

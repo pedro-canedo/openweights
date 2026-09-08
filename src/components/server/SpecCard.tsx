@@ -13,6 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import Icon from "../ui/Icon";
 import { getSetting, setSetting } from "../../lib/api";
 import {
   onTuneSpec,
@@ -157,7 +158,9 @@ export default function SpecCard({ model }: { model: string }) {
             {t("tune.spec.card.running")}
           </span>
         )}
-        <span className="shrink-0 text-dim">{aberto ? "▾" : "▸"}</span>
+        <span className="shrink-0 text-dim">
+          <Icon name={aberto ? "chevron-down" : "chevron-right"} />
+        </span>
       </button>
 
       {aberto && (
