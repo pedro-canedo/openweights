@@ -5,6 +5,28 @@ The full history of every version is in the [changelog](/guide/changelog);
 installers live on
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.19.1 — the benchmark was timing its own repetition
+
+The same model, the same profile and the same machine reported 129 tok/s in
+the optimization screen, 28 in the performance history and 31 in an actual
+conversation. The optimization was the one that was wrong.
+
+Its long prompt was the short one repeated thirty-two times. That looked
+harmless and was not: a profile with n-gram speculation lets the draft find the
+continuation *inside the prompt itself*, acceptance goes to the ceiling, and
+generated-tokens-over-generation-time stops describing the model and starts
+describing how repetitive the test text is. The arithmetic matches the symptom
+exactly — a draft of up to 4 tokens, and 32 × 4 = 128.
+
+The performance history never fell for it, because `llama-bench` does not use
+speculation at all; neither did chat, which reads real text. That is why those
+two agreed on about 30 and only the optimization stood apart.
+
+The long prompt now carries four different function shapes and four different
+tasks. Varying only the identifier would not have been enough: a single body
+under different names still repeats `for value in values { if *value > limit {`
+in every block, and a sequence like that is precisely what an n-gram copies.
+
 ## 0.19.0 — choose the configuration you measured
 
 - **Choose any completed optimization option.** Each configuration shows

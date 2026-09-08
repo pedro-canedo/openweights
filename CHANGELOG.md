@@ -10,6 +10,23 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.19.1] — 2026-09-08
+
+- **Optimization reported a generation speed that was too high** on machines
+  with speculative decoding enabled. The test's long prompt was the same
+  paragraph repeated dozens of times, and n-gram speculation found the
+  continuation inside the prompt itself: the rate multiplied and the number
+  described the test text rather than the model. In a real case the screen
+  said 129 tok/s where chat delivered 31.
+- The long prompt now varies its tasks and function shapes, and the workload
+  identifier moved to `v3` — a measurement taken before this version is not
+  comparable with one taken now.
+
+If you have earlier measurements, run the optimization again: the new numbers
+will be lower and closer to what a conversation actually delivers. The
+comparison between options stays valid, since all of them were measured the
+same way.
+
 ## [0.19.0] — 2026-09-08
 
 - **Choose any completed optimization option.** Each configuration shows

@@ -5,6 +5,28 @@ histórico completo de todas as versões está no
 [changelog](/pt/guia/changelog); os instaladores ficam no
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.19.1 — a medição estava cronometrando a própria repetição
+
+O mesmo modelo, o mesmo perfil e a mesma máquina apareciam com 129 tok/s na
+tela de otimização, 28 no histórico de desempenho e 31 numa conversa de
+verdade. Quem estava errado era a otimização.
+
+O prompt longo dela era o curto repetido trinta e duas vezes. Parecia
+inofensivo e não era: num perfil com especulação por n-grama, o rascunho
+encontra a continuação *dentro do próprio prompt*, a aceitação vai ao teto, e
+tokens-gerados-sobre-tempo-de-geração deixa de descrever o modelo e passa a
+descrever o quanto o texto de teste se repete. A aritmética bate com o sintoma
+exatamente — um rascunho de até 4 tokens, e 32 × 4 = 128.
+
+O histórico de desempenho nunca caiu nessa, porque o `llama-bench` não usa
+especulação nenhuma; o chat também não, porque lê texto real. Foi por isso que
+esses dois concordavam em torno de 30 e só a otimização destoava.
+
+O prompt longo agora traz quatro formas de função e quatro enunciados
+diferentes. Variar só o identificador não bastaria: um mesmo corpo com nomes
+diferentes ainda repete `for value in values { if *value > limit {` em todos os
+blocos, e uma sequência dessas é justamente o que um n-grama copia.
+
 ## 0.19.0 — escolha a configuração que você mediu
 
 - **Escolha qualquer opção concluída na otimização.** Cada configuração tem
