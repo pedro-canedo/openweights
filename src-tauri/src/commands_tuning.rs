@@ -350,6 +350,18 @@ pub struct TuneApplied {
 ///
 /// Se não carregar, restaura o perfil anterior e reinicia de novo. É a
 /// diferença entre "o app sugeriu e quebrou" e "o app tentou e voltou".
+/// Devolve o motor ao que era, sem poder falhar no meio de um rollback.
+///
+/// Com `?`, uma volta atrás que não conseguisse reverter o motor abortava
+/// antes de restaurar o PERFIL — e o usuário ficava com a configuração nova
+/// gravada, o motor parado e um erro que não explicava nenhum dos dois. Se
+/// nem o motor anterior aceita voltar, o oficial sempre aceita.
+fn desfaz_motor(state: &AppState, anterior: lr_types::tuning::EngineSource) {
+    if crate::commands::select_engine(state, anterior).is_err() {
+        let _ = crate::commands::select_engine(state, lr_types::tuning::EngineSource::Official);
+    }
+}
+
 #[tauri::command]
 pub async fn tune_apply(
     app: AppHandle,
@@ -382,7 +394,12 @@ pub async fn tune_apply(
         .set_model_profile(model.trim(), &novo)
         .map_err(err_str)?;
 
-    if let Err(e) = crate::commands::select_engine(&state, novo.engine.unwrap_or_default()) {
+    // Um perfil que não fala do motor não é ordem para trocá-lo. O advisor
+    // não preenche esse campo, e `unwrap_or_default()` fazia uma recomendação
+    // de flags devolver ao motor oficial quem estava no opcional — sem pedir
+    // e sem avisar.
+    let target_engine = novo.engine.unwrap_or(previous_engine);
+    if let Err(e) = crate::commands::select_engine(&state, target_engine) {
         state
             .store
             .set_model_profile(model.trim(), &anterior.clone().unwrap_or_default())
@@ -391,7 +408,7 @@ pub async fn tune_apply(
     }
     // O INI é lido no boot do motor: sem reiniciar, nada disto vale.
     if let Err(e) = restart_engine(&app, &state, force.unwrap_or(false)).await {
-        crate::commands::select_engine(&state, previous_engine)?;
+        desfaz_motor(&state, previous_engine);
         if e.starts_with("engine-busy:") {
             state
                 .store
@@ -409,7 +426,7 @@ pub async fn tune_apply(
             profile: Some(novo),
         }),
         Err(e) => {
-            crate::commands::select_engine(&state, previous_engine)?;
+            desfaz_motor(&state, previous_engine);
             Ok(rollback(&app, &state, &model, anterior, e).await)
         }
     }
@@ -1438,6 +1455,31 @@ mod tests {
             nextn_layers: nextn,
             ..Default::default()
         }
+    }
+
+    /// Um perfil que não diz nada sobre o motor não pede para trocá-lo.
+    ///
+    /// O advisor devolve `engine: None` — ele opina sobre flags, não sobre
+    /// qual executável usar. Com `unwrap_or_default()`, esse `None` virava
+    /// "motor oficial", e aceitar uma recomendação de flags devolvia ao
+    /// oficial quem estava no motor opcional, sem pedir e sem avisar. A
+    /// escolha do motor tem tela própria; o silêncio aqui é silêncio.
+    #[test]
+    fn a_profile_that_says_nothing_about_the_engine_keeps_the_current_one() {
+        use lr_types::tuning::EngineSource;
+        let alvo = |perfil: Option<EngineSource>, atual: EngineSource| perfil.unwrap_or(atual);
+
+        assert_eq!(alvo(None, EngineSource::MoeCache), EngineSource::MoeCache);
+        assert_eq!(alvo(None, EngineSource::Official), EngineSource::Official);
+        // Dizer explicitamente continua valendo, nos dois sentidos.
+        assert_eq!(
+            alvo(Some(EngineSource::Official), EngineSource::MoeCache),
+            EngineSource::Official
+        );
+        assert_eq!(
+            alvo(Some(EngineSource::MoeCache), EngineSource::Official),
+            EngineSource::MoeCache
+        );
     }
 
     /// O cabeçalho manda. O nome do arquivo só fala quando o cabeçalho cala —

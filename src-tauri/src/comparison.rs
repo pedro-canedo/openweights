@@ -637,6 +637,15 @@ pub async fn compare_apply(
     if restore && !saved.applied {
         return Err("comparison-profile-changed".into());
     }
+    // Sair de um braço para outro é a escolha manual que esta tela oferece.
+    // Sair de um perfil que NÃO é braço nenhum é outra coisa: alguém ajustou
+    // à mão depois da medição, e aplicar por cima apagaria esse ajuste sem
+    // avisar. `current_arm` distingue os dois casos — a checagem anterior
+    // (`current == saved.original`) não distinguia, e ao ser removida para
+    // liberar a troca entre braços levou junto a proteção do perfil manual.
+    if !restore && saved.current_arm.is_none() {
+        return Err("comparison-profile-changed".into());
+    }
     if !restore && saved.machine_key != state.profile.machine_key() {
         return Err("comparison-stale".into());
     }
@@ -888,6 +897,58 @@ mod tests {
         assert_eq!(selected_arm(&saved, true, None).unwrap(), 0);
         assert!(selected_arm(&saved, false, Some(2)).is_err());
         assert!(selected_arm(&saved, false, Some(usize::MAX)).is_err());
+    }
+
+    /// Aplicar por cima de um ajuste manual feito DEPOIS da medição apagaria
+    /// esse ajuste. `current_arm` é o que separa "estou num braço medido e
+    /// quero trocar de braço" de "editei o perfil à mão e não sei mais onde
+    /// estou" — a checagem antiga não separava, e ao ser trocada para liberar
+    /// a escolha manual levou junto a proteção do perfil.
+    #[test]
+    fn applying_over_a_hand_edited_profile_is_refused() {
+        let d = |n| Distribution {
+            median: n,
+            min: n,
+            max: n,
+        };
+        let arm = |ctx| Arm {
+            profile: ModelProfile {
+                ctx: Some(ctx),
+                ..Default::default()
+            },
+            gen_tps: d(10.0),
+            prompt_tps: d(100.0),
+            total_ms: d(1000.0),
+            gpu_free_bytes: None,
+            runtime: String::new(),
+            runtime_identity: legacy_runtime_identity(),
+            peak_ram_bytes: Some(1),
+            peak_vram_bytes: None,
+        };
+        let base = Comparison {
+            model: "m".into(),
+            workload: "w".into(),
+            machine_key: "k".into(),
+            runtime: String::new(),
+            config_key: String::new(),
+            model_key: String::new(),
+            applied: false,
+            current_arm: None,
+            original: ModelProfile::default(),
+            arms: vec![arm(8192), arm(16384)],
+            inconclusive: false,
+            winner: 1,
+            original_engine: Default::default(),
+            warnings: Vec::new(),
+        };
+        // Fora de qualquer braço: o perfil em uso foi editado à mão.
+        assert!(base.current_arm.is_none());
+        // Dentro de um braço: trocar para outro é a escolha que a tela oferece.
+        let no_braco = Comparison {
+            current_arm: Some(0),
+            ..base.clone()
+        };
+        assert_eq!(selected_arm(&no_braco, false, Some(1)).unwrap(), 1);
     }
     #[tokio::test]
     #[ignore = "requires OW_TEST_RUNTIME and OW_TEST_MODEL; loads a real GPU model"]
