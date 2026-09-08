@@ -34,11 +34,14 @@ const MAX_CONCURRENT_ARTIFACTS: usize = 2;
 /// ociosa: são arquivos distintos, não precisam de `Range` nem de remontagem.
 const MAX_ARQUIVOS_PARALELOS: usize = 3;
 /// Faixas (`Range`) por arquivo. Ver [`conexoes`] para o porquê do número.
-const MAX_RANGES_POR_ARQUIVO: usize = 4;
+const MAX_RANGES_POR_ARQUIVO: usize = 8;
 /// Teto de conexões de dados abertas pelo app, somando todos os downloads.
-/// Sem ele, três shards de quatro faixas abririam doze canos e a disputa
-/// entre eles custaria mais do que o paralelismo rende.
-const MAX_CONEXOES: usize = 8;
+///
+/// Medido contra a CDN de LFS do Hugging Face numa linha de 900 Mbps: 1
+/// conexão dá 9,5 MB/s, 4 dão 22,6, 8 dão 41,3 e 16 dão 52,9. Depois de 16 a
+/// curva achata e a variância cresce, então é aí que o teto fica — o ganho de
+/// abrir mais não paga a disputa nem o risco de o servidor limitar por IP.
+const MAX_CONEXOES: usize = 16;
 /// De quanto em quanto tempo o progresso das faixas vai para o sidecar.
 /// É o que se re-baixa se a energia cair: alguns segundos por faixa.
 const SIDECAR_INTERVAL: Duration = Duration::from_secs(2);
@@ -188,14 +191,15 @@ fn faixas(total: u64, n: usize) -> Vec<(u64, u64)> {
 
 /// Quantas conexões abrir para um arquivo.
 ///
-/// Uma conexão TCP entrega no máximo `janela ÷ RTT`. Medido contra a CDN de
-/// LFS do Hugging Face (RTT de 146 ms daqui): uma conexão satura em ~14 MB/s
-/// e oito chegam a 20,7 MB/s — mas só com pedaços grandes. Com fatias de
-/// 8 MiB o mesmo teste caiu para 10,7 MB/s, porque cada conexão paga
-/// handshake e partida lenta de novo e passa a vida inteira acelerando.
-/// Daí o piso por faixa, e não um número fixo de conexões.
+/// Uma conexão TCP entrega no máximo `janela ÷ RTT`, e o RTT até a CDN de LFS
+/// do Hugging Face é de ~133 ms daqui — daí os 9,5 MB/s de uma conexão só,
+/// numa linha que dá 113. O paralelismo é o que fecha essa distância.
+///
+/// O piso por faixa existe porque uma conexão nova passa os primeiros ~10
+/// RTT acelerando: abaixo de uns 16 MiB ela termina antes de chegar à
+/// velocidade de regime, e o handshake custa mais do que a faixa rende.
 fn conexoes(total: u64) -> usize {
-    const MINIMO_POR_FAIXA: u64 = 64 * 1024 * 1024;
+    const MINIMO_POR_FAIXA: u64 = 16 * 1024 * 1024;
     ((total / MINIMO_POR_FAIXA) as usize).clamp(1, MAX_RANGES_POR_ARQUIVO)
 }
 
@@ -525,8 +529,15 @@ impl DownloadManager {
     pub fn new(models_dir: PathBuf) -> Self {
         let (events, _) = broadcast::channel(256);
         let ua = concat!("OpenWeights/", env!("CARGO_PKG_VERSION"));
+        // HTTP/1.1 obrigatório para os bytes: sobre HTTP/2 o `reqwest`
+        // multiplexa as requisições concorrentes ao mesmo host num ÚNICO cano
+        // TCP, e oito faixas voltam a dividir a janela de uma conexão só —
+        // todo o paralelismo vira enfeite. Com HTTP/1.1 o pool abre uma
+        // conexão por faixa, que é o que a medição pede.
         let http = reqwest::Client::builder()
             .user_agent(ua)
+            .http1_only()
+            .pool_max_idle_per_host(MAX_CONEXOES)
             .build()
             .expect("reqwest client");
         let http_noredir = reqwest::Client::builder()
@@ -1010,15 +1021,20 @@ async fn try_download_once(
         if ini + ja >= fim {
             continue;
         }
-        let permit = Arc::clone(&inner.conexoes)
-            .acquire_owned()
-            .await
-            .map_err(|e| ModelsError::Api(format!("semáforo de conexões: {e}")))?;
+        let conexoes = Arc::clone(&inner.conexoes);
         let (http, token_hf) = (inner.http.clone(), req.token.clone());
         let (url, part, progresso) = (url.to_string(), part.clone(), progresso.clone());
         let creditado = creditado.clone();
         tarefas.push(async move {
-            let _permit = permit;
+            // A vaga é tomada AQUI, dentro da tarefa, e não no laço que as
+            // monta. Pedir todas as vagas antes de rodar qualquer faixa trava
+            // o download quando o artefato quer mais faixas do que o teto:
+            // três shards ficariam segurando vagas parciais, cada um à espera
+            // da que falta, e nenhum transferindo para liberar as suas.
+            let _permit = conexoes
+                .acquire_owned()
+                .await
+                .map_err(|e| ModelsError::Api(format!("semáforo de conexões: {e}")))?;
             baixa_faixa(
                 &http, &token_hf, &url, &part, ini, fim, i, &progresso, received, &creditado, token,
             )
@@ -1426,6 +1442,59 @@ mod tests {
         assert_eq!(recebido.load(Ordering::Relaxed), restante);
     }
 
+    /// Mais faixas do que vagas no semáforo: as tarefas têm de disputar a
+    /// vaga POR DENTRO. Pedir todas as vagas antes de rodar qualquer faixa
+    /// trava — três shards segurariam vagas parciais, cada um esperando a que
+    /// falta, e nenhum transferindo para liberar a do vizinho. Este teste
+    /// termina em segundos quando está certo, e nunca quando está errado.
+    #[tokio::test]
+    async fn more_ranges_than_permits_still_finishes() {
+        let total = 200_000usize;
+        let original: Vec<u8> = (0..total).map(|i| (i % 173) as u8).collect();
+        let porta = servidor_com_range(original.clone()).await;
+        let url = format!("http://127.0.0.1:{porta}/m.gguf");
+
+        let dir = tempfile::tempdir().unwrap();
+        let part = dir.path().join("m.gguf.part");
+        tokio::fs::File::create(&part)
+            .await
+            .unwrap()
+            .set_len(total as u64)
+            .await
+            .unwrap();
+
+        // Oito faixas para duas vagas: o aperto que o teto global impõe.
+        let limites = faixas(total as u64, 8);
+        let vagas = Arc::new(Semaphore::new(2));
+        let progresso: Arc<Vec<AtomicU64>> =
+            Arc::new((0..limites.len()).map(|_| AtomicU64::new(0)).collect());
+        let recebido = AtomicU64::new(0);
+        let creditado = AtomicU64::new(0);
+        let http = reqwest::Client::new();
+        let cancel = CancellationToken::new();
+
+        let mut fs = Vec::new();
+        for (i, (ini, fim)) in limites.iter().copied().enumerate() {
+            let (http, url, part, progresso) =
+                (http.clone(), url.clone(), part.clone(), progresso.clone());
+            let (recebido, creditado, cancel) = (&recebido, &creditado, cancel.clone());
+            let vagas = Arc::clone(&vagas);
+            fs.push(async move {
+                let _permit = vagas.acquire_owned().await.unwrap();
+                baixa_faixa(
+                    &http, &None, &url, &part, ini, fim, i, &progresso, recebido, creditado,
+                    &cancel,
+                )
+                .await
+                .unwrap()
+            });
+        }
+        let feito =
+            tokio::time::timeout(Duration::from_secs(30), futures_util::future::join_all(fs)).await;
+        assert!(feito.is_ok(), "as faixas travaram disputando as vagas");
+        assert_eq!(tokio::fs::read(&part).await.unwrap(), original);
+    }
+
     #[test]
     fn ranges_cover_the_file_without_gaps_or_overlap() {
         for (total, n) in [(100u64, 3usize), (1, 4), (0, 1), (1 << 30, 4)] {
@@ -1448,9 +1517,9 @@ mod tests {
     #[test]
     fn connection_count_follows_the_file_size() {
         let mib = 1024 * 1024;
-        assert_eq!(conexoes(10 * mib), 1);
-        assert_eq!(conexoes(100 * mib), 1);
-        assert_eq!(conexoes(200 * mib), 3);
+        assert_eq!(conexoes(10 * mib), 1, "abaixo do piso, uma conexão só");
+        assert_eq!(conexoes(100 * mib), 6);
+        assert_eq!(conexoes(200 * mib), MAX_RANGES_POR_ARQUIVO);
         assert_eq!(conexoes(50 * 1024 * mib), MAX_RANGES_POR_ARQUIVO);
     }
 
