@@ -26,6 +26,9 @@ impl SortBy {
 #[derive(Clone)]
 pub struct HfClient {
     http: reqwest::Client,
+    /// Não segue redirects: o probe de acesso quer LER o 302 do `/resolve/`
+    /// como "liberado", não segui-lo até a CDN e começar a baixar bytes.
+    http_noredir: reqwest::Client,
     token: Option<String>,
 }
 
@@ -137,11 +140,21 @@ struct ApiLfs {
 
 impl HfClient {
     pub fn new(token: Option<String>) -> Self {
+        let ua = concat!("OpenWeights/", env!("CARGO_PKG_VERSION"));
         let http = reqwest::Client::builder()
-            .user_agent(concat!("OpenWeights/", env!("CARGO_PKG_VERSION")))
+            .user_agent(ua)
             .build()
             .expect("reqwest client");
-        Self { http, token }
+        let http_noredir = reqwest::Client::builder()
+            .user_agent(ua)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("reqwest client");
+        Self {
+            http,
+            http_noredir,
+            token,
+        }
     }
 
     fn auth(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
@@ -354,6 +367,172 @@ impl HfClient {
         }
         None
     }
+}
+
+// ------------------------------------------------------------- acesso ---
+
+/// O que o Hub responde quando ESTA conta pede um arquivo do repositório.
+///
+/// Não confundir com `ModelSummary::gated`: aquele campo é propriedade do
+/// REPOSITÓRIO ("exige aceite de licença") e continua verdadeiro para sempre,
+/// inclusive depois que a pessoa aceitou. Ele nunca ia responder à pergunta
+/// que a tela precisa fazer — *eu já posso baixar?* —, e por isso o aviso
+/// amarelo ficava na frente de quem já tinha acesso.
+///
+/// Isto aqui é sobre a CONTA, e é o que muda quando o aceite acontece no
+/// navegador: o Hub grava a permissão no perfil de quem aceitou, e o app só
+/// consegue se apresentar como esse perfil pelo token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HfAccess {
+    /// O arquivo desce. Nada a avisar.
+    Granted,
+    /// Restrito e sem token: o app não tem como dizer quem é.
+    NoToken,
+    /// Há token, mas esta conta não aceitou a licença — ou o token é
+    /// fine-grained sem alcance sobre repositórios com licença.
+    NeedsLicense,
+    /// O Hub não reconhece o token gravado (expirado ou revogado).
+    BadToken,
+}
+
+/// Quem é o dono do token, do ponto de vista do Hub.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HfIdentity {
+    pub name: String,
+    /// `read`, `write` ou `fineGrained`, quando o Hub informa.
+    pub role: Option<String>,
+    /// `Some(false)` quando o token é fine-grained e NÃO alcança o conteúdo
+    /// de repositórios públicos com licença — a armadilha que faz o download
+    /// responder 403 mesmo com a licença já aceita, e que nenhuma mensagem
+    /// de erro do Hub explica. `None` quando a resposta não deixa concluir:
+    /// a interface só avisa no `Some(false)`, porque um alarme falso aqui
+    /// manda a pessoa refazer um token que estava certo.
+    pub can_read_gated: Option<bool>,
+}
+
+/// O resultado de perguntar ao Hub "de quem é este token?".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum HfWhoami {
+    /// Não há token gravado.
+    NoToken,
+    /// Há token e o Hub o recusou.
+    Invalid,
+    Ok(HfIdentity),
+}
+
+impl HfClient {
+    /// Se esta conta consegue baixar deste repositório — perguntando ao
+    /// endpoint que de fato aplica o portão.
+    ///
+    /// O portão do Hub não está nos metadados: `/api/models/{id}` e a árvore
+    /// de arquivos respondem 200 para repositório restrito também (a página é
+    /// pública; o que é restrito são os BYTES). Quem responde a verdade é o
+    /// `/resolve/`, e um HEAD nele custa um cabeçalho: o 302 para a CDN já é
+    /// o "pode baixar", sem começar download nenhum.
+    ///
+    /// `file` é o caminho a testar dentro do repositório. O padrão é
+    /// `.gitattributes` porque o Hub cria esse arquivo em todo repositório —
+    /// dá para sondar sem antes listar a árvore. Quem já tem o nome do
+    /// arquivo da quantização deve passá-lo: é o teste do arquivo que a
+    /// pessoa vai baixar de verdade.
+    pub async fn access(&self, repo_id: &str, file: Option<&str>) -> Result<HfAccess, ModelsError> {
+        let file = file.unwrap_or(".gitattributes");
+        let url = format!("{HF_BASE}/{repo_id}/resolve/main/{file}");
+        let resp = self.auth(self.http_noredir.head(&url)).send().await?;
+        let status = resp.status().as_u16();
+        classificar_acesso(status, self.token.is_some())
+            .ok_or_else(|| ModelsError::Api(format!("resolve retornou HTTP {status}")))
+    }
+
+    /// De quem é o token gravado, e se ele alcança repositórios com licença.
+    pub async fn whoami(&self) -> Result<HfWhoami, ModelsError> {
+        if self.token.is_none() {
+            return Ok(HfWhoami::NoToken);
+        }
+        let url = format!("{HF_BASE}/api/whoami-v2");
+        let resp = self.auth(self.http.get(&url)).send().await?;
+        match resp.status().as_u16() {
+            200 => {}
+            401 | 403 => return Ok(HfWhoami::Invalid),
+            s => return Err(ModelsError::Api(format!("whoami retornou HTTP {s}"))),
+        }
+        let raw: serde_json::Value = resp.json().await?;
+        Ok(HfWhoami::Ok(identidade(&raw)))
+    }
+}
+
+/// Traduz a resposta do `/resolve/` em veredito. `None` = resposta que não
+/// diz nada sobre acesso (e vira erro de API para quem chamou).
+///
+/// Qual código vem para quem não pode baixar depende de haver credencial: o
+/// Hub responde 401 a quem não se identificou e 403 a quem se identificou e
+/// não está na lista. É essa diferença que separa "falta o token" de "a
+/// licença não foi aceita por esta conta" — as duas coisas que o aviso antigo
+/// dizia com a mesma frase.
+fn classificar_acesso(status: u16, tem_token: bool) -> Option<HfAccess> {
+    Some(match status {
+        // 302 é a resposta normal do arquivo LFS liberado (o redirect para a
+        // CDN); 200 vem dos arquivos pequenos, servidos direto. 404 é o
+        // portão aberto para um caminho que não existe — quem não passa pelo
+        // portão recebe 401/403 antes de o Hub olhar o caminho.
+        200..=399 | 404 => HfAccess::Granted,
+        401 | 403 if !tem_token => HfAccess::NoToken,
+        401 => HfAccess::BadToken,
+        403 => HfAccess::NeedsLicense,
+        _ => return None,
+    })
+}
+
+/// Lê o `whoami-v2` sem modelar a árvore inteira.
+///
+/// O bloco `fineGrained` é o que mais muda de forma entre versões do Hub, e
+/// aqui só interessa uma resposta de três valores. Modelar o resto seria
+/// trocar um `None` honesto por um erro de desserialização na primeira vez
+/// que o Hub acrescentar um campo.
+fn identidade(raw: &serde_json::Value) -> HfIdentity {
+    let name = raw
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let tok = raw.get("auth").and_then(|a| a.get("accessToken"));
+    let role = tok
+        .and_then(|t| t.get("role"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+    let can_read_gated = match role.as_deref() {
+        // Tokens clássicos leem tudo o que a conta pode ler.
+        Some("read") | Some("write") => Some(true),
+        Some("fineGrained") => {
+            let fg = tok.and_then(|t| t.get("fineGrained"));
+            fg.and_then(|f| f.get("canReadGatedRepos"))
+                .and_then(|v| v.as_bool())
+                .or_else(|| fg.map(|f| permissoes(f).any(|p| p == "repo.content.read")))
+        }
+        _ => None,
+    };
+    HfIdentity {
+        name,
+        role,
+        can_read_gated,
+    }
+}
+
+/// Toda permissão citada no bloco `fineGrained`, global ou por entidade.
+fn permissoes(fg: &serde_json::Value) -> impl Iterator<Item = &str> {
+    let global = fg.get("global").and_then(|v| v.as_array());
+    let scoped = fg.get("scoped").and_then(|v| v.as_array());
+    let diretas = global.into_iter().flatten();
+    let por_entidade = scoped
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.get("permissions"))
+        .filter_map(|p| p.as_array())
+        .flatten();
+    diretas.chain(por_entidade).filter_map(|v| v.as_str())
 }
 
 /// Nome de perfil do Hub: letras, dígitos, `-`, `_` e `.`.
@@ -685,6 +864,92 @@ mod tests {
     }
 
     /// Teste live (rede): metadados GGUF + paginação por cursor.
+    /// O que o `/resolve/` responde vira qual veredito — inclusive a
+    /// diferença que o aviso antigo não fazia: sem token e com token são
+    /// problemas diferentes com o mesmo código HTTP.
+    #[test]
+    fn resolve_status_becomes_the_right_verdict() {
+        // Liberado: 302 (LFS), 200 (arquivo pequeno) e 404 (passou pelo
+        // portão, o caminho é que não existe).
+        for s in [200, 302, 404] {
+            assert_eq!(classificar_acesso(s, false), Some(HfAccess::Granted));
+            assert_eq!(classificar_acesso(s, true), Some(HfAccess::Granted));
+        }
+        // Sem token, negar é sempre a mesma história: falta dizer quem é.
+        assert_eq!(classificar_acesso(401, false), Some(HfAccess::NoToken));
+        assert_eq!(classificar_acesso(403, false), Some(HfAccess::NoToken));
+        // Com token, o Hub separa "não te reconheço" de "você não está na
+        // lista" — e é a segunda que o aceite no navegador resolve.
+        assert_eq!(classificar_acesso(401, true), Some(HfAccess::BadToken));
+        assert_eq!(classificar_acesso(403, true), Some(HfAccess::NeedsLicense));
+        // Qualquer outra coisa não é veredito de acesso: vira erro.
+        assert_eq!(classificar_acesso(500, true), None);
+    }
+
+    /// O token clássico lê tudo o que a conta lê; o fine-grained só lê o que
+    /// foi marcado — e é ele que dá 403 depois da licença aceita.
+    #[test]
+    fn whoami_says_whether_the_token_reaches_gated_repos() {
+        let classico = serde_json::json!({
+            "name": "alguem",
+            "auth": { "accessToken": { "role": "read" } }
+        });
+        let id = identidade(&classico);
+        assert_eq!(id.name, "alguem");
+        assert_eq!(id.can_read_gated, Some(true));
+
+        // Fine-grained que o Hub responde direto.
+        let direto = serde_json::json!({
+            "name": "alguem",
+            "auth": { "accessToken": { "role": "fineGrained",
+                "fineGrained": { "canReadGatedRepos": false } } }
+        });
+        assert_eq!(identidade(&direto).can_read_gated, Some(false));
+
+        // Sem o campo direto, a permissão aparece na lista — global ou por
+        // entidade, as duas formas que o Hub usa.
+        let global = serde_json::json!({
+            "name": "alguem",
+            "auth": { "accessToken": { "role": "fineGrained",
+                "fineGrained": { "global": ["repo.content.read"], "scoped": [] } } }
+        });
+        assert_eq!(identidade(&global).can_read_gated, Some(true));
+
+        let escopado = serde_json::json!({
+            "name": "alguem",
+            "auth": { "accessToken": { "role": "fineGrained", "fineGrained": {
+                "global": [],
+                "scoped": [{ "entity": { "type": "user", "name": "alguem" },
+                             "permissions": ["repo.write"] }] } } }
+        });
+        assert_eq!(identidade(&escopado).can_read_gated, Some(false));
+
+        // Sem saber o tipo do token, a resposta honesta é "não sei" — a tela
+        // só avisa quando a permissão comprovadamente falta.
+        let mudo = serde_json::json!({ "name": "alguem" });
+        assert_eq!(identidade(&mudo).can_read_gated, None);
+        assert_eq!(identidade(&mudo).role, None);
+    }
+
+    /// O portão não está nos metadados — está no `/resolve/`.
+    ///
+    /// Verificado ao vivo: `/api/models/{id}` responde 200 para repositório
+    /// restrito também (a PÁGINA é pública; restritos são os BYTES). Quem
+    /// tentasse ler acesso dali concluiria "liberado" para todo mundo.
+    #[tokio::test]
+    #[ignore = "acessa a rede (Hugging Face)"]
+    async fn the_gate_answers_at_resolve_not_at_the_metadata() {
+        let c = HfClient::new(None);
+        assert_eq!(
+            c.access("unsloth/Qwen3-0.6B-GGUF", None).await.unwrap(),
+            HfAccess::Granted
+        );
+        assert_eq!(
+            c.access("meta-llama/Llama-3.2-1B", None).await.unwrap(),
+            HfAccess::NoToken
+        );
+    }
+
     #[tokio::test]
     #[ignore = "acessa a rede (Hugging Face)"]
     async fn live_gguf_meta_and_search_cursor() {

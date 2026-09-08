@@ -51,9 +51,23 @@ Escolha uma, baixe, e ela aparece em **Meus Modelos**. Downloads interrompidos
 podem ser retomados, mesmo depois de reiniciar o computador.
 
 ::: tip Modelos com licença
-Alguns repositórios exigem aceitar uma licença no Hugging Face. Aceite na página
-do modelo e cole um token do Hugging Face em **Configurações** — o app usa ele
-para baixar.
+Alguns repositórios exigem aceitar uma licença no Hugging Face. O aceite fica
+gravado na **sua conta**, não na máquina — o app precisa saber quem é você.
+
+Em **Configurações**, clique em **Entrar com o Hugging Face**: o navegador
+abre na página de autorização, você confirma, e a conta fica conectada. Não há
+token a criar nem a colar, e o app renova a sessão sozinho enquanto baixa.
+
+Feito isso, clique em **Aceitar a licença no Hugging Face** no aviso do
+modelo. Enquanto a aba estiver aberta, o app pergunta ao Hub a cada poucos
+segundos se o portão abriu — assim que você aceita, o aviso some e o download
+que estava esperando começa sozinho.
+
+Quem preferir continuar colando um token pode fazê-lo em **Ou usar um token
+manualmente**. Nesse caminho vale a atenção de sempre: um token *fine-grained*
+precisa da permissão "Read access to contents of all public gated repos", ou o
+download falha mesmo com a licença aceita — e **Configurações** avisa quando é
+esse o caso.
 :::
 
 ## Ajuste para esta máquina

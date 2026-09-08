@@ -152,6 +152,40 @@ export interface ModelSummary {
   caps: ModelCaps;
 }
 
+/**
+ * Se ESTA conta já pode baixar de um repositório restrito.
+ *
+ * `ModelSummary.gated` não responde isso: ele é propriedade do repositório
+ * ("exige aceite") e continua `true` depois que a pessoa aceitou. O aceite
+ * mora na conta do Hugging Face, e o app só se apresenta como essa conta
+ * pelo token — daí o veredito vir do backend, e não de um campo da busca.
+ */
+export type HfAccess = "granted" | "noToken" | "needsLicense" | "badToken";
+
+/** A conta dona do token, como o Hub a descreve. */
+export interface HfIdentity {
+  name: string;
+  /** `read`, `write` ou `fineGrained`. */
+  role: string | null;
+  /**
+   * `false` quando o token é fine-grained e não alcança o conteúdo de
+   * repositórios com licença — o 403 que sobrevive ao aceite. `null` quando
+   * não dá para concluir: a tela só avisa no `false`.
+   */
+  canReadGated: boolean | null;
+}
+
+export interface AccessReport {
+  access: HfAccess;
+  who: HfIdentity | null;
+}
+
+/** Resposta de `hfWhoami`: sem token, token recusado, ou a conta. */
+export type HfWhoami =
+  | { kind: "noToken" }
+  | { kind: "invalid" }
+  | ({ kind: "ok" } & HfIdentity);
+
 /** O que o modelo sabe fazer, derivado pelo backend do que o Hub entrega. */
 export interface ModelCaps {
   vision: boolean;

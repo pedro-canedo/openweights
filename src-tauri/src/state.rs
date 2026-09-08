@@ -13,6 +13,9 @@ pub struct AppState {
     pub store: Arc<lr_store::Store>,
     /// Cliente HF; recriado quando o token muda.
     pub hf: tokio::sync::Mutex<lr_models::HfClient>,
+    /// HTTP cru para o que não é a API do Hub: o login com a conta do
+    /// Hugging Face (registro do app, troca e renovação de token).
+    pub http: reqwest::Client,
     pub runtime_mgr: lr_runtime::RuntimeManager,
     pub downloads: lr_models::DownloadManager,
     /// llama-server em Router mode (um processo para todos os modelos).
@@ -207,6 +210,7 @@ impl AppState {
         Ok(Self {
             profile,
             hf: tokio::sync::Mutex::new(lr_models::HfClient::new(token)),
+            http: reqwest::Client::new(),
             runtime_mgr: lr_runtime::RuntimeManager::new(data_dir.clone()),
             downloads: lr_models::DownloadManager::new(models_dir.clone()),
             server: tokio::sync::Mutex::new(None),

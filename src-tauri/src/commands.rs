@@ -284,6 +284,155 @@ pub async fn models_readme(state: State<'_, AppState>, repo_id: String) -> CmdRe
         .map_err(err_str)
 }
 
+/// O veredito de acesso a um repositório restrito, do jeito que a tela usa.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessReport {
+    access: lr_models::HfAccess,
+    /// A conta dona do token. Só é consultada quando o acesso NÃO saiu
+    /// liberado — é ela que responde a pergunta seguinte, "aceitar a licença
+    /// com qual conta?", e não faz sentido gastar uma ida à rede para
+    /// respondê-la quando não há nada a resolver.
+    who: Option<lr_models::HfIdentity>,
+}
+
+/// Se esta conta já pode baixar deste repositório.
+///
+/// A tela precisa disto porque o aceite da licença acontece FORA do app: a
+/// pessoa clica em "Abrir no Hugging Face", aceita no navegador e volta. O
+/// Hub grava a permissão no perfil de quem aceitou, e daqui o app só consegue
+/// se apresentar como esse perfil pelo token — não há cookie de navegador a
+/// herdar. O que este comando faz é fechar esse ciclo: depois de aceitar, uma
+/// chamada diz se o portão abriu, sem precisar tentar um download de 70 GB
+/// para descobrir.
+#[tauri::command]
+pub async fn models_access(
+    state: State<'_, AppState>,
+    repo_id: String,
+    file: Option<String>,
+) -> CmdResult<AccessReport> {
+    let hf = hf_pronto(&state).await;
+    let access = hf
+        .access(&repo_id, file.as_deref())
+        .await
+        .map_err(err_str)?;
+    let who = if access == lr_models::HfAccess::Granted {
+        None
+    } else {
+        match hf.whoami().await {
+            Ok(lr_models::HfWhoami::Ok(id)) => Some(id),
+            // Quem é o dono do token é contexto, não o veredito: se essa
+            // consulta falhar, o veredito acima continua valendo.
+            _ => None,
+        }
+    };
+    Ok(AccessReport { access, who })
+}
+
+/// A chave onde mora a sessão OAuth inteira (token, renovação e registro).
+const SESSAO_HF: &str = "hf_oauth";
+
+/// Garante um token válido antes de falar com o Hub.
+///
+/// A sessão do login expira em horas; um download de dezenas de GB dura mais
+/// que isso. Sem esta renovação, o app pediria login de novo no meio — e a
+/// pessoa descobriria pelo download parado. Quem entrou colando token à mão
+/// não tem sessão nenhuma aqui e passa direto: aquele token não expira.
+pub(crate) async fn hf_pronto(state: &AppState) -> lr_models::HfClient {
+    let salva: Option<lr_models::HfSession> = state
+        .store
+        .get_setting(SESSAO_HF)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok());
+    let Some(sessao) = salva.filter(|s| s.expirando(now_ms())) else {
+        return state.hf.lock().await.clone();
+    };
+    match lr_models::oauth_refresh(&state.http, &sessao).await {
+        Ok(nova) => {
+            guardar_sessao(state, &nova).await;
+            state.hf.lock().await.clone()
+        }
+        // Renovação recusada (sessão revogada no site, por exemplo) não é
+        // motivo para travar a tela: o token velho ainda pode responder, e se
+        // não responder o veredito de acesso já sabe dizer "token recusado".
+        Err(e) => {
+            log::warn!("renovação da sessão do Hugging Face falhou: {e}");
+            state.hf.lock().await.clone()
+        }
+    }
+}
+
+/// Grava a sessão e passa o token novo a quem fala com o Hub.
+async fn guardar_sessao(state: &AppState, sessao: &lr_models::HfSession) {
+    if let Ok(json) = serde_json::to_string(sessao) {
+        let _ = state.store.set_setting(SESSAO_HF, &json);
+    }
+    let _ = state.store.set_setting("hf_token", &sessao.access_token);
+    *state.hf.lock().await = lr_models::HfClient::new(Some(sessao.access_token.clone()));
+}
+
+/// Entrar com a conta do Hugging Face, sem copiar e colar token.
+///
+/// O app se registra sozinho no Hub na primeira vez (registro dinâmico de
+/// cliente, que o Hub abre a qualquer aplicativo), abre a página de
+/// autorização no navegador — onde a pessoa provavelmente já está logada — e
+/// espera a volta numa porta local. Só o consentimento é humano.
+#[tauri::command]
+pub async fn hf_login(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<lr_models::HfWhoami> {
+    let registrado: Option<lr_models::OauthClient> = state
+        .store
+        .get_setting("hf_oauth_client")
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(&s).ok());
+
+    let login = lr_models::Login::start(&state.http, registrado)
+        .await
+        .map_err(err_str)?;
+    // O registro é guardado antes da espera: se a pessoa desistir agora, o
+    // próximo login reaproveita este cadastro em vez de criar outro.
+    if let Ok(json) = serde_json::to_string(login.client()) {
+        let _ = state.store.set_setting("hf_oauth_client", &json);
+    }
+
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(login.url(), None::<&str>)
+        .map_err(err_str)?;
+
+    let sessao = login
+        .finish(&state.http, std::time::Duration::from_secs(300))
+        .await
+        .map_err(err_str)?;
+    guardar_sessao(&state, &sessao).await;
+
+    let hf = state.hf.lock().await.clone();
+    hf.whoami().await.map_err(err_str)
+}
+
+/// Desconectar: o token sai do app, e nada mais fala pelo dono dele.
+///
+/// O registro do aplicativo fica: ele não é credencial de ninguém, e mantê-lo
+/// poupa um cadastro no próximo login.
+#[tauri::command]
+pub async fn hf_logout(state: State<'_, AppState>) -> CmdResult<()> {
+    state.store.set_setting(SESSAO_HF, "").map_err(err_str)?;
+    state.store.set_setting("hf_token", "").map_err(err_str)?;
+    *state.hf.lock().await = lr_models::HfClient::new(None);
+    Ok(())
+}
+
+/// De quem é o token gravado — a validação que a tela de Configurações faz.
+#[tauri::command]
+pub async fn hf_whoami(state: State<'_, AppState>) -> CmdResult<lr_models::HfWhoami> {
+    let hf = hf_pronto(&state).await;
+    hf.whoami().await.map_err(err_str)
+}
+
 /// O que a gaveta de quantizações precisa saber.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -455,13 +604,11 @@ pub async fn download_start(
     repo_id: String,
     artifact_name: String,
 ) -> CmdResult<String> {
-    let files = state
-        .hf
-        .lock()
-        .await
-        .repo_files(&repo_id)
-        .await
-        .map_err(err_str)?;
+    // Renova a sessão antes de listar e de baixar: quem entrou com a conta
+    // tem um token com hora para morrer, e um download começa agora e termina
+    // em horas.
+    let hf = hf_pronto(&state).await;
+    let files = hf.repo_files(&repo_id).await.map_err(err_str)?;
     let artifact = lr_models::group_artifacts(&files)
         .into_iter()
         .find(|a| a.name == artifact_name)
@@ -487,6 +634,7 @@ pub async fn download_pause(state: State<'_, AppState>, id: String) -> CmdResult
 
 #[tauri::command]
 pub async fn download_resume(state: State<'_, AppState>, id: String) -> CmdResult<()> {
+    hf_pronto(&state).await;
     let token = state.store.get_setting("hf_token").ok().flatten();
     state.downloads.resume(&id, token).await.map_err(err_str)
 }

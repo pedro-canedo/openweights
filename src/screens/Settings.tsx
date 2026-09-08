@@ -10,13 +10,20 @@
 // motor), depois o que se conecta (Hugging Face), depois as preferências, e
 // por último a máquina — que não se ajusta, se consulta.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { getHardwareProfile, getSetting, setSetting } from "../lib/api";
+import {
+  getHardwareProfile,
+  getSetting,
+  hfLogin,
+  hfLogout,
+  hfWhoami,
+  setSetting,
+} from "../lib/api";
 import { invoke, isTauri } from "../lib/tauri";
 import { formatBytes } from "../lib/format";
 import { navigate } from "../lib/nav";
-import type { HardwareProfile } from "../lib/types";
+import type { HardwareProfile, HfWhoami } from "../lib/types";
 import { Card, Page, Row, StatusDot } from "../components/ui/Shell";
 import { CopyValue } from "../components/ui/Copy";
 import EngineCard from "../components/settings/EngineCard";
@@ -100,63 +107,159 @@ function HfTokenCard() {
   const { t } = useTranslation();
   const [token, setToken] = useState("");
   const [gravado, setGravado] = useState(false);
-  const [editando, setEditando] = useState(false);
+  const [manual, setManual] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [entrando, setEntrando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  // O que o Hub responde sobre a credencial. `null` é "ainda perguntando":
+  // um token gravado não é a mesma coisa que um token que funciona, e a
+  // diferença entre os dois só aparece perguntando.
+  const [who, setWho] = useState<HfWhoami | null>(null);
 
-  useEffect(() => {
-    getSetting("hf_token").then((v) => {
-      setToken(v ?? "");
-      setGravado(!!v);
-    });
+  const verificar = useCallback(() => {
+    setWho(null);
+    getSetting("hf_token").then((v) => setGravado(!!v));
+    hfWhoami()
+      .then(setWho)
+      // Rede fora do ar não é credencial inválida: sem resposta, o cartão
+      // volta a dizer só o que sabe — se há ou não token gravado.
+      .catch(() => setWho(null));
   }, []);
 
-  async function save() {
+  useEffect(verificar, [verificar]);
+
+  async function entrar() {
+    setEntrando(true);
+    setErro(null);
+    try {
+      setWho(await hfLogin());
+      setGravado(true);
+      setManual(false);
+    } catch (e) {
+      setErro(String(e));
+    } finally {
+      setEntrando(false);
+    }
+  }
+
+  async function sair() {
+    await hfLogout();
+    setToken("");
+    setGravado(false);
+    setWho({ kind: "noToken" });
+  }
+
+  async function salvarManual() {
     await setSetting("hf_token", token.trim());
-    setGravado(!!token.trim());
-    setEditando(false);
+    setManual(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
+    verificar();
   }
+
+  const conta = who?.kind === "ok" ? who : null;
+  const invalido = who?.kind === "invalid";
+  const tone = conta ? "ok" : invalido ? "bad" : gravado ? "warn" : "off";
+  const estado = entrando
+    ? t("settings.hfLoginWaiting")
+    : conta
+      ? t("settings.hfTokenAs", { user: conta.name })
+      : invalido
+        ? t("settings.hfTokenInvalid")
+        : gravado
+          ? t("settings.hfTokenSet")
+          : t("settings.hfTokenNone");
 
   return (
     <Card
       title={t("settings.hfToken")}
       hint={t("settings.hfTokenHint")}
       action={
-        gravado && !editando ? (
+        conta ? (
           <button
             type="button"
-            onClick={() => setEditando(true)}
+            onClick={() => void sair()}
             className="rounded-lg border border-edge px-3 py-1.5 text-[12px] text-dim transition-colors hover:border-accent hover:text-ink"
           >
-            {t("settings.hfTokenChange")}
+            {t("settings.hfLogout")}
           </button>
         ) : undefined
       }
     >
       <div className="mt-3 flex items-center gap-2.5">
-        <StatusDot tone={gravado ? "ok" : "off"} />
-        <span className="text-sm">
-          {gravado ? t("settings.hfTokenSet") : t("settings.hfTokenNone")}
-        </span>
+        <StatusDot tone={tone} pulse={entrando} />
+        <span className="text-sm">{estado}</span>
+        {gravado && who === null && !entrando && (
+          <span className="text-[12px] text-dim">
+            {t("settings.hfTokenChecking")}
+          </span>
+        )}
         {saved && <span className="text-[12px] text-ok">✓</span>}
+        {gravado && who !== null && !entrando && (
+          <button
+            type="button"
+            onClick={verificar}
+            className="text-[12px] text-dim underline-offset-2 transition-colors hover:text-ink hover:underline"
+          >
+            {t("settings.hfTokenRecheck")}
+          </button>
+        )}
       </div>
 
-      {(!gravado || editando) && (
-        <div className="mt-3 flex gap-2">
-          <input
-            type="password"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            placeholder="hf_..."
-            className="flex-1 rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent"
-          />
+      {/* A armadilha do token fine-grained: a conta está certa, a licença
+          está aceita, e o download responde 403 porque o token não alcança
+          o conteúdo de repositórios com licença. Nada no Hub diz isso na
+          hora do erro — por isso o aviso mora aqui, onde o token é colado.
+          Quem entra pela conta não passa por isto: o escopo vem certo. */}
+      {conta?.canReadGated === false && (
+        <p className="mt-2 text-[12px] text-warn">
+          {t("settings.hfTokenScopeWarn")}
+        </p>
+      )}
+
+      {erro && <p className="mt-2 text-[12px] text-bad">{erro}</p>}
+
+      {!conta && (
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
-            onClick={() => void save()}
-            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
+            onClick={() => void entrar()}
+            disabled={entrando}
+            className={`rounded-lg px-4 py-2 text-sm font-medium transition-opacity ${
+              entrando
+                ? "cursor-default bg-panel2 text-dim"
+                : "bg-accent text-white hover:opacity-90"
+            }`}
           >
-            {t("common.save")}
+            {entrando ? t("settings.hfLoginWaiting") : t("settings.hfLogin")}
           </button>
+          <button
+            type="button"
+            onClick={() => setManual((v) => !v)}
+            className="text-[12px] text-dim underline-offset-2 transition-colors hover:text-ink hover:underline"
+          >
+            {t("settings.hfManual")}
+          </button>
+        </div>
+      )}
+
+      {manual && !conta && (
+        <div className="mt-3">
+          <p className="text-[12px] text-dim">{t("settings.hfManualHint")}</p>
+          <div className="mt-2 flex gap-2">
+            <input
+              type="password"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="hf_..."
+              className="flex-1 rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent"
+            />
+            <button
+              onClick={() => void salvarManual()}
+              className="rounded-lg border border-edge px-4 py-2 text-sm font-medium text-ink transition-colors hover:border-accent"
+            >
+              {t("common.save")}
+            </button>
+          </div>
         </div>
       )}
     </Card>

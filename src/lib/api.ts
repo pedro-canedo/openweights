@@ -3,10 +3,12 @@
 
 import { invoke, isTauri, listen } from "./tauri";
 import type {
+  AccessReport,
   ChatRow,
   DownloadEvent,
   DownloadStatus,
   HardwareProfile,
+  HfWhoami,
   LocalModel,
   MessageRow,
   ModelSummary,
@@ -84,6 +86,41 @@ export const modelReadme = (repoId: string) =>
   isTauri
     ? invoke<string>("models_readme", { repoId })
     : Promise.resolve("");
+
+/**
+ * Se já dá para baixar deste repositório — a pergunta que o campo `gated` da
+ * busca não responde.
+ *
+ * `file` é o caminho a sondar dentro do repositório; passar o arquivo da
+ * quantização escolhida testa exatamente o que vai ser baixado. Sem ele o
+ * backend sonda um arquivo que todo repositório do Hub tem.
+ */
+export const modelAccess = (repoId: string, file?: string) =>
+  isTauri
+    ? invoke<AccessReport>("models_access", { repoId, file: file ?? null })
+    : Promise.resolve<AccessReport>({ access: "granted", who: null });
+
+/**
+ * Entrar com a conta do Hugging Face.
+ *
+ * A promessa só resolve quando a autorização acontece no navegador — o
+ * backend fica escutando numa porta local — ou quando a espera de cinco
+ * minutos vence. Quem chama deve mostrar que está esperando.
+ */
+export const hfLogin = () =>
+  isTauri
+    ? invoke<HfWhoami>("hf_login")
+    : Promise.reject(new Error("login indisponível fora do app"));
+
+/** Desconectar a conta: o token sai do app. */
+export const hfLogout = () =>
+  isTauri ? invoke<void>("hf_logout") : Promise.resolve();
+
+/** De quem é o token gravado — validação da tela de Configurações. */
+export const hfWhoami = () =>
+  isTauri
+    ? invoke<HfWhoami>("hf_whoami")
+    : Promise.resolve<HfWhoami>({ kind: "noToken" });
 
 export const getModelQuants = (
   repoId: string,

@@ -52,9 +52,25 @@ Pick one, download it, and it lands in **My Models**. Interrupted downloads are
 resumable, even after restarting the computer.
 
 ::: tip Gated models
-Some repositories require accepting a license on Hugging Face. Accept it on the
-model page, then paste a Hugging Face token in **Settings** — the app uses it to
-download.
+Some repositories require accepting a license on Hugging Face. The acceptance
+is stored on **your account**, not on the machine — the app needs to know who
+you are.
+
+In **Settings**, click **Sign in with Hugging Face**: your browser opens the
+authorization page, you confirm, and the account is connected. There is no
+token to create or paste, and the app renews the session on its own while
+downloading.
+
+Then click **Accept the license on Hugging Face** on the model's notice. While
+that tab is open, the app asks the Hub every few seconds whether the gate
+opened — the moment you accept, the notice disappears and the download that
+was waiting starts on its own.
+
+If you would rather keep pasting a token, **Or use a token manually** is still
+there. On that path the usual caveat applies: a *fine-grained* token needs the
+"Read access to contents of all public gated repos" permission, or the download
+fails even with the license accepted — and **Settings** tells you when that is
+the case.
 :::
 
 ## Tuning for this machine

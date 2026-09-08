@@ -2548,10 +2548,12 @@ name = "lr_models"
 version = "0.17.0"
 dependencies = [
  "futures-util",
+ "getrandom 0.3.4",
  "log",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",

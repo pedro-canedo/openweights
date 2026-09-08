@@ -11,15 +11,17 @@
 // Ele NÃO renderiza HTML embutido — muitos cartões trazem `<div>`s e imagens
 // de terceiros, e um app desktop não deve executar marcação de estranho.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { ModelSummary, QuantsView, QuantView } from "../../lib/types";
-import { getModelQuants, modelReadme, startDownload } from "../../lib/api";
+import { getModelQuants, hfLogin, modelReadme, startDownload } from "../../lib/api";
 import { formatAgo, formatBytes, formatCount, formatParams } from "../../lib/format";
 import Markdown from "../chat/Markdown";
 import AuthorAvatar from "./AuthorAvatar";
+import { useHfAccess } from "../../lib/hfAccess";
 import CapBadges from "./CapBadges";
+import GateNotice from "./GateNotice";
 import VerdictBadge from "./VerdictBadge";
 
 async function abrirNoHub(repoId: string) {
@@ -155,18 +157,74 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
     [view],
   );
 
-  const baixar = (q: QuantView) => {
-    // Feedback imediato; reverte se o backend recusar.
-    setStarted((prev) => new Set(prev).add(q.artifactName));
-    startDownload(model.id, q.artifactName).catch((err) => {
+  // O portão do repositório, e o que ele exige desta conta. Só é consultado
+  // depois que as quantizações chegam, para a sondagem testar o arquivo que
+  // a pessoa vai baixar de verdade.
+  const gate = useHfAccess(
+    model.id,
+    ordenadas?.[0]?.files?.[0],
+    model.gated && (view != null || failed),
+  );
+  /** A quantização que espera o portão abrir. */
+  const [pendente, setPendente] = useState<QuantView | null>(null);
+  const [entrando, setEntrando] = useState(false);
+
+  // Entrar com a conta: o comando só volta quando a autorização acontece no
+  // navegador (ou expira), e aí a resposta do portão já pode ter mudado.
+  const entrar = useCallback(async () => {
+    setEntrando(true);
+    try {
+      await hfLogin();
+      gate.revalidar();
+    } catch (err) {
       console.error(err);
-      setStarted((prev) => {
-        const next = new Set(prev);
-        next.delete(q.artifactName);
-        return next;
+    } finally {
+      setEntrando(false);
+    }
+    // `revalidar` é estável; depender do objeto inteiro recriaria isto a
+    // cada render sem necessidade.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gate.revalidar]);
+
+  const iniciar = useCallback(
+    (q: QuantView) => {
+      // Feedback imediato; reverte se o backend recusar.
+      setStarted((prev) => new Set(prev).add(q.artifactName));
+      startDownload(model.id, q.artifactName).catch((err) => {
+        console.error(err);
+        setStarted((prev) => {
+          const next = new Set(prev);
+          next.delete(q.artifactName);
+          return next;
+        });
       });
-    });
+    },
+    [model.id],
+  );
+
+  // Clicar em baixar num modelo com o portão fechado não é erro nem recusa:
+  // é o começo do caminho. O app abre a página onde se aceita, guarda a
+  // quantização escolhida e passa a perguntar ao Hub se o portão abriu —
+  // quando abre, o download que ficou parado começa sozinho.
+  const baixar = (q: QuantView) => {
+    if (gate.bloqueado) {
+      setPendente(q);
+      if (gate.report?.access === "noToken") void entrar();
+      else {
+        void abrirNoHub(model.id);
+        gate.aguardarAceite();
+      }
+      return;
+    }
+    iniciar(q);
   };
+
+  useEffect(() => {
+    if (!pendente || !gate.liberado) return;
+    const q = pendente;
+    setPendente(null);
+    iniciar(q);
+  }, [pendente, gate.liberado, iniciar]);
 
   const atualizado = model.updatedAt
     ? formatAgo(i18n.language, new Date(model.updatedAt).getTime())
@@ -217,16 +275,25 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
           </h3>
           <p className="mt-0.5 text-[12px] text-dim">{t("discover.quantsHint")}</p>
 
-          {model.gated && (
-            <div className="mt-3 rounded-xl border border-warn/40 bg-warn/10 p-3">
-              <p className="text-xs text-ink">{t("discover.gatedHint")}</p>
-              <button
-                onClick={() => void abrirNoHub(model.id)}
-                className="mt-2 rounded-lg border border-edge bg-panel px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:border-accent"
-              >
-                {t("discover.openOnHf")} ↗
-              </button>
-            </div>
+          {/* O aviso só aparece depois que o Hub responde se ESTA conta pode
+              baixar — e some quando pode. A sondagem espera as quantizações
+              para testar o arquivo que vai ser baixado de verdade; se a lista
+              falhar, o aviso sonda sozinho um arquivo comum a todo
+              repositório. */}
+          {model.gated && (view != null || failed) && (
+            <GateNotice
+              report={gate.report}
+              checando={gate.checando}
+              falhou={gate.falhou}
+              aguardando={gate.aguardando}
+              entrando={entrando}
+              onOpenHub={() => {
+                void abrirNoHub(model.id);
+                gate.aguardarAceite();
+              }}
+              onRecheck={gate.revalidar}
+              onLogin={() => void entrar()}
+            />
           )}
 
           <div className="mt-3">
