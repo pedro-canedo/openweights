@@ -200,7 +200,13 @@ function mockAdvice(model: string): TuneAdvice {
       },
     ],
     reasons: [
-      { key: "ctx", values: [["ctx", "32768"], ["kv", String(1.1 * gib)]] },
+      {
+        key: "ctx",
+        values: [
+          ["ctx", "32768"],
+          ["kv", String(1.1 * gib)],
+        ],
+      },
       { key: "flashAttn", values: [] },
       {
         key: "fitsGpu",
@@ -362,6 +368,12 @@ export interface PerfRowDto {
    * migração) — exibir o profileKey encurtado ou "—", NUNCA rotular de "uso".
    */
   profileSummary: Record<string, string> | null;
+  /**
+   * O perfil inteiro da medição. `null` nas linhas gravadas antes da coluna
+   * existir — sem ele não há como voltar a esta configuração, e a tela não
+   * oferece o botão em vez de reconstruir um perfil pelos pares do INI.
+   */
+  profile: ModelProfile | null;
   /** Limite de energia da placa nesta medição, em watts. */
   powerLimitW: number | null;
   deltaPct: number | null;
@@ -424,6 +436,7 @@ function mockPerfHistory(): PerfHistoryDto {
     gpuName: "GPU simulada 16 GB",
     profileKey: chave,
     profileSummary: resumo,
+    profile: null,
   };
   return {
     gpuName: "GPU simulada 16 GB",
@@ -468,6 +481,7 @@ function mockPerfHistory(): PerfHistoryDto {
         buildNumber: 10380,
         profileKey: "",
         profileSummary: null,
+        profile: null,
         deltaPct: null,
         powerLimitW: 370,
         deltaReason: "first",
@@ -536,7 +550,8 @@ export interface SpecDecision {
   key: string;
   spec: SpecType[];
   gainPct: number | null;
-  verdict: "applied" | "inconclusive" | "rejected" | "deferred" | "unverifiable";
+  verdict:
+    "applied" | "inconclusive" | "rejected" | "deferred" | "unverifiable";
   at: number;
 }
 
@@ -568,28 +583,40 @@ export function tuneSpecBench(
       arms: [
         {
           spec: ["none"],
-          byPrompt: [["code", 40], ["prose", 38]],
+          byPrompt: [
+            ["code", 40],
+            ["prose", 38],
+          ],
           avgTps: 39,
           quality: "match",
           divergence: null,
         },
         {
           spec: ["ngramMod"],
-          byPrompt: [["code", 71], ["prose", 33]],
+          byPrompt: [
+            ["code", 71],
+            ["prose", 33],
+          ],
           avgTps: 52,
           quality: "match",
           divergence: null,
         },
         {
           spec: ["draftMtp", "ngramMod"],
-          byPrompt: [["code", 88], ["prose", 41]],
+          byPrompt: [
+            ["code", 88],
+            ["prose", 41],
+          ],
           avgTps: 64.5,
           quality: "match",
           divergence: null,
         },
         {
           spec: ["draftDflash"],
-          byPrompt: [["code", 120], ["prose", 96]],
+          byPrompt: [
+            ["code", 120],
+            ["prose", 96],
+          ],
           avgTps: 108,
           quality: "diverged",
           divergence: {

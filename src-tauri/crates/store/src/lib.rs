@@ -178,6 +178,10 @@ impl Store {
         ensure_column(&conn, "perf_runs", "n_prompt", "INTEGER")?;
         ensure_column(&conn, "perf_runs", "n_depth", "INTEGER")?;
         ensure_column(&conn, "perf_runs", "power_limit_w", "INTEGER")?;
+        // O perfil INTEIRO, para o histórico poder voltar a uma configuração
+        // e não só descrevê-la. As linhas antigas ficam sem, e a tela diz
+        // isso em vez de reconstruir um perfil a partir dos pares do INI.
+        ensure_column(&conn, "perf_runs", "profile_full_json", "TEXT")?;
         engine_presets::init(&conn)?;
         // Totais "desde sempre" das estatísticas de serviço (por modelo).
         serve::init(&conn)?;

@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS perf_runs (
     profile_json TEXT,
     n_prompt INTEGER,
     n_depth INTEGER,
-    power_limit_w INTEGER
+    power_limit_w INTEGER,
+    profile_full_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_perf_lookup
     ON perf_runs(machine_key, model_id, profile_key);
@@ -76,6 +77,13 @@ pub struct PerfRun {
     /// Os pares INI legíveis do perfil medido, em JSON — é o que permite à
     /// tela mostrar a configuração sem decifrar o hash de `profile_key`.
     pub profile_json: Option<String>,
+    /// O perfil INTEIRO desta medição, serializado.
+    ///
+    /// O `profile_json` acima guarda só os pares do INI: dá para LER a
+    /// configuração, não para voltar a ela. Sem o perfil completo, uma
+    /// linha do histórico é um número que não se pode reaplicar.
+    /// `None` nas medições gravadas antes desta coluna existir.
+    pub profile_full_json: Option<String>,
     /// Com que tamanho de prompt `prompt_tps` foi medido. `None` em linhas
     /// gravadas antes desta coluna — e é por isso que elas não ganham Δ de
     /// prompt: não dá para saber se são comparáveis.
@@ -102,12 +110,13 @@ fn run_from(r: &Row<'_>) -> rusqlite::Result<PerfRun> {
         n_prompt: r.get::<_, Option<i64>>(13)?.map(|v| v.max(0) as u32),
         n_depth: r.get::<_, Option<i64>>(14)?.map(|v| v.max(0) as u32),
         power_limit_w: r.get::<_, Option<i64>>(15)?.map(|v| v.max(0) as u32),
+        profile_full_json: r.get(16)?,
     })
 }
 
 const COLUNAS: &str = "machine_key, model_id, profile_key, build_number, gen_tps, prompt_tps, \
                        gen_stddev, gpu_bytes, source, suspect, measured_at, gpu_name, \
-                       profile_json, n_prompt, n_depth, power_limit_w";
+                       profile_json, n_prompt, n_depth, power_limit_w, profile_full_json";
 
 impl Store {
     #[allow(clippy::too_many_arguments)]
@@ -117,8 +126,8 @@ impl Store {
             "INSERT INTO perf_runs (machine_key, model_id, profile_key, build_number,
                                     gen_tps, prompt_tps, gen_stddev, gpu_bytes, source,
                                     suspect, measured_at, gpu_name, profile_json,
-                                    n_prompt, n_depth, power_limit_w)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
+                                    n_prompt, n_depth, power_limit_w, profile_full_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 run.machine_key,
                 run.model_id,
@@ -136,6 +145,7 @@ impl Store {
                 run.n_prompt.map(|v| v as i64),
                 run.n_depth.map(|v| v as i64),
                 run.power_limit_w.map(|v| v as i64),
+                run.profile_full_json,
             ],
         )?;
         Ok(())
@@ -390,6 +400,7 @@ mod tests {
             measured_at: 1_000,
             gpu_name: Some("RTX de Teste".into()),
             profile_json: None,
+            profile_full_json: None,
             n_prompt: Some(512),
             n_depth: Some(0),
             power_limit_w: None,
@@ -703,6 +714,37 @@ mod tests {
 
     /// A média de uso vem das respostas do chat, agrupada por configuração,
     /// ignorando mensagens sem tokens/s ou sem chave de perfil.
+    /// O histórico guarda a configuração inteira, não só o rótulo dela.
+    ///
+    /// Sem isto, uma linha da tabela é um número que não se pode reaplicar:
+    /// os pares do INI descrevem a configuração, mas voltar a ela exigiria
+    /// adivinhar o resto do perfil. As linhas gravadas antes da coluna
+    /// existir continuam com `None`, e a tela não oferece o botão nelas.
+    #[test]
+    fn a_measured_configuration_can_be_read_back_whole() {
+        let s = Store::open_in_memory().unwrap();
+        let mut com_perfil = run("chave-a", 30.0, 1);
+        com_perfil.profile_full_json = Some(r#"{"ctx":32768,"ngl":64}"#.into());
+        s.add_perf_run(&com_perfil).unwrap();
+        s.add_perf_run(&run("chave-b", 20.0, 1)).unwrap();
+
+        let linhas = s.perf_history_rows("maquina-a", "m.gguf", 10).unwrap();
+        assert_eq!(linhas.len(), 2);
+        let a = linhas
+            .iter()
+            .find(|r| r.profile_key == "chave-a")
+            .expect("a linha gravada com perfil");
+        assert_eq!(
+            a.profile_full_json.as_deref(),
+            Some(r#"{"ctx":32768,"ngl":64}"#)
+        );
+        let b = linhas
+            .iter()
+            .find(|r| r.profile_key == "chave-b")
+            .expect("a linha sem perfil");
+        assert_eq!(b.profile_full_json, None, "linha antiga não inventa perfil");
+    }
+
     #[test]
     fn usage_aggregates_chat_messages_by_profile() {
         let s = Store::open_in_memory().unwrap();

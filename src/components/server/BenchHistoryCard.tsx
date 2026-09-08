@@ -9,14 +9,20 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Icon from "../ui/Icon";
-import { engineBusyReason, getHardwareProfile, getModelProfile } from "../../lib/api";
+import {
+  engineBusyReason,
+  getHardwareProfile,
+  getModelProfile,
+} from "../../lib/api";
 import { errorMessage } from "../../lib/serverSession";
 import { listen } from "../../lib/tauri";
 import {
   emptyProfile,
   perfHistory,
+  tuneApply,
   tuneBench,
   type BenchProgress,
+  type ModelProfile,
   type PerfHistoryDto,
   type PerfRowDto,
 } from "../../lib/tuning";
@@ -58,14 +64,13 @@ const SUMMARY_PRIORITY = [
 function shortVal(key: string, value: string): string {
   if (key === "ctx-size") {
     const n = Number(value);
-    if (Number.isFinite(n) && n >= 1024 && n % 1024 === 0) return `${n / 1024}k`;
+    if (Number.isFinite(n) && n >= 1024 && n % 1024 === 0)
+      return `${n / 1024}k`;
   }
   return value;
 }
 
-function summaryPairs(
-  summary: Record<string, string>,
-): [string, string][] {
+function summaryPairs(summary: Record<string, string>): [string, string][] {
   const entries = Object.entries(summary);
   const rank = (k: string) => {
     const i = SUMMARY_PRIORITY.indexOf(k);
@@ -113,6 +118,7 @@ export default function BenchHistoryCard({
   const [data, setData] = useState<PerfHistoryDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [medindo, setMedindo] = useState<BenchProgress | null>(null);
+  const [aplicando, setAplicando] = useState<number | null>(null);
   const [busyWith, setBusyWith] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [hw, setHw] = useState<HardwareProfile | null>(null);
@@ -237,6 +243,21 @@ export default function BenchHistoryCard({
     );
   };
 
+  /** Volta a uma configuração já medida, sem refazer os ajustes à mão. */
+  async function aplicar(profile: ModelProfile, indice: number) {
+    setAplicando(indice);
+    setError(null);
+    try {
+      const r = await tuneApply(model, profile);
+      if (!r.ok) throw new Error(r.error ?? "tune-apply-failed");
+      setData(await perfHistory(model));
+    } catch (e) {
+      setError(errorMessage(e) || String(e));
+    } finally {
+      setAplicando(null);
+    }
+  }
+
   const badge = (cls: string, texto: React.ReactNode, title?: string) => (
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] ${cls}`}
@@ -268,6 +289,15 @@ export default function BenchHistoryCard({
                 {data.gpuName ?? "CPU"}
               </span>
             )}
+            {/* De qual modelo é a série. A tabela sempre foi por modelo, mas
+                não dizia qual — e um número de geração só significa alguma
+                coisa junto do modelo que o produziu. */}
+            <span
+              className="max-w-64 truncate rounded-full border border-edge px-2 py-0.5 text-[11px] text-dim"
+              title={model}
+            >
+              {model}
+            </span>
             <button
               type="button"
               disabled={!model || medindo != null}
@@ -342,7 +372,10 @@ export default function BenchHistoryCard({
                     {rows.map((r, i) => {
                       const cfg = configLabel(r.profileSummary, r.profileKey);
                       return (
-                        <tr key={`${r.measuredAt}-${i}`} className="border-t border-edge">
+                        <tr
+                          key={`${r.measuredAt}-${i}`}
+                          className="border-t border-edge"
+                        >
                           <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums text-dim">
                             {/* measuredAt já vem em ms (scheduler::now_ms());
                                 a data segue o idioma do app, não o do SO. */}
@@ -350,11 +383,33 @@ export default function BenchHistoryCard({
                               i18n.language,
                             )}
                           </td>
-                          <td
-                            className="whitespace-nowrap py-1.5 pr-3 font-mono text-[11px]"
-                            title={cfg.title}
-                          >
-                            {cfg.text}
+                          <td className="whitespace-nowrap py-1.5 pr-3">
+                            {/* Voltar a uma configuração medida era refazer
+                                os ajustes à mão a partir do rótulo. Só as
+                                linhas que gravaram o perfil inteiro viram
+                                botão; as antigas continuam como texto, porque
+                                reconstruir um perfil a partir dos pares do
+                                INI seria adivinhar. */}
+                            {r.profile ? (
+                              <button
+                                type="button"
+                                disabled={running || aplicando != null}
+                                onClick={() => void aplicar(r.profile!, i)}
+                                title={`${cfg.title}\n\n${t("tune.history.useThis")}`}
+                                className="rounded font-mono text-[11px] underline decoration-dotted underline-offset-4 hover:text-accent disabled:no-underline disabled:opacity-50"
+                              >
+                                {aplicando === i
+                                  ? t("common.loading")
+                                  : cfg.text}
+                              </button>
+                            ) : (
+                              <span
+                                className="font-mono text-[11px]"
+                                title={cfg.title}
+                              >
+                                {cfg.text}
+                              </span>
+                            )}
                           </td>
                           <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums">
                             {r.genTps.toFixed(1)}
@@ -446,7 +501,10 @@ export default function BenchHistoryCard({
               </div>
               <div className="mt-2 flex flex-col gap-1.5">
                 {usage.map((u) => {
-                  const cfg = configLabel(summaryFor(u.profileKey), u.profileKey);
+                  const cfg = configLabel(
+                    summaryFor(u.profileKey),
+                    u.profileKey,
+                  );
                   return (
                     <div
                       key={u.profileKey}

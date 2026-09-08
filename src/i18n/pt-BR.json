@@ -863,7 +863,8 @@
       "noBaseline": "sem base de comparação",
       "powerChanged": "O limite de energia da placa mudou entre as duas medições — a diferença pode vir dos watts, não da configuração.",
       "powerLimit": "Limite de energia da placa nesta medição",
-      "bestBadge": "melhor"
+      "bestBadge": "melhor",
+      "useThis": "Voltar a esta configuração"
     },
     "sweep": {
       "title": "Curva",

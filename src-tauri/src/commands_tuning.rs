@@ -721,6 +721,9 @@ pub async fn tune_bench(
             // Os pares INI legíveis do perfil: é o que deixa o histórico
             // mostrar "ngl=99 · ctx=16k" em vez de um hash.
             profile_json: serde_json::to_string(&perfil.to_ini_extras()).ok(),
+            // O perfil inteiro, para a linha do histórico poder ser aplicada
+            // de volta — os pares acima descrevem, este reproduz.
+            profile_full_json: serde_json::to_string(&perfil).ok(),
             power_limit_w,
         });
     }
@@ -850,6 +853,10 @@ pub struct PerfRowDto {
     /// Pares INI legíveis da configuração medida; `None` em linhas gravadas
     /// antes de `profile_json` existir (a tela cai no profileKey encurtado).
     pub profile_summary: Option<std::collections::BTreeMap<String, String>>,
+    /// O perfil inteiro da medição, quando ele foi gravado. É o que permite
+    /// voltar a esta configuração com um clique; `None` nas linhas anteriores
+    /// à coluna, e aí a tela não oferece o botão em vez de inventar um perfil.
+    pub profile: Option<lr_types::tuning::ModelProfile>,
     /// Com que tamanho de prompt o `prompt_tps` desta linha foi medido —
     /// `None` em linhas antigas. A tela mostra ao lado do número, porque
     /// 800 tok/s num prompt de 512 e 300 num de 4096 não são o mesmo eixo.
@@ -927,6 +934,10 @@ pub fn perf_history(state: State<'_, AppState>, model_id: String) -> CmdResult<P
             gpu_name: r.gpu_name,
             profile_key: r.profile_key,
             profile_summary: resumo_do_perfil(r.profile_json.as_deref()),
+            profile: r
+                .profile_full_json
+                .as_deref()
+                .and_then(|j| serde_json::from_str(j).ok()),
             n_prompt: r.n_prompt,
             power_limit_w: r.power_limit_w,
             delta_pct: d.gen_pct,

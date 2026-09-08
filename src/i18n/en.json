@@ -863,7 +863,8 @@
       "noBaseline": "no baseline to compare against",
       "powerChanged": "The card's power limit changed between the two runs — the difference may come from the watts, not the configuration.",
       "powerLimit": "The card's power limit during this run",
-      "bestBadge": "best"
+      "bestBadge": "best",
+      "useThis": "Use this configuration again"
     },
     "sweep": {
       "title": "Curve",
