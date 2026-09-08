@@ -58,6 +58,7 @@ import {
 } from "../form/controls";
 import FlagControl, { RequirementBadges } from "../form/FlagControl";
 import Icon from "../ui/Icon";
+import { useProfileRevision } from "../../lib/profileChanges";
 
 const CTX_CHIPS = [8192, 16384, 32768, 65536];
 
@@ -86,9 +87,11 @@ export default function EngineConfigSection({
   hasGpu,
   selected: selectedProp,
   onSelect,
+  compact = false,
 }: {
   running: boolean;
   hasGpu: boolean;
+  compact?: boolean;
   /** Seleção elevada: com o par `selected`/`onSelect`, o pai é o dono do
    *  modelo escolhido (o histórico de benchmark precisa saber qual é).
    *  Sem o par, o componente se comporta como antes (estado interno). */
@@ -100,6 +103,7 @@ export default function EngineConfigSection({
   const [selectedState, setSelectedState] = useState<string>("");
   const controlled = selectedProp !== undefined && onSelect !== undefined;
   const selected = controlled ? selectedProp : selectedState;
+  const profileRevision = useProfileRevision(selected);
   const setSelected = controlled ? onSelect : setSelectedState;
   const [draft, setDraft] = useState<ModelProfile>(emptyProfile());
   const [caps, setCaps] = useState<ModelCaps | null>(null);
@@ -173,6 +177,7 @@ export default function EngineConfigSection({
   // Perfil + capacidades do modelo selecionado.
   useEffect(() => {
     if (!selected) return;
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
     let cancelled = false;
     setPendingReload(false);
     setBusyWith([]);
@@ -188,8 +193,9 @@ export default function EngineConfigSection({
     })();
     return () => {
       cancelled = true;
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
     };
-  }, [selected]);
+  }, [selected, profileRevision]);
 
   const refreshPreview = useCallback(() => {
     if (!selected) return;
@@ -197,7 +203,7 @@ export default function EngineConfigSection({
       .then(setPreview)
       .catch(() => setPreview(null));
   }, [selected]);
-  useEffect(refreshPreview, [refreshPreview]);
+  useEffect(refreshPreview, [refreshPreview, profileRevision]);
 
   const validate = useCallback(
     (extras: [string, string][]) => {
@@ -388,7 +394,7 @@ export default function EngineConfigSection({
   }
 
   return (
-    <div className="mt-4 rounded-xl border border-edge bg-panel p-5">
+    <div className="rounded-2xl border border-edge bg-panel p-4 sm:p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-medium">{t("server.engineConfig.title")}</div>
@@ -401,7 +407,8 @@ export default function EngineConfigSection({
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
-          className="min-w-64 flex-1 rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none focus:border-accent"
+          aria-label={t("comparison.selectModel")}
+          className="min-w-0 basis-64 flex-1 rounded-xl border border-edge bg-panel2 px-3 py-2 text-sm outline-none focus:border-accent"
         >
           {models.map((m) => (
             <option key={m} value={m}>
@@ -474,6 +481,8 @@ export default function EngineConfigSection({
         </div>
       )}
 
+      <details open={!compact} className="mt-4 border-t border-edge pt-4">
+      <summary className="cursor-pointer text-xs font-medium text-dim">{t("comparison.manualSettings")}</summary>
       {/* presets */}
       <div className="mt-4 flex flex-col gap-2">
         <span className={label}>{t("server.enginePresets.title")}</span>
@@ -984,6 +993,7 @@ export default function EngineConfigSection({
         )}
       </div>
 
+      </details>
       {/* estado de aplicação */}
       {busyWith.length > 0 && (
         <p className="mt-3 text-[11px] leading-relaxed text-warn">

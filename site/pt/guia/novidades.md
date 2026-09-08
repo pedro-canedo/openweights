@@ -5,6 +5,29 @@ histórico completo de todas as versões está no
 [changelog](/pt/guia/changelog); os instaladores ficam no
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.19.0 — escolha a configuração que você mediu
+
+- **Escolha qualquer opção concluída na otimização.** Cada configuração tem
+  geração, leitura do prompt e tempo total visíveis. A recomendação continua
+  considerando tempo total e estabilidade, mas agora você pode selecionar uma
+  alternativa com geração mais rápida e clicar em **Usar configuração**, mesmo
+  sem um vencedor recomendado. A medição preserva o perfil atual até esse clique.
+- **O histórico funciona com o servidor ligado e ocioso.** Perfis completos
+  salvos têm uma ação explícita para aplicar e carregar o modelo. Medições
+  antigas sem perfil completo são identificadas; o limite de energia mostrado
+  pertence à medição e não é alterado ao reaplicar o perfil.
+- **A aba de desempenho foi reorganizada.** Cards com ícones, métricas
+  separadas, indicação da configuração em uso e layout responsivo destacam
+  otimização e histórico. Ajustes manuais e presets ficam em uma seção expansível.
+- **Aplicar mantém os controles sincronizados.** O editor e o histórico são
+  atualizados após uma aplicação bem-sucedida. A escolha usa o motor associado
+  ao perfil; atividade em andamento impede a aplicação, e falhas de carga
+  acionam a recuperação da configuração anterior.
+
+As velocidades exibidas são resultados do teste realizado, não uma promessa
+para todas as conversas. Esta versão não altera automaticamente a configuração
+ao terminar a otimização: você escolhe a opção e confirma em **Usar configuração**.
+
 ## 0.18.4 — o download estava travando a máquina inteira
 
 O download em paralelo, que chegou na 0.18.2, deixou as transferências muito

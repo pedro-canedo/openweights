@@ -864,7 +864,11 @@
       "powerChanged": "The card's power limit changed between the two runs — the difference may come from the watts, not the configuration.",
       "powerLimit": "The card's power limit during this run",
       "bestBadge": "best",
-      "useThis": "Use this configuration again"
+      "useThis": "Use configuration",
+      "applied": "Configuration applied and model loaded.",
+      "applyHelp": "Use a saved configuration even while the server is running and idle. The power limit is from the measurement; applying a profile does not change GPU watts.",
+      "legacy": "Profile not saved",
+      "legacyHelp": "This older measurement did not save the complete profile. Run a new measurement to make it reusable."
     },
     "sweep": {
       "title": "Curve",
@@ -1321,8 +1325,8 @@
     "cache": "Cached tokens"
   },
   "comparison": {
-    "title": "Configuration for your computer",
-    "description": "The app installs the optional engine when compatible and tests the options for you. Optimization reserves the engine for a few minutes. Your current configuration is preserved.",
+    "title": "Optimization",
+    "description": "Test options for this model. The engine is reserved during measurement; when it finishes, choose the configuration to use.",
     "measure": "Optimize for my computer",
     "cancel": "Cancel test",
     "progress": "Testing option {{arm}} · sample {{sample}} of 3",
@@ -1330,13 +1334,13 @@
     "details": "Technical details",
     "median": "Median (minimum–maximum), after warmup and three repetitions.",
     "metric": "Metric",
-    "reference": "Current",
+    "reference": "Reference",
     "candidate": "Candidate",
     "genTps": "Generation · tokens/s",
     "promptTps": "Prompt · tokens/s",
     "totalMs": "Response · ms",
     "memory": "Available device memory after warmup (engine)",
-    "inconclusive": "Your current configuration remains the best verified option.",
+    "inconclusive": "No option consistently reduced total response time.",
     "improved": "Configuration ready",
     "configurations": "View compared configurations",
     "apply": "Use configuration",
@@ -1382,6 +1386,20 @@
     "peakVram": "Observed peak VRAM",
     "allMeasurements": "View measurements and configurations",
     "resultNumber": "Option {{n}}",
-    "memoryNote": "Observed system memory during the test; includes other applications."
+    "memoryNote": "Observed system memory during the test; includes other applications.",
+    "selectModel": "Select a model to get started",
+    "applying": "Applying configuration…",
+    "activeSuccess": "Configuration in use",
+    "sampleCount": "3 measurements per option",
+    "selectionHelp": "The recommendation considers total response time and test stability. You can choose another option for generation speed. These values describe this test, not every conversation.",
+    "fastestGeneration": "Fastest generation",
+    "recommended": "Lowest verified time",
+    "generationLabel": "Generation",
+    "readingLabel": "Prompt reading",
+    "durationLabel": "Total time",
+    "profileSummary": "Context {{ctx}} · Threads {{threads}}",
+    "selectedRates": "Selected: generation {{gen}} tok/s · reading {{prompt}} tok/s. Click Use configuration to apply it and load the model.",
+    "optionalEngineNote": "This option uses the optimized engine. Review the measured configuration: it may change speculation and memory placement.",
+    "manualSettings": "Manual settings and presets"
   }
 }

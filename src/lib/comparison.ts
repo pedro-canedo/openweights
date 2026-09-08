@@ -1,11 +1,12 @@
 import { invoke, isTauri, listen } from "./tauri";
 import { generationStore } from "./generationStore";
+import { notifyProfileApplied } from "./profileChanges";
 import type { ModelProfile } from "./tuning";
 
 export interface Distribution { median: number; min: number; max: number }
 export interface RuntimeIdentity { source: "official" | "moeCache"; revision: string; backend: string; platform: string }
 export interface ComparisonArm { profile: ModelProfile; genTps: Distribution; promptTps: Distribution; totalMs: Distribution; gpuFreeBytes: number | null; peakRamBytes?: number | null; peakVramBytes?: number | null; runtime?: string; runtimeIdentity?: RuntimeIdentity }
-export interface Comparison { model: string; workload: string; arms: ComparisonArm[]; inconclusive: boolean; applied: boolean; winner?: number; warnings?: string[] }
+export interface Comparison { model: string; workload: string; arms: ComparisonArm[]; inconclusive: boolean; applied: boolean; currentArm?: number | null; winner?: number; warnings?: string[] }
 export interface ComparisonProgress { model: string; arm: number; sample: number; stage?: string }
 export const onComparisonProgress = (fn: (p: ComparisonProgress) => void) => listen<ComparisonProgress>("comparison-progress", fn);
 export const latestComparison = (model: string) => isTauri ? invoke<Comparison | null>("compare_latest", { model }) : Promise.resolve(null);
@@ -38,10 +39,10 @@ export async function runComparison(model: string): Promise<Comparison> {
     throw error;
   } finally { unlisten?.(); release(); publish({ kind: null }); }
 }
-export async function applyComparison(model: string, restore = false): Promise<void> {
+export async function applyComparison(model: string, restore = false, armIndex?: number): Promise<void> {
   const release = generationStore.acquireBenchmark();
   publish({ model, kind: "apply", progress: null, error: "" });
-  try { await invoke("compare_apply", { model, restore }); }
+  try { await invoke("compare_apply", { model, restore, armIndex }); notifyProfileApplied(model); }
   catch (error) { publish({ error: String(error) }); throw error; }
   finally { release(); publish({ kind: null }); }
 }

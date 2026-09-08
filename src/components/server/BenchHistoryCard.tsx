@@ -6,9 +6,11 @@
 // nenhum dos dois lados marcado como suspeito de aquecimento — o resto é
 // mostrado como "—" com o motivo no title.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import Icon from "../ui/Icon";
+import { comparisonOperation } from "../../lib/comparison";
+import { useProfileRevision } from "../../lib/profileChanges";
 import {
   engineBusyReason,
   getHardwareProfile,
@@ -114,7 +116,12 @@ export default function BenchHistoryCard({
   running: boolean;
 }) {
   const { t, i18n } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
+  const revision = useProfileRevision(model);
+  const operation = useSyncExternalStore(comparisonOperation.subscribe, comparisonOperation.snapshot);
+  const [success, setSuccess] = useState(false);
+  const epoch = useRef(0);
+  useEffect(() => { epoch.current++; setSuccess(false); setAplicando(null); }, [model]);
   const [data, setData] = useState<PerfHistoryDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [medindo, setMedindo] = useState<BenchProgress | null>(null);
@@ -135,6 +142,7 @@ export default function BenchHistoryCard({
     }
     let alive = true;
     setLoading(true);
+    setData(null);
     setError(null);
     perfHistory(model)
       .then((d) => alive && setData(d))
@@ -143,7 +151,7 @@ export default function BenchHistoryCard({
     return () => {
       alive = false;
     };
-  }, [open, model]);
+  }, [open, model, revision, operation.kind]);
 
   // O teto de banda é do hardware, não do modelo: carrega uma vez.
   useEffect(() => {
@@ -173,6 +181,7 @@ export default function BenchHistoryCard({
 
   async function medir(force = false) {
     if (!model) return;
+    const current = epoch.current;
     medindoLocal.current = true;
     setMedindo({ model, step: 0, total: 1 });
     setBusyWith([]);
@@ -181,17 +190,20 @@ export default function BenchHistoryCard({
       // Mede a configuração VIGENTE do modelo — é ela que entra na série.
       const perfil = (await getModelProfile(model)) ?? emptyProfile();
       const r = await tuneBench(model, [perfil], force);
+      if (epoch.current !== current) return;
       // Voltar sem nenhum resultado é falha (modelo não carregou, teste
       // abortou) — fingir sucesso esconderia o problema da pessoa.
       if (r.results.length === 0) setError(t("tune.history.benchFailed"));
-      setData(await perfHistory(model));
+      const updated = await perfHistory(model);
+      if (epoch.current === current) setData(updated);
     } catch (e) {
+      if (epoch.current !== current) return;
       const quem = engineBusyReason(e);
       if (quem) setBusyWith(quem);
       else setError(errorMessage(e));
     } finally {
       medindoLocal.current = false;
-      setMedindo(null);
+      if (epoch.current === current) setMedindo(null);
     }
   }
 
@@ -226,7 +238,7 @@ export default function BenchHistoryCard({
               className="ml-1 text-dim"
               title={t("tune.history.powerChanged")}
             >
-              ⚡
+              <Icon name="power" className="inline h-3 w-3" />
             </span>
           )}
         </span>
@@ -245,16 +257,19 @@ export default function BenchHistoryCard({
 
   /** Volta a uma configuração já medida, sem refazer os ajustes à mão. */
   async function aplicar(profile: ModelProfile, indice: number) {
+    const current = epoch.current;
+    setSuccess(false);
     setAplicando(indice);
     setError(null);
     try {
       const r = await tuneApply(model, profile);
       if (!r.ok) throw new Error(r.error ?? "tune-apply-failed");
-      setData(await perfHistory(model));
+      const updated = await perfHistory(model);
+      if (epoch.current === current) { setData(updated); setSuccess(true); }
     } catch (e) {
-      setError(errorMessage(e) || String(e));
+      if (epoch.current === current) setError(engineBusyReason(e) ? t("comparison.errors.busy") : errorMessage(e) || String(e));
     } finally {
-      setAplicando(null);
+      if (epoch.current === current) setAplicando(null);
     }
   }
 
@@ -268,13 +283,14 @@ export default function BenchHistoryCard({
   );
 
   return (
-    <div className="mt-4 rounded-xl border border-edge bg-panel">
+    <div className="rounded-2xl border border-edge bg-panel">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center justify-between px-5 py-3 text-sm"
       >
-        {t("tune.history.title")}
+        <span className="flex items-center gap-3 font-semibold"><span className="rounded-xl bg-panel2 p-2.5 text-dim"><Icon name="history" className="h-5 w-5" /></span>{t("tune.history.title")}</span>
         <span className="text-dim">
           <Icon name={open ? "chevron-down" : "chevron-right"} />
         </span>
@@ -300,7 +316,7 @@ export default function BenchHistoryCard({
             </span>
             <button
               type="button"
-              disabled={!model || medindo != null}
+              disabled={!model || medindo != null || aplicando != null || operation.kind != null}
               onClick={() => void medir()}
               className="rounded-lg border border-edge px-2.5 py-1.5 text-xs text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
             >
@@ -327,7 +343,8 @@ export default function BenchHistoryCard({
               })}
             </p>
           )}
-          {error && <p className="mt-2 text-[12px] text-bad">{error}</p>}
+          {error && <p role="alert" className="mt-3 rounded-xl bg-bad/5 p-3 text-xs text-bad">{error}</p>}
+          {success && <p role="status" className="mt-3 flex items-center gap-2 text-xs text-ok"><Icon name="check" />{t("tune.history.applied")}</p>}
 
           {loading && (
             <p className="mt-3 text-[11px] text-dim">{t("common.loading")}</p>
@@ -346,129 +363,33 @@ export default function BenchHistoryCard({
 
           {rows.length > 0 && (
             <>
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-[12px]">
-                  <thead>
-                    <tr className="text-[11px] text-dim">
-                      <th className="py-1.5 pr-3 font-normal">
-                        {t("tune.history.date")}
-                      </th>
-                      <th className="py-1.5 pr-3 font-normal">
-                        {t("tune.history.config")}
-                      </th>
-                      <th className="py-1.5 pr-3 font-normal">
-                        {t("tune.history.tps")}
-                      </th>
-                      <th className="py-1.5 pr-3 font-normal">
-                        {t("tune.history.promptTps")}
-                      </th>
-                      <th className="py-1.5 pr-3 font-normal">
-                        {t("tune.history.delta")}
-                      </th>
-                      <th className="py-1.5 font-normal" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r, i) => {
-                      const cfg = configLabel(r.profileSummary, r.profileKey);
-                      return (
-                        <tr
-                          key={`${r.measuredAt}-${i}`}
-                          className="border-t border-edge"
-                        >
-                          <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums text-dim">
-                            {/* measuredAt já vem em ms (scheduler::now_ms());
-                                a data segue o idioma do app, não o do SO. */}
-                            {new Date(r.measuredAt).toLocaleDateString(
-                              i18n.language,
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap py-1.5 pr-3">
-                            {/* Voltar a uma configuração medida era refazer
-                                os ajustes à mão a partir do rótulo. Só as
-                                linhas que gravaram o perfil inteiro viram
-                                botão; as antigas continuam como texto, porque
-                                reconstruir um perfil a partir dos pares do
-                                INI seria adivinhar. */}
-                            {r.profile ? (
-                              <button
-                                type="button"
-                                disabled={running || aplicando != null}
-                                onClick={() => void aplicar(r.profile!, i)}
-                                title={`${cfg.title}\n\n${t("tune.history.useThis")}`}
-                                className="rounded font-mono text-[11px] underline decoration-dotted underline-offset-4 hover:text-accent disabled:no-underline disabled:opacity-50"
-                              >
-                                {aplicando === i
-                                  ? t("common.loading")
-                                  : cfg.text}
-                              </button>
-                            ) : (
-                              <span
-                                className="font-mono text-[11px]"
-                                title={cfg.title}
-                              >
-                                {cfg.text}
-                              </span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums">
-                            {r.genTps.toFixed(1)}
-                          </td>
-                          <td className="whitespace-nowrap py-1.5 pr-3 tabular-nums">
-                            {/* Linha antiga pode carregar 0.0 gravado —
-                                exibir "0.0" mentiria; null e <= 0 viram —. */}
-                            {r.promptTps != null && r.promptTps > 0
-                              ? r.promptTps.toFixed(1)
-                              : "—"}
-                          </td>
-                          <td className="whitespace-nowrap py-1.5 pr-3">
-                            {deltaCell(r)}
-                          </td>
-                          <td className="py-1.5">
-                            <div className="flex flex-wrap items-center gap-1">
-                              {data?.bestProfileKey != null &&
-                                r.profileKey === data.bestProfileKey &&
-                                badge(
-                                  "border-warn/40 bg-warn/10 text-warn",
-                                  t("tune.history.bestBadge"),
-                                  t("tune.history.best"),
-                                )}
-                              {data != null &&
-                                data.currentProfileKey !== "" &&
-                                r.profileKey === data.currentProfileKey &&
-                                badge(
-                                  "border-accent bg-accent/10 text-ink",
-                                  t("tune.history.current"),
-                                )}
-                              {r.suspect &&
-                                badge(
-                                  "border-warn/40 bg-warn/10 text-warn",
-                                  <>
-                                    <Icon name="alert" className="h-3 w-3" />
-                                    {t("tune.history.suspect")}
-                                  </>,
-                                  t("tune.benchSuspect"),
-                                )}
-                              {badge(
-                                "border-edge text-dim",
-                                t("tune.history.build", { n: r.buildNumber }),
-                              )}
-                              {/* Os watts em vigor na medição: é o que
-                                  transforma "por que ficou mais lento?" numa
-                                  pergunta respondível. */}
-                              {r.powerLimitW != null &&
-                                badge(
-                                  "border-edge text-dim",
-                                  `${r.powerLimitW} W`,
-                                  t("tune.history.powerLimit"),
-                                )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <p className="mt-4 text-xs leading-relaxed text-dim">{t("tune.history.applyHelp")}</p>
+              <div className="mt-4 space-y-2">
+                {rows.map((r, i) => {
+                  const cfg = configLabel(r.profileSummary, r.profileKey);
+                  const current = !!data?.currentProfileKey && r.profileKey === data.currentProfileKey;
+                  const disabled = aplicando != null || medindo != null || operation.kind != null;
+                  return <article key={`${r.measuredAt}-${i}`} className={`rounded-xl border p-3 sm:p-4 ${current ? "border-accent/30 bg-accent/5" : "border-edge"}`}>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="min-w-0 flex-1 basis-56">
+                        <div className="flex flex-wrap items-center gap-2 text-[10px] text-dim">
+                          <time dateTime={new Date(r.measuredAt).toISOString()}>{new Date(r.measuredAt).toLocaleString(i18n.language, { dateStyle: "short", timeStyle: "short" })}</time>
+                          {current && badge("border-accent/30 text-accent", t("tune.history.current"))}
+                          {r.suspect && badge("border-warn/20 text-warn", <><Icon name="alert" className="h-3 w-3" />{t("tune.history.suspect")}</>, t("tune.benchSuspect"))}
+                        </div>
+                        <p className="mt-2 break-words font-mono text-[11px] leading-relaxed" title={cfg.title}>{cfg.text}</p>
+                        <div className="mt-2 flex items-center gap-3 text-[10px] text-dim"><span>{t("tune.history.build", { n: r.buildNumber })}</span>{r.powerLimitW != null && <span className="inline-flex items-center gap-1" title={t("tune.history.powerLimit")}><Icon name="power" className="h-3 w-3" />{r.powerLimitW} W</span>}</div>
+                      </div>
+                      <dl className="flex flex-wrap gap-5 text-xs tabular-nums">
+                        <div><dt className="text-[10px] text-dim">{t("comparison.generationLabel")}</dt><dd className="mt-1 text-lg font-semibold">{r.genTps.toFixed(1)} <span className="text-[10px] font-normal text-dim">tok/s</span></dd></div>
+                        <div><dt className="text-[10px] text-dim">{t("comparison.readingLabel")}</dt><dd className="mt-1 text-lg">{r.promptTps != null && r.promptTps > 0 ? r.promptTps.toFixed(1) : "—"}</dd></div>
+                        <div><dt className="text-[10px] text-dim">{t("tune.history.delta")}</dt><dd className="mt-2">{deltaCell(r)}</dd></div>
+                      </dl>
+                      {r.profile ? <button type="button" disabled={disabled} onClick={() => void aplicar(r.profile!, i)} title={cfg.title} className="inline-flex items-center gap-2 rounded-xl border border-edge px-3 py-2 text-xs transition-colors hover:border-accent hover:bg-accent/10 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"><Icon name="arrow-right" />{aplicando === i ? t("comparison.applying") : t("tune.history.useThis")}</button> : <span className="max-w-32 text-[10px] text-dim" title={t("tune.history.legacyHelp")}>{t("tune.history.legacy")}</span>}
+                    </div>
+                    <details className="mt-3 text-[11px] text-dim"><summary className="cursor-pointer">{t("tune.history.config")}</summary><dl className="mt-2 grid grid-cols-1 gap-1 sm:grid-cols-2">{summaryPairs(r.profileSummary ?? {}).map(([key, value]) => <div key={key} className="flex min-w-0 gap-2"><dt className="shrink-0">{key}</dt><dd className="break-all font-mono text-ink">{value}</dd></div>)}</dl></details>
+                  </article>;
+                })}
               </div>
               <p className="mt-2 text-[11px] leading-relaxed text-dim">
                 {t("tune.history.gpuSeries")}

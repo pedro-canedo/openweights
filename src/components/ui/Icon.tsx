@@ -9,6 +9,10 @@
 // compila, e o erro de digitação vira um SVG vazio — invisível na tela e mudo
 // no `tsc`. O `satisfies` confere a forma sem alargar as chaves.
 const PATHS = {
+  tune: "M4 7h16M4 17h16M8 4v6m8 4v6",
+  history: "M3 11a9 9 0 119 10M3 4v7h7M12 7v5l3 2",
+  clock: "M21 12a9 9 0 11-18 0 9 9 0 0118 0M12 7v5l3 2",
+  sparkles: "M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3z",
   // Colapsáveis (Shell Collapse, SpecCard, PowerCard, BenchHistory, flags).
   "chevron-down": "M6 9l6 6 6-6",
   "chevron-right": "M9 6l6 6-6 6",

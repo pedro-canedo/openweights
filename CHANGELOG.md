@@ -10,6 +10,29 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.19.0] — 2026-09-08
+
+- **Choose any completed optimization option.** Each configuration shows
+  generation speed, prompt reading speed and total response time. Recommendations
+  still consider total time and stability, but you can now select an alternative
+  with faster generation and click **Use configuration**, even without a
+  recommended winner. Measurement preserves your current profile until that click.
+- **History works while the server is running and idle.** Complete saved
+  profiles have an explicit action to apply them and load the model. Older
+  measurements without a complete profile are identified; the displayed power
+  limit belongs to the measurement and is not changed when reapplying a profile.
+- **The performance tab has been reorganized.** Cards with icons, separate
+  metrics, an active configuration indicator and a responsive layout highlight
+  optimization and history. Manual settings and presets live in an expandable section.
+- **Applying keeps controls in sync.** The editor and history refresh after a
+  successful application. The choice uses the engine associated with the profile;
+  active work prevents application, and loading failures trigger recovery of the
+  previous configuration.
+
+Displayed speeds describe the measured workload, not every conversation. This
+version does not automatically change settings when optimization finishes:
+select an option and confirm with **Use configuration**.
+
 ## [0.18.4] — 2026-09-08
 
 - **Downloading a model no longer freezes the computer.** Since 0.18.2 the

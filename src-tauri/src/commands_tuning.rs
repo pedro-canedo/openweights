@@ -361,6 +361,16 @@ pub async fn tune_apply(
     if crate::comparison::active() {
         return Err("engine-busy:benchmark".into());
     }
+    let _measurement = begin_measurement()?;
+    let _active = crate::comparison::activate();
+    if !force.unwrap_or(false) {
+        let busy = crate::commands::engine_busy_with(&state);
+        if !busy.is_empty() {
+            return Err(format!("engine-busy:{}", busy.join(",")));
+        }
+        crate::comparison::assert_idle(&state).await?;
+    }
+    let previous_engine = crate::commands::selected_engine(&state);
     let anterior = profile_for(&state, &model);
     let mut novo = profile;
     if novo.source == ProfileSource::Manual {
@@ -372,11 +382,21 @@ pub async fn tune_apply(
         .set_model_profile(model.trim(), &novo)
         .map_err(err_str)?;
 
+    if let Err(e) = crate::commands::select_engine(&state, novo.engine.unwrap_or_default()) {
+        state
+            .store
+            .set_model_profile(model.trim(), &anterior.clone().unwrap_or_default())
+            .map_err(err_str)?;
+        return Err(e);
+    }
     // O INI é lido no boot do motor: sem reiniciar, nada disto vale.
     if let Err(e) = restart_engine(&app, &state, force.unwrap_or(false)).await {
-        // Guarda de ocupação não é falha da configuração: devolve o motivo
-        // sem desfazer nada, porque a escolha continua válida.
+        crate::commands::select_engine(&state, previous_engine)?;
         if e.starts_with("engine-busy:") {
+            state
+                .store
+                .set_model_profile(model.trim(), &anterior.unwrap_or_default())
+                .map_err(err_str)?;
             return Err(e);
         }
         return Ok(rollback(&app, &state, &model, anterior, e).await);
@@ -388,7 +408,10 @@ pub async fn tune_apply(
             error: None,
             profile: Some(novo),
         }),
-        Err(e) => Ok(rollback(&app, &state, &model, anterior, e).await),
+        Err(e) => {
+            crate::commands::select_engine(&state, previous_engine)?;
+            Ok(rollback(&app, &state, &model, anterior, e).await)
+        }
     }
 }
 

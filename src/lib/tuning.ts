@@ -6,6 +6,8 @@
 // "10,7 de 16 GB" sem estar chutando.
 
 import { invoke, isTauri, listen } from "./tauri";
+import { notifyProfileApplied } from "./profileChanges";
+import { generationStore } from "./generationStore";
 
 /** Tipo do KV cache. Comprimir troca um pouco de qualidade por memória. */
 export type KvType = "f16" | "q8_0" | "q4_0";
@@ -143,10 +145,9 @@ export function tuneAdvise(model: string): Promise<TuneAdvice> {
  *
  * Nunca lança por causa da configuração: quando o modelo não carrega, o
  * backend restaura o perfil anterior sozinho e devolve `ok: false` com o
- * motivo. Só lança quando o motor está ocupado (`engine-busy:…`), e aí a
- * escolha continua gravada — é só repetir com `force`.
+ * motivo. Se o motor estiver ocupado, mantém o perfil anterior.
  */
-export function tuneApply(
+export async function tuneApply(
   model: string,
   profile: ModelProfile,
   force = false,
@@ -154,7 +155,12 @@ export function tuneApply(
   if (!isTauri) {
     return Promise.resolve({ ok: true, error: null, profile });
   }
-  return invoke<TuneApplied>("tune_apply", { model, profile, force });
+  const release = generationStore.acquireBenchmark();
+  try {
+    const result = await invoke<TuneApplied>("tune_apply", { model, profile, force });
+    if (result.ok) notifyProfileApplied(model);
+    return result;
+  } finally { release(); }
 }
 
 // ------------------------------------------------------------- simulação ---

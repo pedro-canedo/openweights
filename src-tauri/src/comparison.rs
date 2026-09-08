@@ -83,6 +83,8 @@ pub struct Comparison {
     pub model_key: String,
     #[serde(default)]
     pub applied: bool,
+    #[serde(default)]
+    pub current_arm: Option<usize>,
     pub original: ModelProfile,
     pub arms: Vec<Arm>,
     pub inconclusive: bool,
@@ -501,6 +503,7 @@ pub async fn compare_run(
             config_key: config_key(&config),
             model_key: file_key(&entry.path),
             applied: false,
+            current_arm: Some(0),
             original,
             arms: vec![reference, proposed],
             inconclusive,
@@ -540,16 +543,20 @@ pub fn compare_latest(
         .map(|(_, payload)| serde_json::from_str(&payload).map_err(|e| e.to_string()))
         .transpose()?;
     if let Some(ref mut item) = saved {
-        // `winner > 0` antes de comparar os perfis: quando a medição termina
-        // sem vencedor, o braço 0 É o perfil atual, e compará-lo consigo mesmo
-        // daria "aplicado" para uma otimização que não aplicou nada. A tela
-        // então oferecia "restaurar configuração anterior" — sugerindo uma
-        // mudança que nunca houve, e cujo clique reiniciava o motor à toa.
-        item.applied = item.winner > 0
-            && item.arms.get(item.winner).is_some_and(|arm| {
-                commands::profile_for(&state, &model).as_ref() == Some(&arm.profile)
-                    && commands::selected_engine(&state) == arm.profile.engine.unwrap_or_default()
-            });
+        // A escolha manual pode ser diferente da recomendação. O braço 0
+        // é apenas a referência; estar nele não é uma mudança a restaurar.
+        let current = commands::profile_for(&state, &model).unwrap_or_default();
+        let engine = commands::selected_engine(&state);
+        item.current_arm = item.arms.iter().enumerate().position(|(i, arm)| {
+            current == arm.profile
+                && engine
+                    == if i == 0 {
+                        item.original_engine
+                    } else {
+                        arm.profile.engine.unwrap_or_default()
+                    }
+        });
+        item.applied = item.current_arm.is_some_and(|i| i > 0);
     }
     Ok(saved)
 }
@@ -560,6 +567,7 @@ pub async fn compare_apply(
     state: State<'_, AppState>,
     model: String,
     restore: bool,
+    arm_index: Option<usize>,
 ) -> Result<(), String> {
     let _measurement = commands_tuning::begin_measurement()?;
     ACTIVE.store(true, Ordering::SeqCst);
@@ -567,22 +575,17 @@ pub async fn compare_apply(
     assert_idle(&state).await?;
     let saved = compare_latest(state.clone(), model.clone())?.ok_or("comparison-missing")?;
     let current = commands::profile_for(&state, &model).unwrap_or_default();
-    let proposed = &saved
-        .arms
-        .get(saved.winner)
-        .ok_or("comparison-missing")?
-        .profile;
-    let expected = if restore { proposed } else { &saved.original };
-    if &current != expected {
+    let selected = selected_arm(&saved, restore, arm_index)?;
+    let proposed = &saved.arms[selected].profile;
+    let target_engine = if selected == 0 {
+        saved.original_engine
+    } else {
+        proposed.engine.unwrap_or_default()
+    };
+    if restore && !saved.applied {
         return Err("comparison-profile-changed".into());
     }
-    if !restore && saved.inconclusive {
-        return Err("comparison-inconclusive".into());
-    }
-    if !restore
-        && (saved.machine_key != state.profile.machine_key()
-            || saved.runtime != runtime_key(&commands::preview_server_config(&state).await))
-    {
+    if !restore && saved.machine_key != state.profile.machine_key() {
         return Err("comparison-stale".into());
     }
     if !restore {
@@ -595,7 +598,7 @@ pub async fn compare_apply(
             return Err("comparison-stale".into());
         }
         let mut target_cfg = cfg.clone();
-        if proposed.engine == Some(lr_types::tuning::EngineSource::MoeCache) {
+        if target_engine == lr_types::tuning::EngineSource::MoeCache {
             target_cfg.exe_path = state
                 .runtime_mgr
                 .experimental_state()
@@ -608,7 +611,7 @@ pub async fn compare_apply(
                 .server_exe
                 .ok_or("comparison-stale")?;
         }
-        let arm = &saved.arms[saved.winner];
+        let arm = &saved.arms[selected];
         if !arm.runtime.is_empty() && arm.runtime != runtime_key(&target_cfg) {
             return Err("comparison-stale".into());
         }
@@ -629,7 +632,7 @@ pub async fn compare_apply(
             if restore {
                 saved.original_engine
             } else {
-                target.engine.unwrap_or_default()
+                target_engine
             },
         )?;
         commands::restart_engine(&app, &state, false).await?;
@@ -663,6 +666,27 @@ pub async fn compare_apply(
         return Err(error);
     }
     Ok(())
+}
+
+/// A recomendação é conservadora; uma escolha explícita pode usar qualquer
+/// braço completo. Nunca aceitar um índice ausente ou inferir um vencedor.
+fn selected_arm(
+    saved: &Comparison,
+    restore: bool,
+    requested: Option<usize>,
+) -> Result<usize, String> {
+    let index = if restore {
+        0
+    } else {
+        requested.unwrap_or(saved.winner)
+    };
+    if saved.arms.get(index).is_none() {
+        return Err("comparison-missing".into());
+    }
+    if !restore && requested.is_none() && saved.inconclusive {
+        return Err("comparison-inconclusive".into());
+    }
+    Ok(index)
 }
 
 #[cfg(test)]
@@ -737,6 +761,28 @@ mod tests {
         assert!(!inconclusive(&reference, &proposed));
         proposed.total_ms = steady(1060.0);
         assert!(inconclusive(&reference, &proposed));
+        let saved = Comparison {
+            model: "test".into(),
+            workload: "test".into(),
+            machine_key: "test".into(),
+            runtime: String::new(),
+            config_key: String::new(),
+            model_key: String::new(),
+            applied: false,
+            current_arm: Some(0),
+            original: ModelProfile::default(),
+            arms: vec![reference, proposed],
+            inconclusive: true,
+            winner: 0,
+            original_engine: Default::default(),
+            warnings: Vec::new(),
+        };
+        // Não recomendar automaticamente não deve impedir a escolha manual.
+        assert!(selected_arm(&saved, false, None).is_err());
+        assert_eq!(selected_arm(&saved, false, Some(1)).unwrap(), 1);
+        assert_eq!(selected_arm(&saved, true, None).unwrap(), 0);
+        assert!(selected_arm(&saved, false, Some(2)).is_err());
+        assert!(selected_arm(&saved, false, Some(usize::MAX)).is_err());
     }
     #[tokio::test]
     #[ignore = "requires OW_TEST_RUNTIME and OW_TEST_MODEL; loads a real GPU model"]

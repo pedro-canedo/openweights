@@ -864,7 +864,11 @@
       "powerChanged": "O limite de energia da placa mudou entre as duas medições — a diferença pode vir dos watts, não da configuração.",
       "powerLimit": "Limite de energia da placa nesta medição",
       "bestBadge": "melhor",
-      "useThis": "Voltar a esta configuração"
+      "useThis": "Usar configuração",
+      "applied": "Configuração aplicada e modelo carregado.",
+      "applyHelp": "Use uma configuração salva mesmo com o servidor ligado e ocioso. O limite de energia mostrado é o da medição; reaplicar o perfil não altera os watts da GPU.",
+      "legacy": "Perfil não salvo",
+      "legacyHelp": "Esta medição antiga não guardou o perfil completo. Faça uma nova medição para poder reaplicá-lo."
     },
     "sweep": {
       "title": "Curva",
@@ -1321,8 +1325,8 @@
     "cache": "Tokens de cache"
   },
   "comparison": {
-    "title": "Configuração para seu computador",
-    "description": "O app instala o motor opcional quando compatível e testa as opções por você. Durante alguns minutos, o motor ficará reservado para a otimização. Sua configuração atual será preservada.",
+    "title": "Otimização",
+    "description": "Teste as opções para este modelo. O motor fica reservado durante a medição; ao terminar, escolha qual configuração usar.",
     "measure": "Otimizar para meu computador",
     "cancel": "Cancelar teste",
     "progress": "Testando opção {{arm}} · medição {{sample}} de 3",
@@ -1330,13 +1334,13 @@
     "details": "Detalhes técnicos",
     "median": "Mediana (mínimo–máximo), após aquecimento e três repetições.",
     "metric": "Métrica",
-    "reference": "Atual",
+    "reference": "Referência",
     "candidate": "Candidata",
     "genTps": "Geração · tokens/s",
     "promptTps": "Prompt · tokens/s",
     "totalMs": "Resposta · ms",
     "memory": "Memória disponível nos dispositivos após aquecimento (motor)",
-    "inconclusive": "Sua configuração atual continua sendo a melhor opção verificada.",
+    "inconclusive": "Nenhuma opção reduziu o tempo total de forma consistente.",
     "improved": "Configuração pronta",
     "configurations": "Ver configurações comparadas",
     "apply": "Usar configuração",
@@ -1382,6 +1386,20 @@
     "peakVram": "Pico de VRAM observado",
     "allMeasurements": "Ver medições e configurações",
     "resultNumber": "Opção {{n}}",
-    "memoryNote": "Memória observada no computador durante o teste; inclui outros aplicativos."
+    "memoryNote": "Memória observada no computador durante o teste; inclui outros aplicativos.",
+    "selectModel": "Selecione um modelo para começar",
+    "applying": "Aplicando configuração…",
+    "activeSuccess": "Configuração em uso",
+    "sampleCount": "3 medições por opção",
+    "selectionHelp": "A recomendação considera o tempo total e a estabilidade do teste. Você pode escolher outra opção pela velocidade de geração. Os valores são deste teste, não uma previsão para toda conversa.",
+    "fastestGeneration": "Maior geração",
+    "recommended": "Menor tempo verificado",
+    "generationLabel": "Geração",
+    "readingLabel": "Leitura do prompt",
+    "durationLabel": "Tempo total",
+    "profileSummary": "Contexto {{ctx}} · Threads {{threads}}",
+    "selectedRates": "Selecionada: geração {{gen}} tok/s · leitura {{prompt}} tok/s. Clique em Usar configuração para aplicar e carregar o modelo.",
+    "optionalEngineNote": "Esta opção usa o motor otimizado. Confira a configuração medida: ela pode alterar a especulação e a distribuição da memória.",
+    "manualSettings": "Ajustes manuais e presets"
   }
 }

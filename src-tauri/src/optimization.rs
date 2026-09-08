@@ -314,6 +314,7 @@ pub async fn optimize_run(
             config_key: comparison::config_key(&config),
             model_key: comparison::file_key(&entry.path),
             applied: false,
+            current_arm: Some(0),
             original,
             arms,
             inconclusive: best == 0,
