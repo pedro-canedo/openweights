@@ -34,8 +34,18 @@ jobs:
       - uses: lycheeverse/lychee-action@v2
         id: lychee
         with:
+          # `--root-dir` e `--fallback-extensions` existem para o verificador
+          # dizer a verdade. Sem eles, TODO link interno vira erro: os
+          # root-relative (`/guia/chat`) porque o lychee não sabe de onde a
+          # barra parte, e os sem extensão porque ele procura o arquivo
+          # literal em vez de `.md`. A primeira execução abriu uma issue com
+          # 58 erros, e os 58 eram falsos — que é o jeito mais rápido de
+          # ensinar todo mundo a ignorar a issue seguinte, justamente a que
+          # vier com um link quebrado de verdade.
           args: >-
             --cache --max-cache-age 1d
+            --root-dir "${{ github.workspace }}/site"
+            --fallback-extensions md
             'site/**/*.md' 'docs/**/*.md' '*.md'
           fail: false
 
