@@ -5,6 +5,31 @@ The full history of every version is in the [changelog](/guide/changelog);
 installers live on
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.19.2 — what the new choice took with it
+
+Letting you pick which measured configuration to use meant loosening the guards
+around applying one. One of those guards was doing two jobs, and only one of
+them was in the way.
+
+The old check refused to apply unless the profile in use was exactly the one
+from before the measurement. That blocked switching between measured options —
+the whole point of the new screen — so it went. But it also blocked applying on
+top of an adjustment someone made by hand *after* measuring, and that half had
+no replacement: change a flag, click "use configuration", and the adjustment was
+gone without a word. The two cases are now told apart, and a hand-edited profile
+is flagged before the click rather than refused after it.
+
+Two more things came out of the same review. A profile that says nothing about
+which engine to use was being read as "use the official one" — and the tuning
+advisor never fills that field, so accepting a flag recommendation quietly moved
+anyone on the optional engine back to the official one. And a failure while
+reverting the engine could abort before the profile was restored, leaving the
+new configuration saved with the engine stopped.
+
+All three passed the test suite, the linter and the formatter. None of them was
+visible without reading what the change removed alongside what it meant to
+remove.
+
 ## 0.19.1 — the benchmark was timing its own repetition
 
 The same model, the same profile and the same machine reported 129 tok/s in

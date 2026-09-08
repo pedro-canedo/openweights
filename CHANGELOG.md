@@ -10,6 +10,24 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.19.2] — 2026-09-08
+
+- **A hand-made adjustment after a measurement is no longer overwritten
+  silently.** When the screen gained the choice of which configuration to use,
+  the check protecting a manual profile went out along with the one that got in
+  the way of switching between options. The two situations are now told apart:
+  switching between measured options stays free, and a hand-edited profile is
+  flagged on screen before the click.
+- **Accepting a flag recommendation no longer sends you back to the official
+  engine.** The tuning advisor has no opinion about which engine to use, and
+  that silence was being read as "use the official one" — anyone on the
+  optional engine was moved back without being asked or told.
+- **If applying fails, the previous configuration comes back whole.** One path
+  aborted before restoring the profile when reverting the engine failed,
+  leaving the new configuration saved with the engine stopped.
+
+Nada precisa ser refeito. As medições guardadas continuam válidas.
+
 ## [0.19.1] — 2026-09-08
 
 - **Optimization reported a generation speed that was too high** on machines

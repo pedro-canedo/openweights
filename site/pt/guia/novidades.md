@@ -5,6 +5,30 @@ histórico completo de todas as versões está no
 [changelog](/pt/guia/changelog); os instaladores ficam no
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.19.2 — o que a escolha nova levou junto
+
+Deixar você escolher qual configuração medida usar exigiu afrouxar as guardas
+em torno de aplicar uma delas. Uma dessas guardas fazia dois trabalhos, e só um
+deles atrapalhava.
+
+A verificação antiga só deixava aplicar se o perfil em uso fosse exatamente o
+de antes da medição. Isso impedia trocar entre as opções medidas — que é o
+sentido da tela nova —, então ela saiu. Mas ela também impedia aplicar por cima
+de um ajuste feito à mão *depois* de medir, e essa metade ficou sem substituto:
+bastava mexer numa flag, clicar em "usar configuração", e o ajuste sumia sem
+uma palavra. Os dois casos agora são distinguidos, e um perfil editado à mão é
+avisado antes do clique, em vez de recusado depois dele.
+
+Mais duas coisas saíram da mesma revisão. Um perfil que não diz nada sobre qual
+motor usar estava sendo lido como "use o oficial" — e o assistente de ajuste
+nunca preenche esse campo, então aceitar uma recomendação de flags devolvia ao
+motor oficial, caladamente, quem estava no opcional. E uma falha ao reverter o
+motor podia abortar antes de o perfil ser restaurado, deixando a configuração
+nova gravada com o motor parado.
+
+Os três passavam na suíte de testes, no lint e no formatador. Nenhum era
+visível sem ler o que a mudança tirou junto com o que ela queria tirar.
+
 ## 0.19.1 — a medição estava cronometrando a própria repetição
 
 O mesmo modelo, o mesmo perfil e a mesma máquina apareciam com 129 tok/s na
