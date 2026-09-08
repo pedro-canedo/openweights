@@ -35,6 +35,15 @@ exatamente com o publicado. Arquivos abaixo de 16 MB continuam com uma conexão
 só, porque um arquivo pequeno acaba antes de a conexão nova parar de
 acelerar.
 
+No Windows, o atalho na Área de Trabalho voltou. Ele nascia só na instalação
+nova: a rotina de atalho do instalador do Tauri desiste quando está rodando
+como atualização, e o updater do app sempre a roda assim. Então quem instalou
+uma vez e desde então só atualiza nunca ganhou um atalho, por mais versões que
+passassem — o app estava lá, e achá-lo era procurar no menu Iniciar. A regra em
+si está certa, porque um atalho apagado de propósito não deve voltar pelas
+costas de quem apagou; ela só não distinguia "apaguei" de "nunca tive". Agora
+uma marca no registro separa os dois casos.
+
 ## 0.18.0 — um botão só decide o motor, as threads e o cache de especialistas
 
 Ajustar um modelo com especialistas exigia saber que existe um fork do

@@ -34,6 +34,15 @@ Measured end to end against the Hub, the same 742 MiB file went from 41.9 s to
 published one exactly. Files under 16 MB keep a single connection, because a
 small file finishes before a fresh connection stops accelerating.
 
+On Windows, the desktop shortcut is back. It had been created only on a fresh
+install: the Tauri installer's shortcut routine bails out when it is running as
+an update, and the app's updater always runs it that way. So anyone who
+installed once and has updated ever since never got a shortcut, no matter how
+many versions went by — the app was there, and finding it meant searching the
+Start menu. The rule itself is right, since a shortcut someone deleted on
+purpose should not come back behind their back; it just could not tell "deleted
+it" from "never had one". Now a mark in the registry tells them apart.
+
 ## 0.18.0 — one button decides the engine, the threads and the expert cache
 
 Tuning a mixture-of-experts model used to mean knowing that a llama.cpp fork

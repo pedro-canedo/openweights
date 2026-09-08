@@ -22,6 +22,10 @@ published releases and the version commits, and are kept as history.
   over HTTP/1.1 — on HTTP/2 the ranges would share a single pipe again.
   Measured end to end, the same file went from 41.9 s to 21.9 s, peaking at
   51.5 MB/s.
+- **The desktop shortcut is back on Windows.** It was only created on a fresh
+  install, so anyone who installed once and has updated ever since never got
+  one and had to find the app in the Start menu. Updating to this version
+  creates it. Anyone who deleted theirs on purpose still won't get one.
 - Interrupted downloads still resume where they stopped, now range by range. A
   `.part` from an earlier version resumes in the old format rather than
   starting over.
