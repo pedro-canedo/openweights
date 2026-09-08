@@ -983,14 +983,14 @@ async fn try_download_once(
 
     // 3) O `.part` nasce do tamanho final: as faixas escrevem cada uma no seu
     //    trecho, e um arquivo que cresce por cima de si mesmo não permitiria
-    //    isso. `set_len` não reserva blocos de verdade em todo sistema de
-    //    arquivos, mas dá o arquivo esparso onde dá.
+    //    isso.
     let arquivo = tokio::fs::OpenOptions::new()
         .create(true)
         .write(true)
         .truncate(false)
         .open(&part)
         .await?;
+    marca_esparso(&arquivo).await;
     arquivo.set_len(file.size_bytes).await?;
     drop(arquivo);
 
@@ -1084,6 +1084,59 @@ impl Drop for Estorno<'_> {
         let n = self.creditado.swap(0, Ordering::Relaxed);
         self.received.fetch_sub(n, Ordering::Relaxed);
     }
+}
+
+/// Marca o `.part` como esparso, onde isso existe.
+///
+/// No NTFS, `set_len` move o fim do arquivo mas não o *valid data length*.
+/// Escrever depois no meio faz o sistema ZERAR fisicamente tudo entre um e
+/// outro antes de aceitar os bytes — para não expor no arquivo novo o que
+/// havia naqueles setores. Medido nesta máquina, num arquivo de 16 GiB:
+/// escrever 1 MiB a 14 GB do início custa 9,54 s sem a marca e 0,51 ms com
+/// ela.
+///
+/// Com faixas paralelas isso deixou de ser detalhe e virou o defeito: oito
+/// conexões começam quase juntas, cada uma escreve longe do início, e o disco
+/// — que é do sistema inteiro, não do app — passa minutos zerando. O app
+/// parava de responder, o botão de pausa não chegava a ser processado, e a
+/// máquina toda ia junto.
+///
+/// Falhar aqui não impede o download: o volume pode não suportar arquivos
+/// esparsos (FAT32, alguns de rede), e nesse caso o que resta é o
+/// comportamento lento de antes, não um erro na cara de quem só quer baixar.
+/// Em Linux e macOS o `ftruncate` já não aloca nem zera nada.
+async fn marca_esparso(arquivo: &tokio::fs::File) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
+        use windows::Win32::System::IO::DeviceIoControl;
+        use windows::Win32::System::Ioctl::FSCTL_SET_SPARSE;
+
+        let handle = HANDLE(arquivo.as_raw_handle() as _);
+        let mut devolvidos = 0u32;
+        // SAFETY: `handle` vem de um `File` vivo por toda a chamada, e o
+        // controle não lê nem escreve buffer nenhum (entrada e saída vazias).
+        let r = unsafe {
+            DeviceIoControl(
+                handle,
+                FSCTL_SET_SPARSE,
+                None,
+                0,
+                None,
+                0,
+                Some(&mut devolvidos),
+                None,
+            )
+        };
+        if let Err(e) = r {
+            log::warn!(
+                "volume sem suporte a arquivo esparso ({e}); o download vai escrever mais devagar"
+            );
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = arquivo;
 }
 
 async fn escreve_sidecar(
