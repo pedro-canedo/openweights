@@ -25,7 +25,12 @@ const arm = (fast: boolean) => ({ profile: { ctx: 32768, engine: fast ? "moeCach
       callbacks.get(handler)?.({ payload: { model: args.model, arm: 0, sample: 0, stage: "installing" } });
       await new Promise(resolve => setTimeout(resolve, scenario === "cancel" ? 1500 : 150));
       if (cancelled) throw new Error("comparison-cancelled");
-      saved = { model: args.model, workload: "fixture", arms: [arm(false), arm(true)], winner: 1, inconclusive: false, applied: false, warnings: scenario === "unavailable" ? ["optimization-package-unavailable"] : [] };
+      // Sem vencedor, o braço 0 É a configuração atual: nada foi aplicado,
+      // e `applied` tem de continuar falso — foi aqui que a tela oferecia
+      // "restaurar" para uma mudança que nunca houve.
+      saved = scenario === "inconclusive"
+        ? { model: args.model, workload: "fixture", arms: [arm(false)], winner: 0, inconclusive: true, applied: false, warnings: [] }
+        : { model: args.model, workload: "fixture", arms: [arm(false), arm(true)], winner: 1, inconclusive: false, applied: false, warnings: scenario === "unavailable" ? ["optimization-package-unavailable"] : [] };
       return saved;
     }
     if (cmd === "compare_apply") {

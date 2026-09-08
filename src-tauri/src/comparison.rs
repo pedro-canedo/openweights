@@ -540,10 +540,16 @@ pub fn compare_latest(
         .map(|(_, payload)| serde_json::from_str(&payload).map_err(|e| e.to_string()))
         .transpose()?;
     if let Some(ref mut item) = saved {
-        item.applied = item.arms.get(item.winner).is_some_and(|arm| {
-            commands::profile_for(&state, &model).as_ref() == Some(&arm.profile)
-                && commands::selected_engine(&state) == arm.profile.engine.unwrap_or_default()
-        });
+        // `winner > 0` antes de comparar os perfis: quando a medição termina
+        // sem vencedor, o braço 0 É o perfil atual, e compará-lo consigo mesmo
+        // daria "aplicado" para uma otimização que não aplicou nada. A tela
+        // então oferecia "restaurar configuração anterior" — sugerindo uma
+        // mudança que nunca houve, e cujo clique reiniciava o motor à toa.
+        item.applied = item.winner > 0
+            && item.arms.get(item.winner).is_some_and(|arm| {
+                commands::profile_for(&state, &model).as_ref() == Some(&arm.profile)
+                    && commands::selected_engine(&state) == arm.profile.engine.unwrap_or_default()
+            });
     }
     Ok(saved)
 }

@@ -9,6 +9,10 @@ export default function ComparisonCard({ model }: { model: string }) {
   const [result, setResult] = useState<Comparison | null>(null);
   const operation = useSyncExternalStore(comparisonOperation.subscribe, comparisonOperation.snapshot);
   const busy = operation.kind !== null;
+  // Medindo, o resultado da rodada ANTERIOR não pode ficar na tela: ele
+  // aparecia embaixo de "medição 3 de 3" com um veredito já formado, como se
+  // a bateria em curso tivesse terminado e concluído aquilo.
+  const medindo = operation.kind === "measure" && operation.model === model;
   const progress = operation.progress;
   const [error, setError] = useState("");
   const epoch = useRef(0);
@@ -51,7 +55,7 @@ export default function ComparisonCard({ model }: { model: string }) {
     </div>
     {busy && <p role="status" aria-live="polite" className="mt-2 text-xs text-dim">{progress?.stage ? t(`comparison.${progress.stage}`) : progress ? t("comparison.progress", { arm: progress.arm + 1, sample: progress.sample }) : t("comparison.preparing")}</p>}
     {failure && <div role="alert" className="mt-2 text-sm text-warn">{t(`comparison.errors.${errorKey}`, { defaultValue: t("comparison.errors.failed") })}<details className="text-xs"><summary>{t("comparison.details")}</summary>{failure}</details></div>}
-    {result && <>
+    {result && !medindo && <>
       <p role="status" className="mt-4 text-sm font-medium">{t(result.inconclusive ? "comparison.inconclusive" : "comparison.improved")}</p>
       {best && <p className="mt-1 text-sm text-dim">{t("comparison.readyRates", { prompt: best.promptTps.median.toFixed(1), gen: best.genTps.median.toFixed(1) })}</p>}
       {!!result.warnings?.length && <div className="mt-2 text-xs text-warn">
