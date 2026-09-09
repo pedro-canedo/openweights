@@ -1,4 +1,18 @@
 {
+  "interface": {
+    "sourceHint": { "local": "Run models on your own hardware", "9router": "Connect your accounts in one place", "openrouter": "Access models through a single API key" },
+    "settingsSubtitle": "Make OpenWeights your own. Manage your preferences, account and local engine.",
+    "harnessSubtitle": "Your workspace for writing, exploring and improving code with AI.",
+    "harnessLead": "From an idea to working code",
+    "engineDetails": "Engine version and installation details",
+    "modelsSubtitle": "Your local library, ready for your next conversation.",
+    "addModels": "Find models",
+    "searchModels": "Search your models…",
+    "modelCount_one": "{{count}} model in your library",
+    "modelCount_other": "{{count}} models in your library",
+    "localFile": "On your computer",
+    "noModels": "No models match this search. Try another name or quantization."
+  },
   "nav": {
     "discover": "Discover",
     "models": "My Models",

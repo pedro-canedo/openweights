@@ -10,6 +10,14 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.19.3] — 2026-09-09
+
+- **Settings, Sources, DeepSeek Harness and My Models received a visual refresh** with clearer hierarchy, contextual headings and stronger primary actions.
+- **My Models now has search, library totals and more room for model names**, while model source cards explain their purpose and open their controls.
+- **The light theme, narrow layouts, keyboard focus and bilingual copy were reviewed** across the management screens.
+
+The OpenAI-compatible API, local model references and generation behavior are unchanged.
+
 ## [0.19.2] — 2026-09-08
 
 - **A hand-made adjustment after a measurement is no longer overwritten

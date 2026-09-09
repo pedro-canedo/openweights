@@ -1,4 +1,18 @@
 {
+  "interface": {
+    "sourceHint": { "local": "Rode modelos no seu próprio hardware", "9router": "Conecte suas contas em um só lugar", "openrouter": "Acesse modelos com uma única chave de API" },
+    "settingsSubtitle": "Deixe o OpenWeights do seu jeito. Gerencie preferências, conta e motor local.",
+    "harnessSubtitle": "Seu espaço para escrever, explorar e melhorar código com inteligência artificial.",
+    "harnessLead": "Da ideia ao código funcionando",
+    "engineDetails": "Versão do motor e detalhes da instalação",
+    "modelsSubtitle": "Sua biblioteca local, pronta para a próxima conversa.",
+    "addModels": "Encontrar modelos",
+    "searchModels": "Buscar nos seus modelos…",
+    "modelCount_one": "{{count}} modelo na biblioteca",
+    "modelCount_other": "{{count}} modelos na biblioteca",
+    "localFile": "No seu computador",
+    "noModels": "Nenhum modelo corresponde à busca. Tente outro nome ou quantização."
+  },
   "nav": {
     "discover": "Descobrir",
     "models": "Meus Modelos",

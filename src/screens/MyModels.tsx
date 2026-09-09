@@ -11,6 +11,8 @@ import { autorDoRepo } from "../lib/authorAvatars";
 import AuthorAvatar from "../components/discover/AuthorAvatar";
 import IncompleteDownloads from "../components/models/IncompleteDownloads";
 import TunePanel from "../components/models/TunePanel";
+import { Page } from "../components/ui/Shell";
+import Icon from "../components/ui/Icon";
 
 function ModelCard({
   model,
@@ -40,18 +42,18 @@ function ModelCard({
   const autor = autorDoRepo(model.repoId);
 
   return (
-    <div className="flex flex-col rounded-xl border border-edge bg-panel p-4">
+    <article className="model-library-card flex min-w-0 flex-col rounded-2xl border border-edge bg-panel p-6">
       <div className="flex min-w-0 items-start gap-3">
         {autor && (
-          <AuthorAvatar author={autor} size={36} className="rounded-lg" />
+          <AuthorAvatar author={autor} size={44} className="rounded-xl" />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-start gap-2">
             <p
-              className="min-w-0 flex-1 truncate text-sm font-medium text-ink"
+              className="min-w-0 flex-1 break-words text-base font-semibold leading-relaxed text-ink"
               title={model.name}
             >
-              {model.name}
+              {model.name.replace(/\.gguf$/i, "")}
             </p>
             {model.quantLabel && (
               <span className="shrink-0 rounded-md bg-accent/15 px-1.5 py-0.5 font-mono text-[11px] font-medium text-accent">
@@ -61,13 +63,13 @@ function ModelCard({
           </div>
           <p className="mt-1 truncate text-xs text-dim" title={model.repoId}>
             {model.repoId || t("models.loose")}
-            {" · "}
-            <span className="tabular-nums">{formatBytes(model.totalBytes)}</span>
           </p>
         </div>
       </div>
 
-      <div className="mt-auto pt-4">
+      <div className="my-5 flex items-center gap-2 border-y border-edge/70 py-4 text-xs text-dim"><Icon name="disk" /><span className="font-medium tabular-nums text-ink">{formatBytes(model.totalBytes)}</span><span className="ml-auto flex items-center gap-1.5"><Icon name="check" className="h-3.5 w-3.5 text-ok" />{t("interface.localFile")}</span></div>
+
+      <div className="mt-auto">
         {confirming ? (
           <div className="flex flex-col gap-2">
             <span className="text-xs text-bad">
@@ -94,9 +96,10 @@ function ModelCard({
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => navigate("chat", { chatModel: model.name })}
-              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+              className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
             >
               {t("models.chatWith")}
+              <Icon name="arrow-right" />
             </button>
             <button
               onClick={onToggleTune}
@@ -107,20 +110,21 @@ function ModelCard({
             </button>
             <button
               onClick={() => setConfirming(true)}
-              className="rounded-lg border border-edge px-3 py-1.5 text-xs font-medium text-dim transition-colors hover:border-bad/60 hover:text-bad"
+              className="ml-auto rounded-lg px-2 py-1.5 text-xs font-medium text-dim transition-colors hover:bg-bad/10 hover:text-bad"
             >
               {t("models.delete")}
             </button>
           </div>
         )}
       </div>
-    </div>
+    </article>
   );
 }
 
 export default function MyModels() {
   const { t } = useTranslation();
   const [models, setModels] = useState<LocalModel[] | null>(null);
+  const [query, setQuery] = useState("");
   // Qual modelo está com o painel de ajuste aberto. Mora aqui, e não no
   // cartão, porque o painel ocupa a LINHA inteira da grade: dentro de uma
   // célula ele nasce espremido e transborda por cima do cartão vizinho.
@@ -139,9 +143,16 @@ export default function MyModels() {
     refresh();
   }, [refresh]);
 
+  const visibleModels = models?.filter(m => `${m.name} ${m.repoId} ${m.quantLabel ?? ""}`.toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()));
+
   return (
-    <div className="mx-auto max-w-5xl px-8 py-8">
-      <h1 className="text-xl font-semibold">{t("models.title")}</h1>
+    <Page icon="layers" title={t("models.title")} subtitle={t("interface.modelsSubtitle")}
+      actions={<button onClick={() => navigate("discover")} className="flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-medium text-white hover:opacity-90"><Icon name="download" />{t("interface.addModels")}</button>}>
+
+      <div className="library-toolbar">
+        <div className="flex flex-wrap items-center gap-4 text-xs text-dim"><span>{t("interface.modelCount", { count: models?.length ?? 0 })}</span><span className="flex items-center gap-2"><Icon name="disk" />{models ? formatBytes(models.reduce((sum, m) => sum + m.totalBytes, 0)) : "—"}</span></div>
+        <label className="flex w-full items-center gap-2 rounded-xl border border-edge bg-panel px-3 py-2.5 sm:w-80"><Icon name="search" className="h-4 w-4 text-dim" /><input aria-label={t("interface.searchModels")} placeholder={t("interface.searchModels")} value={query} onChange={e => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></label>
+      </div>
 
       <div className="mt-6">
         {models == null ? (
@@ -168,8 +179,9 @@ export default function MyModels() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {models.map((m) => (
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            {visibleModels?.length === 0 && <p role="status" className="col-span-full rounded-xl border border-dashed border-edge p-10 text-center text-sm text-dim">{t("interface.noModels")}</p>}
+            {visibleModels?.map((m) => (
               <Fragment key={m.primaryPath}>
                 <ModelCard
                   model={m}
@@ -193,6 +205,6 @@ export default function MyModels() {
       </div>
 
       <IncompleteDownloads onFinished={refresh} />
-    </div>
+    </Page>
   );
 }

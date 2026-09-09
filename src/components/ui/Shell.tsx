@@ -23,7 +23,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import Icon from "./Icon";
+import Icon, { type IconName } from "./Icon";
 
 // ---------------------------------------------------------------- página ---
 
@@ -33,6 +33,7 @@ export function Page({
   actions,
   children,
   wide,
+  icon,
 }: {
   title: string;
   subtitle?: string;
@@ -41,19 +42,21 @@ export function Page({
   children: ReactNode;
   /** Telas com tabela ou lista longa respiram melhor em 5xl. */
   wide?: boolean;
+  icon?: IconName;
 }) {
   return (
-    <div className={`mx-auto ${wide ? "max-w-5xl" : "max-w-4xl"} px-8 py-8`}>
-      <header className="flex items-start justify-between gap-4">
+    <div className={icon ? "workspace-page" : `mx-auto ${wide ? "max-w-5xl" : "max-w-4xl"} px-8 py-8`}>
+      <header className={icon ? "workspace-heading" : "flex items-start justify-between gap-4"}>
+        {icon && <div className="workspace-icon"><Icon name={icon} className="h-6 w-6" /></div>}
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold">{title}</h1>
+          <h1 className={icon ? "text-2xl font-semibold tracking-tight sm:text-3xl" : "text-xl font-semibold"}>{title}</h1>
           {subtitle && (
             <p className="mt-1 max-w-2xl text-sm leading-relaxed text-dim">
               {subtitle}
             </p>
           )}
         </div>
-        {actions && <div className="shrink-0">{actions}</div>}
+        {actions && <div className="shrink-0 sm:ml-auto">{actions}</div>}
       </header>
       {children}
     </div>

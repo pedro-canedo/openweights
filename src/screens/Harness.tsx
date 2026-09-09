@@ -32,6 +32,7 @@ import {
 } from "../lib/harness";
 import { formatBytes, formatEta } from "../lib/format";
 import { Card, Page, StatusDot } from "../components/ui/Shell";
+import Icon from "../components/ui/Icon";
 
 const botao =
   "rounded-lg border border-edge px-3 py-2 text-sm text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50";
@@ -129,9 +130,11 @@ function Controle() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <Page title={t("harness.title")} subtitle={t("harness.subtitle")}>
+      <Page icon="terminal" title={t("harness.title")} subtitle={t("interface.harnessSubtitle")}>
+        <div className="harness-layout">
         {/* ------------------------------------------------- estado + ação */}
-        <Card tone={pendente ? "warn" : "normal"}>
+        <Card className="harness-launch" tone={pendente ? "warn" : "normal"}>
+          <div className="mb-6 flex items-center gap-3 text-accent"><Icon name="terminal" className="h-8 w-8" /><h2 className="harness-lead text-xl font-semibold text-ink">{t("interface.harnessLead")}</h2></div>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -298,10 +301,8 @@ function Controle() {
 
         {/* ---------------------------------------------------- isolamento */}
         <Card title={t("harness.controlTitle")} hint={t("harness.controlBody")}>
-          <ul className="mt-3 space-y-1.5 text-[12px] text-dim">
-            <li>· {t("harness.controlIsolated")}</li>
-            <li>· {t("harness.controlProviders")}</li>
-            <li>· {t("harness.controlKeys")}</li>
+          <ul className="mt-4 space-y-4 text-[12px] leading-relaxed text-dim">
+            {["controlIsolated", "controlProviders", "controlKeys"].map(key => <li key={key} className="flex gap-3"><Icon name="check" className="mt-0.5 h-4 w-4 text-accent" />{t(`harness.${key}`)}</li>)}
           </ul>
 
           {/* Remoção em dois passos, como o descarte de modelo. */}
@@ -351,6 +352,7 @@ function Controle() {
             </div>
           )}
         </Card>
+        </div>
       </Page>
     </div>
   );

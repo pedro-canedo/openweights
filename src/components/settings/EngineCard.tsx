@@ -181,7 +181,9 @@ export default function EngineCard() {
 
       {/* Os fatos por trás da frase, para quem quiser conferir. */}
       {check && (
-        <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-1.5 border-t border-edge pt-3 text-[12px]">
+        <details className="mt-5 border-t border-edge pt-4" open={verdict !== "ready"}>
+        <summary className="cursor-pointer text-xs font-medium text-dim hover:text-ink">{t("interface.engineDetails")}</summary>
+        <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-3 text-[12px]">
           <Fato
             termo={t("settings.engine.expected")}
             valor={`${check.expectedTag} · ${check.expectedVariant}`}
@@ -224,6 +226,7 @@ export default function EngineCard() {
             />
           )}
         </dl>
+        </details>
       )}
 
       {/* O detalhe técnico do que falhou fica à vista quando falhou: é o que

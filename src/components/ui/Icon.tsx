@@ -9,6 +9,10 @@
 // compila, e o erro de digitação vira um SVG vazio — invisível na tela e mudo
 // no `tsc`. O `satisfies` confere a forma sem alargar as chaves.
 const PATHS = {
+  search: "M20 20l-5-5M17 10a7 7 0 11-14 0 7 7 0 0114 0",
+  terminal: "M4 6l6 6-6 6m9 0h7",
+  layers: "M12 3L2 8l10 5 10-5-10-5zM2 12l10 5 10-5M2 16l10 5 10-5",
+  network: "M9 3h6v6H9zM3 15h6v6H3zM15 15h6v6h-6zM12 9v3m-6 3v-3h12v3",
   tune: "M4 7h16M4 17h16M8 4v6m8 4v6",
   history: "M3 11a9 9 0 119 10M3 4v7h7M12 7v5l3 2",
   clock: "M21 12a9 9 0 11-18 0 9 9 0 0118 0M12 7v5l3 2",

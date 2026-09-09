@@ -62,8 +62,11 @@ export default function Settings() {
     "rounded-lg border border-edge bg-panel2 px-3 py-1.5 text-sm outline-none focus:border-accent";
 
   return (
-    <Page title={t("settings.title")} subtitle={t("settings.subtitle")}>
+    <Page icon="tune" title={t("settings.title")} subtitle={t("interface.settingsSubtitle")}>
+      <div className="settings-layout">
+      <div className="settings-engine">
       <EngineCard />
+      </div>
 
       <HfTokenCard />
 
@@ -71,6 +74,7 @@ export default function Settings() {
         <div className="mt-3 divide-y divide-edge">
           <Row label={t("settings.theme")}>
             <select
+              aria-label={t("settings.theme")}
               value={theme}
               onChange={(e) => applyTheme(e.target.value)}
               className={select}
@@ -81,6 +85,7 @@ export default function Settings() {
           </Row>
           <Row label={t("settings.language")}>
             <select
+              aria-label={t("settings.language")}
               value={i18n.language}
               onChange={(e) => applyLanguage(e.target.value)}
               className={select}
@@ -92,7 +97,8 @@ export default function Settings() {
         </div>
       </Card>
 
-      <HardwareCard profile={profile} modelsDir={paths?.modelsDir} />
+      <div className="settings-hardware"><HardwareCard profile={profile} modelsDir={paths?.modelsDir} /></div>
+      </div>
     </Page>
   );
 }

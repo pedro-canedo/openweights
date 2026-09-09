@@ -1,5 +1,17 @@
 # Novidades
 
+## 0.19.3 — um espaço de trabalho mais claro
+
+Configurações, Fontes, DeepSeek Harness e Meus Modelos agora compartilham uma
+hierarquia visual mais clara. Os cabeçalhos explicam a finalidade da tela, a
+ação principal aparece no lugar esperado e os detalhes técnicos continuam
+disponíveis sem disputar atenção com a próxima decisão.
+
+Meus Modelos ganhou busca, totais da biblioteca e mais espaço para os nomes.
+Os cartões de fontes explicam para que servem llama.cpp local, 9router e
+OpenRouter e abrem os controles certos. O tema claro, telas estreitas, foco de
+teclado e as traduções foram revisados juntos.
+
 Esta página conta o que mudou no app que você baixaria hoje, e por quê. O
 histórico completo de todas as versões está no
 [changelog](/pt/guia/changelog); os instaladores ficam no

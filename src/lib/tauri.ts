@@ -72,6 +72,8 @@ async function mockInvoke(cmd: string, _args?: Record<string, unknown>) {
       return mockProfile;
     case "app_version":
       return "0.1.0-dev";
+    case "ninerouter_status":
+      return { nodeInstalled: false, installed: false, running: false, port: 20128, dashboardUrl: null, password: "", version: "" };
     case "dsh_status":
       return { ...dshMock };
     case "dsh_install":

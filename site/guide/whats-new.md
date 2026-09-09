@@ -5,6 +5,18 @@ The full history of every version is in the [changelog](/guide/changelog);
 installers live on
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.19.3 — a clearer workspace
+
+Settings, model sources, the DeepSeek Harness and My Models now share a clearer
+visual hierarchy. Management screens explain their purpose, put the main action
+where you expect it and keep technical details available without competing with
+the next decision.
+
+My Models adds search, library totals and more room for model names. Source
+cards explain local llama.cpp, 9router and OpenRouter and open the right
+controls. The light theme, narrow layouts, keyboard focus and both translations
+were reviewed together.
+
 ## 0.19.2 — what the new choice took with it
 
 Letting you pick which measured configuration to use meant loosening the guards

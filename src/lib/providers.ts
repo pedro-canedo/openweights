@@ -132,7 +132,9 @@ export const providersConfigSet = (cfg: ProvidersConfig): Promise<void> =>
     : Promise.resolve();
 
 export const providersList = (): Promise<ProviderView[]> =>
-  isTauri ? invoke<ProviderView[]>("providers_list") : Promise.resolve([]);
+  isTauri ? invoke<ProviderView[]>("providers_list") : Promise.resolve(
+    (["local", "9router", "openrouter"] as const).map(id => ({ id, ready: false, reason: null, baseUrl: null })),
+  );
 
 export const providerEndpoint = (modelRef: string): Promise<ResolvedEndpoint> =>
   invoke<ResolvedEndpoint>("provider_endpoint", { modelRef });
