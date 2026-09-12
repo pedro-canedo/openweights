@@ -1,5 +1,12 @@
 # What's new
 
+## 0.20.2
+
+Fixes the actual Studio download failure on Windows: the file was opened in
+append-only mode, which prevented resizing it before receiving data. Version
+0.20.1 did not resolve this issue. Update and retry installation; existing
+downloads can resume without deleting your data.
+
 ## 0.20.1
 
 The Training Studio installer now handles an existing Windows runtime marker

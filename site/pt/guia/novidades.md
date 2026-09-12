@@ -1,5 +1,12 @@
 # Novidades
 
+## 0.20.2
+
+Corrige a falha real no download do Studio no Windows: o modo de abertura do
+arquivo impedia ajustar seu tamanho antes de receber dados. A versão 0.20.1
+não resolvia esse erro. Atualize e tente instalar novamente; downloads existentes
+podem continuar sem apagar seus dados.
+
 ## 0.20.1
 
 O instalador do Studio de treinamento agora trata corretamente um marcador de

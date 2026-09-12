@@ -21,6 +21,13 @@ published releases and the version commits, and are kept as history.
 
 **Release candidate:** training and export were exercised on Windows with an RTX 3090. A short experiment does not guarantee factual answers about documents. OCR was tested on a rasterized book sample and a mixed PDF, not every kind of scan. Training targets Windows x64 with NVIDIA; chat remains available on existing platforms. This candidate does not automatically replace the stable version through the updater.
 
+## [0.20.2] — 2026-09-12
+
+- Fixes the reproduced “Access denied (os error 5)” when installing Studio: the download file now allows resizing and resuming writes on Windows.
+- Preserves downloaded parts when resuming and restores atomic replacement of the activation marker.
+- Version 0.20.1 did not fix this download failure. Update and retry installation; no data deletion or administrator privileges are required.
+- Native Windows validation: six tests passed, including fresh download, resume, restart and reinstall. The optional full-package test was not run in this round.
+
 ## [0.20.1] — 2026-09-12
 
 - Fixes Training Studio installation and repair on Windows when the runtime marker already exists.

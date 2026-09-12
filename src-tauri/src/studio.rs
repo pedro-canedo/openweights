@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, State};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 pub static GPU_RESERVED: AtomicBool = AtomicBool::new(false);
 pub static GPU_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -447,13 +447,7 @@ pub async fn studio_install(
             received = base;
         }
         response = response.error_for_status().map_err(|e| e.to_string())?;
-        let mut file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&archive)
-            .await
-            .map_err(|e| e.to_string())?;
-        file.set_len(received).await.map_err(|e| e.to_string())?;
+        let mut file = open_download(&archive, received).await?;
         while let Some(chunk) = response.chunk().await.map_err(|e| e.to_string())? {
             received += chunk.len() as u64;
             if received > base + part.size {
@@ -478,6 +472,22 @@ pub async fn studio_install(
     tokio::task::spawn_blocking(move || install_archive(root, archive, catalog, ocr))
         .await
         .map_err(|e| e.to_string())?
+}
+
+async fn open_download(path: &std::path::Path, offset: u64) -> Result<tokio::fs::File, String> {
+    // FILE_APPEND_DATA alone cannot SetEndOfFile on Windows (error 5).
+    // Keep earlier parts, discard only bytes beyond the resume offset and
+    // position the writer explicitly before receiving the next part.
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)
+        .await
+        .map_err(|e| format_io("abrir o download do Studio", e))?;
+    file.set_len(offset).await.map_err(|e| format_io("preparar a retomada do download", e))?;
+    file.seek(std::io::SeekFrom::Start(offset)).await.map_err(|e| format_io("retomar o download", e))?;
+    Ok(file)
 }
 
 fn install_archive(
@@ -584,17 +594,10 @@ fn install_archive(
             .map_err(|e| e.to_string())?;
         std::fs::rename(stage, destination).map_err(|e| e.to_string())?;
     }
-    // Windows não substitui um arquivo existente com `rename` e devolve
-    // `os error 5` (acesso negado). Isso acontecia toda vez que o usuário
-    // tentava reparar ou atualizar uma instalação já iniciada. Removemos o
-    // marcador anterior somente depois que o pacote novo está completo e
-    // repetimos a operação para dar tempo ao antivírus de liberar o arquivo.
+    // Ative somente depois que o pacote estiver completo.
     let active_tmp = root.join("active.tmp");
     let active = root.join("active.txt");
     std::fs::write(&active_tmp, catalog.version).map_err(|e| format_io("preparar o marcador do runtime", e))?;
-    if active.exists() {
-        retry_io("ativar o runtime", || std::fs::remove_file(&active))?;
-    }
     retry_io("ativar o runtime", || std::fs::rename(&active_tmp, &active))?;
     Ok(())
 }
@@ -771,6 +774,21 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[tokio::test]
+    async fn download_creates_resumes_and_restarts_without_access_denied() {
+        let root = std::env::temp_dir().join(format!("ow-download-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("runtime.partial");
+        for (offset, bytes, expected) in [(0, b"first".as_slice(), b"first".as_slice()), (5, b"part", b"firstpart"), (5, b"next", b"firstnext"), (0, b"new", b"new")] {
+            let mut file = open_download(&path, offset).await.unwrap();
+            file.write_all(bytes).await.unwrap();
+            file.sync_all().await.unwrap();
+            drop(file);
+            assert_eq!(std::fs::read(&path).unwrap(), expected);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn unsafe_zip_cannot_escape_staging() {
         let (root, archive, catalog) = fixture("unsafe", true);
@@ -783,12 +801,17 @@ mod tests {
     #[test]
     fn complete_package_activates_only_after_extraction() {
         let (root, archive, catalog) = fixture("valid", false);
-        install_archive(root.clone(), archive, catalog, true).unwrap();
+        install_archive(root.clone(), archive.clone(), catalog, true).unwrap();
         assert_eq!(
             std::fs::read_to_string(root.join("active.txt")).unwrap(),
             "1.0.0"
         );
         assert!(root.join("1.0.0/bin/tesseract.exe").is_file());
+        let catalog: Catalog = serde_json::from_value(json!({
+            "version": "1.0.0", "url": "unused", "sha256": std::fs::read_to_string(root.join("1.0.0/.package-sha256")).unwrap(),
+            "size": std::fs::metadata(&archive).unwrap().len(), "expanded_size": 1048576
+        })).unwrap();
+        install_archive(root.clone(), archive, catalog, true).unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
 
