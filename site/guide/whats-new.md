@@ -1,5 +1,12 @@
 # What's new
 
+## 0.20.1
+
+The Training Studio installer now handles an existing Windows runtime marker
+without failing with `Access denied (os error 5)`. It retries short antivirus
+locks and provides a concrete recovery message. The [Training Studio guide](/guide/studio)
+now covers preparation, OCR, resume, resource checks, and troubleshooting.
+
 This page covers what changed in the app you would download today, and why.
 The full history of every version is in the [changelog](/guide/changelog);
 installers live on

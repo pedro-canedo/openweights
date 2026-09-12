@@ -1,5 +1,13 @@
 # Novidades
 
+## 0.20.1
+
+O instalador do Studio de treinamento agora trata corretamente um marcador de
+runtime já existente no Windows, evitando **Acesso negado (os error 5)**. Ele
+tenta novamente em bloqueios breves do antivírus e orienta a recuperação. O
+[guia do Studio](/pt/guia/studio) cobre preparação, OCR, retomada, recursos e
+solução de problemas.
+
 ## 0.20.0 — Studio pelo atualizador
 
 A versão 0.20.0 remove o sufixo de pré-release do desktop e oferece novos

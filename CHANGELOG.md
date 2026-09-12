@@ -21,6 +21,12 @@ published releases and the version commits, and are kept as history.
 
 **Release candidate:** training and export were exercised on Windows with an RTX 3090. A short experiment does not guarantee factual answers about documents. OCR was tested on a rasterized book sample and a mixed PDF, not every kind of scan. Training targets Windows x64 with NVIDIA; chat remains available on existing platforms. This candidate does not automatically replace the stable version through the updater.
 
+## [0.20.1] — 2026-09-12
+
+- Fixes Training Studio installation and repair on Windows when the runtime marker already exists.
+- Activation now tolerates short antivirus locks and explains the next step when permissions remain insufficient.
+- Expands the Studio documentation with the training flow, OCR, resume behavior, and troubleshooting.
+
 ## [0.20.0] — 2026-09-12
 
 - **Version 0.20.0 without a prerelease suffix**, with rebuilt installers and signed metadata for the application's updater.
