@@ -485,8 +485,12 @@ async fn open_download(path: &std::path::Path, offset: u64) -> Result<tokio::fs:
         .open(path)
         .await
         .map_err(|e| format_io("abrir o download do Studio", e))?;
-    file.set_len(offset).await.map_err(|e| format_io("preparar a retomada do download", e))?;
-    file.seek(std::io::SeekFrom::Start(offset)).await.map_err(|e| format_io("retomar o download", e))?;
+    file.set_len(offset)
+        .await
+        .map_err(|e| format_io("preparar a retomada do download", e))?;
+    file.seek(std::io::SeekFrom::Start(offset))
+        .await
+        .map_err(|e| format_io("retomar o download", e))?;
     Ok(file)
 }
 
@@ -597,12 +601,16 @@ fn install_archive(
     // Ative somente depois que o pacote estiver completo.
     let active_tmp = root.join("active.tmp");
     let active = root.join("active.txt");
-    std::fs::write(&active_tmp, catalog.version).map_err(|e| format_io("preparar o marcador do runtime", e))?;
+    std::fs::write(&active_tmp, catalog.version)
+        .map_err(|e| format_io("preparar o marcador do runtime", e))?;
     retry_io("ativar o runtime", || std::fs::rename(&active_tmp, &active))?;
     Ok(())
 }
 
-fn retry_io<T>(operation: &str, mut action: impl FnMut() -> std::io::Result<T>) -> Result<T, String> {
+fn retry_io<T>(
+    operation: &str,
+    mut action: impl FnMut() -> std::io::Result<T>,
+) -> Result<T, String> {
     let mut last = None;
     for attempt in 0..8 {
         match action() {
@@ -621,7 +629,10 @@ fn retry_io<T>(operation: &str, mut action: impl FnMut() -> std::io::Result<T>) 
 
 fn format_io(operation: &str, error: std::io::Error) -> String {
     if error.kind() == std::io::ErrorKind::PermissionDenied {
-        format!("O Windows bloqueou {}. Feche o OpenWeights e tente novamente; se persistir, confira se o antivírus não está bloqueando a pasta de dados.", operation)
+        format!(
+            "O Windows bloqueou {}. Feche o OpenWeights e tente novamente; se persistir, confira se o antivírus não está bloqueando a pasta de dados.",
+            operation
+        )
     } else {
         format!("Não foi possível {}: {}", operation, error)
     }
@@ -776,10 +787,22 @@ mod tests {
 
     #[tokio::test]
     async fn download_creates_resumes_and_restarts_without_access_denied() {
-        let root = std::env::temp_dir().join(format!("ow-download-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let root = std::env::temp_dir().join(format!(
+            "ow-download-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir(&root).unwrap();
         let path = root.join("runtime.partial");
-        for (offset, bytes, expected) in [(0, b"first".as_slice(), b"first".as_slice()), (5, b"part", b"firstpart"), (5, b"next", b"firstnext"), (0, b"new", b"new")] {
+        for (offset, bytes, expected) in [
+            (0, b"first".as_slice(), b"first".as_slice()),
+            (5, b"part", b"firstpart"),
+            (5, b"next", b"firstnext"),
+            (0, b"new", b"new"),
+        ] {
             let mut file = open_download(&path, offset).await.unwrap();
             file.write_all(bytes).await.unwrap();
             file.sync_all().await.unwrap();
