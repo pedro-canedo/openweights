@@ -5,6 +5,12 @@ The full history of every version is in the [changelog](/guide/changelog);
 installers live on
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.20.0 — Studio through the updater
+
+Version 0.20.0 removes the desktop prerelease suffix and provides rebuilt,
+signed update artifacts. It includes the optional training Studio and local OCR
+described below, using the same verified runtime packages.
+
 ## 0.20.0-rc.1 — optional local training Studio
 
 The release candidate adds **Train**, with a private Windows runtime, automatic

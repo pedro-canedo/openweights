@@ -3,7 +3,7 @@
 O Studio é o módulo opcional de treinamento local do OpenWeights. Ele prepara seus
 arquivos, adapta um modelo pequeno e gera um GGUF para abrir no chat.
 
-Disponível na release candidata 0.20.0-rc.1. O primeiro download do treinamento
+Disponível a partir da versão 0.20.0. O primeiro download do treinamento
 tem aproximadamente 3 GB; o OCR opcional acrescenta cerca de 66 MB.
 
 1. Abra **Treinar** e instale o módulo.

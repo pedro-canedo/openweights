@@ -21,6 +21,15 @@ published releases and the version commits, and are kept as history.
 
 **Release candidate:** training and export were exercised on Windows with an RTX 3090. A short experiment does not guarantee factual answers about documents. OCR was tested on a rasterized book sample and a mixed PDF, not every kind of scan. Training targets Windows x64 with NVIDIA; chat remains available on existing platforms. This candidate does not automatically replace the stable version through the updater.
 
+## [0.20.0] — 2026-09-12
+
+- **Version 0.20.0 without a prerelease suffix**, with rebuilt installers and signed metadata for the application's updater.
+- **Train** integrates the optional Studio: book, conversation and code preparation, private Python/CUDA runtime, benchmark, QLoRA and GGUF Q4_K_M export into chat.
+- **Optional local OCR** in Portuguese and English with Tesseract and Poppler. Mixed PDFs reuse native text and resume completed pages.
+- Cooperative cancellation, verified checkpoints, explicit engine stop and copy-based import from the MVP.
+
+Training initially targets Windows x64 with NVIDIA and was exercised on an RTX 3090. Short training is an experiment and does not guarantee factual answers about documents. The optional training and OCR packages are the same verified packages from 0.20.0-rc.1; this release updates the desktop version and its distribution through the updater.
+
 ## [0.19.3] — 2026-09-09
 
 - **Settings, Sources, DeepSeek Harness and My Models now have a clearer visual hierarchy.** Contextual headings, stronger primary actions and easier-to-scan status cards make each screen faster to understand.

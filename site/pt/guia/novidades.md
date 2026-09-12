@@ -1,5 +1,11 @@
 # Novidades
 
+## 0.20.0 — Studio pelo atualizador
+
+A versão 0.20.0 remove o sufixo de pré-release do desktop e oferece novos
+instaladores e artefatos de atualização assinados. Inclui o Studio e o OCR local
+descritos abaixo, com os mesmos pacotes de runtime já verificados.
+
 ## 0.20.0-rc.1 — Studio opcional de treinamento local
 
 A release candidata adiciona **Treinar**, com runtime privado para Windows,
