@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use tauri::{AppHandle, Manager};
 
 pub struct AppState {
+    pub studio: tokio::sync::Mutex<Option<crate::studio::Service>>,
     pub profile: HardwareProfile,
     pub data_dir: PathBuf,
     pub models_dir: PathBuf,
@@ -211,6 +212,7 @@ impl AppState {
             profile,
             hf: tokio::sync::Mutex::new(lr_models::HfClient::new(token)),
             http: reqwest::Client::new(),
+            studio: tokio::sync::Mutex::new(None),
             runtime_mgr: lr_runtime::RuntimeManager::new(data_dir.clone()),
             downloads: lr_models::DownloadManager::new(models_dir.clone()),
             server: tokio::sync::Mutex::new(None),
@@ -286,6 +288,9 @@ impl AppState {
                 gw.stop_blocking();
             }
             *guard = None;
+        }
+        if let Ok(mut studio) = self.studio.try_lock() {
+            *studio = None;
         }
         self.cluster.stop_blocking();
         self.kill_orphan_pids();

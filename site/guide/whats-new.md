@@ -5,6 +5,14 @@ The full history of every version is in the [changelog](/guide/changelog);
 installers live on
 [GitHub](https://github.com/pedro-canedo/openweights/releases).
 
+## 0.20.0-rc.1 — optional local training Studio
+
+The release candidate adds **Train**, with a private Windows runtime, automatic
+data preparation, optional local OCR and Q4_K_M export into the model library.
+The first recipe uses Qwen3-0.6B and was exercised on an RTX 3090. A short run is
+an experiment, not a guarantee of accurate answers. This candidate is separate
+from the stable updater channel; training initially targets Windows with NVIDIA.
+
 ## 0.19.3 — a clearer workspace
 
 Settings, model sources, the DeepSeek Harness and My Models now share a clearer

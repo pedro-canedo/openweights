@@ -14,6 +14,7 @@
     "noModels": "Nenhum modelo corresponde à busca. Tente outro nome ou quantização."
   },
   "nav": {
+    "studio": "Treinar",
     "discover": "Descobrir",
     "models": "Meus Modelos",
     "chat": "Chat",

@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0-rc.1",
+  "url": "https://github.com/pedro-canedo/openweights/releases/download/studio-runtime-v1/openweights-studio-1.0.0-rc.1-windows-x64.zip",
+  "sha256": "a6d71e7bb818bc1b01aad5c6fc65a35c7b4d942934624c17c4192267eab7133a",
+  "size": 3013866382,
+  "expanded_size": 5018526173,
+  "parts": [
+    {
+      "url": "https://github.com/pedro-canedo/openweights/releases/download/studio-runtime-v1/openweights-studio-1.0.0-rc.1-windows-x64.zip.001",
+      "size": 1073741824,
+      "sha256": "6cdc825824a6bf6be17e5fad0d1b6bb19c611d8e36a0ad9339a08553054caaf0"
+    },
+    {
+      "url": "https://github.com/pedro-canedo/openweights/releases/download/studio-runtime-v1/openweights-studio-1.0.0-rc.1-windows-x64.zip.002",
+      "size": 1073741824,
+      "sha256": "1d149368256a98c568870acef3c4fa3d485c25b01b36e75411f7baeffea69265"
+    },
+    {
+      "url": "https://github.com/pedro-canedo/openweights/releases/download/studio-runtime-v1/openweights-studio-1.0.0-rc.1-windows-x64.zip.003",
+      "size": 866382734,
+      "sha256": "50ed509cce8ea5d63879ba6723ec7e55486ea965954c3c415e5954d18190eea1"
+    }
+  ]
+}

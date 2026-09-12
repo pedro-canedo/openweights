@@ -11,10 +11,12 @@ mod commands_providers;
 mod commands_tuning;
 mod comparison;
 mod desktop_host;
+mod gpu_lease;
 mod optimization;
 mod serve_stats;
 mod spec_bench;
 mod state;
+mod studio;
 mod telemetry;
 mod tts;
 mod update;
@@ -44,6 +46,7 @@ fn main() {
             telemetry::spawn_loop(app.handle().clone(), &profile);
 
             let state = state::AppState::new(profile, app.handle())?;
+            gpu_lease::init(&state.data_dir);
 
             // Encaminha eventos de download para a UI. Lagged NÃO pode
             // encerrar o loop — só Closed (o manager morreu junto do app).
@@ -75,13 +78,24 @@ fn main() {
                 let on = std::sync::Arc::new(move |snap: lr_cluster::ClusterSnapshot| {
                     let _ = handle.emit("cluster", &snap);
                 });
+                if cluster.snapshot().await.enabled && gpu_lease::acquire("cluster").is_err() {
+                    let _ = cluster.set_enabled(false).await;
+                }
                 if let Err(e) = cluster.start(on).await {
+                    gpu_lease::release("cluster");
                     log::warn!("cluster: {e}");
                 }
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            studio::studio_status,
+            studio::studio_request,
+            studio::studio_upload,
+            studio::studio_train,
+            studio::studio_install,
+            studio::studio_import_legacy,
+            studio::studio_uninstall,
             commands::hardware_profile,
             commands::app_version,
             tts::tts_speak,

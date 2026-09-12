@@ -167,5 +167,5 @@ jobs:
           releaseName: OpenWeights ${{ github.ref_type == 'tag' && github.ref_name || 'v0.0.0-dev' }}
           releaseBody: ${{ needs.portao.outputs.corpo }}
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
           args: --target ${{ matrix.target }}

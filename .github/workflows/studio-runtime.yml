@@ -1,0 +1,79 @@
+name: Studio runtime verification and signing
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: studio-runtime-signing
+  cancel-in-progress: false
+jobs:
+  verify-sign:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Download and verify the committed runtime catalogs
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force packages | Out-Null
+          foreach ($component in @('windows-x64', 'ocr-windows-x64')) {
+            $catalog = Get-Content "studio/catalogs/$component.json" | ConvertFrom-Json
+            $asset = ([Uri]$catalog.url).Segments[-1]
+            $archive = Join-Path packages $asset
+            if ($catalog.parts) {
+              $combined = [IO.File]::Create("$pwd/$archive")
+              try {
+                foreach ($part in $catalog.parts) {
+                  $partName = ([Uri]$part.url).Segments[-1]
+                  gh release download studio-runtime-v1 --pattern $partName --dir packages
+                  if ($LASTEXITCODE -ne 0) { throw 'Runtime part download failed' }
+                  $partPath = Join-Path packages $partName
+                  if ((Get-Item $partPath).Length -ne $part.size -or (Get-FileHash $partPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $part.sha256) { throw 'Part digest mismatch' }
+                  $stream = [IO.File]::OpenRead("$pwd/$partPath")
+                  try { $stream.CopyTo($combined) } finally { $stream.Dispose() }
+                }
+              } finally { $combined.Dispose() }
+            } else {
+              gh release download studio-runtime-v1 --pattern $asset --dir packages
+              if ($LASTEXITCODE -ne 0) { throw 'Runtime asset download failed' }
+            }
+            if ((Get-Item $archive).Length -ne $catalog.size -or (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $catalog.sha256) { throw 'Runtime digest mismatch' }
+            $destination = if ($component -eq 'windows-x64') { 'packages/runtime' } else { "packages/ocr/$($catalog.version)" }
+            Expand-Archive -LiteralPath $archive -DestinationPath $destination
+            if ($component -eq 'ocr-windows-x64') { Set-Content -LiteralPath packages/ocr/active.txt -Value $catalog.version -NoNewline }
+          }
+      - name: Verify private Python and real OCR with system dependencies excluded
+        shell: pwsh
+        run: |
+          & packages/runtime/python/python.exe studio/verify_runtime.py --ocr-components packages/ocr --fixtures studio/tests/fixtures --data packages/verification
+          if ($LASTEXITCODE -ne 0) { throw 'Private runtime verification failed' }
+      - name: Sign verified catalogs
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: |
+          foreach ($component in @('windows-x64', 'ocr-windows-x64')) {
+            $path = "studio/catalogs/$component.json"
+            npx tauri signer sign $path
+            if ($LASTEXITCODE -ne 0) { throw 'Catalog signing failed' }
+            $signature = [Convert]::FromBase64String((Get-Content "$path.sig" -Raw).Trim())
+            [IO.File]::WriteAllBytes("$pwd/$path.minisig", $signature)
+          }
+      - name: Attach verified catalogs and signatures
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload studio-runtime-v1 studio/catalogs/windows-x64.json studio/catalogs/windows-x64.json.minisig studio/catalogs/ocr-windows-x64.json studio/catalogs/ocr-windows-x64.json.minisig
+          if ($LASTEXITCODE -ne 0) { throw 'Catalog upload failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: studio-runtime-verification
+          path: packages/verification

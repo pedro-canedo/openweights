@@ -481,6 +481,10 @@ async fn carga_de_prova(state: &AppState, model: &str) -> Result<(), String> {
 /// inteira, e duas ao mesmo tempo mediriam uma à outra.
 static MEDINDO: AtomicBool = AtomicBool::new(false);
 
+pub(crate) fn gpu_measurement_active() -> bool {
+    MEDINDO.load(Ordering::SeqCst) || AUTO_RODANDO.load(Ordering::SeqCst)
+}
+
 /// Há uma medição em curso? O coletor de estatísticas pergunta antes de
 /// carimbar "a máquina está em uso": a própria bateria gera tokens, e sem
 /// esta pergunta ela se marcaria como tráfego e nunca sairia do portão de
@@ -566,6 +570,10 @@ pub async fn tune_sweep(
     }
     CANCELAR.store(false, Ordering::SeqCst);
     let _fim = MedindoGuard;
+    let _gpu = crate::gpu_lease::Guard::new("measurement")?;
+    if crate::studio::GPU_RESERVED.load(Ordering::SeqCst) {
+        return Err("O Studio está usando a GPU.".into());
+    }
 
     let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
     let runtime = {
@@ -665,6 +673,10 @@ pub async fn tune_bench(
     }
     CANCELAR.store(false, Ordering::SeqCst);
     let _fim = MedindoGuard;
+    let _gpu = crate::gpu_lease::Guard::new("measurement")?;
+    if crate::studio::GPU_RESERVED.load(Ordering::SeqCst) {
+        return Err("O Studio está usando a GPU.".into());
+    }
 
     let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
     let runtime = {
@@ -799,6 +811,14 @@ pub(crate) fn begin_measurement() -> Result<MedindoGuard, String> {
     if MEDINDO.swap(true, Ordering::SeqCst) {
         return Err("engine-busy:benchmark".into());
     }
+    if crate::studio::GPU_RESERVED.load(Ordering::SeqCst) {
+        MEDINDO.store(false, Ordering::SeqCst);
+        return Err("O Studio está usando a GPU. Aguarde o treino terminar.".into());
+    }
+    if let Err(e) = crate::gpu_lease::acquire("measurement") {
+        MEDINDO.store(false, Ordering::SeqCst);
+        return Err(e);
+    }
     CANCELAR.store(false, Ordering::SeqCst);
     Ok(MedindoGuard)
 }
@@ -806,6 +826,7 @@ pub(crate) fn begin_measurement() -> Result<MedindoGuard, String> {
 impl Drop for MedindoGuard {
     fn drop(&mut self) {
         MEDINDO.store(false, Ordering::SeqCst);
+        crate::gpu_lease::release("measurement");
     }
 }
 
@@ -833,6 +854,10 @@ pub async fn tune_spec_bench(
         return Err("já existe uma medição em andamento".into());
     }
     let _fim = MedindoGuard;
+    let _gpu = crate::gpu_lease::Guard::new("measurement")?;
+    if crate::studio::GPU_RESERVED.load(Ordering::SeqCst) {
+        return Err("O Studio está usando a GPU.".into());
+    }
 
     let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
     // MTP só faz sentido quando o arquivo traz as camadas; oferecê-lo a um
@@ -1121,6 +1146,14 @@ pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
     if AUTO_RODANDO.swap(true, Ordering::SeqCst) {
         return;
     }
+    if crate::studio::GPU_RESERVED.load(Ordering::SeqCst) {
+        AUTO_RODANDO.store(false, Ordering::SeqCst);
+        return;
+    }
+    let Ok(_gpu) = crate::gpu_lease::Guard::new("auto-tune") else {
+        AUTO_RODANDO.store(false, Ordering::SeqCst);
+        return;
+    };
     let chave = auto_key(state);
     let cluster = cluster_args(state);
     let dir = {
@@ -1315,6 +1348,12 @@ pub(crate) async fn auto_spec_pending(app: AppHandle, state: &AppState) {
         return; // uma medição manual tem precedência
     }
     let _fim = MedindoGuard;
+    let Ok(_gpu) = crate::gpu_lease::Guard::new("measurement") else {
+        return;
+    };
+    if crate::studio::GPU_RESERVED.load(Ordering::SeqCst) {
+        return;
+    }
     let _ = app.emit(
         "tune-spec",
         serde_json::json!({ "phase": "start", "model": modelo }),

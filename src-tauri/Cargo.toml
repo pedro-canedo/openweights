@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.19.3"
+version = "0.20.0-rc.1"
 edition = "2024"
 license = "MIT"
 
@@ -28,6 +28,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "stream",
   "gzip",
   "http2",
+  "multipart",
 ] }
 lr_types = { path = "crates/types" }
 
@@ -63,6 +64,9 @@ env_logger = "0.11"
 # Chave de API do servidor local: o CSPRNG do sistema, sem arrastar um
 # framework de random inteiro para gerar 20 bytes.
 getrandom = "0.3"
+sha2 = "0.10"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+minisign-verify = "0.2"
 # URLs alternativas com LAN ligada (bind 0.0.0.0): enumerar os IPv4 locais.
 # O mdns-sd do cluster já traz este crate na árvore — custo zero de lockfile.
 if-addrs = "0.13"

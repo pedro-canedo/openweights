@@ -1077,6 +1077,12 @@ pub async fn server_start(
 }
 
 pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult<ServerStatusView> {
+    let _studio_gate = crate::studio::GPU_GATE.lock().await;
+    if crate::studio::GPU_RESERVED.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(
+            "O Studio está usando a GPU. Aguarde o treinamento terminar ou cancele-o.".into(),
+        );
+    }
     let runtime = active_runtime(state);
     let extra = state.cluster.host_extra_args().await;
     let exe = runtime
@@ -1109,6 +1115,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             });
         }
 
+        let gpu_start = crate::gpu_lease::Guard::new("server-start")?;
         let mut cfg = lr_engine::ServerConfig::new(exe, state.models_dir.clone(), port);
         if lan {
             cfg.host = "0.0.0.0".to_string();
@@ -1171,6 +1178,8 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             // Acabou de subir com as prefs de agora: nada pendente.
             key_stale: false,
         };
+        crate::gpu_lease::acquire("server")?;
+        drop(gpu_start);
         *guard = Some(srv);
         view
     };
@@ -1208,6 +1217,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                     key_stale: false,
                 },
             );
+            crate::gpu_lease::release("server");
             return Err("llama-server não respondeu ao /health em 30s".to_string());
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -1243,6 +1253,7 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
             srv.stop().await;
         }
         *guard = None;
+        crate::gpu_lease::release("server");
     }
     state
         .server_pid

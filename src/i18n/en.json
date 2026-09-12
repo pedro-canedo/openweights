@@ -14,6 +14,7 @@
     "noModels": "No models match this search. Try another name or quantization."
   },
   "nav": {
+    "studio": "Train",
     "discover": "Discover",
     "models": "My Models",
     "chat": "Chat",

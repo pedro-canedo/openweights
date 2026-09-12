@@ -1,0 +1,55 @@
+/* ============================================================
+   Open Weights Studio — tema "Forja".
+   Grafite quente de bancada + âmbar de metal em trabalho.
+   Para criar outro tema, basta trocar os tokens abaixo.
+   ============================================================ */
+:root{
+  /* superfícies */
+  --bg:#0a0b0d;
+  --bg-soft:#0e1013;
+  --bg-deep:#060708;
+  --surface:#121418;
+  --surface-2:#181b21;
+  --surface-3:#21252d;
+
+  /* contornos */
+  --line:#1e222a;
+  --line-strong:#2a2f39;
+  --line-hover:#3b4250;
+
+  /* texto */
+  --ink:#edeff3;
+  --ink-soft:#c4cad4;
+  --muted:#8b93a2;
+  --faint:#9aa3b3;
+
+  /* acento laranja — extraído da marca oficial (brand/mark.svg) */
+  --accent:#ff8f1f;
+  --accent-strong:#ffb54d;
+  --accent-deep:#f25c05;
+  --accent-ink:#1a1206;
+  --accent-soft:rgba(255,143,31,.10);
+  --accent-glow:rgba(255,143,31,.25);
+
+  /* estados */
+  --ok:#3ecf8e;
+  --info:#63a4f7;
+  --warn:#f0c25e;
+  --danger:#f0616e;
+  --violet:#b49ef8;
+
+  /* elevação */
+  --elev-soft:0 18px 36px -24px rgba(0,0,0,.72);
+  --elev-sel:0 0 0 1px color-mix(in srgb,var(--accent) 28%,transparent),0 18px 36px -24px rgba(0,0,0,.55);
+
+  /* forma */
+  --radius:14px;
+  --radius-sm:12px;
+
+  /* tipografia */
+  --font-display:'Space Grotesk','Inter',system-ui,sans-serif;
+  --font-body:'Inter','Segoe UI',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,'Cascadia Mono',Consolas,monospace;
+
+  color-scheme:dark;
+}

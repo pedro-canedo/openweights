@@ -10,13 +10,26 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.20.0-rc.1] — 2026-09-12
+
+- **Train** opens the optional Studio: data, training and results inside the desktop interface.
+- A single book can produce separate training, validation and test partitions. Conversations preserve real messages; prose is never converted into fabricated question/answer pairs.
+- Private Windows runtime with Python, PyTorch/CUDA, QLoRA and GGUF tools; on-demand installation with signed catalogs and SHA-256 verification.
+- Optional local Tesseract OCR with Portuguese and English. Mixed PDFs reuse native text and preparation resumes from completed pages.
+- Initial Qwen3-0.6B recipe with benchmark, short training, evaluation and automatic Q4_K_M export. The model is published into the library and can be opened in chat.
+- Explicit engine stop before training, GPU exclusion, cooperative cancellation, verified checkpoints and copy-based import from the MVP.
+
+**Release candidate:** training and export were exercised on Windows with an RTX 3090. A short experiment does not guarantee factual answers about documents. OCR was tested on a rasterized book sample and a mixed PDF, not every kind of scan. Training targets Windows x64 with NVIDIA; chat remains available on existing platforms. This candidate does not automatically replace the stable version through the updater.
+
 ## [0.19.3] — 2026-09-09
 
-- **Settings, Sources, DeepSeek Harness and My Models received a visual refresh** with clearer hierarchy, contextual headings and stronger primary actions.
-- **My Models now has search, library totals and more room for model names**, while model source cards explain their purpose and open their controls.
-- **The light theme, narrow layouts, keyboard focus and bilingual copy were reviewed** across the management screens.
+- **Settings, Sources, DeepSeek Harness and My Models now have a clearer visual hierarchy.** Contextual headings, stronger primary actions and easier-to-scan status cards make each screen faster to understand.
+- **My Models now includes search, library counts and more room for model names.** File size and local availability are visible before starting a conversation.
+- **Model sources explain what each option is for.** llama.cpp, 9router and OpenRouter cards act as direct shortcuts to their controls.
+- **The Harness has a clearer entry point for installing, starting, updating and understanding its controlled environment.**
+- **Light theme, language switching and narrow screens were reviewed**, with visible focus, Portuguese and English translations and keyboard-accessible actions.
 
-The OpenAI-compatible API, local model references and generation behavior are unchanged.
+The OpenAI-compatible API, local model references and generation behavior remain unchanged.
 
 ## [0.19.2] — 2026-09-08
 

@@ -1,5 +1,13 @@
 # Novidades
 
+## 0.20.0-rc.1 — Studio opcional de treinamento local
+
+A release candidata adiciona **Treinar**, com runtime privado para Windows,
+preparação automática, OCR local opcional e exportação Q4_K_M para a biblioteca.
+A receita inicial usa Qwen3-0.6B e foi exercitada numa RTX 3090. Um treino curto
+é um experimento, sem garantia de respostas corretas. A candidata fica separada
+do updater estável; o treino inicialmente atende Windows com NVIDIA.
+
 ## 0.19.3 — um espaço de trabalho mais claro
 
 Configurações, Fontes, DeepSeek Harness e Meus Modelos agora compartilham uma

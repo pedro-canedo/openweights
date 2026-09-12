@@ -3,6 +3,7 @@
 
 export type Screen =
   | "discover"
+  | "studio"
   | "models"
   | "chat"
   | "harness"

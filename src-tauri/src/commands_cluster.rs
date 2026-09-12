@@ -62,11 +62,21 @@ pub async fn cluster_set_enabled(
     state: State<'_, AppState>,
     enabled: bool,
 ) -> CmdResult<lr_cluster::ClusterSnapshot> {
+    let _studio_gate = crate::studio::GPU_GATE.lock().await;
+    if enabled && crate::studio::GPU_RESERVED.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err("Aguarde o treinamento terminar antes de ativar a GPU na rede.".into());
+    }
     if enabled {
         let _ = ensure_rpc_binaries(&app, &state).await;
-        state.cluster.set_enabled(true).await?;
+        crate::gpu_lease::acquire("cluster")?;
+        if let Err(e) = state.cluster.set_enabled(true).await {
+            crate::gpu_lease::release("cluster");
+            return Err(e);
+        }
     } else {
         state.cluster.set_enabled(false).await?;
+        crate::gpu_lease::release("cluster");
+        drop(_studio_gate);
         let _ = restart_if_running(&app, &state).await;
     }
     Ok(state.cluster.snapshot().await)
