@@ -584,9 +584,44 @@ fn install_archive(
             .map_err(|e| e.to_string())?;
         std::fs::rename(stage, destination).map_err(|e| e.to_string())?;
     }
-    std::fs::write(root.join("active.tmp"), catalog.version).map_err(|e| e.to_string())?;
-    std::fs::rename(root.join("active.tmp"), root.join("active.txt")).map_err(|e| e.to_string())?;
+    // Windows não substitui um arquivo existente com `rename` e devolve
+    // `os error 5` (acesso negado). Isso acontecia toda vez que o usuário
+    // tentava reparar ou atualizar uma instalação já iniciada. Removemos o
+    // marcador anterior somente depois que o pacote novo está completo e
+    // repetimos a operação para dar tempo ao antivírus de liberar o arquivo.
+    let active_tmp = root.join("active.tmp");
+    let active = root.join("active.txt");
+    std::fs::write(&active_tmp, catalog.version).map_err(|e| format_io("preparar o marcador do runtime", e))?;
+    if active.exists() {
+        retry_io("ativar o runtime", || std::fs::remove_file(&active))?;
+    }
+    retry_io("ativar o runtime", || std::fs::rename(&active_tmp, &active))?;
     Ok(())
+}
+
+fn retry_io<T>(operation: &str, mut action: impl FnMut() -> std::io::Result<T>) -> Result<T, String> {
+    let mut last = None;
+    for attempt in 0..8 {
+        match action() {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                if error.kind() != std::io::ErrorKind::PermissionDenied || attempt == 7 {
+                    return Err(format_io(operation, error));
+                }
+                last = Some(error);
+                std::thread::sleep(std::time::Duration::from_millis(150 * (attempt + 1)));
+            }
+        }
+    }
+    Err(format_io(operation, last.expect("tentativa de I/O")))
+}
+
+fn format_io(operation: &str, error: std::io::Error) -> String {
+    if error.kind() == std::io::ErrorKind::PermissionDenied {
+        format!("O Windows bloqueou {}. Feche o OpenWeights e tente novamente; se persistir, confira se o antivírus não está bloqueando a pasta de dados.", operation)
+    } else {
+        format!("Não foi possível {}: {}", operation, error)
+    }
 }
 
 #[tauri::command]

@@ -37,6 +37,7 @@ const PARES = [
   ["guide/first-run.md", "pt/guia/primeira-execucao.md"],
   ["guide/models.md", "pt/guia/modelos.md"],
   ["guide/chat.md", "pt/guia/chat.md"],
+  ["guide/studio.md", "pt/guia/studio.md"],
   ["guide/performance.md", "pt/guia/desempenho.md"],
   ["guide/harness.md", "pt/guia/harness.md"],
   ["guide/troubleshooting.md", "pt/guia/solucao-de-problemas.md"],

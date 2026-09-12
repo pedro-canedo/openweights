@@ -30,7 +30,9 @@ installer of a few MB, no Electron.
 
 - It is not a cloud service. There is no account, no telemetry sent anywhere,
   no server of ours to be down.
-- It is not a training tool. It runs models; it does not fine-tune them.
+- It includes an optional Training Studio. Chat remains separate from training:
+  the Studio downloads its dependencies only when requested, prepares data
+  locally, and publishes the resulting GGUF into the app library.
 - It does not run every model format. OpenWeights runs **GGUF** files, which is
   what llama.cpp reads. MLX (Apple's format), safetensors, GPTQ and AWQ do not
   run here — the same model almost always exists as GGUF.
@@ -60,3 +62,5 @@ running as your user can read it.
   compare two configurations honestly.
 - [The coding agent](/guide/harness) — the DeepSeek Harness, installed and run
   by the app, pre-configured with your models.
+- [Training Studio](/guide/studio) — prepare a book, train on your GPU, and open
+  the resulting GGUF in chat.
