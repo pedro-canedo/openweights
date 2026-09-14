@@ -22,6 +22,18 @@ Python nem Docker globalmente.
 
 ## Projetos e escolha da base
 
+Use **Novo treinamento** para criar um projeto. Na tela inicial, os cartões
+mostram a base escolhida, a quantidade de arquivos e o próximo passo. A busca
+localiza projetos pelo nome ou pelo modelo. **Voltar ao Studio** salva o projeto
+e retorna à lista.
+
+Em **Execuções e versões**, preparação, treinamento e comparação aparecem
+separadamente, com data e identificador. Busque pelo nome, modelo ou etapa e
+use os filtros para encontrar modelos prontos, execuções em andamento ou que
+precisam de atenção. **Ver detalhes** abre os registros e as ações disponíveis;
+**Abrir no chat** usa o modelo pronto. Na interface independente, **Baixar GGUF**
+permite obter o arquivo.
+
 Cada projeto mantém suas fontes, snapshots preparados, execuções e linhagem do
 modelo. Crie um projeto para cada assunto e reabra-o depois de reiniciar o app
 sem enviar os arquivos novamente.

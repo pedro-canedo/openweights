@@ -1,5 +1,16 @@
 # Novidades
 
+## 0.20.4
+
+A tela inicial do Studio agora apresenta projetos em cartões e um histórico
+que distingue preparação, treinamento e comparação. Busque por nome, modelo
+ou etapa e filtre os modelos prontos para abri-los diretamente no chat.
+Datas e identificadores ajudam a diferenciar execuções do mesmo documento.
+
+A seção de gerenciamento e importação do MVP saiu da tela. A navegação salva
+seu projeto antes de iniciar outro, e o layout funciona em janelas estreitas
+nos temas claro e escuro. Veja o [guia do Studio](/pt/guia/studio).
+
 ## 0.20.3
 
 O Studio de treinamento agora tem projetos persistentes: fontes, datasets

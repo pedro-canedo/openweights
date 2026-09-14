@@ -57,6 +57,7 @@ export interface StudioDataset {
 }
 
 export interface StudioJob {
+  created_at?: string;
   id: string;
   name: string;
   kind: string;
@@ -68,7 +69,10 @@ export interface StudioJob {
   config?: Record<string, unknown>;
   progress?: { total_steps?: number; training_started_at?: string };
   download_progress?: { received_files: number; total_files: number };
-  training_info?: { evaluation?: { held_out_test?: { test_loss?: number } } };
+  training_info?: {
+    base?: { name?: string; repo?: string };
+    evaluation?: { held_out_test?: { test_loss?: number } };
+  };
   chat_model?: string;
   checkpoints?: string[];
   can_retry_export?: boolean;

@@ -21,6 +21,16 @@ install Python or Docker globally.
 
 ## Projects and base models
 
+Use **New training** to create a project. On the home screen, cards show the
+selected base, source file count and next step. Search finds projects by name
+or model. **Back to Studio** saves the project and returns to the list.
+
+In **Runs and versions**, preparation, training and comparison appear separately
+with a date and identifier. Search by name, model or stage and filter for ready
+models, active runs or runs needing attention. **View details** opens the logs
+and available actions; **Open in chat** uses the ready model. In the standalone
+interface, **Download GGUF** retrieves the file.
+
 Each project keeps its sources, prepared dataset snapshots, runs and model
 lineage together. Create a project for a subject, then add sources to it; the
 same project can be reopened after a restart without uploading the files again.

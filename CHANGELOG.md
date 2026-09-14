@@ -21,6 +21,15 @@ published releases and the version commits, and are kept as history.
 
 **Release candidate:** training and export were exercised on Windows with an RTX 3090. A short experiment does not guarantee factual answers about documents. OCR was tested on a rasterized book sample and a mixed PDF, not every kind of scan. Training targets Windows x64 with NVIDIA; chat remains available on existing platforms. This candidate does not automatically replace the stable version through the updater.
 
+## [0.20.4] — 2026-09-14
+
+- The Studio home screen now uses project cards showing the base model, source files and next step.
+- Run history distinguishes preparation, training and comparison, with dates, run identifiers and the model used when available.
+- Search by project, model or stage and filter for ready models, active runs or runs needing attention.
+- Ready models can be opened directly in chat from history; the standalone interface offers a GGUF download instead.
+- The module-management and MVP-import section was removed from this screen. Existing data is preserved.
+- Navigation returns to Studio and saves the current project before starting another. The layout supports narrow windows and light and dark themes.
+
 ## [0.20.3] — 2026-09-14
 
 - Studio now keeps sources, datasets, runs and model lineage together in persistent projects.

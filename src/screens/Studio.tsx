@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import StudioOverview, {
+  StudioHistory,
+} from "../components/studio/StudioOverview";
+import Icon from "../components/ui/Icon";
 import { Page } from "../components/ui/Shell";
 import { isTauri, listen } from "../lib/tauri";
 import { navigate } from "../lib/nav";
@@ -240,6 +244,7 @@ export default function Studio() {
     setProject((p) => (p ? { ...p, ...update } : p));
   }
   async function createProject() {
+    if (project) await save(project);
     const p: StudioProject = {
       id: crypto.randomUUID().replaceAll("-", ""),
       name: "Meu treinamento",
@@ -324,6 +329,18 @@ export default function Studio() {
   return (
     <Page
       wide
+      icon="cpu"
+      actions={
+        installed && compatible ? (
+          <button
+            className={`${primary} inline-flex items-center gap-2`}
+            disabled={active || busy}
+            onClick={() => void action(createProject)}
+          >
+            <Icon name="sparkles" /> Novo treinamento
+          </button>
+        ) : undefined
+      }
       title="Studio de treinamento"
       subtitle="Seus dados, sua base, um modelo adaptado na sua máquina."
     >
@@ -378,34 +395,34 @@ export default function Studio() {
         </section>
       ) : (
         <>
-          <div className="my-6 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-semibold">Seus projetos</h2>
-              <p className="text-sm text-dim">
-                Dados e configurações salvos ao sair.
-              </p>
-            </div>
+          {!project && !job ? (
+            <StudioOverview
+              projects={projects}
+              models={models}
+              runs={history}
+              disabled={busy || active}
+              onCreate={() => void action(createProject)}
+              onProject={(p) => void action(() => openProject(p))}
+              onRun={(run) =>
+                void action(async () => setJob(await api(`/runs/${run.id}`)))
+              }
+            />
+          ) : (
             <button
-              className={primary}
+              className={`${button} mb-6 inline-flex items-center gap-2 hover:bg-panel2`}
               disabled={active || busy}
-              onClick={() => void action(createProject)}
+              onClick={() =>
+                void action(async () => {
+                  if (project) await save(project);
+                  setProject(undefined);
+                  setJob(undefined);
+                })
+              }
             >
-              Novo treinamento
+              <Icon name="arrow-right" className="h-4 w-4 rotate-180" /> Voltar
+              ao Studio
             </button>
-          </div>
-          <div className="mb-6 flex flex-wrap gap-2">
-            {projects.map((p) => (
-              <button
-                key={p.id}
-                aria-pressed={p.id === project?.id}
-                className={p.id === project?.id ? primary : button}
-                disabled={active || busy}
-                onClick={() => void action(() => openProject(p))}
-              >
-                {p.name}
-              </button>
-            ))}
-          </div>
+          )}
           {project && (
             <>
               <label className="mb-4 block text-sm">
@@ -421,7 +438,10 @@ export default function Studio() {
               <p role="status" className="mb-4 text-xs text-dim">
                 {saved}
               </p>
-              <ol className="mb-6 flex gap-6 text-sm" aria-label="Etapas">
+              <ol
+                className="studio-steps mb-6 grid grid-cols-3 gap-2 text-sm"
+                aria-label="Etapas"
+              >
                 {["Dados", "Treinamento", "Resultado"].map((title, i) => (
                   <li
                     key={title}
@@ -921,6 +941,12 @@ export default function Studio() {
           )}
           {job && (
             <section className={`${panel} mt-5`} aria-live="polite">
+              <p className="mb-2 text-xs text-dim">
+                {job.name} · #{job.id.slice(0, 8)}
+                {job.training_info?.base?.name
+                  ? ` · ${job.training_info.base.name}`
+                  : ""}
+              </p>
               <h2 className="font-semibold">
                 {labels[job.status] ?? job.status}
                 {active && job.stage
@@ -1137,66 +1163,19 @@ export default function Studio() {
               </details>
             </section>
           )}
-          {!!history.length && (
-            <section className="mt-6">
-              <h2 className="mb-3 font-semibold">Execuções e versões</h2>
-              <div className="flex flex-wrap gap-2">
-                {history
-                  .filter(
-                    (r) =>
-                      !project ||
-                      r.project_id === project.id ||
-                      r.id === project.preparation_id,
-                  )
-                  .map((r) => (
-                    <button
-                      key={r.id}
-                      className={button}
-                      disabled={active || busy}
-                      onClick={() =>
-                        void action(async () =>
-                          setJob(await api(`/runs/${r.id}`)),
-                        )
-                      }
-                    >
-                      {r.name} · {labels[r.status] ?? r.status}
-                    </button>
-                  ))}
-              </div>
-            </section>
-          )}
-          {!standaloneStudio && (
-            <details className="mt-8 text-sm">
-              <summary>Gerenciar módulo e importar MVP</summary>
-              <p className="my-3 text-dim">
-                Remover dependências preserva datasets, checkpoints e modelos.
-                Importe o MVP em um Studio vazio.
-              </p>
-              <button
-                className={button}
-                disabled={active || busy}
-                onClick={() =>
-                  void action(async () => {
-                    await invoke("studio_import_legacy");
-                    await refresh();
-                  })
-                }
-              >
-                Importar cópia do MVP
-              </button>{" "}
-              <button
-                className={button}
-                disabled={active || busy}
-                onClick={() =>
-                  void action(async () => {
-                    await invoke("studio_uninstall");
-                    setInstalled(false);
-                  })
-                }
-              >
-                Remover módulo de treinamento
-              </button>
-            </details>
+          {(project || job) && (
+            <StudioHistory
+              runs={history.filter(
+                (r) =>
+                  !project ||
+                  r.project_id === project.id ||
+                  r.id === project.preparation_id,
+              )}
+              disabled={active || busy}
+              onOpen={(run) =>
+                void action(async () => setJob(await api(`/runs/${run.id}`)))
+              }
+            />
           )}
         </>
       )}

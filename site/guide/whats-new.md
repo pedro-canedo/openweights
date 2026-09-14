@@ -1,5 +1,16 @@
 # What's new
 
+## 0.20.4
+
+The Studio home screen now has project cards and a history that distinguishes
+preparation, training and comparison. Search by name, model or stage and filter
+ready models to open them directly in chat. Dates and identifiers help tell
+runs of the same document apart.
+
+The module-management and MVP-import section has been removed from this screen.
+Navigation saves your project before starting another, and the layout supports
+narrow windows in light and dark themes. See the [Studio guide](/guide/studio).
+
 ## 0.20.3
 
 Training Studio now has persistent projects, so sources, prepared datasets,

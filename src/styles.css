@@ -155,3 +155,13 @@ body {
   background-clip: text;
   color: transparent;
 }
+
+/* Studio overview and the active project share the desktop theme. */
+.studio-intro { background-image: radial-gradient(ellipse at top right, color-mix(in srgb, var(--lr-accent) 12%, transparent), transparent 65%); }
+.studio-steps li { border-bottom: 2px solid var(--lr-edge); padding: 12px 4px; color: var(--lr-dim); }
+.studio-steps li[aria-current="step"] { color: var(--lr-accent); border-color: var(--lr-accent); font-weight: 600; }
+
+.studio-status-success { background: rgb(16 185 129 / 10%); color: #34d399; }
+.studio-status-attention { background: rgb(245 158 11 / 10%); color: #fbbf24; }
+:root[data-theme="light"] .studio-status-success { color: #047857; }
+:root[data-theme="light"] .studio-status-attention { color: #92400e; }
