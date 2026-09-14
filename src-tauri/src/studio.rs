@@ -85,19 +85,15 @@ async fn start(state: &AppState) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     let mut cmd = tokio::process::Command::new(python);
     lr_proc::prepare(&mut cmd);
-    cmd.args([
-        "-m",
-        "uvicorn",
-        "app.main:app",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        &port.to_string(),
-    ])
-    .current_dir(&root)
-    .env("LAB_DATA", &data)
-    .env("HF_HOME", data.join("cache/huggingface"))
-    .env("OW_MODELS_DIR", &state.models_dir)
+    // Embedded Python ignores PYTHONPATH due to its private ._pth file.
+    cmd.args(["-c", "import sys; sys.path.insert(0, sys.argv[1]); import uvicorn; uvicorn.run('app.main:app', host='127.0.0.1', port=int(sys.argv[2]))"])
+    .arg(&state.studio_backend)
+    .arg(port.to_string())
+      .current_dir(&state.studio_backend)
+      .env("LAB_DATA", &data)
+      .env("HF_HOME", data.join("cache/huggingface"))
+      .env("OW_STUDIO_UI", state.studio_backend.join("app/static"))
+      .env("OW_MODELS_DIR", &state.models_dir)
     .env("OW_LLAMA_DIR", root.join("llama.cpp"))
     .env("OW_GPU_LOCK", state.data_dir.join("gpu.lock"))
     .env(
@@ -108,7 +104,7 @@ async fn start(state: &AppState) -> Result<(), String> {
     .env("OW_STUDIO_RUNTIME", root.file_name().unwrap_or_default())
     .env("PYTHONNOUSERSITE", "1")
     .env("PYTHONIOENCODING", "utf-8")
-    .env("PYTHONPATH", &root)
+    .env("PYTHONPATH", &state.studio_backend)
     .stdout(log.try_clone().map_err(|e| e.to_string())?)
     .stderr(log);
     let child = lr_proc::spawn_supervised(&mut cmd).map_err(|e| e.to_string())?;
@@ -184,11 +180,18 @@ pub async fn studio_request(
     // Allow only the guided contract. GPU mutations use the guarded command below.
     let allowed = (method == "GET"
         && (path == "/api/v1/capabilities"
+            || path == "/api/v1/models"
+            || path == "/api/v1/projects"
+            || path == "/api/v1/sources"
+            || (path.starts_with("/api/v1/datasets/")
+                && valid_run_path(&path.replacen("/datasets/", "/runs/", 1), "/preview"))
             || path == "/api/v1/datasets"
             || path == "/api/v1/runs"
             || valid_run_path(&path, "")))
         || (method == "POST"
             && (path == "/api/v1/prepare"
+                || path == "/api/v1/projects"
+                || path == "/api/v1/models/import"
                 || path == "/api/v1/preflight"
                 || valid_run_path(&path, "/cancel")
                 || (path.starts_with("/api/v1/preparations/")
@@ -240,7 +243,13 @@ pub async fn studio_train(
             format!("/api/v1/runs/{id}/resume")
         }
         Some(_) => return Err("Treinamento inválido.".into()),
-        None => "/api/v1/runs".into(),
+        None => match body.get("comparison_run").and_then(Value::as_str) {
+            Some(id) if id.len() == 32 && id.bytes().all(|b| b.is_ascii_hexdigit()) => {
+                format!("/api/v1/runs/{id}/compare")
+            }
+            Some(_) => return Err("Comparação inválida.".into()),
+            None => "/api/v1/runs".into(),
+        },
     };
     start(&state).await?;
     GPU_RESERVED.store(true, Ordering::SeqCst);
@@ -336,6 +345,10 @@ pub async fn studio_install(
         "https://github.com/pedro-canedo/openweights/releases/download/studio-runtime-v1/windows-x64.json"
     };
     let client = &state.http;
+    let _ = app.emit(
+        "studio-install",
+        json!({"stage":"catalog", "received":0, "total":0}),
+    );
     let manifest = client
         .get(url)
         .send()
@@ -469,9 +482,16 @@ pub async fn studio_install(
     if received != catalog.size {
         return Err("Download incompleto. Tente instalar novamente para continuar.".into());
     }
-    tokio::task::spawn_blocking(move || install_archive(root, archive, catalog, ocr))
-        .await
-        .map_err(|e| e.to_string())?
+    tokio::task::spawn_blocking(move || {
+        install_archive_progress(root, archive, catalog, ocr, |stage| {
+            let _ = app.emit(
+                "studio-install",
+                json!({"stage":stage, "received":0, "total":0}),
+            );
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 async fn open_download(path: &std::path::Path, offset: u64) -> Result<tokio::fs::File, String> {
@@ -494,14 +514,26 @@ async fn open_download(path: &std::path::Path, offset: u64) -> Result<tokio::fs:
     Ok(file)
 }
 
+#[cfg(test)]
 fn install_archive(
     root: PathBuf,
     archive: PathBuf,
     catalog: Catalog,
     ocr: bool,
 ) -> Result<(), String> {
+    install_archive_progress(root, archive, catalog, ocr, |_| {})
+}
+
+fn install_archive_progress(
+    root: PathBuf,
+    archive: PathBuf,
+    catalog: Catalog,
+    ocr: bool,
+    progress: impl Fn(&str),
+) -> Result<(), String> {
     use sha2::{Digest, Sha256};
     use std::io::Read;
+    progress("verifying");
     let mut source = std::fs::File::open(&archive).map_err(|e| e.to_string())?;
     let mut hash = Sha256::new();
     let mut buffer = [0u8; 1024 * 1024];
@@ -532,6 +564,7 @@ fn install_archive(
         .map_err(|e| e.to_string())?
         .as_nanos();
     let stage = root.join(format!("{}.staging-{nonce}", catalog.version));
+    progress("extracting");
     std::fs::create_dir(&stage).map_err(|e| e.to_string())?;
     let mut zip = zip::ZipArchive::new(std::fs::File::open(&archive).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
@@ -581,6 +614,7 @@ fn install_archive(
         }
     }
     let destination = root.join(&catalog.version);
+    progress("activating");
     if destination.exists() {
         if std::fs::read_to_string(destination.join(".package-sha256"))
             .ok()
@@ -672,6 +706,26 @@ pub async fn studio_upload(
             .into());
     }
     Ok(value)
+}
+
+#[tauri::command]
+pub async fn studio_import_model(state: State<'_, AppState>) -> Result<Value, String> {
+    match rfd::AsyncFileDialog::new()
+        .set_title("Escolha a base de treinamento (safetensors)")
+        .pick_folder()
+        .await
+    {
+        Some(folder) => {
+            request(
+                &state,
+                "POST",
+                "/api/v1/models/import",
+                Some(json!({"source":"local", "location":folder.path()})),
+            )
+            .await
+        }
+        None => Ok(Value::Null),
+    }
 }
 
 #[tauri::command]

@@ -29,6 +29,13 @@
     }
   },
   "bundle": {
+    "resources": {
+      "../studio/app/": "studio-backend/app/",
+      "../studio/LICENSE": "studio-backend/LICENSE",
+      "../studio/launch.py": "studio-backend/launch.py",
+      "../dist/studio.html": "studio-backend/app/static/studio.html",
+      "../dist/assets/": "studio-backend/app/static/assets/"
+    },
     "active": true,
     "publisher": "OpenWeights contributors",
     "copyright": "© 2026 OpenWeights contributors",

@@ -22,7 +22,7 @@ def models_dir():
 
 
 def runtime_id():
-    return os.environ.get('OW_STUDIO_RUNTIME', 'development')
+    return os.environ.get('OW_STUDIO_RUNTIME', 'development') + '+studio2'
 
 
 def ocr_tools():

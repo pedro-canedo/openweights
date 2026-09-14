@@ -5,6 +5,7 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from . import store
 
 class Queue:
@@ -32,7 +33,9 @@ class Queue:
             store.update('jobs', ident, {'status': 'running', 'started_at': store.now(), 'error': None})
             try:
                 with open(folder / 'worker.log', 'a', encoding='utf-8') as log:
-                    self.process = subprocess.Popen([sys.executable, '-u', '-m', 'app.worker', ident],
+                    self.process = subprocess.Popen([sys.executable, '-u', '-c',
+                        "import sys,runpy; sys.path.insert(0,sys.argv.pop(1)); runpy.run_module('app.worker',run_name='__main__')",
+                        str(Path(__file__).resolve().parent.parent), ident],
                         stdout=log, stderr=subprocess.STDOUT, start_new_session=(os.name != 'nt'),
                         **({'creationflags': subprocess.CREATE_NO_WINDOW} if os.name == 'nt' else {}))
                     signalled_at = None

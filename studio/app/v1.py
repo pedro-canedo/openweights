@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from . import store, runtime
+from . import store, runtime, catalog
 from .guided import TOO_SHORT
 from .schemas import TrainInput
 from .studio.pipeline import digest
@@ -28,7 +28,115 @@ class Prepare(BaseModel):
 class Run(BaseModel):
     dataset_id: str
     request_id: str = Field(min_length=8, max_length=100)
-    context: Literal[512, 1024] = 1024
+    context: Literal[512, 1024, 2048, 4096] = 1024
+    model_id: str = catalog.DEFAULT_MODEL
+    recipe_id: Literal['quick', 'recommended'] = 'quick'
+    project_id: str | None = None
+    rank: Literal[8, 16, 32] = 16
+    learning_rate: float = Field(default=1e-4, ge=1e-6, le=0.001)
+    max_steps: int | None = Field(default=None, ge=1, le=2000)
+    max_minutes: int = Field(default=30, ge=1, le=1440)
+
+
+class Project(BaseModel):
+    id: str = Field(pattern=r'^[a-f0-9]{32}$')
+    name: str = Field(min_length=1, max_length=100)
+    source_ids: list[str] = Field(default_factory=list, max_length=1000)
+    dataset_id: str | None = None
+    preparation_id: str | None = None
+    model_id: str = catalog.DEFAULT_MODEL
+    recipe_id: Literal['quick', 'recommended'] = 'quick'
+    preset: Literal['auto', 'documents', 'conversations', 'code'] = 'auto'
+    context: Literal[512, 1024, 2048, 4096] = 1024
+    rank: Literal[8, 16, 32] = 16
+    learning_rate: float = Field(default=1e-4, ge=1e-6, le=0.001)
+    max_minutes: int = Field(default=30, ge=1, le=1440)
+
+
+class ImportModel(BaseModel):
+    source: Literal['hub', 'local']
+    location: str = Field(min_length=1, max_length=1000)
+
+
+class Comparison(BaseModel):
+    request_id: str = Field(min_length=8, max_length=100)
+    prompt: str = Field(min_length=1, max_length=8000)
+
+
+@router.post('/runs/{ident}/compare')
+def compare(ident: str, body: Comparison):
+    with lock:
+        source = store.get('jobs', ident)
+        if source['kind'] != 'workflow' or source['status'] != 'completed':
+            raise ValueError('Conclua o treinamento antes de comparar.')
+        if source['config'].get('runtime') != runtime.runtime_id():
+            raise ValueError('Use a versão original do Studio e do runtime desta execução para comparar.')
+        config = {'run_id': ident, 'prompt': body.prompt, 'system': 'Responda em português de forma clara.',
+                  'max_tokens': 200, 'temperature': 0}
+        fingerprint = digest(config)
+        old = next((j for j in store.all_records('jobs') if j.get('request_id') == body.request_id), None)
+        if old:
+            if old.get('request_fingerprint') != fingerprint:
+                raise ValueError('Esta solicitação já pertence a outra comparação.')
+            return old
+        job = store.create('jobs', {'kind': 'comparison', 'name': source['name'], 'config': config,
+                'project_id': source.get('project_id'), 'request_id': body.request_id,
+                'request_fingerprint': fingerprint, 'status': 'queued', 'cancel_requested': False})
+        return job
+
+
+@router.get('/models')
+def models():
+    return catalog.available()
+
+
+@router.post('/models/import')
+def import_model(body: ImportModel):
+    with lock:
+        try:
+            return catalog.inspect_import(body.source, body.location)
+        except (OSError, KeyError) as exc:
+            raise ValueError('Não foi possível conferir a base. Verifique a pasta ou o identificador do Hugging Face, a conexão e o acesso ao modelo.') from exc
+
+
+@router.get('/projects')
+def projects():
+    return store.all_records('projects')
+
+
+@router.get('/sources')
+def sources():
+    return [{'id': s['id'], 'name': s.get('name', s.get('filename', 'Arquivo'))} for s in store.all_records('sources')]
+
+
+@router.post('/projects')
+def save_project(body: Project):
+    with lock:
+        catalog.resolve(body.model_id)
+        for ident in body.source_ids:
+            store.get('sources', ident)
+        if body.dataset_id:
+            store.get('datasets', body.dataset_id)
+        if body.preparation_id:
+            store.get('jobs', body.preparation_id)
+        record = body.model_dump()
+        try:
+            old = store.get('projects', body.id)
+            versions = list(old.get('dataset_versions', []))
+            if body.dataset_id and body.dataset_id not in versions:
+                versions.append(body.dataset_id)
+            return store.update('projects', body.id, record | {'dataset_versions': versions})
+        except KeyError:
+            return store.create('projects', record | {'dataset_versions': [body.dataset_id] if body.dataset_id else []})
+
+
+@router.get('/datasets/{ident}/preview')
+def preview(ident: str):
+    store.get('datasets', ident)
+    rows = json.loads((store.ROOT/'datasets'/f'{ident}.json').read_text(encoding='utf-8'))
+    # Never expose held-out examples in the tuning UI.
+    return {'examples': [r for r in rows if r['split'] == 'train'][:3],
+            'manifest': json.loads((store.ROOT/'datasets'/ident/'manifest.json').read_text(encoding='utf-8'))}
 
 
 class ImportLegacy(BaseModel):
@@ -54,8 +162,8 @@ def import_legacy(body: ImportLegacy):
 def capabilities():
     from .main import system
     store.ROOT.mkdir(parents=True, exist_ok=True)
-    return system() | {'api_version': 1, 'runtime': runtime.runtime_id(), 'base': BASE,
-                       'presets': ['documents', 'conversations', 'code']}
+    return system() | {'api_version': 1, 'studio_contract': 2, 'runtime': runtime.runtime_id(), 'base': BASE,
+                       'recipes': catalog.RECIPES, 'presets': ['documents', 'conversations', 'code']}
 
 
 @router.post('/prepare')
@@ -84,21 +192,27 @@ def preflight(body: Run):
     counts = dataset.get('split_counts', {})
     if not dataset.get('immutable') or not all(counts.get(p) for p in ('train', 'validation', 'test')):
         raise ValueError(TOO_SHORT)
+    model = catalog.resolve(body.model_id)
+    if dataset['kind'] == 'chat' and model.get('chat_template') is False:
+        raise ValueError('Esta base não tem template de conversa. Escolha outra base para conversas.')
+    if body.project_id:
+        store.get('projects', body.project_id)
+    estimated = catalog.resources(model, body.context, body.rank)
     caps = capabilities()
     if not caps['gpu']:
         raise ValueError('Não encontramos uma GPU NVIDIA disponível. Confira o driver NVIDIA.')
     gpu = caps['gpu']
-    if gpu['total_mb'] - gpu['used_mb'] < 4096:
+    if gpu['total_mb'] - gpu['used_mb'] < estimated['vram_estimated_mb']:
         raise ValueError('A GPU está com pouca memória livre. Feche outros programas que usam a GPU e tente novamente.')
-    if caps['disk_free'] < 8 * 1024**3:
-        raise ValueError('Libere pelo menos 8 GB no disco para a base, checkpoints e exportação.')
+    if caps['disk_free'] < estimated['disk_required_bytes']:
+        raise ValueError(f"Libere {estimated['disk_required_bytes']/1024**3:.1f} GB no disco para esta base e exportação.")
     import psutil
-    if psutil.virtual_memory().available < 4 * 1024**3:
-        raise ValueError('Libere pelo menos 4 GB de RAM antes de treinar e exportar.')
+    if psutil.virtual_memory().available < estimated['ram_required_bytes']:
+        raise ValueError(f"Libere {estimated['ram_required_bytes']/1024**3:.1f} GB de RAM ou escolha uma base menor.")
     if not caps['gguf']['available']:
         raise ValueError('Instale ou repare as ferramentas GGUF do módulo de treinamento.')
-    return {'ready': True, 'base': BASE, 'context': body.context, 'benchmark_required': True,
-            'disk_required_bytes': 8 * 1024**3, 'dataset': dataset}
+    return {'ready': True, 'base': model, 'context': body.context, 'benchmark_required': True,
+            **estimated, 'recipe': catalog.recipe(body, dataset, model), 'dataset': dataset}
 
 
 @router.post('/runs')
@@ -106,25 +220,27 @@ def create_run(body: Run):
     with lock:
         old = next((j for j in store.all_records('jobs') if j.get('request_id') == body.request_id), None)
         if old:
-            if old['config']['dataset_id'] != body.dataset_id or old['config']['context'] != body.context:
+            if old.get('request_fingerprint', digest({'dataset_id': old['config']['dataset_id'], 'context': old['config']['context']})) != digest(body.model_dump(exclude={'request_id'})):
                 raise ValueError('Esta solicitação já pertence a outra receita. Inicie uma nova solicitação.')
             return old
-        preflight(body)
+        validation = preflight(body)
         dataset = store.get('datasets', body.dataset_id)
         rows = json.loads((store.ROOT/'datasets'/f'{body.dataset_id}.json').read_text(encoding='utf-8'))
         if digest(rows) != dataset['sha256']:
             raise ValueError('O dataset mudou no disco. Prepare uma nova versão.')
-        model_id = digest(BASE)[:32]
+        base = catalog.resolve(body.model_id)
+        model_id = digest(base)[:32]
         try:
             model = store.get('models', model_id)
         except KeyError:
-            model = store.create('models', BASE | {'id': model_id})
+            model = store.create('models', base | {'id': model_id})
         config = TrainInput(name=dataset['name'], mode='qlora' if dataset['kind'] == 'chat' else 'continued',
-                            dataset_id=body.dataset_id, model_id=model_id, context=body.context,
-                            max_steps=50, save_steps=5).model_dump()
-        config.update(one_epoch=True, runtime=runtime.runtime_id(), benchmark=True)
+                            dataset_id=body.dataset_id, model_id=model_id, **{k:v for k,v in validation['recipe'].items() if k in TrainInput.model_fields}).model_dump()
+        config.update(validation['recipe'])
+        config['project_id'] = body.project_id
         job = store.create('jobs', {'kind': 'workflow', 'name': dataset['name'], 'config': config,
-                                  'request_id': body.request_id, 'status': 'preparing', 'cancel_requested': False})
+                                  'request_id': body.request_id, 'request_fingerprint': digest(body.model_dump(exclude={'request_id'})),
+                                  'project_id': body.project_id, 'status': 'preparing', 'cancel_requested': False})
         folder = store.run_dir(job['id'])
         snapshot = {p: [r for r in rows if r['split'] == p] for p in ('train', 'validation', 'test')}
         store.write_json(folder/'dataset.json', snapshot)
@@ -135,7 +251,7 @@ def create_run(body: Run):
 
 @router.get('/runs')
 def runs():
-    return [j for j in store.all_records('jobs') if j['kind'] in ('workflow', 'guided_prepare')]
+    return [j for j in store.all_records('jobs') if j['kind'] in ('workflow', 'guided_prepare', 'comparison')]
 
 
 @router.get('/runs/{ident}')
@@ -189,7 +305,7 @@ def resume(ident: str):
         if job['kind'] == 'guided_prepare':
             return store.update('jobs', ident, {'status': 'queued', 'cancel_requested': False, 'error': None})
         if job['config'].get('runtime') != runtime.runtime_id():
-            raise ValueError('Instale a versão original do runtime para retomar este treino.')
+            raise ValueError('Use a versão original do Studio e do runtime para retomar este treino. Os checkpoints permanecem preservados.')
         folder = store.run_dir(ident)
         integrity = json.loads((folder/'integrity.json').read_text(encoding='utf-8'))
         for name in ('config', 'dataset'):

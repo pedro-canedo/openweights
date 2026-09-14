@@ -377,4 +377,4 @@ app.add_middleware(BodyLimit)
 app.include_router(studio_router)
 from .v1 import router as v1_router
 app.include_router(v1_router)
-app.mount('/', StaticFiles(directory=Path(__file__).parent/'static', html=True), name='ui')
+app.mount('/', StaticFiles(directory=os.environ.get('OW_STUDIO_UI', str(Path(__file__).parent/'static')), html=True), name='ui')

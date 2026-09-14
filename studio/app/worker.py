@@ -37,10 +37,18 @@ def resolve_model(record):
             raise ValueError('Caminho local inválido.')
         return str(path)
     from huggingface_hub import snapshot_download
+    from tqdm.auto import tqdm
+    class DownloadProgress(tqdm):
+        def update(self, n=1):
+            result = super().update(n)
+            ident = os.environ.get('OW_STUDIO_JOB')
+            if ident and self.total:
+                store.update('jobs', ident, {'download_progress': {'received_files': self.n, 'total_files': self.total}})
+            return result
     print(f"Carregando {record['repo']} ({record.get('resolved_revision') or record['revision']})", flush=True)
     path = snapshot_download(record['repo'], revision=record.get('resolved_revision') or record['revision'],
         allow_patterns=['*.json','*.safetensors','*.model','*.txt','*.tiktoken','*.jinja','*.jinja2'],
-        max_workers=4)
+        max_workers=4, tqdm_class=DownloadProgress)
     if not list(Path(path).glob('*.safetensors')):
         raise ValueError('Repositório não contém pesos safetensors compatíveis. GGUF não é um checkpoint de treino.')
     store.update('models', record['id'], {'status':'ready','resolved_revision':Path(path).name})
@@ -149,6 +157,7 @@ def train(job, folder):
         raise ValueError(f'Contexto escolhido excede o limite de {cap} do modelo.')
     token_counts = {}
 
+    effective_steps = c['max_steps']
     class Monitor(TrainerCallback):
         def on_save(self, args, state, control, **kwargs):
             if c.get('one_epoch'):
@@ -165,14 +174,14 @@ def train(job, folder):
             if tracked_model is not None and getattr(tracked_model, 'last_router_aux_loss', None) is not None:
                 entry['router_aux_loss'] = tracked_model.last_router_aux_loss
                 entry['expert_counts'] = tracked_model.last_expert_counts
-            entry.update(step=state.global_step, total_steps=state.max_steps, elapsed=time.monotonic()-timer,
+            entry.update(step=state.global_step, total_steps=min(state.max_steps,effective_steps), elapsed=time.monotonic()-timer,
                 vram_gb=torch.cuda.max_memory_allocated()/2**30)
             with (folder/'metrics.jsonl').open('a', encoding='utf-8') as f:
                 f.write(json.dumps(entry, ensure_ascii=False)+'\n')
         def on_step_end(self, args, state, control, **kwargs):
             global CANCELLED
             CANCELLED = CANCELLED or store.get('jobs', job['id']).get('cancel_requested', False)
-            if CANCELLED or (c.get('one_epoch') and state.global_step >= c['max_steps']):
+            if CANCELLED or (c.get('one_epoch') and (state.global_step >= effective_steps or time.monotonic()-timer >= c.get('max_minutes', 1440)*60)):
                 control.should_training_stop = True
                 control.should_save = True
             return control
@@ -268,6 +277,14 @@ def train(job, folder):
     store.update('jobs', job['id'], {'training_info':manifest})
     print('Tokens:', token_counts, '| batch efetivo:', c['batch']*c['accumulation'], flush=True)
     check_cancel()
+    effective_steps = min(c['max_steps'], max(1, math.ceil(len(train_ds)/(c['batch']*c['accumulation'])))) if c.get('one_epoch') else c['max_steps']
+    benchmark_file = folder/'benchmark.json'
+    if c.get('recipe_id') == 'recommended' and benchmark_file.exists():
+        measured = json.loads(benchmark_file.read_text(encoding='utf-8'))
+        seconds = measured.get('train', {}).get('train_runtime', 0)
+        if seconds > 0:
+            effective_steps = min(effective_steps, max(1, int(c.get('max_minutes',30)*60 / seconds)))
+    store.update('jobs', job['id'], {'progress': {'total_steps': effective_steps, 'training_started_at': store.now()}})
     result = trainer.train(resume_from_checkpoint=str(checkpoint_path) if checkpoint_path else None)
     if CANCELLED:
         print('Treino interrompido; checkpoint preservado.')
@@ -295,6 +312,7 @@ def train(job, folder):
                     manifest['artifact_sha256'][path.relative_to(artifact).as_posix()] = hashlib.file_digest(stream, 'sha256').hexdigest()
         store.write_json(folder/'manifest.json', manifest)
         store.write_json(folder/'training-complete.json', {'artifact_sha256': manifest['artifact_sha256']})
+        store.update('jobs', job['id'], {'training_info': manifest})
     store.update('jobs', job['id'], {'result':metrics,'artifact':str(artifact)})
     print('Treinamento concluído. Artefato:', artifact, flush=True)
 
@@ -341,7 +359,8 @@ def generate(job, folder):
     if options['do_sample']: options['temperature']=c['temperature']
     from transformers import StoppingCriteria, StoppingCriteriaList
     class CancelGeneration(StoppingCriteria):
-        def __call__(self, input_ids, scores, **kwargs): return CANCELLED
+        def __call__(self, input_ids, scores, **kwargs):
+            return CANCELLED or store.get('jobs', job['id']).get('cancel_requested', False)
     with torch.inference_mode():
         output=model.generate(**inputs, max_new_tokens=budget, **options,
             pad_token_id=tok.pad_token_id if tok.pad_token_id is not None else tok.eos_token_id,
@@ -501,6 +520,10 @@ def main():
         elif job['kind']=='generate':
             from .gpu_lease import lease
             with lease(): generate(job,folder)
+        elif job['kind']=='comparison':
+            from .gpu_lease import lease
+            from .workflow import compare_models
+            with lease(): compare_models(job, folder, check_cancel)
         elif job['kind']=='gguf': gguf_export(job,folder)
         elif job['kind']=='download':
             path=resolve_model(store.get('models',job['config']['model_id']))

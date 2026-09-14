@@ -19,6 +19,37 @@ install Python or Docker globally.
 5. When export finishes, click **Open in chat**. The GGUF and its manifest are
    published atomically in the same model library used by OpenWeights.
 
+## Projects and base models
+
+Each project keeps its sources, prepared dataset snapshots, runs and model
+lineage together. Create a project for a subject, then add sources to it; the
+same project can be reopened after a restart without uploading the files again.
+
+The **Base model** picker starts with the pinned Qwen3 0.6B Apache-2.0 model.
+Qwen3 1.7B is also available as a candidate and requires the local benchmark
+before a run can start. The picker shows the expected download, VRAM, RAM and
+disk requirements for the selected recipe. **Quick** is the safe 50-step
+recipe; **Recommended** raises the budget only after the preflight succeeds.
+
+You can import a compatible Hugging Face repository or a local model folder.
+The Studio accepts dense safetensors models with a tokenizer and chat template;
+quantized GGUF folders, adapter-only folders and models with custom code are
+rejected with an actionable message. Imported models are copied into the
+Studio data directory and pinned by revision and SHA-256, so changing the
+original folder cannot change an existing run.
+
+The **Advanced** panel exposes context, LoRA rank, learning rate and the time
+limit. Changing one of these values recalculates the resource summary and
+requires a new preflight. The chosen model revision and recipe are frozen in
+the run manifest.
+
+## Comparing results
+
+After a run has completed, **Compare with base** runs the same short prompts
+through the original and trained model, one at a time, and stores both answers
+in the run record. The comparison is diagnostic only: it never uses the
+reserved test partition to select a checkpoint or tune the recipe.
+
 The module checks free VRAM, RAM and disk and runs a short benchmark before
 training. If the chat engine is using the GPU, it asks before stopping it.
 External GPU processes are detected through available memory and are never

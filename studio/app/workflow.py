@@ -25,6 +25,15 @@ def run(job, folder, check_cancel):
         if digest(json.loads((folder/f'{name}.json').read_text(encoding='utf-8'))) != integrity[name]:
             raise ValueError('O snapshot foi alterado. Prepare uma nova versão antes de treinar.')
     if not job.get('resume') and not job.get('resume_export'):
+        store.update('jobs', job['id'], {'stage': 'downloading'})
+        saved = json.loads((folder/'config.json').read_text(encoding='utf-8'))
+        base = saved['model']
+        if base.get('file_hashes'):
+            for name, expected in base['file_hashes'].items():
+                if file_hash(Path(base['repo'])/name) != expected:
+                    raise ValueError('A base local foi alterada. Importe uma cópia íntegra.')
+        worker.resolve_model(base)
+        check_cancel()
         store.update('jobs', job['id'], {'stage': 'benchmark'})
         benchmark = folder/'benchmark'
         benchmark.mkdir(exist_ok=True)
@@ -70,6 +79,37 @@ def run(job, folder, check_cancel):
     check_cancel()
     result = store.get('jobs', job['id'])['result']
     publish(job, folder, result)
+
+
+def compare_models(job, folder, check_cancel):
+    from . import worker
+    import torch
+    config = job['config']
+    source = store.get('jobs', config['run_id'])
+    saved = json.loads((store.run_dir(source['id'])/'config.json').read_text(encoding='utf-8'))
+    marker = json.loads((store.run_dir(source['id'])/'training-complete.json').read_text(encoding='utf-8'))
+    for name, expected in marker['artifact_sha256'].items():
+        artifact_root = store.run_dir(source['id'])/'artifact'
+        target = (artifact_root/name).resolve()
+        if not target.is_relative_to(artifact_root.resolve()) or file_hash(target) != expected:
+            raise ValueError('O artefato mudou. Restaure uma cópia íntegra para comparar.')
+    base_id = digest(['comparison-base', saved['model']])[:32]
+    try:
+        store.get('models', base_id)
+    except KeyError:
+        store.create('models', saved['model'] | {'id': base_id})
+    answers = {}
+    for label in ('original', 'trained'):
+        check_cancel()
+        store.update('jobs', job['id'], {'stage': f'comparing_{label}'})
+        options = dict(config, model_id=base_id if label == 'original' else None,
+                       run_id=source['id'] if label == 'trained' else None)
+        worker.generate(dict(job, config=options), folder)
+        answers[label] = store.get('jobs', job['id'])['result']
+        gc.collect()
+        torch.cuda.empty_cache()
+    store.update('jobs', job['id'], {'result': answers | {'prompt': config['prompt'],
+                 'limitation': 'Comparação exploratória; estes exemplos não pertencem ao teste reservado.'}})
 
 
 def publish(job, folder, result):

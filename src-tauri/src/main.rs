@@ -95,6 +95,7 @@ fn main() {
             studio::studio_train,
             studio::studio_install,
             studio::studio_import_legacy,
+            studio::studio_import_model,
             studio::studio_uninstall,
             commands::hardware_profile,
             commands::app_version,

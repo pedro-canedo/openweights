@@ -8,6 +8,7 @@ use tauri::{AppHandle, Manager};
 
 pub struct AppState {
     pub studio: tokio::sync::Mutex<Option<crate::studio::Service>>,
+    pub studio_backend: PathBuf,
     pub profile: HardwareProfile,
     pub data_dir: PathBuf,
     pub models_dir: PathBuf,
@@ -213,6 +214,11 @@ impl AppState {
             hf: tokio::sync::Mutex::new(lr_models::HfClient::new(token)),
             http: reqwest::Client::new(),
             studio: tokio::sync::Mutex::new(None),
+            studio_backend: if cfg!(debug_assertions) {
+                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../studio")
+            } else {
+                app.path().resource_dir()?.join("studio-backend")
+            },
             runtime_mgr: lr_runtime::RuntimeManager::new(data_dir.clone()),
             downloads: lr_models::DownloadManager::new(models_dir.clone()),
             server: tokio::sync::Mutex::new(None),

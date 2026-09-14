@@ -20,6 +20,36 @@ Python nem Docker globalmente.
 5. Ao terminar, clique em **Abrir no chat**. O GGUF e o manifesto entram na mesma
    biblioteca de modelos do OpenWeights.
 
+## Projetos e escolha da base
+
+Cada projeto mantém suas fontes, snapshots preparados, execuções e linhagem do
+modelo. Crie um projeto para cada assunto e reabra-o depois de reiniciar o app
+sem enviar os arquivos novamente.
+
+O seletor **Modelo base** começa com o Qwen3 0.6B Apache-2.0 fixado no catálogo.
+O Qwen3 1.7B também aparece como candidato e exige o benchmark local antes de
+iniciar. Para a base e a receita escolhidas, a tela mostra download, VRAM, RAM e
+disco estimados. **Rápido** usa a receita segura de 50 passos; **Recomendado**
+aumenta o limite somente depois que a pré-validação passa.
+
+É possível importar um repositório Hugging Face compatível ou uma pasta local.
+O Studio aceita modelos densos em safetensors com tokenizer e template de chat;
+pastas GGUF quantizadas, somente adaptadores e modelos com código customizado
+são recusados com uma orientação concreta. Modelos importados são copiados para
+a pasta de dados e fixados por revisão e SHA-256, portanto alterar a pasta
+original não muda uma execução existente.
+
+O painel **Avançado** expõe contexto, rank LoRA, taxa de aprendizado e limite de
+tempo. Qualquer mudança recalcula os recursos e exige nova pré-validação. A
+revisão da base e a receita escolhidas ficam congeladas no manifesto da execução.
+
+## Comparar resultados
+
+Depois de concluir uma execução, **Comparar com a base** envia os mesmos prompts
+curtos para o modelo original e o treinado, um por vez, e salva as duas respostas
+na execução. A comparação serve para diagnóstico; nunca usa o conjunto de teste
+reservado para escolher checkpoint ou ajustar a receita.
+
 Antes do treino o módulo confere VRAM, RAM e disco livres e executa um benchmark
 curto. Se o motor do chat usar a GPU, ele pede confirmação antes de pará-lo.
 
