@@ -1,5 +1,18 @@
 # What's new
 
+## 0.20.3
+
+Training Studio now has persistent projects, so sources, prepared datasets,
+runs and model lineage stay together. The base-model picker includes Qwen3
+0.6B and Qwen3 1.7B, with resource estimates and safe import validation for
+Hugging Face repositories or local safetensors folders. Quick and recommended
+recipes, an Advanced panel, preflight checks and base-versus-trained comparison
+make the path from a document to a chat model easier to inspect.
+
+The packaged desktop also starts the Python Studio backend and its UI from the
+private runtime included by Tauri. The [Training Studio guide](/guide/studio)
+explains the new project and model workflow.
+
 ## 0.20.2
 
 Fixes the actual Studio download failure on Windows: the file was opened in

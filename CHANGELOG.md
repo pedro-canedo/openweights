@@ -21,6 +21,14 @@ published releases and the version commits, and are kept as history.
 
 **Release candidate:** training and export were exercised on Windows with an RTX 3090. A short experiment does not guarantee factual answers about documents. OCR was tested on a rasterized book sample and a mixed PDF, not every kind of scan. Training targets Windows x64 with NVIDIA; chat remains available on existing platforms. This candidate does not automatically replace the stable version through the updater.
 
+## [0.20.3] — 2026-09-14
+
+- Studio now keeps sources, datasets, runs and model lineage together in persistent projects.
+- The model picker includes Qwen3 0.6B and Qwen3 1.7B, shows estimated resources and accepts Hugging Face bases or local safetensors folders.
+- Quick and recommended recipes, an Advanced panel, VRAM/RAM/disk preflight and base-versus-trained comparison are now part of the guided flow.
+- Packaged installation now loads the Studio Python backend and UI from the Tauri private runtime, without depending on the development checkout.
+- Studio documentation now covers projects, base selection, safe imports and result comparison.
+
 ## [0.20.2] — 2026-09-12
 
 - Fixes the reproduced “Access denied (os error 5)” when installing Studio: the download file now allows resizing and resuming writes on Windows.

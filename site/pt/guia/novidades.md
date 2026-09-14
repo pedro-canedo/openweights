@@ -1,5 +1,18 @@
 # Novidades
 
+## 0.20.3
+
+O Studio de treinamento agora tem projetos persistentes: fontes, datasets
+preparados, execuções e linhagem do modelo ficam juntos. O seletor de bases
+inclui Qwen3 0.6B e Qwen3 1.7B, mostra os recursos estimados e valida importações
+de repositórios Hugging Face ou pastas safetensors locais. Receitas rápida e
+recomendada, painel Avançado, pré-validação e comparação entre base e modelo
+treinado deixam o caminho de um documento até o chat mais fácil de conferir.
+
+O desktop empacotado também inicia o backend Python e a interface do Studio pelo
+runtime privado incluído pelo Tauri. O [guia do Studio](/pt/guia/studio) explica
+o novo fluxo de projetos e modelos.
+
 ## 0.20.2
 
 Corrige a falha real no download do Studio no Windows: o modo de abertura do
