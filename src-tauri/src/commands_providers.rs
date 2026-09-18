@@ -249,8 +249,98 @@ pub async fn ninerouter_status(state: State<'_, AppState>) -> CmdResult<NineRout
         port,
         dashboard_url: running.then(|| format!("http://127.0.0.1:{port}/dashboard")),
         password: cfg.nine_router.password.clone(),
-        version: cfg.nine_router.version.clone(),
+        version: l.versao_instalada().unwrap_or_default(),
     })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NineRouterCheck {
+    pub version: String,
+    pub latest_version: String,
+    pub update_available: bool,
+}
+
+#[tauri::command]
+pub async fn ninerouter_check(state: State<'_, AppState>) -> CmdResult<NineRouterCheck> {
+    let version = layout(&state)
+        .versao_instalada()
+        .ok_or_else(|| "não foi possível ler a versão instalada do 9router".to_string())?;
+    let latest_version = lr_ninerouter::ultima_versao(&state.http)
+        .await
+        .map_err(err_str)?;
+    Ok(NineRouterCheck {
+        update_available: lr_ninerouter::versao_mais_nova(&version, &latest_version),
+        version,
+        latest_version,
+    })
+}
+
+#[tauri::command]
+pub async fn ninerouter_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<NineRouterStatus> {
+    let _operation = state
+        .ninerouter_operation
+        .try_lock()
+        .map_err(|_| "uma operação do 9router já está em andamento".to_string())?;
+    let check = ninerouter_check(state.clone()).await?;
+    if !check.update_available {
+        return ninerouter_status(state.clone()).await;
+    }
+    let l = layout(&state);
+    let app_node = app.clone();
+    state
+        .node
+        .ensure(move |ev| {
+            let _ = app_node.emit(EVENTO, &ev);
+        })
+        .await
+        .map_err(err_str)?;
+    let emitir = |ev: NineRouterEvent| {
+        let _ = app.emit(EVENTO, &ev);
+    };
+    let staged =
+        lr_ninerouter::preparar_atualizacao(&state.node, &l, &check.latest_version, &emitir)
+            .await
+            .map_err(err_str)?;
+
+    let running = state.ninerouter.lock().await.is_some();
+    ninerouter_stop_inner(&state).await?;
+    fechar_painel(&app);
+    sincronizar_rotas(&state).await;
+    // A cópia antiga deve sobreviver até a restauração em caso de erro.
+    let staged_path = staged.keep();
+    let result = lr_ninerouter::aplicar_atualizacao(&l, &staged_path).map_err(err_str);
+    if (result.is_ok() || !staged_path.join("previous-app").exists())
+        && let Err(e) = lr_fetch::remove_dir_all_retrying(&staged_path)
+    {
+        log::warn!("limpeza da atualização do 9router: {e}");
+    }
+    let saved = if result.is_ok() {
+        let mut cfg = load_config(&state);
+        cfg.nine_router.version = check.latest_version;
+        state
+            .store
+            .set_setting(SETTING, &cfg.to_json())
+            .map_err(err_str)
+    } else {
+        Ok(())
+    };
+    let restart = if running {
+        ninerouter_start_inner(app.clone(), state.clone())
+            .await
+            .map(|_| ())
+    } else {
+        Ok(())
+    };
+    sincronizar_rotas(&state).await;
+    result?;
+    saved?;
+    restart.map_err(|e| format!("9router atualizado, mas não foi possível reiniciar: {e}"))?;
+    let _ = app.emit(EVENTO, &NineRouterEvent::Ready);
+    ninerouter_status(state.clone()).await
 }
 
 /// Baixa o Node portátil e instala o 9router na pasta isolada.
@@ -263,7 +353,14 @@ pub async fn ninerouter_install(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<NineRouterStatus> {
+    let _operation = state
+        .ninerouter_operation
+        .try_lock()
+        .map_err(|_| "uma operação do 9router já está em andamento".to_string())?;
     let l = layout(&state);
+    if l.instalado() {
+        return ninerouter_status(state.clone()).await;
+    }
 
     // 1. Node portátil (progresso real: o download tem content-length).
     let app_node = app.clone();
@@ -301,11 +398,22 @@ pub async fn ninerouter_install(
         .map_err(err_str)?;
 
     let _ = app.emit(EVENTO, &NineRouterEvent::Ready);
-    ninerouter_status(state).await
+    ninerouter_status(state.clone()).await
 }
 
 #[tauri::command]
 pub async fn ninerouter_start(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<NineRouterStatus> {
+    let _operation = state
+        .ninerouter_operation
+        .try_lock()
+        .map_err(|_| "uma operação do 9router já está em andamento".to_string())?;
+    ninerouter_start_inner(app, state.clone()).await
+}
+
+async fn ninerouter_start_inner(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<NineRouterStatus> {
@@ -499,10 +607,14 @@ pub async fn ninerouter_stop(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<NineRouterStatus> {
+    let _operation = state
+        .ninerouter_operation
+        .try_lock()
+        .map_err(|_| "uma operação do 9router já está em andamento".to_string())?;
     ninerouter_stop_inner(&state).await?;
     fechar_painel(&app);
     sincronizar_rotas(&state).await;
-    ninerouter_status(state).await
+    ninerouter_status(state.clone()).await
 }
 
 /// Para o processo e apaga a instalação.
@@ -515,6 +627,10 @@ pub async fn ninerouter_uninstall(
     state: State<'_, AppState>,
     remove_data: bool,
 ) -> CmdResult<NineRouterStatus> {
+    let _operation = state
+        .ninerouter_operation
+        .try_lock()
+        .map_err(|_| "uma operação do 9router já está em andamento".to_string())?;
     ninerouter_stop_inner(&state).await?;
     fechar_painel(&app);
     let l = layout(&state);
@@ -536,7 +652,7 @@ pub async fn ninerouter_uninstall(
         .set_setting(SETTING, &cfg.to_json())
         .map_err(err_str)?;
     sincronizar_rotas(&state).await;
-    ninerouter_status(state).await
+    ninerouter_status(state.clone()).await
 }
 
 // -------------------------------------------------------------- gateway ---

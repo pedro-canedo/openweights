@@ -42,6 +42,8 @@ pub const INSTALL_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 pub enum NineRouterError {
     #[error("o Node portátil não está instalado")]
     NodeMissing,
+    #[error("falha ao consultar atualização: {0}")]
+    Network(#[from] reqwest::Error),
     #[error("falha de E/S: {0}")]
     Io(#[from] std::io::Error),
     #[error("npm falhou ({codigo}): {detalhe}")]
@@ -120,6 +122,81 @@ impl Layout {
     pub fn instalado(&self) -> bool {
         self.cli_js().is_file()
     }
+
+    pub fn versao_instalada(&self) -> Option<String> {
+        let json = std::fs::read(self.app().join("node_modules/9router/package.json")).ok()?;
+        let package: serde_json::Value = serde_json::from_slice(&json).ok()?;
+        let version = package.get("version")?.as_str()?;
+        semver::Version::parse(version).ok()?;
+        Some(version.to_string())
+    }
+}
+
+pub fn versao_mais_nova(instalada: &str, candidata: &str) -> bool {
+    match (
+        semver::Version::parse(instalada),
+        semver::Version::parse(candidata),
+    ) {
+        (Ok(atual), Ok(nova)) => nova > atual,
+        _ => false,
+    }
+}
+
+pub async fn ultima_versao(client: &reqwest::Client) -> Result<String, NineRouterError> {
+    let package: serde_json::Value = client
+        .get("https://registry.npmjs.org/9router/latest")
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let version = package
+        .get("version")
+        .and_then(|v| v.as_str())
+        .filter(|v| semver::Version::parse(v).is_ok())
+        .ok_or_else(|| NineRouterError::Verification("versão inválida no npm".into()))?;
+    Ok(version.to_string())
+}
+
+/// Prepara o pacote fora da instalação ativa. Erros de rede/npm não tocam
+/// no app anterior nem no DATA_DIR com contas, SQLite e credenciais.
+pub async fn preparar_atualizacao(
+    node: &NodeManager,
+    layout: &Layout,
+    version: &str,
+    on_event: &(dyn Fn(NineRouterEvent) + Send + Sync),
+) -> Result<tempfile::TempDir, NineRouterError> {
+    semver::Version::parse(version).map_err(|e| NineRouterError::Verification(e.to_string()))?;
+    let dir = tempfile::Builder::new()
+        .prefix("update-")
+        .tempdir_in(&layout.raiz)?;
+    let staged = Layout {
+        raiz: dir.path().to_path_buf(),
+    };
+    instalar_versao(node, &staged, version, on_event).await?;
+    if staged.versao_instalada().as_deref() != Some(version) {
+        return Err(NineRouterError::Verification(
+            "pacote baixado não corresponde à versão solicitada".into(),
+        ));
+    }
+    Ok(dir)
+}
+
+/// Troca apenas o código. Se a promoção falhar, restaura o pacote anterior.
+pub fn aplicar_atualizacao(layout: &Layout, staged: &Path) -> Result<(), NineRouterError> {
+    let backup = staged.join("previous-app");
+    std::fs::rename(layout.app(), &backup)?;
+    if let Err(e) = std::fs::rename(staged.join("app"), layout.app()) {
+        if let Err(restore) = std::fs::rename(&backup, layout.app()) {
+            return Err(NineRouterError::Verification(format!(
+                "falha ao trocar pacote ({e}); cópia anterior em {}: {restore}",
+                backup.display()
+            )));
+        }
+        return Err(e.into());
+    }
+    Ok(())
 }
 
 // --------------------------------------------------------------- segredos ---
@@ -185,17 +262,26 @@ pub async fn instalar(
     layout: &Layout,
     on_event: &(dyn Fn(NineRouterEvent) + Send + Sync),
 ) -> Result<(), NineRouterError> {
+    instalar_versao(node, layout, PINNED_9ROUTER, on_event).await
+}
+
+async fn instalar_versao(
+    node: &NodeManager,
+    layout: &Layout,
+    version: &str,
+    on_event: &(dyn Fn(NineRouterEvent) + Send + Sync),
+) -> Result<(), NineRouterError> {
     std::fs::create_dir_all(layout.app())?;
     std::fs::create_dir_all(layout.data())?;
 
-    match rodar_npm(node, layout, true, on_event).await {
+    match rodar_npm(node, layout, version, true, on_event).await {
         Ok(()) => Ok(()),
         Err(e) => {
             log::warn!("npm com --ignore-scripts falhou ({e}); repetindo sem a flag");
             on_event(NineRouterEvent::Log {
                 line: "scripts de instalação do pacote serão executados".to_string(),
             });
-            rodar_npm(node, layout, false, on_event).await
+            rodar_npm(node, layout, version, false, on_event).await
         }
     }
 }
@@ -203,12 +289,13 @@ pub async fn instalar(
 async fn rodar_npm(
     node: &NodeManager,
     layout: &Layout,
+    version: &str,
     ignorar_scripts: bool,
     on_event: &(dyn Fn(NineRouterEvent) + Send + Sync),
 ) -> Result<(), NineRouterError> {
     use tokio::io::AsyncBufReadExt as _;
 
-    let args = npm_install_args(PINNED_9ROUTER, ignorar_scripts);
+    let args = npm_install_args(version, ignorar_scripts);
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
     let app = layout.app();
     let mut cmd = node
@@ -224,24 +311,49 @@ async fn rodar_npm(
 
     // O log ao vivo é o que substitui a barra de progresso: sem ele a tela
     // fica muda por minutos e parece travada.
-    let mut linhas = Vec::new();
-    if let Some(saida) = stdout {
+    async fn ler(
+        saida: impl tokio::io::AsyncRead + Unpin,
+        on_event: &(dyn Fn(NineRouterEvent) + Send + Sync),
+    ) -> String {
         let mut leitor = tokio::io::BufReader::new(saida).lines();
-        while let Ok(Some(linha)) = leitor.next_line().await {
-            if let Some(fase) = fase_do_npm(&linha) {
+        let mut tail = std::collections::VecDeque::new();
+        while let Ok(Some(line)) = leitor.next_line().await {
+            if let Some(phase) = fase_do_npm(&line) {
                 on_event(NineRouterEvent::Installing {
-                    phase: fase.to_string(),
+                    phase: phase.into(),
                 });
             }
-            on_event(NineRouterEvent::Log {
-                line: linha.clone(),
-            });
-            linhas.push(linha);
+            on_event(NineRouterEvent::Log { line: line.clone() });
+            tail.push_back(line);
+            if tail.len() > 20 {
+                tail.pop_front();
+            }
         }
+        tail.into_iter().collect::<Vec<_>>().join("\n")
     }
-
-    let status = match tokio::time::timeout(INSTALL_TIMEOUT, filho.wait()).await {
-        Ok(r) => r?,
+    // Drena os dois pipes ao mesmo tempo: npm escreve o progresso no stderr.
+    // O timeout cobre também a leitura, não apenas o wait após EOF.
+    let operation = async {
+        tokio::join!(
+            filho.wait(),
+            async {
+                if let Some(s) = stdout {
+                    ler(s, on_event).await
+                } else {
+                    String::new()
+                }
+            },
+            async {
+                if let Some(s) = stderr {
+                    ler(s, on_event).await
+                } else {
+                    String::new()
+                }
+            },
+        )
+    };
+    let (status, out, err) = match tokio::time::timeout(INSTALL_TIMEOUT, operation).await {
+        Ok((r, out, err)) => (r?, out, err),
         Err(_) => {
             if let Some(pid) = filho.id() {
                 lr_proc::kill_process_tree(pid);
@@ -251,17 +363,7 @@ async fn rodar_npm(
     };
 
     if !status.success() {
-        let mut detalhe = String::new();
-        if let Some(saida) = stderr {
-            let mut leitor = tokio::io::BufReader::new(saida).lines();
-            while let Ok(Some(l)) = leitor.next_line().await {
-                detalhe.push_str(&l);
-                detalhe.push('\n');
-            }
-        }
-        if detalhe.trim().is_empty() {
-            detalhe = linhas.join("\n");
-        }
+        let detalhe = if err.trim().is_empty() { out } else { err };
         return Err(NineRouterError::Npm {
             codigo: status.code().map(|c| c.to_string()).unwrap_or_default(),
             detalhe: detalhe
@@ -843,6 +945,81 @@ mod tests {
     }
 
     #[test]
+    fn updates_compare_semver_without_downgrades() {
+        assert!(versao_mais_nova("0.5.9", "0.5.75"));
+        assert!(!versao_mais_nova("0.5.75", "0.5.9"));
+        assert!(!versao_mais_nova("0.5.75", "0.5.75"));
+        assert!(!versao_mais_nova("1.0.0", "1.0.0-rc.1"));
+        assert!(versao_mais_nova("1.0.0-rc.1", "1.0.0"));
+        assert!(!versao_mais_nova("unknown", "1.0.0"));
+    }
+
+    fn fake_package(l: &Layout, version: &str) {
+        std::fs::create_dir_all(l.cli_js().parent().unwrap()).unwrap();
+        std::fs::write(l.cli_js(), "// cli").unwrap();
+        std::fs::write(
+            l.app().join("node_modules/9router/package.json"),
+            serde_json::json!({"version": version}).to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn promoting_an_update_preserves_data_and_reads_the_real_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let l = Layout::new(dir.path());
+        fake_package(&l, "0.5.55");
+        std::fs::create_dir_all(l.data()).unwrap();
+        std::fs::write(l.data().join("accounts.sqlite"), b"accounts and secrets").unwrap();
+        let stage = tempfile::tempdir_in(&l.raiz).unwrap();
+        fake_package(
+            &Layout {
+                raiz: stage.path().into(),
+            },
+            "0.5.75",
+        );
+        aplicar_atualizacao(&l, stage.path()).unwrap();
+        assert_eq!(l.versao_instalada().as_deref(), Some("0.5.75"));
+        assert!(
+            stage
+                .path()
+                .join("previous-app/node_modules/9router/cli.js")
+                .is_file()
+        );
+        assert_eq!(
+            std::fs::read(l.data().join("accounts.sqlite")).unwrap(),
+            b"accounts and secrets"
+        );
+    }
+
+    #[test]
+    fn failed_promotion_restores_the_original_installation() {
+        let dir = tempfile::tempdir().unwrap();
+        let l = Layout::new(dir.path());
+        fake_package(&l, "0.5.55");
+        let stage = tempfile::tempdir_in(&l.raiz).unwrap();
+        // Sem app preparado: a segunda renomeação falha após guardar o antigo.
+        assert!(aplicar_atualizacao(&l, stage.path()).is_err());
+        assert!(l.instalado());
+        assert_eq!(l.versao_instalada().as_deref(), Some("0.5.55"));
+    }
+
+    #[tokio::test]
+    async fn preparation_failure_does_not_touch_the_installed_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let l = Layout::new(dir.path());
+        fake_package(&l, "0.5.55");
+        let node = NodeManager::new(dir.path().to_path_buf(), "windows", "x86_64");
+        assert!(
+            preparar_atualizacao(&node, &l, "0.5.75", &|_| {})
+                .await
+                .is_err()
+        );
+        assert_eq!(l.versao_instalada().as_deref(), Some("0.5.55"));
+        assert_eq!(std::fs::read_dir(&l.raiz).unwrap().count(), 1);
+    }
+
+    #[test]
     fn the_install_can_fall_back_to_running_scripts() {
         let args = npm_install_args(PINNED_9ROUTER, false).join(" ");
         assert!(!args.contains("--ignore-scripts"));
@@ -980,6 +1157,30 @@ mod tests {
             "o banco deveria estar em {}",
             banco.display()
         );
+
+        let dados_antes = std::fs::read(&banco).unwrap();
+        let latest = ultima_versao(&reqwest::Client::new())
+            .await
+            .expect("registry npm");
+        let staged = preparar_atualizacao(&node, &layout, &latest, &|ev| {
+            if let NineRouterEvent::Log { line } = ev {
+                eprintln!("{line}");
+            }
+        })
+        .await
+        .expect("preparação da atualização");
+        aplicar_atualizacao(&layout, staged.path()).expect("troca do pacote");
+        assert_eq!(layout.versao_instalada().as_deref(), Some(latest.as_str()));
+        assert_eq!(
+            std::fs::read(&banco).unwrap(),
+            dados_antes,
+            "atualização não altera os dados"
+        );
+        let mut atualizado =
+            NineRouter::spawn(&node, &layout, &cfg).expect("restart após atualizar");
+        let pronto = atualizado.wait_ready(READY_TIMEOUT).await;
+        atualizado.stop_blocking();
+        pronto.expect("versão atualizada deveria atender");
 
         desinstalar(&layout, true).unwrap();
         assert!(!layout.raiz.exists());

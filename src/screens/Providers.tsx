@@ -17,6 +17,7 @@ import NineRouterCard from "../components/providers/NineRouterCard";
 import GatewayCard from "../components/providers/GatewayCard";
 import NineRouterPanel from "../components/providers/NineRouterPanel";
 import OpenRouterCard from "../components/providers/OpenRouterCard";
+import EngineCard from "../components/settings/EngineCard";
 import Icon from "../components/ui/Icon";
 import { navigate } from "../lib/nav";
 import { Page, StatusDot, Tabs, useTab, type TabDef } from "../components/ui/Shell";
@@ -27,11 +28,11 @@ import {
   type ProviderView,
 } from "../lib/providers";
 
-/** A aba onde cada fonte se resolve. `local` mora em outra tela. */
+/** A aba onde cada fonte se configura e atualiza. */
 const ABA_DA_FONTE: Record<string, string | null> = {
   openrouter: "openrouter",
   "9router": "9router",
-  local: null,
+  local: "local",
 };
 
 export default function Providers() {
@@ -58,6 +59,7 @@ export default function Providers() {
   );
 
   const abas: TabDef[] = [
+    { id: "local", label: t("providers.name.local") },
     { id: "openrouter", label: t("providers.name.openrouter") },
     { id: "9router", label: t("providers.name.9router") },
     { id: "gateway", label: t("providers.gateway.tab") },
@@ -100,7 +102,16 @@ export default function Providers() {
       <Tabs tabs={abas} value={aba} onChange={setAba} />
 
       <div className="provider-details mt-4 flex flex-col gap-4">
-        {aba === "openrouter" && <OpenRouterCard />}
+        {aba === "local" && <>
+          <EngineCard />
+          <button className="self-start rounded-lg border border-edge px-3 py-2 text-sm text-dim hover:text-ink" onClick={() => navigate("server")}>
+            {t("providers.localServer")}
+          </button>
+        </>}
+        {aba === "openrouter" && <>
+          <p className="text-xs text-dim">{t("providers.cloudUpdates")}</p>
+          <OpenRouterCard />
+        </>}
         {aba === "gateway" && <GatewayCard />}
         {aba === "9router" && (
           <>

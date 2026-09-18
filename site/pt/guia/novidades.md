@@ -1,5 +1,18 @@
 # Novidades
 
+## 0.20.5
+
+O 9router pode ser atualizado diretamente em **Fontes → 9router**. A tela
+verifica a versão disponível no npm, mostra a versão instalada e oferece
+**Atualizar** quando há uma versão mais recente. Contas e configurações são
+preservadas; se estiver ligado, o serviço reinicia depois da troca e pode
+interromper solicitações em andamento.
+
+O pacote novo é preparado antes de substituir a instalação. Falhas no download
+ou na preparação mantêm o pacote anterior, e o progresso do npm aparece na tela.
+A aba **Máquina local (llama.cpp)** reúne os controles do motor, incluindo sua
+verificação e atualização. O OpenRouter recebe atualizações como serviço online.
+
 ## 0.20.4
 
 A tela inicial do Studio agora apresenta projetos em cartões e um histórico

@@ -214,6 +214,8 @@ fn main() {
             commands_providers::openrouter_key_info,
             commands_providers::ninerouter_status,
             commands_providers::ninerouter_install,
+            commands_providers::ninerouter_check,
+            commands_providers::ninerouter_update,
             commands_providers::ninerouter_start,
             commands_providers::ninerouter_stop,
             commands_providers::ninerouter_open_panel,

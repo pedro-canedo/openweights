@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.20.4"
+version = "0.20.5"
 edition = "2024"
 license = "MIT"
 
@@ -76,6 +76,7 @@ lr_runtime = { path = "crates/runtime" }
 lr_engine = { path = "crates/engine" }
 lr_providers = { path = "crates/providers" }
 lr_nodejs = { path = "crates/nodejs" }
+lr_fetch = { path = "crates/fetch" }
 lr_ninerouter = { path = "crates/ninerouter" }
 lr_dshhost = { path = "crates/dshhost" }
 lr_proc = { path = "crates/proc" }

@@ -44,6 +44,8 @@ pub struct AppState {
     pub node: lr_nodejs::NodeManager,
     /// 9router em execução, quando ligado.
     pub ninerouter: tokio::sync::Mutex<Option<lr_ninerouter::NineRouter>>,
+    /// Serializa instalar/atualizar/iniciar/parar/remover, sem bloquear status.
+    pub ninerouter_operation: tokio::sync::Mutex<()>,
     /// PID do 9router (0 = nenhum), pelo mesmo motivo do `server_pid`: no
     /// exit o mutex pode estar ocupado e o processo não pode sobreviver.
     pub ninerouter_pid: AtomicU32,
@@ -228,6 +230,7 @@ impl AppState {
             author_avatars: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             node: lr_nodejs::NodeManager::new(data_dir.join("providers"), os, arch),
             ninerouter: tokio::sync::Mutex::new(None),
+            ninerouter_operation: tokio::sync::Mutex::new(()),
             ninerouter_pid: AtomicU32::new(0),
             dsh: tokio::sync::Mutex::new(None),
             dsh_pid: AtomicU32::new(0),

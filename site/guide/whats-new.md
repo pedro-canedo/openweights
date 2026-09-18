@@ -1,5 +1,19 @@
 # What's new
 
+## 0.20.5
+
+9router can be updated directly in **Sources → 9router**. The screen checks
+the version available on npm, shows the installed version and offers **Update**
+when a newer version is available. Accounts and settings are preserved; a
+running service restarts after the replacement and may interrupt requests
+in progress.
+
+The new package is prepared before replacing the installation. Download or
+preparation failures leave the previous package intact, and npm progress appears
+on screen. The **Local machine (llama.cpp)** tab brings together the engine
+controls, including checks and updates. OpenRouter receives updates as an
+online service.
+
 ## 0.20.4
 
 The Studio home screen now has project cards and a history that distinguishes

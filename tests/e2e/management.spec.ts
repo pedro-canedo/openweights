@@ -23,6 +23,8 @@ test("source cards open their controls and settings stay usable in a narrow ligh
   await page.locator(".source-card").filter({ hasText: "9router" }).click();
   await expect(page.getByRole("tab", { name: "9router", exact: true })).toHaveAttribute("aria-selected", "true");
   await page.locator(".source-card").filter({ hasText: "Máquina local" }).click();
+  await expect(page.getByRole("tab", { name: "Máquina local (llama.cpp)", exact: true })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: "Abrir servidor local", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Servidor Local", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Configurações", exact: true }).click();
   await page.getByRole("combobox", { name: "Tema", exact: true }).selectOption("light");
@@ -35,3 +37,28 @@ test("source cards open their controls and settings stay usable in a narrow ligh
   expect(overflow).toBe(false);
   expect(errors).toEqual([]);
 });
+
+for (const running of [false, true]) {
+  test(`9router update preserves settings and ${running ? "running" : "stopped"} state`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", e => errors.push(e.message));
+    await page.setViewportSize({ width: 900, height: 900 });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Fontes", exact: true }).click();
+    await page.locator(".source-card").filter({ hasText: "9router" }).click();
+    await page.getByRole("button", { name: "Instalar", exact: true }).click();
+    await expect(page.getByText("Nova versão disponível: 0.5.75", { exact: true })).toBeVisible();
+    if (running) await page.getByRole("button", { name: "Iniciar", exact: true }).click();
+    await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Atualizando…", exact: true })).toBeDisabled();
+    await expect(page.getByText("9router atualizado com sucesso.", { exact: true })).toBeVisible();
+    await expect(page.getByText("versão 0.5.75", { exact: true })).toBeVisible();
+    await expect(page.getByText("demo-password", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: running ? "Parar" : "Iniciar", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Atualizar", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Verificar atualização", exact: true }).click();
+    await expect(page.getByText("Você já está na versão mais recente disponível para esta instalação.", { exact: true })).toBeVisible();
+    expect(await page.locator(".workspace-page").evaluate(el => el.scrollWidth > el.clientWidth)).toBe(false);
+    expect(errors).toEqual([]);
+  });
+}

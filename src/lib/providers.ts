@@ -176,6 +176,15 @@ export const nineRouterStatus = (): Promise<NineRouterStatus> =>
 export const nineRouterInstall = (): Promise<NineRouterStatus> =>
   invoke<NineRouterStatus>("ninerouter_install");
 
+export interface NineRouterCheck {
+  version: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+}
+
+export const nineRouterCheck = () => invoke<NineRouterCheck>("ninerouter_check");
+export const nineRouterUpdate = () => invoke<NineRouterStatus>("ninerouter_update");
+
 export const nineRouterStart = (): Promise<NineRouterStatus> =>
   invoke<NineRouterStatus>("ninerouter_start");
 

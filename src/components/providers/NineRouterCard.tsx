@@ -9,12 +9,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   nineRouterInstall,
+  nineRouterCheck,
+  nineRouterUpdate,
   nineRouterStart,
   nineRouterStatus,
   nineRouterStop,
   nineRouterUninstall,
   onProviderEvent,
   type NineRouterStatus,
+  type NineRouterCheck,
   type ProviderEvent,
 } from "../../lib/providers";
 import { errorMessage } from "../../lib/serverSession";
@@ -36,6 +39,10 @@ export default function NineRouterCard({
   const [log, setLog] = useState<string[]>([]);
   const [segundos, setSegundos] = useState(0);
   const [confirmando, setConfirmando] = useState(false);
+  const [check, setCheck] = useState<NineRouterCheck | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState<string | null>(null);
+  const [updated, setUpdated] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
 
   const recarregar = useCallback(async () => {
@@ -52,6 +59,24 @@ export default function NineRouterCard({
     void recarregar();
   }, [recarregar]);
 
+  const verificar = useCallback(async () => {
+    setChecking(true);
+    setCheckError(null);
+    try {
+      setCheck(await nineRouterCheck());
+    } catch (e) {
+      setCheck(null);
+      setCheckError(errorMessage(e));
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status?.installed) void verificar();
+    else setCheck(null);
+  }, [status?.installed, status?.version, verificar]);
+
   // Cronômetro: com o npm mudo por minutos, é o que diz que ainda anda.
   useEffect(() => {
     if (!busy) {
@@ -65,32 +90,30 @@ export default function NineRouterCard({
   async function comEventos(nome: string, acao: () => Promise<NineRouterStatus>) {
     setBusy(nome);
     setError(null);
+    setUpdated(false);
+    setConfirmando(false);
     setLog([]);
     setProgresso(null);
-    // StrictMode monta duas vezes: sem a bandeira, o primeiro `unlisten`
-    // chegaria depois do segundo registro e sobraria assinatura pendurada.
-    const assinatura: { cancelado: boolean; desligar: (() => void) | null } = {
-      cancelado: false,
-      desligar: null,
-    };
-    void onProviderEvent((e) => {
-      setProgresso(e);
-      if (e.kind === "log") {
-        setLog((atual) => [...atual.slice(-200), e.line]);
-      }
-    }).then((f) => {
-      if (assinatura.cancelado) f();
-      else assinatura.desligar = f;
-    });
+    let desligar: (() => void) | undefined;
     try {
+      desligar = await onProviderEvent((e) => {
+        setProgresso(e);
+        if (e.kind === "log") {
+          setLog((atual) => [...atual.slice(-200), e.line]);
+        }
+      });
       const s = await acao();
       setStatus(s);
       onChanged(s);
+      if (nome === "update") {
+        setUpdated(true);
+        await verificar();
+      }
     } catch (e) {
       setError(errorMessage(e));
+      await recarregar();
     } finally {
-      assinatura.cancelado = true;
-      assinatura.desligar?.();
+      desligar?.();
       setBusy(null);
       setProgresso(null);
     }
@@ -105,7 +128,7 @@ export default function NineRouterCard({
 
   return (
     <div className="rounded-xl border border-edge bg-panel px-5 py-4">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="text-sm">{t("providers.nineRouter.title")}</div>
           <div className="mt-1 text-[12px] text-dim">
@@ -116,7 +139,7 @@ export default function NineRouterCard({
           {!instalado && (
             <button
               onClick={() => void comEventos("install", nineRouterInstall)}
-              disabled={busy !== null}
+              disabled={busy !== null || status === null}
               className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {busy === "install"
@@ -211,6 +234,31 @@ export default function NineRouterCard({
             </span>
             <span>·</span>
             <span>{t("providers.nineRouter.port", { port: status?.port })}</span>
+          </div>
+
+          <div className="mt-3 rounded-lg border border-edge bg-panel2 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p role="status" className="text-[12px] text-dim">
+                {checking ? t("providers.nineRouter.checking")
+                  : check?.updateAvailable ? t("providers.nineRouter.updateAvailable", { version: check.latestVersion })
+                  : check ? t("providers.nineRouter.upToDate")
+                  : t("providers.nineRouter.checkHint")}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => void verificar()} disabled={busy !== null || checking} className={botao}>
+                  {t("providers.nineRouter.checkUpdates")}
+                </button>
+                {check?.updateAvailable && (
+                  <button onClick={() => void comEventos("update", nineRouterUpdate)} disabled={busy !== null || checking}
+                    className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+                    {busy === "update" ? t("providers.nineRouter.updating") : t("providers.nineRouter.update")}
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] text-dim">{t("providers.nineRouter.updateHint")}</p>
+            {checkError && <p role="alert" className="mt-2 text-[12px] text-bad">{t("providers.nineRouter.checkFailed")} {checkError}</p>}
+            {updated && <p role="status" className="mt-2 text-[12px] text-ok">{t("providers.nineRouter.updated")}</p>}
           </div>
 
           {status?.password && (

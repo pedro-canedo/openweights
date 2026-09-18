@@ -21,6 +21,14 @@ published releases and the version commits, and are kept as history.
 
 **Release candidate:** training and export were exercised on Windows with an RTX 3090. A short experiment does not guarantee factual answers about documents. OCR was tested on a rasterized book sample and a mixed PDF, not every kind of scan. Training targets Windows x64 with NVIDIA; chat remains available on existing platforms. This candidate does not automatically replace the stable version through the updater.
 
+## [0.20.5] — 2026-09-18
+
+- 9router now checks the version published on npm and offers an Update button in Sources, without opening a console.
+- Updates preserve accounts and settings, prepare the package before replacing it and restart 9router if it was already running. Requests in progress may be interrupted during the restart.
+- The displayed version comes from the installed package. Version comparison prevents downgrades, and preparation failures leave the previous installation intact.
+- The installer reads both npm output streams concurrently and applies its timeout to the entire operation, preventing installation stalls.
+- Sources also provides the local engine update controls and explains that OpenRouter is updated as an online service.
+
 ## [0.20.4] — 2026-09-14
 
 - The Studio home screen now uses project cards showing the base model, source files and next step.

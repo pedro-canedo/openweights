@@ -66,6 +66,12 @@ let dshMock = {
   version: "",
 };
 
+let nineMock = {
+  nodeInstalled: false, installed: false, running: false, port: 20128,
+  dashboardUrl: null as string | null, password: "", version: "",
+};
+const nineLatestMock = "0.5.75";
+
 async function mockInvoke(cmd: string, _args?: Record<string, unknown>) {
   switch (cmd) {
     case "hardware_profile":
@@ -73,7 +79,25 @@ async function mockInvoke(cmd: string, _args?: Record<string, unknown>) {
     case "app_version":
       return "0.1.0-dev";
     case "ninerouter_status":
-      return { nodeInstalled: false, installed: false, running: false, port: 20128, dashboardUrl: null, password: "", version: "" };
+      return { ...nineMock };
+    case "ninerouter_install":
+      nineMock = { ...nineMock, nodeInstalled: true, installed: true, version: "0.5.55", password: "demo-password" };
+      return { ...nineMock };
+    case "ninerouter_check":
+      return { version: nineMock.version, latestVersion: nineLatestMock, updateAvailable: nineMock.version !== nineLatestMock };
+    case "ninerouter_update":
+      await new Promise(resolve => setTimeout(resolve, 400));
+      nineMock = { ...nineMock, version: nineLatestMock };
+      return { ...nineMock };
+    case "ninerouter_start":
+      nineMock = { ...nineMock, running: true, dashboardUrl: "http://127.0.0.1:20128/dashboard" };
+      return { ...nineMock };
+    case "ninerouter_stop":
+      nineMock = { ...nineMock, running: false, dashboardUrl: null };
+      return { ...nineMock };
+    case "ninerouter_uninstall":
+      nineMock = { ...nineMock, installed: false, running: false, dashboardUrl: null, version: "", password: _args?.removeData ? "" : nineMock.password };
+      return { ...nineMock };
     case "dsh_status":
       return { ...dshMock };
     case "dsh_install":
