@@ -8,6 +8,7 @@
 
 pub mod config;
 pub mod jev;
+pub mod jev_esforco;
 pub mod model_ref;
 pub mod openrouter;
 
@@ -17,6 +18,10 @@ pub use config::{
 };
 pub use jev::{
     ClienteJev, JEV_MODELO_PADRAO, JevError, Pergunta, RespostaJev, RespostasJev, UsoJev,
+};
+pub use jev_esforco::{
+    CapacidadeModelo, Contadores, ContextoDecisao, DecisaoEsforco, MensagemResumida,
+    NivelRaciocinio, Origem, ResumoContadores, Superficie, UltimaDecisao,
 };
 pub use model_ref::{ModelRef, ProviderId};
 pub use openrouter::{KeyInfo, OpenRouterModel, ProviderError};
