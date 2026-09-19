@@ -7,12 +7,16 @@
 //! provedor remoto não arraste consigo a gestão de processo local.
 
 pub mod config;
+pub mod jev;
 pub mod model_ref;
 pub mod openrouter;
 
 pub use config::{
     EndpointError, NINEROUTER_DEFAULT_PORT, NineRouterConfig, OPENROUTER_BASE_URL,
     OpenRouterConfig, ProvidersConfig, ResolvedEndpoint,
+};
+pub use jev::{
+    ClienteJev, JEV_MODELO_PADRAO, JevError, Pergunta, RespostaJev, RespostasJev, UsoJev,
 };
 pub use model_ref::{ModelRef, ProviderId};
 pub use openrouter::{KeyInfo, OpenRouterModel, ProviderError};
