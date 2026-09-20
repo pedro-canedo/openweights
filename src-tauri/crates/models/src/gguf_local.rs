@@ -11,8 +11,19 @@
 //! devolve `None` no campo (nunca erro, nunca pânico) — quem consome trata
 //! ausência como "não sei", que é sempre mais seguro que um chute.
 
+use std::collections::BTreeSet;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::path::Path;
+
+/// `GGML_TYPE_COUNT` do llama.cpp oficial que o app fixa (`lr_runtime::PINNED_TAG`,
+/// b10441): qualquer tensor com tipo igual ou acima disto é desconhecido para
+/// aquele binário e faz o carregamento falhar com "unknown type". Acompanha o
+/// pino — ao promover a tag, conferir `ggml/include/ggml.h` da release.
+pub const GGML_TYPE_COUNT_STOCK: u32 = 43;
+/// Tipos privados do fork da PrismML (branch `prism`): ternário de 2 bits
+/// com Hadamard e ternário empacotado de ~1,75 bit, os dois do Bonsai 2.
+pub const GGML_TYPE_PQ2_0: u32 = 142;
+pub const GGML_TYPE_PTQ1_0: u32 = 143;
 
 /// O que o cabeçalho diz sobre o modelo — só o que as decisões de carga usam.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -78,6 +89,37 @@ pub struct LocalGgufMeta {
     /// dois sentidos. O template é o que o llama.cpp de fato executa, então
     /// se ele lê a variável, o botão funciona.
     pub thinking_toggle: bool,
+    /// Os tipos ggml de TODOS os tensores (ids numéricos, sem repetição).
+    ///
+    /// É o que diz se o binário oficial consegue abrir o arquivo: o nome do
+    /// arquivo pode mentir, o cabeçalho não. Vazio quando a tabela de
+    /// tensores não pôde ser lida — os campos acima continuam válidos.
+    pub tensor_types: BTreeSet<u32>,
+}
+
+impl LocalGgufMeta {
+    /// O arquivo usa um tipo de tensor que o llama.cpp oficial não conhece
+    /// e que só o fork da PrismML carrega (Bonsai 2: `PQ2_0`, `PTQ1_0`).
+    pub fn exige_prism(&self) -> bool {
+        self.tensor_types
+            .iter()
+            .any(|t| *t >= GGML_TYPE_COUNT_STOCK)
+    }
+
+    /// Os tipos que o binário oficial não conhece, com nome quando o app
+    /// sabe qual é (`PQ2_0`, `PTQ1_0`) e o id numérico quando não sabe — é
+    /// o que uma mensagem de erro consegue dizer de útil.
+    pub fn tipos_fora_do_oficial(&self) -> Vec<String> {
+        self.tensor_types
+            .iter()
+            .filter(|t| **t >= GGML_TYPE_COUNT_STOCK)
+            .map(|t| match *t {
+                GGML_TYPE_PQ2_0 => "PQ2_0".to_string(),
+                GGML_TYPE_PTQ1_0 => "PTQ1_0".to_string(),
+                outro => format!("tipo {outro}"),
+            })
+            .collect()
+    }
 }
 
 /// Teto de pares chave/valor lidos. Um GGUF normal tem dezenas; um arquivo
@@ -100,7 +142,7 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
         return None;
     }
     let _version = read_u32(&mut r)?;
-    let _n_tensors = read_u64(&mut r)?;
+    let n_tensors = read_u64(&mut r)?;
     let n_kv = read_u64(&mut r)?.min(MAX_KV);
 
     let mut arch: Option<String> = None;
@@ -159,6 +201,10 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
     }
 
     let arch = arch?;
+    // A tabela de tensores vem logo depois dos KVs. Ela é opcional para o
+    // resto do cabeçalho: uma tabela que não dá para ler deixa os campos de
+    // geometria valendo e só o conjunto de tipos vazio.
+    let tensor_types = tipos_de_tensor(&mut r, n_tensors).unwrap_or_default();
     let acha = |sufixo: &str| {
         valores
             .iter()
@@ -182,7 +228,42 @@ fn parse(path: &Path) -> Option<LocalGgufMeta> {
         nextn_layers: acha("nextn_predict_layers"),
         thinking_toggle,
         reasoning_efforts,
+        tensor_types,
     })
+}
+
+/// Teto de tensores da tabela. Um modelo grande tem alguns milhares; um
+/// arquivo corrompido não pode nos prender num laço.
+const MAX_TENSORS: u64 = 100_000;
+
+/// Os tipos ggml da tabela de tensores, lidos a partir da posição atual (o
+/// leitor tem de estar logo depois do último KV).
+fn tipos_de_tensor<R: Read>(r: &mut R, n_tensors: u64) -> Option<BTreeSet<u32>> {
+    if n_tensors > MAX_TENSORS {
+        return None;
+    }
+    let mut tipos = BTreeSet::new();
+    for _ in 0..n_tensors {
+        let (_, _, kind, _) = le_tensor_info(r)?;
+        tipos.insert(kind);
+    }
+    Some(tipos)
+}
+
+/// Uma entrada da tabela de tensores: nome, dimensões, tipo ggml e offset.
+fn le_tensor_info<R: Read>(r: &mut R) -> Option<(String, Vec<u64>, u32, u64)> {
+    let name = read_string(r)?;
+    let nd = read_u32(r)?;
+    if !(1..=4).contains(&nd) {
+        return None;
+    }
+    let mut dims = Vec::with_capacity(nd as usize);
+    for _ in 0..nd {
+        dims.push(read_u64(r)?);
+    }
+    let kind = read_u32(r)?;
+    let offset = read_u64(r)?;
+    Some((name, dims, kind, offset))
 }
 
 /// Só guarda o que pode vir a interessar — o resto nem aloca.
@@ -227,7 +308,7 @@ pub fn expert_slot_bytes(path: &Path, experts: u32) -> Option<u64> {
     }
     let tensors = read_u64(&mut r)?;
     let kv = read_u64(&mut r)?;
-    if tensors > 100_000 || kv > MAX_KV {
+    if tensors > MAX_TENSORS || kv > MAX_KV {
         return None;
     }
     let mut alignment = 32u64;
@@ -260,17 +341,8 @@ pub fn expert_slot_bytes(path: &Path, experts: u32) -> Option<u64> {
     }
     let mut spans = Vec::new();
     for _ in 0..tensors {
-        let name = read_string(&mut r)?;
-        let nd = read_u32(&mut r)?;
-        if !(1..=4).contains(&nd) {
-            return None;
-        }
-        let mut dims = Vec::new();
-        for _ in 0..nd {
-            dims.push(read_u64(&mut r)?);
-        }
-        let _kind = read_u32(&mut r)?;
-        let offset = read_u64(&mut r)?;
+        let (name, dims, _kind, offset) = le_tensor_info(&mut r)?;
+        let nd = dims.len() as u32;
         let routed = name.contains("_exps.weight") || name.contains("_chexps.weight");
         // GGUF keeps the tensor dimensions in model order, which differs
         // between exporters.  The expert axis is the dimension declared by
@@ -387,10 +459,35 @@ mod tests {
 
     /// Monta um GGUF sintético só de cabeçalho, no formato v3.
     fn gguf(pairs: &[(&str, KV)]) -> Vec<u8> {
+        gguf_com_tensores(pairs, &[])
+    }
+
+    /// Um tensor da tabela: nome, dimensões e tipo ggml. Os offsets são
+    /// sequenciais e fictícios — só o cabeçalho existe.
+    type Tensor = (&'static str, Vec<u64>, u32);
+
+    fn gguf_com_tensores(pairs: &[(&str, KV)], tensores: &[Tensor]) -> Vec<u8> {
+        let mut out = gguf_cabecalho(pairs, tensores.len() as u64);
+        for (i, (nome, dims, kind)) in tensores.iter().enumerate() {
+            out.extend_from_slice(&(nome.len() as u64).to_le_bytes());
+            out.extend_from_slice(nome.as_bytes());
+            out.extend_from_slice(&(dims.len() as u32).to_le_bytes());
+            for d in dims {
+                out.extend_from_slice(&d.to_le_bytes());
+            }
+            out.extend_from_slice(&kind.to_le_bytes());
+            out.extend_from_slice(&((i as u64) * 4096).to_le_bytes());
+        }
+        out
+    }
+
+    /// Só o cabeçalho e os KVs, anunciando `n_tensores` na contagem — para
+    /// os testes de tabela ausente ou absurda.
+    fn gguf_cabecalho(pairs: &[(&str, KV)], n_tensores: u64) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(b"GGUF");
         out.extend_from_slice(&3u32.to_le_bytes());
-        out.extend_from_slice(&0u64.to_le_bytes()); // tensores
+        out.extend_from_slice(&n_tensores.to_le_bytes());
         out.extend_from_slice(&(pairs.len() as u64).to_le_bytes());
         for (key, val) in pairs {
             out.extend_from_slice(&(key.len() as u64).to_le_bytes());
@@ -562,6 +659,84 @@ mod tests {
     }
 
     /// Lixo, arquivo vazio e magic errado devolvem "não sei" — nunca pânico.
+    fn qwen(tensores: &[Tensor]) -> Vec<u8> {
+        gguf_com_tensores(
+            &[
+                ("general.architecture", KV::Str("qwen3")),
+                ("qwen3.block_count", KV::U32(64)),
+            ],
+            tensores,
+        )
+    }
+
+    /// Tipos que o binário oficial conhece (F32 = 0, Q4_K = 12) não pedem
+    /// fork; a geometria continua sendo lida junto.
+    #[test]
+    fn stock_tensor_types_do_not_require_the_prism_fork() {
+        let f = escreve(&qwen(&[
+            ("token_embd.weight", vec![5120, 248_320], 0),
+            ("blk.0.attn_q.weight", vec![5120, 5120], 12),
+        ]));
+        let meta = read_local_meta(f.path());
+        assert_eq!(meta.n_layers, Some(64));
+        assert_eq!(meta.tensor_types, BTreeSet::from([0, 12]));
+        assert!(!meta.exige_prism());
+    }
+
+    /// Um único tensor `PQ2_0` ou `PTQ1_0` basta: o llama.cpp oficial
+    /// recusa o arquivo inteiro como "unknown type".
+    #[test]
+    fn a_bonsai_2_tensor_type_requires_the_prism_fork() {
+        let f = escreve(&qwen(&[
+            ("token_embd.weight", vec![5120, 248_320], 12),
+            ("blk.0.ffn_up.weight", vec![5120, 17_408], GGML_TYPE_PQ2_0),
+        ]));
+        assert!(read_local_meta(f.path()).exige_prism());
+
+        let f = escreve(&qwen(&[(
+            "blk.0.ffn_up.weight",
+            vec![5120, 17_408],
+            GGML_TYPE_PTQ1_0,
+        )]));
+        let meta = read_local_meta(f.path());
+        assert!(meta.exige_prism());
+        assert_eq!(meta.tensor_types, BTreeSet::from([GGML_TYPE_PTQ1_0]));
+        assert_eq!(meta.tipos_fora_do_oficial(), vec!["PTQ1_0"]);
+        let desconhecido = LocalGgufMeta {
+            tensor_types: BTreeSet::from([12, 150]),
+            ..Default::default()
+        };
+        assert_eq!(desconhecido.tipos_fora_do_oficial(), vec!["tipo 150"]);
+    }
+
+    /// Tabela anunciada mas cortada: a geometria dos KVs fica valendo, e o
+    /// conjunto de tipos volta vazio — nunca um chute e nunca um pânico.
+    #[test]
+    fn a_truncated_tensor_table_keeps_the_kv_fields() {
+        let mut bytes = qwen(&[("blk.0.attn_q.weight", vec![5120, 5120], 12)]);
+        bytes.truncate(bytes.len() - 6);
+        let f = escreve(&bytes);
+        let meta = read_local_meta(f.path());
+        assert_eq!(meta.n_layers, Some(64));
+        assert!(meta.tensor_types.is_empty());
+        assert!(!meta.exige_prism());
+    }
+
+    /// Uma contagem absurda de tensores é ignorada sem tentar ler nada.
+    #[test]
+    fn an_absurd_tensor_count_is_ignored_without_reading_the_table() {
+        let bytes = gguf_cabecalho(
+            &[
+                ("general.architecture", KV::Str("qwen3")),
+                ("qwen3.block_count", KV::U32(64)),
+            ],
+            200_000,
+        );
+        let meta = read_local_meta(escreve(&bytes).path());
+        assert_eq!(meta.n_layers, Some(64));
+        assert!(meta.tensor_types.is_empty());
+    }
+
     #[test]
     fn garbage_yields_unknown_not_a_panic() {
         let vazio = escreve(b"");
