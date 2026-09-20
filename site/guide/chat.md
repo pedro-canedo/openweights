@@ -48,6 +48,12 @@ The panel on the right has two halves, and the split is the point:
 
 Presets save a set of parameters under a name.
 
+With [Jev](/integrations/providers#jev-a-decision-layer) enabled in Sources,
+**Effort** becomes a ceiling rather than a fixed value: before each send a
+decision model looks at the message and turns the local model's thinking off,
+to medium or up to your setting. The run details of the answer say what it
+decided and how confident it was; when it kept your setting, nothing is shown.
+
 **Load-time settings** — context window, KV cache, flash attention, speculation
 (MTP), vision and the rest of the llama.cpp knobs — moved house: they now live
 in **Local Server**, next to the model that uses them. The shortcut in the panel

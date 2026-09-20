@@ -20,6 +20,35 @@ são e quantos modelos o filtro atual encontrou.
 
 Com a chave definida, a tela mostra quanto você gastou e seu limite de crédito.
 
+## Jev — camada de decisão
+
+Abaixo do cartão do OpenRouter fica o **Jev**, um modelo de decisão da TypeSafe
+que o app alcança pela mesma chave do OpenRouter. Ele não gera texto: recebe a
+mensagem atual mais um trecho curto da conversa e responde, em bem menos de um
+segundo, **quanto raciocínio a mensagem pede** — nenhum, médio ou alto. O app
+então liga ou desliga o raciocínio do modelo local por mensagem, em vez de usar
+o esforço fixo da conversa. Um "oi" deixa de pagar trinta segundos de thinking;
+um problema de lógica continua com o orçamento inteiro.
+
+Vem desligado e só fica disponível depois que a chave do OpenRouter está
+configurada. Ligado, essa mensagem e o trecho saem da sua máquina — o cartão diz
+isso onde você liga. Todo o resto continua local, e o custo é fração de centavo
+por mil mensagens (só tokens de entrada; a resposta é grátis).
+
+Dois interruptores dizem onde vale. **Chat do app** decide antes de cada envio
+e mostra a escolha nos detalhes da execução da resposta. **Agentes de código**
+sobe um proxy local pequeno em `127.0.0.1:11712` na frente do motor; o DeepSeek
+Harness e os outros agentes que o app abre passam a apontar para ele, e cada
+`chat/completions` que mandam recebe a mesma decisão aplicada ao corpo. Qualquer
+outra requisição atravessa intocada, streaming inclusive. O proxy só escuta no
+endereço de loopback: o que chega ao motor pela rede não passa por ele.
+
+**Só agir acima de** é o piso de confiança. Abaixo dele — ou sempre que o Jev
+está fora do ar, a chave falta ou a resposta se contradiz — nada muda e o
+esforço que você configurou prevalece. **Testar decisão** manda uma pergunta de
+amostra para você ver chave e endpoint funcionando antes de uma conversa
+depender deles.
+
 ## 9router
 
 Um roteador local com painel próprio: ele põe contas de vários provedores atrás

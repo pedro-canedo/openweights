@@ -21,6 +21,36 @@ those are and how many models the current filter found.
 
 With a key set, the screen shows what you have spent and your credit limit.
 
+## Jev — a decision layer
+
+Below the OpenRouter card sits **Jev**, a decision model from TypeSafe that the
+app reaches through the same OpenRouter key. It does not generate text: it
+receives the current message plus a short tail of the conversation and answers,
+in well under a second, **how much reasoning the message needs** — none, medium
+or high. The app then turns the local model's thinking on or off per message
+instead of using the conversation's fixed effort. A greeting stops paying thirty
+seconds of thinking; a logic problem still gets the full budget.
+
+It is off by default and only becomes available once the OpenRouter key is set.
+When it is on, that message and tail leave your machine — the card says so where
+you switch it on. Everything else stays local, and the cost is a fraction of a
+cent per thousand messages (input tokens only; the answer is free).
+
+Two switches say where it applies. **Chat in the app** decides before each
+send and shows the choice in the answer's run details. **Coding agents** starts
+a small local proxy on `127.0.0.1:11712` in front of the engine; the DeepSeek
+Harness and the other agents the app launches are pointed at it, and every
+`chat/completions` they send gets the same decision applied to the body. Every
+other request passes through untouched, streaming included. The proxy only
+listens on the loopback address: anything reaching the engine from the network
+bypasses it.
+
+**Only act above** is the confidence floor. Below it — or whenever Jev is
+unreachable, the key is missing, or the answer contradicts itself — nothing
+changes and the effort you configured stands. **Test decision** sends one
+sample question so you can see the key and endpoint working before a
+conversation depends on them.
+
 ## 9router
 
 A local router with its own dashboard: it puts accounts from several providers

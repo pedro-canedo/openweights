@@ -48,6 +48,12 @@ O painel da direita tem duas metades, e a divisão é o ponto:
 
 Presets salvam um conjunto de parâmetros com um nome.
 
+Com o [Jev](/pt/integracoes/provedores#jev-camada-de-decisao) ligado em Fontes,
+**Esforço** vira um teto em vez de um valor fixo: antes de cada envio um modelo
+de decisão olha a mensagem e desliga o raciocínio do modelo local, põe no médio
+ou deixa no que você escolheu. Os detalhes da execução da resposta dizem o que
+foi decidido e com que confiança; quando o seu valor foi mantido, nada aparece.
+
 **Na carga** — janela de contexto, cache KV, flash attention, especulação
 (MTP), visão e o resto dos botões do llama.cpp — mudaram de casa: agora moram
 em **Servidor Local**, junto do modelo que os usa. O atalho no painel leva

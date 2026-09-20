@@ -1,5 +1,21 @@
 # What's new
 
+## 0.21.0
+
+**Jev** joins **Sources → OpenRouter** as a decision layer for local models. A
+TypeSafe decision model, reached through the OpenRouter key, looks at each
+message and decides whether the local model should think and how hard — none,
+medium or high — instead of the conversation's fixed effort. Simple messages
+answer faster; hard ones keep the full budget. The answer's run details show
+what was decided.
+
+The same decision reaches the coding agents: with the switch on, a small local
+proxy on port 11712 sits in front of the engine, and the DeepSeek Harness and
+the other agents the app launches are pointed at it. Streaming and every other
+request pass through untouched; whenever Jev cannot decide, the request goes
+as the agent sent it. Off by default, and the card says what leaves your
+machine when it is on. See [external model sources](/integrations/providers#jev-a-decision-layer).
+
 ## 0.20.5
 
 9router can be updated directly in **Sources → 9router**. The screen checks

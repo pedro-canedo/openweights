@@ -68,6 +68,14 @@ difference between an answer and a truncated draft.
 
 **Off** really turns thinking off, not down.
 
+With [Jev](/integrations/providers#jev-a-decision-layer) enabled for coding
+agents, the selector still sets the ceiling, but each request the harness sends
+goes through a local proxy that decides, per message, whether the model should
+think at all and at which of the template's levels. Continuations of the same
+task (tool results coming back) reuse the decision instead of paying for it
+again, and anything the proxy cannot decide passes through exactly as the
+harness sent it.
+
 ## Output cap
 
 Each local model also declares how much it may write in one answer — half its

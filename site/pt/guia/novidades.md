@@ -1,5 +1,22 @@
 # Novidades
 
+## 0.21.0
+
+O **Jev** entra em **Fontes → OpenRouter** como camada de decisão para os
+modelos locais. Um modelo de decisão da TypeSafe, alcançado pela chave do
+OpenRouter, olha cada mensagem e decide se o modelo local deve pensar e quanto —
+nenhum, médio ou alto — em vez do esforço fixo da conversa. Mensagens simples
+respondem mais rápido; as difíceis mantêm o orçamento inteiro. Os detalhes da
+execução da resposta mostram o que foi decidido.
+
+A mesma decisão chega aos agentes de código: com o interruptor ligado, um proxy
+local pequeno na porta 11712 fica na frente do motor, e o DeepSeek Harness e os
+outros agentes que o app abre passam a apontar para ele. Streaming e todas as
+outras requisições atravessam intocados; sempre que o Jev não consegue decidir,
+a requisição vai como o agente mandou. Vem desligado, e o cartão diz o que sai
+da sua máquina quando está ligado. Veja
+[fontes externas de modelo](/pt/integracoes/provedores#jev-camada-de-decisao).
+
 ## 0.20.5
 
 O 9router pode ser atualizado diretamente em **Fontes → 9router**. A tela

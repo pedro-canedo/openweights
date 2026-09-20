@@ -68,6 +68,14 @@ frequência, a diferença entre uma resposta e um rascunho cortado.
 
 **Desligado** desliga o raciocínio de verdade, não o reduz.
 
+Com o [Jev](/pt/integracoes/provedores#jev-camada-de-decisao) ligado para
+agentes de código, o seletor continua sendo o teto, mas cada requisição que o
+harness manda passa por um proxy local que decide, por mensagem, se o modelo
+deve pensar e em qual dos níveis do template. Continuações da mesma tarefa
+(resultados de ferramenta voltando) reaproveitam a decisão em vez de pagá-la de
+novo, e o que o proxy não consegue decidir atravessa exatamente como o harness
+mandou.
+
 O esforço padrão é da **rota inteira**, não de cada modelo — o harness só
 aceita um valor para todos. Como a rota local costuma misturar modelos que
 raciocinam com modelos que não raciocinam (um Coder, por exemplo), quase nunca
