@@ -222,6 +222,8 @@ export interface QuantView {
   /** Arquivo + KV cache + reserva, com a janela avaliada. */
   estTotalBytes: number;
   kvCacheBytes: number;
+  /** Pelo nome, só abre no motor da PrismML (Bonsai 2); instalado junto. */
+  requiresPrism: boolean;
 }
 
 /** O que a gaveta de quantizações recebe do backend. */
@@ -267,6 +269,8 @@ export interface LocalModel {
   totalBytes: number;
   files: string[];
   quantLabel: string;
+  /** O cabeçalho pede o motor da PrismML (Bonsai 2). */
+  requiresPrism: boolean;
 }
 
 // -------------------------------------------------------------- servidor ---

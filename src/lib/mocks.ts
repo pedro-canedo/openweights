@@ -156,6 +156,7 @@ export async function modelQuants(_repoId: string): Promise<QuantsView> {
     // Arquivo + KV da janela avaliada + reserva de runtime.
     estTotalBytes: sizeGb * gb + 1.4 * gb,
     kvCacheBytes: 0.4 * gb,
+    requiresPrism: false,
   });
   return {
     quants: [
@@ -218,6 +219,7 @@ export async function localModels(): Promise<LocalModel[]> {
       totalBytes: 5.1 * 2 ** 30,
       files: ["C:/fake/models/unsloth/Qwen3-8B-GGUF/Qwen3-8B-UD-Q4_K_XL.gguf"],
       quantLabel: "UD-Q4_K_XL",
+      requiresPrism: false,
     },
   ];
 }

@@ -643,6 +643,9 @@ pub struct LocalModelView {
     #[serde(flatten)]
     pub artifact: lr_models::LocalArtifact,
     pub quant_label: String,
+    /// O cabeçalho do arquivo usa tipos de tensor que só o motor da PrismML
+    /// abre (Bonsai 2). Lido do disco, não do nome: é a prova, não a pista.
+    pub requires_prism: bool,
 }
 
 #[tauri::command]
@@ -651,6 +654,7 @@ pub fn local_models(state: State<'_, AppState>) -> Vec<LocalModelView> {
         .into_iter()
         .map(|artifact| LocalModelView {
             quant_label: advisor::quant::parse_label(&artifact.name),
+            requires_prism: lr_models::read_local_meta(&artifact.primary_path).exige_prism(),
             artifact,
         })
         .collect()

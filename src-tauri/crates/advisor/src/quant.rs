@@ -33,12 +33,27 @@ const QUALITY_ORDER: &[&str] = &[
     "IQ3_XXS",
     "UD-Q2_K_XL",
     "Q2_K",
+    "PQ2_0",
+    "Q2_0",
     "IQ2_M",
     "IQ2_XS",
     "IQ2_XXS",
+    "PTQ1_0",
     "IQ1_M",
     "IQ1_S",
+    "Q1_0",
 ];
+
+/// Rótulos que só o fork da PrismML abre (Bonsai 2). O nome do arquivo é a
+/// única pista ANTES do download — o cabeçalho, que é a prova, só existe
+/// depois (`lr_models::LocalGgufMeta::exige_prism`).
+const PRISM_ONLY: &[&str] = &["PTQ1_0", "PQ2_0"];
+
+/// O arquivo, pelo nome, pede o motor da PrismML.
+pub fn requires_prism(filename: &str) -> bool {
+    let upper = filename.to_uppercase();
+    PRISM_ONLY.iter().any(|l| upper.contains(l))
+}
 
 /// Bits por peso aproximados (tabela oficial do HF + docs llama.cpp).
 pub fn bits_per_weight(label: &str) -> Option<f32> {
@@ -58,6 +73,10 @@ pub fn bits_per_weight(label: &str) -> Option<f32> {
         "IQ3_M" | "IQ3_S" => 3.44,
         "IQ3_XXS" => 3.06,
         l if l.starts_with("Q2_K") => 2.625,
+        // Ternários/binários da PrismML (Bonsai): bits declarados no card.
+        "PQ2_0" | "Q2_0" => 2.13,
+        "PTQ1_0" => 1.75,
+        "Q1_0" => 1.13,
         "IQ2_M" | "IQ2_XS" | "IQ2_XXS" => 2.31,
         "IQ1_M" | "IQ1_S" => 1.56,
         _ => return None,
@@ -102,6 +121,27 @@ mod tests {
         assert_eq!(parse_label("llama-bf16.gguf"), "BF16");
         assert_eq!(parse_label("model-q8_0.gguf"), "Q8_0");
         assert_eq!(parse_label("weird-name.gguf"), "?");
+    }
+
+    /// Os arquivos da PrismML ganham rótulo em vez de "?", e só os dois
+    /// formatos privados do fork pedem o motor dela — `Q2_g64` e `Q1_0` são
+    /// do llama.cpp oficial.
+    #[test]
+    fn prism_labels_are_recognised_and_only_the_fork_formats_require_prism() {
+        assert_eq!(parse_label("Ternary-Bonsai-2-27B-PTQ1_0.gguf"), "PTQ1_0");
+        assert_eq!(parse_label("Ternary-Bonsai-27B-PQ2_0.gguf"), "PQ2_0");
+        assert_eq!(parse_label("Ternary-Bonsai-27B-Q2_0.gguf"), "Q2_0");
+        assert_eq!(parse_label("Bonsai-8B-Q1_0.gguf"), "Q1_0");
+        assert!(requires_prism("Ternary-Bonsai-2-27B-ptq1_0.gguf"));
+        assert!(requires_prism("Ternary-Bonsai-27B-PQ2_0.gguf"));
+        assert!(!requires_prism("Ternary-Bonsai-27B-Q2_g64.gguf"));
+        assert!(!requires_prism("Ternary-Bonsai-27B-Q2_0.gguf"));
+        assert!(!requires_prism("Qwen3-8B-Q4_K_M.gguf"));
+        assert!(quality_rank("Q2_K") > quality_rank("PQ2_0"));
+        assert!(quality_rank("PQ2_0") > quality_rank("PTQ1_0"));
+        assert!(quality_rank("PTQ1_0") > quality_rank("IQ1_S"));
+        assert_eq!(bits_per_weight("PTQ1_0"), Some(1.75));
+        assert_eq!(bits_per_weight("PQ2_0"), Some(2.13));
     }
 
     #[test]

@@ -457,6 +457,9 @@ pub struct QuantOption {
     /// GB com a janela que você usa".
     pub est_total_bytes: u64,
     pub kv_cache_bytes: u64,
+    /// Pelo nome, o arquivo só abre no motor da PrismML (Bonsai 2). A tela
+    /// avisa antes do download e o app instala o motor junto.
+    pub requires_prism: bool,
 }
 
 /// Avalia todos os arquivos de um repositório e marca o recomendado:
@@ -481,6 +484,7 @@ pub fn evaluate_files(
                 verdict: report.verdict,
                 est_total_bytes: report.est_total_bytes,
                 kv_cache_bytes: report.kv_cache_bytes,
+                requires_prism: quant::requires_prism(&f.filename),
             }
         })
         .collect();
