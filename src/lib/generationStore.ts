@@ -12,12 +12,13 @@ import {
   visionModelFor,
 } from "./serverSession";
 import { splitModelRef } from "./providers";
+import { jevDecideEffort, summarizeForJev } from "./jev";
 import {
   completeOnce,
   streamChat,
   type ChatMessage,
 } from "./llama";
-import type { ChatParams } from "./types";
+import type { ChatParams, EffortLevel } from "./types";
 
 export type JobState = "queued" | "running" | "done" | "error";
 
@@ -27,6 +28,8 @@ export interface GenerationMetrics {
   firstTokenMs: number | null; firstAnswerMs: number | null; totalMs: number | null;
   promptTokens: number | null; cachedTokens: number | null; promptTps: number | null;
   thinkingMs: number | null;
+  /** Presente quando o Jev decidiu o esforço desta resposta. */
+  jev?: { effort: EffortLevel; confidence: number | null };
 }
 export interface GenerationJob {
   createdAt: number;
@@ -279,6 +282,18 @@ async function runJob(row: InternalJob): Promise<void> {
       const image = row.opts.messages.some(m => Array.isArray(m.content) && m.content.some(p => p.type === "image_url"));
       resolved = matchServerModel(image ? visionModelFor(row.opts.model, loaded) : row.opts.model, loaded);
     }
+    // O Jev decide o esforço desta requisição antes de ela sair — só para
+    // modelo local (é o único cujo raciocínio o app controla) e só quando o
+    // backend diz que decidiu; qualquer outra coisa mantém o da conversa.
+    let params = row.opts.params;
+    if (provider === "local" && params?.effort) {
+      const d = await jevDecideEffort(resolved, summarizeForJev(row.opts.messages), params.effort);
+      if (cancelled()) return;
+      if (d?.source === "jev") {
+        params = { ...params, effort: d.effort };
+        patch(chatId, { metrics: { ...row.public.metrics, jev: { effort: d.effort, confidence: d.confidence } } });
+      }
+    }
     // Sem evento confirmado do motor, espera não significa carregamento.
     patch(chatId, { metrics: { ...row.public.metrics, phase: "waiting" } });
     if (provider === "local") {
@@ -319,7 +334,7 @@ async function runJob(row: InternalJob): Promise<void> {
         loadingModel: false,
       }, true);
     };
-    const result = await streamChat({ baseUrl, headers, model: resolved, messages: row.opts.messages, params: row.opts.params,
+    const result = await streamChat({ baseUrl, headers, model: resolved, messages: row.opts.messages, params,
       signal: row.abort.signal, onDelta: d => delta(d, false), onReasoningDelta: d => delta(d, true) });
     if (cancelled()) return;
     patch(chatId, { content: result.content, reasoning: result.reasoning, thinkingMs: result.thinkingMs,

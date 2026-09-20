@@ -10,11 +10,14 @@ export default function ThinkingBlock({
   reasoning,
   thinkingMs,
   active,
+  badge,
 }: {
   reasoning: string;
   thinkingMs?: number | null;
   /** true enquanto o raciocínio ainda está sendo transmitido. */
   active: boolean;
+  /** Etiqueta curta ao lado do rótulo (quem decidiu este esforço). */
+  badge?: string | null;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -58,6 +61,11 @@ export default function ThinkingBlock({
           <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent" />
         )}
         <span>{label}</span>
+        {badge && (
+          <span className="ml-auto shrink-0 rounded-full border border-edge px-1.5 py-px text-[10px] text-dim">
+            {badge}
+          </span>
+        )}
       </button>
       {expanded && reasoning && (
         <div

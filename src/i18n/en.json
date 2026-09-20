@@ -1349,7 +1349,10 @@
     "queue": "Queue time",
     "total": "Total time",
     "prompt": "Processed tokens",
-    "cache": "Cached tokens"
+    "cache": "Cached tokens",
+    "jev": "Effort decided by Jev",
+    "jevValue": "{{effort}} ({{confidence}}% confidence)",
+    "jevBadge": "Jev: {{effort}}"
   },
   "comparison": {
     "title": "Optimization",

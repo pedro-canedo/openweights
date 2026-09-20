@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  stream: vi.fn(), add: vi.fn(), title: vi.fn(), endpoint: vi.fn(), setting: vi.fn(), profile: vi.fn(),
+  stream: vi.fn(), add: vi.fn(), title: vi.fn(), endpoint: vi.fn(), setting: vi.fn(), profile: vi.fn(), jev: vi.fn(),
 }));
+vi.mock("./jev", () => ({ jevDecideEffort: mocks.jev, summarizeForJev: (m: unknown) => m }));
 vi.mock("./api", () => ({ addMessage: mocks.add, listChats: vi.fn(async () => []), renameChat: vi.fn(), getSetting: mocks.setting, getModelProfile: mocks.profile }));
 vi.mock("./llama", () => ({ streamChat: mocks.stream, completeOnce: mocks.title }));
 vi.mock("./serverSession", () => ({ ensureEndpoint: mocks.endpoint, listLoadedModels: vi.fn(async () => ["m"]), modelsMax: vi.fn(async () => 1), matchServerModel: (m: string) => m, visionModelFor: (m: string) => m, errorMessage: String }));
@@ -16,6 +17,7 @@ beforeEach(async () => {
   mocks.setting.mockResolvedValue("1"); mocks.profile.mockResolvedValue(null);
   mocks.endpoint.mockImplementation(async (m: string) => ({ provider: m.startsWith("openrouter:") ? "openrouter" : "local", baseUrl: "http://localhost", headers: {} }));
   mocks.stream.mockResolvedValue(result);
+  mocks.jev.mockResolvedValue(null);
   store = (await import("./generationStore")).generationStore;
 });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
@@ -80,5 +82,24 @@ describe("generation coordination", () => {
     await vi.advanceTimersByTimeAsync(10);
     expect(mocks.title.mock.calls[0][0].messages[0].content.length).toBe(1200);
     expect(mocks.add.mock.calls[0][7]).toMatchObject({ promptTokens: 8, cachedTokens: 4, phase: "done" });
+  });
+  it("applies the effort Jev decided and records it in the metrics", async () => {
+    mocks.jev.mockResolvedValue({ effort: "low", source: "jev", confidence: 0.82, cost: 1e-6, reason: null });
+    store.start({ ...opts(1), params: { effort: "high" } as any }); await vi.advanceTimersByTimeAsync(10);
+    expect(mocks.jev).toHaveBeenCalledWith("m", [{ role: "user", content: "hi" }], "high");
+    expect(mocks.stream.mock.calls[0][0].params.effort).toBe("low");
+    expect(store.jobFor(1)?.metrics.jev).toEqual({ effort: "low", confidence: 0.82 });
+  });
+  it("keeps the conversation effort when Jev falls back to the default", async () => {
+    mocks.jev.mockResolvedValue({ effort: "high", source: "padrao", confidence: 0.41, cost: 1e-6, reason: "confiança baixa" });
+    store.start({ ...opts(1), params: { effort: "high" } as any }); await vi.advanceTimersByTimeAsync(10);
+    expect(mocks.stream.mock.calls[0][0].params.effort).toBe("high");
+    expect(store.jobFor(1)?.metrics.jev).toBeUndefined();
+  });
+  it("never asks Jev about a remote model", async () => {
+    mocks.jev.mockResolvedValue({ effort: "low", source: "jev", confidence: 0.9, cost: null, reason: null });
+    store.start({ ...opts(1, "openrouter:x"), params: { effort: "high" } as any }); await vi.advanceTimersByTimeAsync(10);
+    expect(mocks.jev).not.toHaveBeenCalled();
+    expect(mocks.stream.mock.calls[0][0].params.effort).toBe("high");
   });
 });
