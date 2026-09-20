@@ -50,6 +50,7 @@
     "cpuOnly": "Só CPU (lento)",
     "wontFit": "Não cabe na sua máquina",
     "recommended": "Recomendado",
+    "prismRequired": "Precisa do motor da PrismML (cerca de 150 MB), instalado junto com este download.",
     "needsMemory": "Precisa de ~{{total}} com janela de {{ctx}}k",
     "hasProjector": "Este modelo também tem projetor de visão ({{size}}), baixado à parte quando você quiser imagens.",
     "modelCtxMax": "O modelo foi treinado para até {{n}}k de janela.",
@@ -115,7 +116,8 @@
     "cancel": "Cancelar",
     "done": "Concluído",
     "error": "Erro",
-    "empty": "Nenhum download no momento."
+    "empty": "Nenhum download no momento.",
+    "prismEngine": "Motor PrismML (para modelos Bonsai)"
   },
   "jobs": {
     "title": "Gerando",
@@ -129,6 +131,11 @@
     "size": "Tamanho",
     "quant": "Quantização",
     "chatWith": "Conversar",
+    "prismEngine": "Motor PrismML",
+    "prismMissing": "Este modelo precisa do motor da PrismML, que ainda não está instalado.",
+    "prismWhat": "Modelos Bonsai 2 usam tipos de tensor que o llama.cpp padrão não conhece. O fork da PrismML abre esses arquivos; o app troca para ele ao escolher este modelo e volta ao padrão ao escolher outro.",
+    "prismInstall": "Instalar motor PrismML ({{size}})",
+    "prismInstalling": "Instalando o motor da PrismML…",
     "delete": "Excluir",
     "deleteConfirm": "Excluir {{name}} do disco?",
     "loose": "importado manualmente",
@@ -597,6 +604,8 @@
       "advanced": "Avançado"
     },
     "header": {
+      "enginePrism": "Rodando no motor da PrismML (modelos Bonsai)",
+      "engineMoe": "Rodando no motor MoE-cache",
       "noModel": "Nenhum modelo carregado",
       "tps": "{{n}} tokens/s",
       "lanOn": "aberto para a rede local",

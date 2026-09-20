@@ -11,6 +11,7 @@ import { autorDoRepo } from "../lib/authorAvatars";
 import AuthorAvatar from "../components/discover/AuthorAvatar";
 import IncompleteDownloads from "../components/models/IncompleteDownloads";
 import TunePanel from "../components/models/TunePanel";
+import PrismEngineCard from "../components/models/PrismEngineCard";
 import { Page } from "../components/ui/Shell";
 import Icon from "../components/ui/Icon";
 
@@ -60,12 +61,26 @@ function ModelCard({
                 {model.quantLabel}
               </span>
             )}
+            {model.requiresPrism && (
+              <span
+                className="shrink-0 rounded-md border border-warn/40 px-1.5 py-0.5 text-[11px] font-medium text-warn"
+                title={t("models.prismWhat")}
+              >
+                {t("models.prismEngine")}
+              </span>
+            )}
           </div>
           <p className="mt-1 truncate text-xs text-dim" title={model.repoId}>
             {model.repoId || t("models.loose")}
           </p>
         </div>
       </div>
+
+      {model.requiresPrism && (
+        <div className="mt-4">
+          <PrismEngineCard compact />
+        </div>
+      )}
 
       <div className="my-5 flex items-center gap-2 border-y border-edge/70 py-4 text-xs text-dim"><Icon name="disk" /><span className="font-medium tabular-nums text-ink">{formatBytes(model.totalBytes)}</span><span className="ml-auto flex items-center gap-1.5"><Icon name="check" className="h-3.5 w-3.5 text-ok" />{t("interface.localFile")}</span></div>
 

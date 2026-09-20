@@ -88,6 +88,20 @@ export default function ServerHeader({
                 <span>{t("server.header.lanOn")}</span>
               </>
             )}
+            {/* Só quando NÃO é o oficial: é a resposta a "por que o /v1/models
+                diz outra build?" — o modelo selecionado pediu outro motor. */}
+            {status?.engine === "prism" && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="text-accent">{t("server.header.enginePrism")}</span>
+              </>
+            )}
+            {status?.engine === "moeCache" && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="text-accent">{t("server.header.engineMoe")}</span>
+              </>
+            )}
             {status?.keyStale && (
               <>
                 <span aria-hidden>·</span>

@@ -107,6 +107,9 @@ function QuantRow({
       {quant.verdict.kind === "partial" && (
         <p className="mt-1.5 text-[11px] text-warn/90">{t("badge.partialWarn")}</p>
       )}
+      {quant.requiresPrism && (
+        <p className="mt-1.5 text-[11px] text-dim">{t("badge.prismRequired")}</p>
+      )}
     </div>
   );
 }

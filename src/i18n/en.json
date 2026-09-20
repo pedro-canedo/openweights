@@ -50,6 +50,7 @@
     "cpuOnly": "CPU only (slow)",
     "wontFit": "Won't fit on your machine",
     "recommended": "Recommended",
+    "prismRequired": "Needs the PrismML engine (about 150 MB), installed together with this download.",
     "needsMemory": "Needs ~{{total}} with a {{ctx}}k window",
     "hasProjector": "This model also has a vision projector ({{size}}), downloaded separately when you want images.",
     "modelCtxMax": "The model was trained for up to a {{n}}k window.",
@@ -115,7 +116,8 @@
     "cancel": "Cancel",
     "done": "Done",
     "error": "Error",
-    "empty": "No downloads at the moment."
+    "empty": "No downloads at the moment.",
+    "prismEngine": "PrismML engine (for Bonsai models)"
   },
   "jobs": {
     "title": "Generating",
@@ -129,6 +131,11 @@
     "size": "Size",
     "quant": "Quantization",
     "chatWith": "Chat",
+    "prismEngine": "PrismML engine",
+    "prismMissing": "This model needs the PrismML engine, which is not installed yet.",
+    "prismWhat": "Bonsai 2 models use tensor types the standard llama.cpp does not know. The PrismML fork of llama.cpp opens them; the app switches to it when you pick this model and back when you pick another.",
+    "prismInstall": "Install PrismML engine ({{size}})",
+    "prismInstalling": "Installing the PrismML engine…",
     "delete": "Delete",
     "deleteConfirm": "Delete {{name}} from disk?",
     "loose": "manually imported",
@@ -597,6 +604,8 @@
       "advanced": "Advanced"
     },
     "header": {
+      "enginePrism": "Running on the PrismML engine (Bonsai models)",
+      "engineMoe": "Running on the MoE-cache engine",
       "noModel": "No model loaded",
       "tps": "{{n}} tokens/s",
       "lanOn": "open to the local network",

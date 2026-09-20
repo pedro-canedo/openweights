@@ -16,6 +16,8 @@ import { useTranslation } from "react-i18next";
 import { speechStore } from "../../lib/speech";
 import Markdown from "./Markdown";
 import ThinkingBlock from "./ThinkingBlock";
+import PrismEngineCard from "../models/PrismEngineCard";
+import { isPrismRequired } from "../../lib/prism";
 import { formatDuration } from "../../lib/format";
 
 export interface UiMessage {
@@ -271,7 +273,12 @@ export default function MessageList({
             </div>
           ) : (
             <div key={i} className="group max-w-full self-start select-text">
-              {m.error ? (
+              {m.error && isPrismRequired(m.content) ? (
+                // O modelo pede o motor da PrismML e ele não está aqui: em
+                // vez de uma bolha vermelha com uma chave de erro, o botão
+                // que resolve — e a mensagem é reenviada quando ele chega.
+                <PrismEngineCard onInstalled={onRegenerate} />
+              ) : m.error ? (
                 <div className="rounded-xl border border-bad/40 bg-bad/10 px-4 py-2.5 text-sm text-bad">
                   {m.content}
                 </div>

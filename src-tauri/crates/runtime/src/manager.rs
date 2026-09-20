@@ -94,18 +94,23 @@ pub struct RuntimeState {
 }
 
 /// Gerencia a instalação dos runtimes em `<data_dir>/runtimes/`.
+///
+/// `Clone` barato (o lock é compartilhado): uma instalação em segundo plano
+/// — o motor da PrismML baixado junto de um modelo — precisa de um handle
+/// que sobreviva ao comando que a disparou.
+#[derive(Clone)]
 pub struct RuntimeManager {
     pub(crate) data_dir: PathBuf,
     /// Serializa instalações concorrentes (reentrada do comando, remount do
     /// webview): duas extrações no mesmo destino se atropelariam.
-    pub(crate) install_lock: tokio::sync::Mutex<()>,
+    pub(crate) install_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 impl RuntimeManager {
     pub fn new(data_dir: PathBuf) -> Self {
         Self {
             data_dir,
-            install_lock: tokio::sync::Mutex::new(()),
+            install_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 

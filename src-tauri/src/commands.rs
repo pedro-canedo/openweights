@@ -613,10 +613,33 @@ pub async fn models_quants(
 
 #[tauri::command]
 pub async fn download_start(
+    app: AppHandle,
     state: State<'_, AppState>,
     repo_id: String,
     artifact_name: String,
 ) -> CmdResult<String> {
+    // Um clique baixa o modelo E o motor que ele exige. Pelo nome, aqui: o
+    // cabeçalho só existe depois do download. A instalação corre em
+    // paralelo e em segundo plano (sobrevive a trocar de tela); se falhar,
+    // o download não sofre e a biblioteca oferece o botão depois.
+    if advisor::quant::requires_prism(&artifact_name)
+        && lr_runtime::prism::supported(&state.profile)
+        && !prism_state(&state).installed
+    {
+        let mgr = state.runtime_mgr.clone();
+        let variant = lr_runtime::select_variant(&state.profile);
+        let app2 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) = mgr
+                .ensure_prism(variant, move |ev| {
+                    let _ = app2.emit("runtime-prism", &ev);
+                })
+                .await
+            {
+                log::warn!("motor da PrismML não instalou junto do download: {e}");
+            }
+        });
+    }
     // Renova a sessão antes de listar e de baixar: quem entrou com a conta
     // tem um token com hora para morrer, e um download começa agora e termina
     // em horas.
