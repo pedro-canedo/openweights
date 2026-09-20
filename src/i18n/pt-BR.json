@@ -993,6 +993,34 @@
       "routesTitle": "Endereços ativos",
       "noRoutes": "Nenhum provedor no ar. Inicie o servidor local ou o 9router."
     },
+    "jev": {
+      "title": "Jev — camada de decisão",
+      "subtitle": "Um modelo de decisão da TypeSafe, acessado pelo OpenRouter, decide a cada mensagem se o modelo local deve pensar e quanto. Mais rápido nas mensagens simples, sem perder raciocínio nas difíceis. Custa fração de centavo por mil mensagens.",
+      "enable": "Ativar",
+      "needsKey": "Configure a chave do OpenRouter acima para usar o Jev.",
+      "on": "Decidindo o esforço a cada mensagem.",
+      "off": "Desligado: cada conversa usa o esforço fixo dela.",
+      "proxy": "agentes passam por {{url}}",
+      "privacy": "Com isto ligado, a mensagem atual e um trecho curto da conversa são enviados à TypeSafe pelo OpenRouter. Todo o resto continua local. Vem desligado.",
+      "gateChat": "Chat do app",
+      "gateHarness": "Agentes de código (via proxy local)",
+      "minConfidence": "Só agir acima de",
+      "test": "Testar decisão",
+      "testOk": "Decisão de amostra: {{level}} ({{confidence}}% de confiança). Chave e endpoint funcionando.",
+      "testDefault": "O Jev respondeu, mas manteve o padrão: {{reason}}",
+      "counters": "Nesta sessão: {{calls}} consultas, {{applied}} aplicadas, {{failures}} falhas, US$ {{cost}}",
+      "last": "última: {{level}} ({{confidence}}%) vinda de {{where}}",
+      "lastDefault": "última: padrão mantido ({{reason}})",
+      "level": {
+        "nenhum": "sem pensar",
+        "medio": "médio",
+        "alto": "alto"
+      },
+      "where": {
+        "chat": "chat",
+        "proxy": "um agente de código"
+      }
+    },
     "on": "no ar",
     "off": "desligado",
     "readyCount": "{{n}} de {{total}} fontes prontas para atender."

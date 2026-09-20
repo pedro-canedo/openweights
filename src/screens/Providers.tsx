@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import NineRouterCard from "../components/providers/NineRouterCard";
 import GatewayCard from "../components/providers/GatewayCard";
+import JevCard from "../components/providers/JevCard";
 import NineRouterPanel from "../components/providers/NineRouterPanel";
 import OpenRouterCard from "../components/providers/OpenRouterCard";
 import EngineCard from "../components/settings/EngineCard";
@@ -111,6 +112,7 @@ export default function Providers() {
         {aba === "openrouter" && <>
           <p className="text-xs text-dim">{t("providers.cloudUpdates")}</p>
           <OpenRouterCard />
+          <JevCard />
         </>}
         {aba === "gateway" && <GatewayCard />}
         {aba === "9router" && (

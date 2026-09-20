@@ -993,6 +993,34 @@
       "routesTitle": "Active addresses",
       "noRoutes": "No provider running. Start the local server or 9router."
     },
+    "jev": {
+      "title": "Jev — decision layer",
+      "subtitle": "A TypeSafe decision model, reached through OpenRouter, decides per message whether the local model should think and how hard. Faster on simple messages, no lost reasoning on hard ones. Costs a fraction of a cent per thousand messages.",
+      "enable": "Enable",
+      "needsKey": "Set the OpenRouter key above to use Jev.",
+      "on": "Deciding effort per message.",
+      "off": "Off: each conversation uses its fixed effort.",
+      "proxy": "harnesses go through {{url}}",
+      "privacy": "With this on, the current message and a short tail of the conversation are sent to TypeSafe via OpenRouter. Everything else stays local. Off by default.",
+      "gateChat": "Chat in the app",
+      "gateHarness": "Coding agents (via local proxy)",
+      "minConfidence": "Only act above",
+      "test": "Test decision",
+      "testOk": "Sample decision: {{level}} ({{confidence}}% confidence). Key and endpoint are working.",
+      "testDefault": "Jev answered but kept the default: {{reason}}",
+      "counters": "This session: {{calls}} calls, {{applied}} applied, {{failures}} failed, US$ {{cost}}",
+      "last": "last: {{level}} ({{confidence}}%) from {{where}}",
+      "lastDefault": "last: default kept ({{reason}})",
+      "level": {
+        "nenhum": "no thinking",
+        "medio": "medium",
+        "alto": "high"
+      },
+      "where": {
+        "chat": "chat",
+        "proxy": "a coding agent"
+      }
+    },
     "on": "up",
     "off": "off",
     "readyCount": "{{n}} of {{total}} sources ready to answer."
