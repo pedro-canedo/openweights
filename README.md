@@ -76,6 +76,12 @@ Windows, macOS and Linux.
   its own dashboard that the app installs, runs and removes in an isolated
   folder — portable Node included, nothing touching your system. The 9router
   dashboard opens embedded in the app.
+- 🎚️ **Jev, a decision layer (optional)** — a TypeSafe decision model, reached
+  through the OpenRouter key, looks at each message and decides whether the
+  local model should think and how hard, instead of a fixed effort per
+  conversation. Simple messages answer faster; hard ones keep the full budget.
+  The same decision reaches the coding agents through a small local proxy. Off
+  by default, and the card says what leaves your machine when it is on.
 - 🚪 **Single entry point (optional)** — a local Traefik that forwards one
   address to the local engine and to 9router by prefix, so another tool can
   point at OpenWeights without memorising ports. Not a tunnel: nothing becomes

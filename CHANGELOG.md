@@ -10,6 +10,13 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.21.0] — 2026-09-19
+
+- Jev (TypeSafe's decision model, through the OpenRouter key) decides per message whether the local model should think and how hard — none, medium or high — instead of the conversation's fixed effort. Run details show the decision and its confidence.
+- A local proxy on port 11712 applies the same decision to requests from the DeepSeek Harness and the other agents the app launches. Streaming and every other request pass through untouched; without a decision, the request goes as the agent sent it.
+- New card in Sources → OpenRouter, off by default and available only once the key is set: switches for chat and agents, a confidence floor, a test decision, session counters and a notice of what leaves the machine.
+- Only levels the model's chat template accepts are written; models without reasoning never trigger a call.
+
 ## [0.20.0-rc.1] — 2026-09-12
 
 - **Train** opens the optional Studio: data, training and results inside the desktop interface.
