@@ -82,6 +82,16 @@ Baixar as camadas na GPU move parte do modelo para a RAM do sistema: mais
 lento, mas roda. Veja a
 [referência de configuração](/pt/integracoes/configuracao).
 
+## Um modelo Bonsai diz que precisa do motor da PrismML
+
+Arquivos `PTQ1_0` e `PQ2_0` só carregam no fork da PrismML do llama.cpp. O app
+instala esse motor junto com o download; se mesmo assim ele faltar, o chat e o
+cartão do modelo mostram um botão **Instalar motor PrismML** — cerca de 150 MB
+de uma release fixada no GitHub, conferida executando o binário. O motor troca
+sozinho ao escolher o modelo e volta no seguinte; a faixa do Servidor Local diz
+qual está no ar. A otimização e a comparação de motores recusam modelos Bonsai
+de propósito, e a GPU pela rede (cluster) continua na build oficial.
+
 ## O servidor local não sobe
 
 | O que você vê | Costuma significar |

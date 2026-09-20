@@ -1,5 +1,22 @@
 # Novidades
 
+## 0.22.0
+
+**Modelos Bonsai rodam.** Os arquivos Ternary Bonsai 2 da PrismML (`PTQ1_0`,
+`PQ2_0`) usam tipos de tensor que o llama.cpp padrão recusa, e até agora
+acabavam num HTTP 500. O app passa a ler os tipos de tensor do cabeçalho do
+arquivo, sabe quais arquivos precisam do fork da PrismML do llama.cpp e
+**instala esse motor junto com o download** — um clique, as duas barras no
+painel de downloads. Escolher um Bonsai reinicia o servidor local no motor da
+PrismML; escolher qualquer outro modelo o reinicia na build oficial. A faixa do
+Servidor Local diz qual está no ar. Um Bonsai sem o motor mostra um botão
+**Instalar motor PrismML** no chat e na biblioteca em vez de um erro. Veja
+[modelos](/pt/guia/modelos#modelos-bonsai-e-o-motor-da-prismml).
+
+Apagar um modelo com o servidor no ar não deixa mais uma entrada fantasma que
+o chat ainda podia escolher (e que respondia HTTP 500): o modelo é
+descarregado na hora e o servidor reinicia quando está ocioso.
+
 ## 0.21.0
 
 O **Jev** entra em **Fontes → OpenRouter** como camada de decisão para os

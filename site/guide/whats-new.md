@@ -1,5 +1,22 @@
 # What's new
 
+## 0.22.0
+
+**Bonsai models run.** PrismML's Ternary Bonsai 2 files (`PTQ1_0`, `PQ2_0`)
+use tensor types the standard llama.cpp refuses, and until now they ended in
+an HTTP 500. The app now reads the tensor types from the file header, knows
+which files need PrismML's fork of llama.cpp, and **installs that engine
+together with the download** — one click, both progress bars in the downloads
+panel. Picking a Bonsai model restarts the local server on the PrismML engine;
+picking any other model restarts it on the official build. The Local Server
+header says which one is running. A Bonsai model without the engine shows an
+**Install PrismML engine** button in the chat and in the library instead of an
+error. See [models](/guide/models#bonsai-models-and-the-prismml-engine).
+
+Deleting a model while the server is running no longer leaves a ghost entry
+that the chat could still pick (and that answered HTTP 500): the model is
+unloaded at once and the server restarts when idle.
+
 ## 0.21.0
 
 **Jev** joins **Sources → OpenRouter** as a decision layer for local models. A

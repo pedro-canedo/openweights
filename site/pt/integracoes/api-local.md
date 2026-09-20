@@ -36,6 +36,11 @@ deles exige parar e iniciar o motor de novo. A tela diz isso.
 
 O log do servidor fica na aba **Avançado**.
 
+A build por trás da API pode mudar sozinha: escolher um modelo Bonsai reinicia
+o servidor no [motor da PrismML](/pt/guia/modelos#modelos-bonsai-e-o-motor-da-prismml),
+e escolher qualquer outro modelo o reinicia na build oficial. A faixa desta
+tela diz qual está no ar, e o `/v1/models` reporta essa build.
+
 ## Configurar o llama.cpp
 
 Na aba **Desempenho** fica **Configurar llama.cpp**: a configuração de carga

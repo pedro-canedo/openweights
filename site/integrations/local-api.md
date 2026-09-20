@@ -36,6 +36,11 @@ one and the engine has to be stopped and started again. The screen says so.
 
 The server log lives in the **Advanced** tab.
 
+The build behind the API can change on its own: picking a Bonsai model
+restarts the server on the [PrismML engine](/guide/models#bonsai-models-and-the-prismml-engine),
+and picking any other model restarts it on the official build. The header of
+this screen says which one is running, and `/v1/models` reports that build.
+
 ## Configuring llama.cpp
 
 The **Performance** tab holds **Configure llama.cpp**: the **per-model** load

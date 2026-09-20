@@ -124,3 +124,26 @@ On Apple Silicon, macOS caps Metal at about 75% of unified memory. Raising it
 needs a terminal and your password, so the app shows the command instead of
 running it.
 :::
+
+## Bonsai models and the PrismML engine
+
+PrismML's **Ternary Bonsai 2** models ship in two file formats, `PTQ1_0` and
+`PQ2_0`, that use tensor types the standard llama.cpp does not know. The
+official engine the app pins refuses those files as "unknown type"; only
+PrismML's fork of llama.cpp opens them. The app treats this as a fact about
+the file, not something for you to manage.
+
+Before the download, the quantization drawer says which files need the
+PrismML engine and that it will be **installed together with the download** —
+one click starts both, and the downloads panel shows both progress bars. After
+the download, the app reads the file header and knows for sure.
+
+When you pick a Bonsai model in the chat, the local server restarts on the
+PrismML engine; pick any other model and it restarts back on the official
+build. The Local Server header says which engine is running. If a Bonsai model
+ends up in your library without the engine (imported by hand, or the install
+failed), the model card and the chat show an **Install PrismML engine** button
+instead of an error.
+
+Not every Bonsai file needs the fork: the first-generation `Q1_0` and the
+`Q2_g64` file of Ternary Bonsai 27B run on the official build.

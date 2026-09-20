@@ -80,6 +80,17 @@ green refuses to load anyway:
 Lowering GPU layers moves part of the model to system RAM: slower, but it runs.
 See the [configuration reference](/integrations/configuration).
 
+## A Bonsai model says it needs the PrismML engine
+
+`PTQ1_0` and `PQ2_0` files only load on PrismML's fork of llama.cpp. The app
+installs that engine together with the download; if it is missing anyway, the
+chat and the model card show an **Install PrismML engine** button — about
+150 MB from a pinned GitHub release, verified by running the binary. The
+engine switches automatically when you pick the model and switches back on the
+next one; the Local Server header says which one is running. Optimization and
+the engine comparison refuse Bonsai models on purpose, and the network GPU
+(cluster) stays on the official build.
+
 ## The local server will not start
 
 | What you see | Usually means |

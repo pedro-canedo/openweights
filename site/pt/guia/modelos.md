@@ -128,3 +128,26 @@ No Apple Silicon, o macOS limita o Metal a cerca de 75% da memória unificada.
 Levantar isso exige terminal e a sua senha, então o app mostra o comando em vez
 de executá-lo.
 :::
+
+## Modelos Bonsai e o motor da PrismML
+
+Os modelos **Ternary Bonsai 2** da PrismML vêm em dois formatos de arquivo,
+`PTQ1_0` e `PQ2_0`, que usam tipos de tensor que o llama.cpp padrão não
+conhece. O motor oficial que o app fixa recusa esses arquivos com "unknown
+type"; só o fork da PrismML do llama.cpp os abre. O app trata isso como um fato
+sobre o arquivo, não como algo para você administrar.
+
+Antes do download, a gaveta de quantizações diz quais arquivos precisam do
+motor da PrismML e que ele será **instalado junto com o download** — um clique
+começa os dois, e o painel de downloads mostra as duas barras. Depois do
+download, o app lê o cabeçalho do arquivo e sabe com certeza.
+
+Quando você escolhe um Bonsai no chat, o servidor local reinicia no motor da
+PrismML; escolha qualquer outro modelo e ele reinicia de volta na build
+oficial. A faixa do Servidor Local diz qual motor está no ar. Se um Bonsai
+acabar na sua biblioteca sem o motor (importado à mão, ou a instalação
+falhou), o cartão do modelo e o chat mostram um botão **Instalar motor
+PrismML** em vez de um erro.
+
+Nem todo arquivo Bonsai precisa do fork: o `Q1_0` da primeira geração e o
+`Q2_g64` do Ternary Bonsai 27B rodam na build oficial.
