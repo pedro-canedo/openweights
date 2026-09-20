@@ -516,15 +516,19 @@ pub async fn compare_run(
         .into_iter()
         .find(|e| e.id == model)
         .ok_or("comparison-model-missing")?;
+    if commands::modelo_exige_prism(&state, &model) {
+        return Err("prism-unsupported-operation".into());
+    }
     assert_idle(&state).await?;
     commands::stop_engine(&app, &state).await?;
     let measured = async {
-        let runtime_identity =
-            if commands::selected_engine(&state) == lr_types::tuning::EngineSource::MoeCache {
-                lr_runtime::experimental::identity()
-            } else {
+        let runtime_identity = match commands::selected_engine(&state) {
+            lr_types::tuning::EngineSource::MoeCache => lr_runtime::experimental::identity(),
+            lr_types::tuning::EngineSource::Prism => lr_runtime::prism::identity(&state.profile),
+            lr_types::tuning::EngineSource::Official => {
                 lr_runtime::experimental::official_identity(&state.profile)
-            };
+            }
+        };
         let reference = arm(
             Some(&app),
             &config,

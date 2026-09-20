@@ -4,7 +4,7 @@ import { notifyProfileApplied } from "./profileChanges";
 import type { ModelProfile } from "./tuning";
 
 export interface Distribution { median: number; min: number; max: number }
-export interface RuntimeIdentity { source: "official" | "moeCache"; revision: string; backend: string; platform: string }
+export interface RuntimeIdentity { source: "official" | "moeCache" | "prism"; revision: string; backend: string; platform: string }
 export interface ComparisonArm { profile: ModelProfile; genTps: Distribution; promptTps: Distribution; totalMs: Distribution; gpuFreeBytes: number | null; peakRamBytes?: number | null; peakVramBytes?: number | null; runtime?: string; runtimeIdentity?: RuntimeIdentity }
 export interface Comparison { model: string; workload: string; arms: ComparisonArm[]; inconclusive: boolean; applied: boolean; currentArm?: number | null; winner?: number; warnings?: string[] }
 export interface ComparisonProgress { model: string; arm: number; sample: number; stage?: string }

@@ -47,6 +47,17 @@ export const ensureRuntime = () =>
 export const onRuntimeEvent = (h: (e: RuntimeEvent) => void) =>
   listen<RuntimeEvent>("runtime", h);
 
+/** O motor da PrismML (modelos Bonsai 2): instalado ou não nesta máquina. */
+export const getPrismStatus = () =>
+  isTauri ? invoke<RuntimeState>("runtime_prism_status") : mocks.prismStatus();
+
+/** Baixa/instala o motor da PrismML; o progresso chega por `onPrismEvent`. */
+export const ensurePrism = () =>
+  isTauri ? invoke<RuntimeState>("runtime_prism_ensure") : mocks.ensurePrism();
+
+export const onPrismEvent = (h: (e: RuntimeEvent) => void) =>
+  listen<RuntimeEvent>("runtime-prism", h);
+
 /**
  * Verificação funcional do motor: o que está no disco, se executa e se é a
  * build que esta versão do app espera.

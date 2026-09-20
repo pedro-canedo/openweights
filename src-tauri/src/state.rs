@@ -67,6 +67,10 @@ pub struct AppState {
         Arc<std::sync::Mutex<std::collections::HashMap<String, lr_providers::CapacidadeModelo>>>,
     /// Contagem da sessão das consultas ao Jev (chat e proxy).
     pub jev_contadores: Arc<lr_providers::Contadores>,
+    /// O motor com que o llama-server EM EXECUÇÃO subiu (`None` parado). O
+    /// setting `active_engine` diz o que o próximo start usará; isto diz o
+    /// que está no ar — e é o que a tela mostra ao lado da porta.
+    pub motor_ativo: std::sync::Mutex<Option<lr_types::tuning::EngineSource>>,
     /// Cluster RPC (1 host + 1 worker na LAN).
     pub cluster: std::sync::Arc<lr_cluster::ClusterHost>,
     pub rpc_pid: Arc<AtomicU32>,
@@ -248,6 +252,7 @@ impl AppState {
             decisor: tokio::sync::Mutex::new(None),
             jev_capacidades: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             jev_contadores: Arc::new(lr_providers::Contadores::default()),
+            motor_ativo: std::sync::Mutex::new(None),
             cluster,
             rpc_pid,
             store,

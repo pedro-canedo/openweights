@@ -38,6 +38,24 @@ export async function ensureRuntime(): Promise<RuntimeState> {
   return runtimeStatus();
 }
 
+let prismInstalado = false;
+export async function prismStatus(): Promise<RuntimeState> {
+  return {
+    tag: "prism-b10709-9a9394a",
+    variant: "cuda13",
+    installed: prismInstalado,
+    serverExe: prismInstalado ? "C:/fake/runtimes/prism-b10709-9a9394a/cuda-13.3/llama-server.exe" : null,
+    rpcReady: false,
+    rpcExe: null,
+  };
+}
+
+export async function ensurePrism(): Promise<RuntimeState> {
+  await delay(800);
+  prismInstalado = true;
+  return prismStatus();
+}
+
 export async function runtimeCheck(): Promise<EngineCheck> {
   await delay(600);
   return {
@@ -56,6 +74,7 @@ export async function runtimeCheck(): Promise<EngineCheck> {
       hasServer: true,
       hasRpc: true,
     },
+    prism: null,
     others: [],
     reclaimableBytes: 0,
     upstreamTag: "b10502",

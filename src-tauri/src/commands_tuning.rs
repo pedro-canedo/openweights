@@ -1049,7 +1049,7 @@ fn auto_key(state: &AppState) -> String {
     format!(
         "{}|{}|{}",
         state.profile.machine_key(),
-        lr_runtime::PINNED_TAG,
+        crate::commands::active_runtime(state).tag,
         par
     )
 }

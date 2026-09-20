@@ -116,6 +116,8 @@ export interface EngineCheck {
   /** Quanto o `--version` demorou. */
   probeMs: number | null;
   active: InstalledRuntime | null;
+  /** O motor da PrismML desta versão, quando instalado (não conta como lixo). */
+  prism?: InstalledRuntime | null;
   others: InstalledRuntime[];
   reclaimableBytes: number;
   upstreamTag: string | null;
@@ -283,7 +285,13 @@ export interface ServerStatus {
   /** Processo de pé com chave de API diferente da gravada no setting —
    *  "reinicie para aplicar" (serde `key_stale`). Sempre `false` parado. */
   keyStale: boolean;
+  /** O motor com que o processo subiu; `null`/ausente quando parado. */
+  engine?: EngineSource | null;
 }
+
+/** Quem executa o llama-server: o oficial fixado, o fork MoE-cache ou o
+ *  fork da PrismML (modelos Bonsai 2). Espelho de `EngineSource`. */
+export type EngineSource = "official" | "moeCache" | "prism";
 
 /**
  * Agregado de tráfego servido pelo motor (espelho de `ServeAgg` do backend,

@@ -106,6 +106,8 @@ fn main() {
             commands::app_paths,
             commands::runtime_status,
             commands::runtime_ensure,
+            commands::runtime_prism_status,
+            commands::runtime_prism_ensure,
             commands::models_search,
             commands_dsh::dsh_check,
             commands::runtime_check,

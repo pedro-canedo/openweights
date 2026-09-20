@@ -43,7 +43,7 @@ export type ProfileSource = "manual" | "recommended" | "tested";
 export type LoadMode = "auto" | "none" | "mmap" | "mlock" | "mmapMlock" | "dio";
 
 export interface ModelProfile {
-  engine?: "official" | "moeCache" | null;
+  engine?: "official" | "moeCache" | "prism" | null;
   moeCacheSlots?: number | null;
   ctx?: number | null;
   /** Camadas na GPU. É resultado exibido, não botão. */

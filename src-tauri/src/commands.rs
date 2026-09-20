@@ -74,6 +74,33 @@ pub async fn runtime_ensure(
         .map_err(err_str)
 }
 
+/// O motor da PrismML (modelos Bonsai 2): instalado ou não, para a variante
+/// desta máquina.
+#[tauri::command]
+pub fn runtime_prism_status(state: State<'_, AppState>) -> lr_runtime::RuntimeState {
+    prism_state(&state)
+}
+
+/// Baixa/instala o motor da PrismML, emitindo eventos `runtime-prism` com o
+/// progresso — canal separado do `runtime` para o card do motor oficial não
+/// confundir uma instalação com a outra.
+#[tauri::command]
+pub async fn runtime_prism_ensure(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<lr_runtime::RuntimeState> {
+    if !lr_runtime::prism::supported(&state.profile) {
+        return Err("prism-runtime-incompatible".into());
+    }
+    state
+        .runtime_mgr
+        .ensure_prism(lr_runtime::select_variant(&state.profile), move |ev| {
+            let _ = app.emit("runtime-prism", &ev);
+        })
+        .await
+        .map_err(err_str)
+}
+
 /// Verificação funcional do motor: o que está no disco, se ele executa e se
 /// é a build que esta versão do app espera.
 ///
@@ -686,6 +713,15 @@ pub struct ServerStatusView {
     /// settings — a tela mostra "reinicie para aplicar" a partir daqui, e não
     /// de estado local que se perde ao trocar de aba.
     pub key_stale: bool,
+    /// O motor com que o processo subiu (`None` parado). É a resposta a "por
+    /// que o `/v1/models` diz build 10709?": o modelo selecionado pediu o
+    /// motor da PrismML.
+    pub engine: Option<lr_types::tuning::EngineSource>,
+}
+
+/// O motor do processo em execução, como o `AppState` o registrou.
+fn motor_em_execucao(state: &AppState) -> Option<lr_types::tuning::EngineSource> {
+    *state.motor_ativo.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 const DEFAULT_PORT: u16 = 11711;
@@ -816,27 +852,32 @@ pub(crate) fn profile_for(state: &AppState, name: &str) -> Option<lr_types::tuni
 /// servidor não sobe, o modelo não carrega e não há tela para desfazer. O
 /// oficial é o fundo do poço, e é sempre ele quando o opcional não está lá.
 pub(crate) fn selected_engine(state: &AppState) -> lr_types::tuning::EngineSource {
-    let stored = state
-        .store
-        .get_setting("active_engine")
-        .ok()
-        .flatten()
-        .as_deref()
-        == Some("moeCache");
-    if stored && state.runtime_mgr.experimental_state().installed {
-        lr_types::tuning::EngineSource::MoeCache
-    } else {
-        lr_types::tuning::EngineSource::Official
+    use lr_types::tuning::EngineSource;
+    let stored = state.store.get_setting("active_engine").ok().flatten();
+    match stored.as_deref() {
+        Some("moeCache") if state.runtime_mgr.experimental_state().installed => {
+            EngineSource::MoeCache
+        }
+        Some("prism") if prism_state(state).installed => EngineSource::Prism,
+        _ => EngineSource::Official,
     }
 }
 
+/// O estado do motor da PrismML para a variante desta máquina.
+pub(crate) fn prism_state(state: &AppState) -> lr_runtime::RuntimeState {
+    state
+        .runtime_mgr
+        .prism_state(lr_runtime::select_variant(&state.profile))
+}
+
 pub(crate) fn active_runtime(state: &AppState) -> lr_runtime::RuntimeState {
-    if selected_engine(state) == lr_types::tuning::EngineSource::MoeCache {
-        state.runtime_mgr.experimental_state()
-    } else {
-        state
+    use lr_types::tuning::EngineSource;
+    match selected_engine(state) {
+        EngineSource::MoeCache => state.runtime_mgr.experimental_state(),
+        EngineSource::Prism => prism_state(state),
+        EngineSource::Official => state
             .runtime_mgr
-            .state(lr_runtime::select_variant(&state.profile))
+            .state(lr_runtime::select_variant(&state.profile)),
     }
 }
 
@@ -844,27 +885,48 @@ pub(crate) fn select_engine(
     state: &AppState,
     engine: lr_types::tuning::EngineSource,
 ) -> CmdResult<()> {
-    if engine == lr_types::tuning::EngineSource::MoeCache {
-        if !lr_runtime::experimental::supported(&state.profile)
-            || !state.runtime_mgr.experimental_state().installed
-        {
-            return Err("optimization-runtime-incompatible".into());
+    use lr_types::tuning::EngineSource;
+    let valor = match engine {
+        EngineSource::MoeCache => {
+            if !lr_runtime::experimental::supported(&state.profile)
+                || !state.runtime_mgr.experimental_state().installed
+            {
+                return Err("optimization-runtime-incompatible".into());
+            }
+            if state.cluster.measure_args_now().is_some() {
+                return Err("optimization-cluster-active".into());
+            }
+            "moeCache"
         }
-        if state.cluster.measure_args_now().is_some() {
-            return Err("optimization-cluster-active".into());
+        EngineSource::Prism => {
+            if !lr_runtime::prism::supported(&state.profile) || !prism_state(state).installed {
+                return Err("prism-runtime-incompatible".into());
+            }
+            // O cluster empresta GPU com o worker do OFICIAL; um host no
+            // fork falaria com um worker de outra build.
+            if state.cluster.measure_args_now().is_some() {
+                return Err("prism-cluster-active".into());
+            }
+            "prism"
         }
-    }
+        EngineSource::Official => "official",
+    };
     state
         .store
-        .set_setting(
-            "active_engine",
-            if engine == lr_types::tuning::EngineSource::MoeCache {
-                "moeCache"
-            } else {
-                "official"
-            },
-        )
+        .set_setting("active_engine", valor)
         .map_err(err_str)
+}
+
+/// O modelo local, pelo nome que a UI usa, só abre no motor da PrismML.
+///
+/// Lê o cabeçalho do arquivo: é a prova, não o nome. Tolera o `.gguf` como
+/// `profile_for`, porque o chat às vezes chega sem ele.
+pub(crate) fn modelo_exige_prism(state: &AppState, name: &str) -> bool {
+    let stem = model_stem(name);
+    lr_models::scan_local(&state.models_dir)
+        .into_iter()
+        .find(|a| a.name == name || model_stem(&a.name) == stem)
+        .is_some_and(|a| lr_models::read_local_meta(&a.primary_path).exige_prism())
 }
 
 /// Sufixo do id da entrada que carrega o projetor de visão.
@@ -890,9 +952,9 @@ pub(crate) fn router_preset_entries(state: &AppState) -> Vec<lr_engine::PresetEn
 
     for a in lr_models::scan_local(&state.models_dir) {
         let mut perfil = profile_for(state, &a.name);
-        // The router has one executable. A fork profile is never sent to an
-        // official router while another model is selected.
-        if engine == lr_types::tuning::EngineSource::Official
+        // The router has one executable. A MoE-cache profile is never sent
+        // to a router that is not the MoE-cache fork (official or PrismML).
+        if engine != lr_types::tuning::EngineSource::MoeCache
             && let Some(ref mut p) = perfil
         {
             p.engine = None;
@@ -1032,6 +1094,7 @@ pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
             port: srv.config().port,
             lan: srv.config().host != "127.0.0.1",
             key_stale: srv.config().api_key != prefs.api_key,
+            engine: motor_em_execucao(state),
         },
         _ => ServerStatusView {
             running: false,
@@ -1039,6 +1102,7 @@ pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
             port,
             lan,
             key_stale: false,
+            engine: None,
         },
     }
 }
@@ -1087,6 +1151,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             "O Studio está usando a GPU. Aguarde o treinamento terminar ou cancele-o.".into(),
         );
     }
+    let motor = selected_engine(state);
     let runtime = active_runtime(state);
     let extra = state.cluster.host_extra_args().await;
     let exe = runtime
@@ -1116,6 +1181,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                 port: srv.config().port,
                 lan: srv.config().host != "127.0.0.1",
                 key_stale: srv.config().api_key != api_key,
+                engine: motor_em_execucao(state),
             });
         }
 
@@ -1174,6 +1240,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             });
         }
 
+        *state.motor_ativo.lock().unwrap_or_else(|e| e.into_inner()) = Some(motor);
         let view = ServerStatusView {
             running: true,
             base_url: Some(srv.config().connect_url()),
@@ -1181,6 +1248,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             lan,
             // Acabou de subir com as prefs de agora: nada pendente.
             key_stale: false,
+            engine: Some(motor),
         };
         crate::gpu_lease::acquire("server")?;
         drop(gpu_start);
@@ -1211,6 +1279,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             state
                 .server_pid
                 .store(0, std::sync::atomic::Ordering::SeqCst);
+            *state.motor_ativo.lock().unwrap_or_else(|e| e.into_inner()) = None;
             let _ = app.emit(
                 "server-status",
                 &ServerStatusView {
@@ -1219,6 +1288,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                     port,
                     lan,
                     key_stale: false,
+                    engine: None,
                 },
             );
             crate::gpu_lease::release("server");
@@ -1268,6 +1338,7 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
         .store(0, std::sync::atomic::Ordering::SeqCst);
     // Sem motor não há para onde encaminhar: o proxy do Jev desce junto.
     crate::commands_jev::sincronizar_shim(app, state).await;
+    *state.motor_ativo.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let prefs = server_prefs(state);
     let (port, lan) = (prefs.port, prefs.lan);
     let _ = app.emit(
@@ -1278,6 +1349,7 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
             port,
             lan,
             key_stale: false,
+            engine: None,
         },
     );
     Ok(())

@@ -104,6 +104,11 @@ pub async fn optimize_run(
         .find(|e| e.id == model)
         .ok_or("comparison-model-missing")?;
     let meta = lr_models::read_local_meta(&artifact.primary_path);
+    // Os braços da otimização são oficial × MoE-cache; um Bonsai não carrega
+    // em nenhum dos dois, e medir isso seria medir um erro.
+    if meta.exige_prism() {
+        return Err("prism-unsupported-operation".into());
+    }
     let mut warnings = Vec::new();
     progress(&app, &model, "installing");
     let fork = if meta.n_experts.is_some_and(|n| n > 0)
@@ -360,6 +365,36 @@ pub async fn optimize_run(
     Ok(result)
 }
 
+/// Qual motor um modelo pede, dado o que o perfil quer e o que está no disco.
+///
+/// A regra tem uma assimetria de propósito. Um perfil que pede o MoE-cache
+/// sem o pacote instalado cai no oficial: o oficial carrega o mesmo arquivo,
+/// só sem o cache. Um arquivo que EXIGE o motor da PrismML sem ele
+/// instalado não cai em nada — o oficial recusa o arquivo com "unknown
+/// type" — e a resposta é o erro `prism-required`, que a tela transforma
+/// em botão de instalação. O cabeçalho vence o perfil: um perfil antigo
+/// com `engine = moeCache` num Bonsai continua sendo Bonsai.
+pub(crate) fn alvo_do_motor(
+    perfil: Option<EngineSource>,
+    moe_instalado: bool,
+    exige_prism: bool,
+    prism_instalado: bool,
+) -> Result<EngineSource, &'static str> {
+    if exige_prism {
+        return if prism_instalado {
+            Ok(EngineSource::Prism)
+        } else {
+            Err("prism-required")
+        };
+    }
+    Ok(match perfil.unwrap_or_default() {
+        EngineSource::MoeCache if moe_instalado => EngineSource::MoeCache,
+        // Prism gravado num perfil de modelo que não o exige é resto de
+        // outra época: o oficial é o motor desse modelo.
+        _ => EngineSource::Official,
+    })
+}
+
 /// App-originated model switches also switch the executable automatically.
 #[tauri::command]
 pub async fn optimize_prepare_model(
@@ -370,15 +405,13 @@ pub async fn optimize_prepare_model(
     if comparison::active() {
         return Err("engine-busy:benchmark".into());
     }
-    let mut target = commands::profile_for(&state, model.trim_end_matches(commands::VISION_SUFFIX))
-        .and_then(|p| p.engine)
-        .unwrap_or_default();
-    // Um perfil que pede o motor opcional não pode impedir a conversa quando
-    // o pacote não está mais instalado: o oficial carrega o mesmo modelo, só
-    // sem o cache de especialistas.
-    if target == EngineSource::MoeCache && !state.runtime_mgr.experimental_state().installed {
-        target = EngineSource::Official;
-    }
+    let nome = model.trim_end_matches(commands::VISION_SUFFIX);
+    let target = alvo_do_motor(
+        commands::profile_for(&state, nome).and_then(|p| p.engine),
+        state.runtime_mgr.experimental_state().installed,
+        commands::modelo_exige_prism(&state, nome),
+        commands::prism_state(&state).installed,
+    )?;
     let previous = commands::selected_engine(&state);
     if target == previous {
         return Ok(());
@@ -400,6 +433,30 @@ pub async fn optimize_prepare_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Cada combinação de perfil × disco × cabeçalho tem UMA resposta, e a
+    /// única que é erro é o Bonsai sem o motor da PrismML instalado.
+    #[test]
+    fn the_engine_target_follows_the_header_first_and_the_profile_second() {
+        use EngineSource::*;
+        assert_eq!(alvo_do_motor(None, false, false, false), Ok(Official));
+        assert_eq!(
+            alvo_do_motor(Some(MoeCache), true, false, false),
+            Ok(MoeCache)
+        );
+        assert_eq!(
+            alvo_do_motor(Some(MoeCache), false, false, false),
+            Ok(Official)
+        );
+        assert_eq!(alvo_do_motor(Some(Prism), false, false, true), Ok(Official));
+        assert_eq!(alvo_do_motor(None, true, true, true), Ok(Prism));
+        assert_eq!(alvo_do_motor(Some(MoeCache), true, true, true), Ok(Prism));
+        assert_eq!(
+            alvo_do_motor(None, true, true, false),
+            Err("prism-required")
+        );
+    }
+
     #[test]
     fn candidates_preserve_context_precision_and_manual_profile() {
         let base = ModelProfile {
