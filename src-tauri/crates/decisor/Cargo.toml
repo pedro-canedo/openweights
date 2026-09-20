@@ -1,0 +1,27 @@
+[package]
+name = "lr_decisor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Proxy OpenAI-compatível que aplica a decisão do Jev às requisições dos harnesses"
+
+[dependencies]
+lr_providers = { path = "../providers" }
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+tokio.workspace = true
+# O servidor e o cliente HTTP do proxy. Já estão na árvore pelo reqwest —
+# aqui entram só as features de servidor. Hyper cru, e não axum: o corpo
+# de uma resposta em streaming precisa atravessar sem buffer, e com o mesmo
+# tipo (`Incoming`) dos dois lados é passagem direta.
+hyper = { version = "1", features = ["server", "http1", "client"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1", "client-legacy"] }
+http-body-util = "0.1"
+bytes = "1"
+http = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+reqwest.workspace = true
+futures-util = { version = "0.3", default-features = false }
