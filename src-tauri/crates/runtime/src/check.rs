@@ -93,7 +93,11 @@ pub struct EngineCheck {
     pub probe_ms: Option<u64>,
     /// O pacote que o app usaria agora, se houver.
     pub active: Option<InstalledRuntime>,
-    /// Os outros pacotes no disco — builds antigas, variantes que sobraram.
+    /// O motor da PrismML desta versão do app, quando instalado. Não é
+    /// "outro": é o que os modelos Bonsai usam, e a limpeza não o apaga.
+    pub prism: Option<InstalledRuntime>,
+    /// Os outros pacotes no disco — builds antigas, variantes que sobraram
+    /// (inclusive versões antigas do fork).
     pub others: Vec<InstalledRuntime>,
     /// Soma de `others`: o que uma limpeza devolveria ao disco.
     pub reclaimable_bytes: u64,
@@ -103,9 +107,28 @@ pub struct EngineCheck {
     pub upstream_newer: bool,
 }
 
-/// `b10441` → `10441`. O que não tem essa forma não é tag de release.
+/// `b10441` → `10441`. O que não tem essa forma não é tag de release
+/// OFICIAL — a tag do fork da PrismML fica de fora de propósito: quem compara
+/// com a homologada e com a release lá fora só quer o oficial.
 pub fn tag_number(tag: &str) -> Option<u64> {
     tag.strip_prefix('b')?.parse().ok()
+}
+
+/// A build por trás de qualquer tag que o app instala: `b10441` → `10441` e
+/// `prism-b10709-9a9394a` → `10709`. É o que o binário reporta em
+/// `--version` nos dois casos, porque o fork carrega o número do upstream.
+pub fn build_number(tag: &str) -> Option<u64> {
+    if let Some(n) = tag_number(tag) {
+        return Some(n);
+    }
+    let resto = tag.strip_prefix("prism-b")?;
+    let (numero, _sha) = resto.split_once('-')?;
+    numero.parse().ok()
+}
+
+/// A pasta é do fork da PrismML.
+pub fn is_prism_tag(tag: &str) -> bool {
+    tag.starts_with("prism-b")
 }
 
 /// Percorre `<data_dir>/runtimes/` e devolve o que está instalado.
@@ -123,8 +146,9 @@ pub fn scan_installed(data_dir: &Path) -> Vec<InstalledRuntime> {
             continue;
         }
         let tag = tag_entry.file_name().to_string_lossy().into_owned();
-        // Só pastas de release: a sessão de download também mora aqui.
-        if tag_number(&tag).is_none() {
+        // Só pastas de release (oficial ou do fork): a sessão de download
+        // também mora aqui.
+        if build_number(&tag).is_none() {
             continue;
         }
         let Ok(variantes) = std::fs::read_dir(tag_entry.path()) else {
@@ -149,8 +173,8 @@ pub fn scan_installed(data_dir: &Path) -> Vec<InstalledRuntime> {
     }
     // Mais nova primeiro: é a ordem em que uma lista de versões se lê.
     encontrados.sort_by(|a, b| {
-        tag_number(&b.tag)
-            .cmp(&tag_number(&a.tag))
+        build_number(&b.tag)
+            .cmp(&build_number(&a.tag))
             .then_with(|| a.variant_dir.cmp(&b.variant_dir))
     });
     encontrados
@@ -230,7 +254,7 @@ pub fn parse_reported_build(saida: &str) -> Option<u64> {
 ///
 /// O `current_dir` é a pasta do pacote de propósito: as DLLs do CUDA moram ao
 /// lado do executável, e é essa vizinhança que o teste precisa exercitar.
-async fn probe_build(dir: &Path) -> Result<(u64, u64), String> {
+pub(crate) async fn probe_build(dir: &Path) -> Result<(u64, u64), String> {
     let exe = dir.join(server_exe_name());
     if !exe.is_file() {
         return Err(format!(
@@ -335,7 +359,11 @@ fn classifica(
         ),
         (None, _) => {
             let mesma_build = outros.iter().any(|r| r.tag == PINNED_TAG && r.has_server);
-            let outra_build = outros.iter().any(|r| r.has_server);
+            // Só builds OFICIAIS contam como "há outra build": um fork antigo
+            // no disco não é atualização pendente do motor principal.
+            let outra_build = outros
+                .iter()
+                .any(|r| r.has_server && tag_number(&r.tag).is_some());
             match (mesma_build, outra_build) {
                 // A build certa está lá, só que compilada para outra placa.
                 (true, _) => (Verdict::VariantChanged, None, None, None),
@@ -349,10 +377,14 @@ fn classifica(
 /// A verificação completa: disco, execução e — se der — a release lá fora.
 pub async fn check(data_dir: &Path, expected_variant: BackendVariant) -> EngineCheck {
     let esperado = runtime_dir(data_dir, PINNED_TAG, expected_variant);
+    let prism_esperado = runtime_dir(data_dir, crate::prism::TAG, expected_variant);
     let instalados = scan_installed(data_dir);
 
-    let (ativo, outros): (Vec<_>, Vec<_>) = instalados.into_iter().partition(|r| r.dir == esperado);
+    let (ativo, resto): (Vec<_>, Vec<_>) = instalados.into_iter().partition(|r| r.dir == esperado);
     let active = ativo.into_iter().next();
+    let (prism, outros): (Vec<_>, Vec<_>) =
+        resto.into_iter().partition(|r| r.dir == prism_esperado);
+    let prism = prism.into_iter().next().filter(|r| r.has_server);
     let reclaimable_bytes = outros.iter().map(|r| r.size_bytes).sum();
 
     // A execução só faz sentido no pacote que o app usaria.
@@ -377,6 +409,7 @@ pub async fn check(data_dir: &Path, expected_variant: BackendVariant) -> EngineC
         reported_build,
         probe_ms,
         active,
+        prism,
         others: outros,
         reclaimable_bytes,
         upstream_tag,
@@ -400,10 +433,15 @@ pub struct PruneResult {
 /// Só mexe no que a verificação classificou como `others`: a pasta ativa
 /// nunca entra na conta, mesmo que a chamada venha errada.
 pub fn prune(data_dir: &Path, expected_variant: BackendVariant) -> PruneResult {
-    let manter = runtime_dir(data_dir, PINNED_TAG, expected_variant);
+    let manter = [
+        runtime_dir(data_dir, PINNED_TAG, expected_variant),
+        // O motor da PrismML desta versão também fica: apagá-lo faria o
+        // próximo Bonsai baixar 150 MB de novo sem ninguém ter pedido.
+        runtime_dir(data_dir, crate::prism::TAG, expected_variant),
+    ];
     let mut r = PruneResult::default();
     for pacote in scan_installed(data_dir) {
-        if pacote.dir == manter {
+        if manter.contains(&pacote.dir) {
             continue;
         }
         match std::fs::remove_dir_all(&pacote.dir) {
@@ -463,6 +501,58 @@ mod tests {
         assert_eq!(tag_number("b10441"), Some(10441));
         assert_eq!(tag_number("session-abc"), None);
         assert_eq!(tag_number("b"), None);
+    }
+
+    /// A tag do fork carrega a build do upstream; `tag_number` a ignora de
+    /// propósito (não é release oficial), `build_number` a lê.
+    #[test]
+    fn the_prism_tag_has_a_build_number_but_is_not_an_official_release() {
+        assert_eq!(build_number("prism-b10709-9a9394a"), Some(10709));
+        assert_eq!(build_number("b10441"), Some(10441));
+        assert_eq!(tag_number("prism-b10709-9a9394a"), None);
+        assert_eq!(build_number("prism-b"), None);
+        assert_eq!(build_number("prism-b10709"), None);
+        assert_eq!(build_number("session-abc"), None);
+        assert!(is_prism_tag(crate::prism::TAG));
+        assert!(!is_prism_tag(PINNED_TAG));
+        assert_eq!(
+            build_number(crate::prism::TAG),
+            Some(crate::prism::UPSTREAM_BUILD)
+        );
+    }
+
+    /// A pasta do fork aparece no scan, sai de `others` na verificação e
+    /// sobrevive à limpeza; um fork ANTIGO é lixo como qualquer build velha.
+    #[test]
+    fn the_prism_package_is_reported_kept_and_old_forks_are_pruned() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        let prism = runtime_dir(d, crate::prism::TAG, BackendVariant::Cuda13);
+        toca(&prism.join(server_exe_name()), 9);
+        toca(
+            &d.join("runtimes/prism-b10500-abc1234/cuda-13.3")
+                .join(server_exe_name()),
+            4,
+        );
+        toca(&d.join("runtimes/b10390/vulkan").join(server_exe_name()), 7);
+
+        let achados = scan_installed(d);
+        assert_eq!(achados.len(), 3);
+        assert_eq!(
+            achados[0].tag,
+            crate::prism::TAG,
+            "mais nova primeiro, pela build"
+        );
+
+        let limpeza = prune(d, BackendVariant::Cuda13);
+        assert_eq!(limpeza.freed_bytes, 11);
+        assert!(prism.join(server_exe_name()).is_file());
+        assert!(!d.join("runtimes/prism-b10500-abc1234").exists());
+        assert!(!d.join("runtimes/b10390").exists());
+
+        // Um fork antigo no disco não é "atualização disponível" do oficial.
+        let so_fork = [pacote("prism-b10500-abc1234", "cuda-13.3", true)];
+        assert_eq!(classifica(&None, &so_fork, None).0, Verdict::NotInstalled);
     }
 
     /// O disco é a fonte: pastas de release viram itens, a sessão de

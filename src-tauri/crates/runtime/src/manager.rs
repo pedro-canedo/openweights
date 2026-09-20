@@ -24,8 +24,8 @@ use std::path::PathBuf;
 /// User-Agent exigido pela API do GitHub (e boa educação nos downloads).
 const USER_AGENT: &str = concat!("OpenWeights/", env!("CARGO_PKG_VERSION"));
 
-/// Repositório de onde vêm os binários prebuilt.
-const REPO: &str = "ggml-org/llama.cpp";
+/// Repositório de onde vêm os binários prebuilt do motor oficial.
+const REPO: &str = crate::OFFICIAL_REPO;
 
 /// Sanidade final: o runtime completo (exe + DLLs) sempre passa disso.
 /// ATENÇÃO: o llama-server.exe em si é um launcher de ~9 KB — o código real
@@ -110,7 +110,12 @@ impl RuntimeManager {
     }
 
     pub fn state(&self, variant: BackendVariant) -> RuntimeState {
-        let tag = crate::PINNED_TAG;
+        self.state_for(crate::PINNED_TAG, variant)
+    }
+
+    /// O estado de um pacote qualquer em `runtimes/<tag>/<variante>` — o
+    /// oficial e o da PrismML têm o mesmo layout, então a leitura é uma só.
+    pub(crate) fn state_for(&self, tag: &str, variant: BackendVariant) -> RuntimeState {
         let dir = crate::runtime_dir(&self.data_dir, tag, variant);
         let exe = dir.join(crate::server_exe_name());
         // "Instalado" é a presença do executável: não há manifesto separado
@@ -129,16 +134,36 @@ impl RuntimeManager {
         }
     }
 
-    /// Garante que o runtime está instalado, baixando/extraindo se preciso.
+    /// Garante que o runtime oficial está instalado, baixando/extraindo se
+    /// preciso.
     pub async fn ensure(
         &self,
         variant: BackendVariant,
         on_event: impl Fn(RuntimeEvent) + Send + Sync,
     ) -> Result<RuntimeState, RuntimeError> {
+        self.ensure_package(REPO, crate::PINNED_TAG, variant, None, on_event)
+            .await
+    }
+
+    /// Garante um pacote de um repositório/tag em `runtimes/<tag>/<variante>`.
+    ///
+    /// `build_esperada` liga a prova por execução: depois de extrair, o
+    /// `llama-server --version` do staging tem de reportar essa build — é o
+    /// que separa "os arquivos estão lá" de "roda com o cudart ao lado". O
+    /// oficial passa `None` porque a verificação dele acontece na tela do
+    /// motor, a pedido; o fork passa a build porque ninguém mais o confere.
+    pub(crate) async fn ensure_package(
+        &self,
+        repo: &str,
+        tag: &str,
+        variant: BackendVariant,
+        build_esperada: Option<u64>,
+        on_event: impl Fn(RuntimeEvent) + Send + Sync,
+    ) -> Result<RuntimeState, RuntimeError> {
         // Quem esperar na fila re-checa e sai cedo se o outro já instalou.
         let _install_guard = self.install_lock.lock().await;
 
-        let state = self.state(variant);
+        let state = self.state_for(tag, variant);
         if state.installed {
             return Ok(state);
         }
@@ -146,13 +171,22 @@ impl RuntimeManager {
         // Todo o trabalho temporário vive na sessão, que se limpa no Drop —
         // inclusive quando `install` sai por `?` no meio.
         let session = lr_fetch::Session::new(&self.data_dir.join("runtimes"))?;
-        let result = self.install(variant, session.path(), &on_event).await;
+        let result = self
+            .install(
+                repo,
+                tag,
+                variant,
+                build_esperada,
+                session.path(),
+                &on_event,
+            )
+            .await;
         drop(session);
 
         match result {
             Ok(()) => {
                 on_event(RuntimeEvent::Ready);
-                Ok(self.state(variant))
+                Ok(self.state_for(tag, variant))
             }
             Err(e) => {
                 on_event(RuntimeEvent::Failed {
@@ -168,23 +202,33 @@ impl RuntimeManager {
     /// único `fs::rename`.
     async fn install<F>(
         &self,
+        repo: &str,
+        tag: &str,
         variant: BackendVariant,
+        build_esperada: Option<u64>,
         session: &std::path::Path,
         on_event: &F,
     ) -> Result<(), RuntimeError>
     where
         F: Fn(RuntimeEvent) + Send + Sync,
     {
-        let tag = crate::PINNED_TAG;
         let client = lr_fetch::client(USER_AGENT)?;
 
         // Digests de todos os assets de uma vez. `None` se a API falhar.
-        let digests = lr_fetch::github_release_digests(&client, REPO, tag).await;
+        let digests = lr_fetch::github_release_digests(&client, repo, tag).await;
 
         // ---- Asset principal -------------------------------------------
         let asset = crate::asset_name(tag, variant);
         let part = self
-            .baixar_asset(&client, session, tag, &asset, digests.as_ref(), on_event)
+            .baixar_asset(
+                &client,
+                session,
+                repo,
+                tag,
+                &asset,
+                digests.as_ref(),
+                on_event,
+            )
             .await?;
 
         on_event(RuntimeEvent::Extracting {
@@ -209,7 +253,15 @@ impl RuntimeManager {
         // ---- cudart (obrigatório para CUDA) -----------------------------
         if let Some(cudart) = crate::cudart_asset_name(tag, variant) {
             let cpart = self
-                .baixar_asset(&client, session, tag, &cudart, digests.as_ref(), on_event)
+                .baixar_asset(
+                    &client,
+                    session,
+                    repo,
+                    tag,
+                    &cudart,
+                    digests.as_ref(),
+                    on_event,
+                )
                 .await?;
 
             on_event(RuntimeEvent::Extracting {
@@ -241,6 +293,16 @@ impl RuntimeManager {
                 "runtime extraído suspeito de incompleto ({install_size} bytes no total)"
             )));
         }
+        if let Some(esperada) = build_esperada {
+            let (build, _) = crate::check::probe_build(&staging)
+                .await
+                .map_err(RuntimeError::Verification)?;
+            if build != esperada {
+                return Err(RuntimeError::Verification(format!(
+                    "o pacote {tag} se diz build {build}, esperava {esperada}"
+                )));
+            }
+        }
 
         // ---- Instalação atômica -----------------------------------------
         let final_dir = crate::runtime_dir(&self.data_dir, tag, variant);
@@ -254,10 +316,12 @@ impl RuntimeManager {
 
     /// Baixa um asset da release para o `.part` da sessão e confere o SHA256.
     /// Traduz o progresso cru do `lr_fetch` no evento que a UI consome.
+    #[allow(clippy::too_many_arguments)]
     async fn baixar_asset<F>(
         &self,
         client: &reqwest::Client,
         session: &std::path::Path,
+        repo: &str,
         tag: &str,
         asset: &str,
         digests: Option<&std::collections::HashMap<String, String>>,
@@ -270,7 +334,7 @@ impl RuntimeManager {
         let nome = asset.to_string();
         lr_fetch::download_to(
             client,
-            &crate::asset_url(tag, asset),
+            &crate::asset_url(repo, tag, asset),
             &part,
             &|received_bytes, total_bytes| {
                 on_event(RuntimeEvent::Progress {

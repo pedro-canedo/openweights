@@ -21,14 +21,19 @@ use std::path::PathBuf;
 mod check;
 pub mod experimental;
 mod manager;
+pub mod prism;
 pub use check::{
-    EngineCheck, InstalledRuntime, PruneResult, Verdict, check, prune, scan_installed,
+    EngineCheck, InstalledRuntime, PruneResult, Verdict, build_number, check, is_prism_tag, prune,
+    scan_installed,
 };
-pub use manager::{RuntimeEvent, RuntimeManager, RuntimeState};
+pub use manager::{RuntimeError, RuntimeEvent, RuntimeManager, RuntimeState};
 
 /// Tag da release do llama.cpp homologada para esta versão do app.
 /// Atualizada manualmente após testes de contrato (ver plano, risco nº 2).
 pub const PINNED_TAG: &str = "b10441";
+
+/// Repositório de onde vêm os binários oficiais.
+pub const OFFICIAL_REPO: &str = "ggml-org/llama.cpp";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -129,9 +134,12 @@ pub fn cudart_asset_name(tag: &str, variant: BackendVariant) -> Option<String> {
     }
 }
 
-/// URL de download de um asset da release pinada.
-pub fn asset_url(tag: &str, asset: &str) -> String {
-    format!("https://github.com/ggml-org/llama.cpp/releases/download/{tag}/{asset}")
+/// URL de download de um asset de uma release do GitHub.
+///
+/// O repositório é parâmetro porque há dois: o oficial e o fork da PrismML
+/// ([`prism::REPOSITORY`]), que publica com o mesmo padrão de nomes.
+pub fn asset_url(repo: &str, tag: &str, asset: &str) -> String {
+    format!("https://github.com/{repo}/releases/download/{tag}/{asset}")
 }
 
 /// Nome do executável do servidor dentro do pacote extraído.

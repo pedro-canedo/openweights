@@ -18,6 +18,9 @@ pub enum EngineSource {
     #[default]
     Official,
     MoeCache,
+    /// O fork da PrismML, que abre os modelos Bonsai 2 (`PTQ1_0`/`PQ2_0`).
+    /// Sobe sob demanda quando o modelo selecionado exige.
+    Prism,
 }
 
 /// Tipo do KV cache. Comprimir troca um pouco de qualidade por memória, e é
@@ -361,11 +364,14 @@ impl ModelProfile {
         // de fora de propósito: "recomendado" e "manual" com os mesmos
         // valores rendem igual.
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-        if self.engine == Some(EngineSource::MoeCache) {
-            for b in b"engine=moe-cache" {
-                hash ^= *b as u64;
-                hash = hash.wrapping_mul(0x100_0000_01b3);
-            }
+        let marca_do_motor: &[u8] = match self.engine {
+            Some(EngineSource::MoeCache) => b"engine=moe-cache",
+            Some(EngineSource::Prism) => b"engine=prism",
+            _ => b"",
+        };
+        for b in marca_do_motor {
+            hash ^= *b as u64;
+            hash = hash.wrapping_mul(0x100_0000_01b3);
         }
         for (k, v) in self.to_ini_extras() {
             for b in k.bytes().chain(b"=".iter().copied()).chain(v.bytes()) {
@@ -978,5 +984,23 @@ mod tests {
         // `every_legacy_spec_string_still_loads`).
         assert!(json.contains("\"spec\":[\"draftMtp\"]"), "{json}");
         assert_eq!(serde_json::from_str::<ModelProfile>(&json).unwrap(), p);
+    }
+
+    /// Trocar só o motor muda a chave: uma medição feita sob o fork da
+    /// PrismML não pode valer para o oficial nem para o MoE-cache.
+    #[test]
+    fn the_engine_alone_changes_the_profile_key() {
+        let oficial = ModelProfile {
+            ctx: Some(32768),
+            engine: Some(EngineSource::Official),
+            ..Default::default()
+        };
+        let mut prism = oficial.clone();
+        prism.engine = Some(EngineSource::Prism);
+        let mut moe = oficial.clone();
+        moe.engine = Some(EngineSource::MoeCache);
+        assert_ne!(oficial.key(), prism.key());
+        assert_ne!(moe.key(), prism.key());
+        assert_ne!(oficial.key(), moe.key());
     }
 }
