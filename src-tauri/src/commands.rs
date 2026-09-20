@@ -1224,6 +1224,10 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
     }
 
     let _ = app.emit("server-status", &view);
+    // O conjunto de modelos pode ter mudado; e com o motor de pé o proxy do
+    // Jev tem para onde encaminhar.
+    crate::commands_jev::esquecer_capacidades(state);
+    crate::commands_jev::sincronizar_shim(app, state).await;
     // Com o motor de pé, a varredura automática pode perguntar quanto cada
     // configuração custa. Vai em segundo plano: a garantia barata do boot já
     // valeu, e o INI só é relido no próximo start de qualquer jeito.
@@ -1258,6 +1262,8 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
     state
         .server_pid
         .store(0, std::sync::atomic::Ordering::SeqCst);
+    // Sem motor não há para onde encaminhar: o proxy do Jev desce junto.
+    crate::commands_jev::sincronizar_shim(app, state).await;
     let prefs = server_prefs(state);
     let (port, lan) = (prefs.port, prefs.lan);
     let _ = app.emit(

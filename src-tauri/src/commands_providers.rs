@@ -62,10 +62,18 @@ pub fn providers_config_get(state: State<'_, AppState>) -> CmdResult<Option<Stri
 /// aceitar qualquer texto aqui gravaria uma configuração que nunca teria
 /// efeito — e a pessoa acharia que salvou.
 #[tauri::command]
-pub fn providers_config_set(state: State<'_, AppState>, json: String) -> CmdResult<()> {
+pub async fn providers_config_set(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    json: String,
+) -> CmdResult<()> {
     serde_json::from_str::<ProvidersConfig>(&json)
         .map_err(|e| format!("configuração de provedores inválida: {e}"))?;
-    state.store.set_setting(SETTING, &json).map_err(err_str)
+    state.store.set_setting(SETTING, &json).map_err(err_str)?;
+    // A chave do OpenRouter é a credencial do Jev: mudou, o proxy tem de
+    // saber (subir, descer ou trocar de cliente).
+    crate::commands_jev::sincronizar_shim(&app, &state).await;
+    Ok(())
 }
 
 // ---------------------------------------------------------------- estado ---
@@ -710,12 +718,15 @@ fn gateway_config(state: &AppState) -> GatewayConfig {
 
 /// Portas dos provedores que estão de pé agora.
 async fn portas_ativas(state: &AppState) -> (Option<u16>, Option<u16>) {
+    // Com o proxy do Jev no ar, a rota `/local` do gateway passa por ele —
+    // continua loopback, e as ferramentas externas ganham a mesma decisão.
+    let proxy = state.decisor.lock().await.as_ref().map(|p| p.porta());
     let local = {
         let guard = state.server.lock().await;
         guard
             .as_ref()
             .filter(|s| s.is_spawned())
-            .map(|s| s.config().port)
+            .map(|s| proxy.unwrap_or(s.config().port))
     };
     let nove = {
         let guard = state.ninerouter.lock().await;

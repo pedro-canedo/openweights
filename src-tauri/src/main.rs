@@ -6,6 +6,7 @@ mod commands_cluster;
 mod commands_dsh;
 mod commands_flags;
 mod commands_harness;
+mod commands_jev;
 mod commands_power;
 mod commands_providers;
 mod commands_tuning;
@@ -228,6 +229,11 @@ fn main() {
             commands_providers::gateway_stop,
             commands_providers::gateway_refresh_routes,
             commands_providers::gateway_uninstall,
+            commands_jev::jev_config_get,
+            commands_jev::jev_config_set,
+            commands_jev::jev_status,
+            commands_jev::jev_testar,
+            commands_jev::jev_decidir_esforco,
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o OpenWeights")

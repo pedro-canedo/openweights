@@ -3186,6 +3186,7 @@ dependencies = [
  "log",
  "lr_advisor",
  "lr_cluster",
+ "lr_decisor",
  "lr_dshhost",
  "lr_engine",
  "lr_fetch",

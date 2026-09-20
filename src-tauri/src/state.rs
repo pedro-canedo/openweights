@@ -58,6 +58,15 @@ pub struct AppState {
     /// chat depende dele.
     pub gateway: tokio::sync::Mutex<Option<lr_gateway::Gateway>>,
     pub gateway_pid: AtomicU32,
+    /// Proxy do Jev na frente do motor, quando o portão dos harnesses está
+    /// ligado. Opcional: o chat decide pelo IPC, sem passar por ele.
+    pub decisor: tokio::sync::Mutex<Option<lr_decisor::Shim>>,
+    /// O que cada modelo local sabe fazer com raciocínio, lido do GGUF uma
+    /// vez por nome. Compartilhado com o proxy.
+    pub jev_capacidades:
+        Arc<std::sync::Mutex<std::collections::HashMap<String, lr_providers::CapacidadeModelo>>>,
+    /// Contagem da sessão das consultas ao Jev (chat e proxy).
+    pub jev_contadores: Arc<lr_providers::Contadores>,
     /// Cluster RPC (1 host + 1 worker na LAN).
     pub cluster: std::sync::Arc<lr_cluster::ClusterHost>,
     pub rpc_pid: Arc<AtomicU32>,
@@ -236,6 +245,9 @@ impl AppState {
             dsh_pid: AtomicU32::new(0),
             gateway: tokio::sync::Mutex::new(None),
             gateway_pid: AtomicU32::new(0),
+            decisor: tokio::sync::Mutex::new(None),
+            jev_capacidades: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            jev_contadores: Arc::new(lr_providers::Contadores::default()),
             cluster,
             rpc_pid,
             store,

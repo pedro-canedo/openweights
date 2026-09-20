@@ -184,7 +184,12 @@ async fn modelos_locais(state: &AppState) -> CmdResult<(String, Option<String>, 
             _ => return Err("servidor não está rodando".to_string()),
         }
     };
-    let base = cfg.connect_url();
+    // Com o portão do Jev ligado para harnesses, a rota local do dsh passa
+    // pelo proxy — é ele que decide o esforço por requisição. A chave é a
+    // mesma: o proxy repassa o `Authorization`.
+    let base = crate::commands_jev::base_local_para_harness(state)
+        .await
+        .unwrap_or_else(|| cfg.connect_url());
     let chave = cfg.api_key.clone();
     let ids: Vec<String> = lr_engine::LlamaServer::new(cfg)
         .models_status()

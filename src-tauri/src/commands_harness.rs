@@ -198,8 +198,14 @@ fn fill(template: &str, f: &Fill, mask_secret: bool) -> String {
         .replace("{bin}", &f.bin)
 }
 
+/// A raiz que o harness recebe: o proxy do Jev quando está no ar (ele
+/// decide o esforço por requisição e repassa o resto), senão o motor.
+fn escolher_base(proxy: Option<String>, motor: String) -> String {
+    proxy.unwrap_or(motor)
+}
+
 async fn server_fill(state: &AppState, model: &str) -> CmdResult<Fill> {
-    let (base_url, api_key) = {
+    let (motor, api_key) = {
         let guard = state.server.lock().await;
         match guard.as_ref() {
             Some(srv) if srv.is_spawned() => {
@@ -208,6 +214,10 @@ async fn server_fill(state: &AppState, model: &str) -> CmdResult<Fill> {
             _ => return Err("servidor não está rodando".to_string()),
         }
     };
+    let base_url = escolher_base(
+        crate::commands_jev::base_local_para_harness(state).await,
+        motor,
+    );
     Ok(Fill {
         base_root_url: base_url.clone(),
         base_url: format!("{base_url}/v1"),
@@ -467,6 +477,22 @@ mod tests {
                 s.id
             );
         }
+    }
+
+    /// Com o proxy do Jev no ar, é ele que o harness recebe; sem ele, o motor.
+    #[test]
+    fn the_harness_base_prefers_the_jev_proxy_when_it_is_up() {
+        assert_eq!(
+            escolher_base(
+                Some("http://127.0.0.1:11712".into()),
+                "http://127.0.0.1:11711".into()
+            ),
+            "http://127.0.0.1:11712"
+        );
+        assert_eq!(
+            escolher_base(None, "http://127.0.0.1:11711".into()),
+            "http://127.0.0.1:11711"
+        );
     }
 
     /// `{baseRootUrl}` é a raiz SEM `/v1`: o cliente Anthropic anexa
