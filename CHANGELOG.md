@@ -10,6 +10,14 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.22.0] — 2026-09-20
+
+- PrismML's Ternary Bonsai 2 models (PTQ1_0, PQ2_0) now run: the app reads the tensor types from the GGUF header, knows which files need PrismML's fork of llama.cpp, and installs that engine together with the download, in one click.
+- The engine switches on demand: picking a Bonsai model restarts the local server on the PrismML engine; picking another model restarts it on the official build. The Local Server header says which one is running.
+- A Bonsai model without the engine (imported by hand or a failed install) shows an "Install PrismML engine" button in the chat and in the library instead of an error; the quantization drawer warns before the download.
+- The PQ2_0, PTQ1_0, Q2_0 and Q1_0 labels get a name, bits per weight and a ranking position instead of "?".
+- Deleting a model while the server is running unloads it at once and restarts the server when idle, instead of leaving a ghost entry that answered HTTP 500.
+
 ## [0.21.0] — 2026-09-19
 
 - Jev (TypeSafe's decision model, through the OpenRouter key) decides per message whether the local model should think and how hard — none, medium or high — instead of the conversation's fixed effort. Run details show the decision and its confidence.

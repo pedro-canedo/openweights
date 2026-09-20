@@ -82,6 +82,11 @@ Windows, macOS and Linux.
   conversation. Simple messages answer faster; hard ones keep the full budget.
   The same decision reaches the coding agents through a small local proxy. Off
   by default, and the card says what leaves your machine when it is on.
+- 🌳 **Bonsai models, with the engine they need** — PrismML's Ternary Bonsai 2
+  files use tensor types the standard llama.cpp refuses. The app reads the
+  file header, installs PrismML's fork of llama.cpp together with the download
+  in one click, and switches the local server to it when you pick the model
+  (and back to the official build when you pick another).
 - 🚪 **Single entry point (optional)** — a local Traefik that forwards one
   address to the local engine and to 9router by prefix, so another tool can
   point at OpenWeights without memorising ports. Not a tunnel: nothing becomes
