@@ -161,7 +161,7 @@ pub struct RouterModelView {
     pub state: String,
 }
 
-async fn router_call<F, Fut, T>(state: &AppState, f: F) -> CmdResult<T>
+pub(crate) async fn router_call<F, Fut, T>(state: &AppState, f: F) -> CmdResult<T>
 where
     F: FnOnce(lr_engine::ServerConfig) -> Fut,
     Fut: std::future::Future<Output = Result<T, lr_engine::EngineError>>,

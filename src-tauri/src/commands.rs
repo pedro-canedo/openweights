@@ -710,8 +710,20 @@ pub fn local_models(state: State<'_, AppState>) -> Vec<LocalModelView> {
         .collect()
 }
 
+/// Apaga um modelo — e tira-o do Router em execução.
+///
+/// O INI só é relido no boot, então apagar o arquivo com o servidor de pé
+/// deixava uma entrada fantasma: o id continuava no `/v1/models`, o seletor
+/// do chat o oferecia, e escolhê-lo dava HTTP 500. Agora o modelo é
+/// descarregado na hora e, se o motor está ocioso, ele reinicia para o INI
+/// esquecer a entrada; ocupado, o seletor já o esconde por conta própria.
 #[tauri::command]
-pub fn model_delete(state: State<'_, AppState>, repo_id: String, name: String) -> CmdResult<()> {
+pub async fn model_delete(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    repo_id: String,
+    name: String,
+) -> CmdResult<()> {
     let arts = lr_models::scan_local(&state.models_dir);
     let art = arts
         .iter()
@@ -719,6 +731,27 @@ pub fn model_delete(state: State<'_, AppState>, repo_id: String, name: String) -
         .ok_or_else(|| format!("modelo não encontrado: {name}"))?;
     for f in &art.files {
         std::fs::remove_file(f).map_err(err_str)?;
+    }
+    crate::commands_jev::esquecer_capacidades(&state);
+
+    let rodando = {
+        let guard = state.server.lock().await;
+        guard.as_ref().is_some_and(|s| s.is_spawned())
+    };
+    if !rodando {
+        return Ok(());
+    }
+    for id in [name.clone(), format!("{name}{VISION_SUFFIX}")] {
+        let _ = crate::commands_flags::router_call(&state, |cfg| async move {
+            lr_engine::LlamaServer::new(cfg).unload_model(&id).await
+        })
+        .await;
+    }
+    if !crate::comparison::active()
+        && crate::comparison::assert_idle(&state).await.is_ok()
+        && let Err(e) = restart_engine(&app, &state, false).await
+    {
+        log::warn!("motor não reiniciou após apagar {name}: {e}");
     }
     Ok(())
 }
@@ -974,6 +1007,11 @@ pub(crate) fn router_preset_entries(state: &AppState) -> Vec<lr_engine::PresetEn
     let engine = selected_engine(state);
 
     for a in lr_models::scan_local(&state.models_dir) {
+        // Entre o scan e a escrita o arquivo pode ter sumido; uma entrada
+        // apontando para nada vira HTTP 500 na primeira mensagem.
+        if !a.primary_path.is_file() {
+            continue;
+        }
         let mut perfil = profile_for(state, &a.name);
         // The router has one executable. A MoE-cache profile is never sent
         // to a router that is not the MoE-cache fork (official or PrismML).

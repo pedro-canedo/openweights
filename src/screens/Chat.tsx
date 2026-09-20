@@ -80,14 +80,22 @@ async function loadModelOptions(): Promise<string[]> {
     // servidor inacessível — fica só a biblioteca local
   }
   let local: string[] = [];
+  let localOk = false;
   try {
     local = (await listLocalModels()).map((m) => m.name);
+    localOk = true;
   } catch {
     local = [];
   }
   // As entradas de visão são companheiras internas do mesmo arquivo: quem
   // escolhe entre elas é a mensagem (tem imagem ou não), não a pessoa.
-  const visiveis = ids.filter((id) => !id.endsWith(VISION_SUFFIX));
+  // E um id que o Router ainda anuncia mas que não existe mais no disco
+  // (apagado com o motor de pé) é fantasma: escolhê-lo dá HTTP 500.
+  const visiveis = ids.filter(
+    (id) =>
+      !id.endsWith(VISION_SUFFIX) &&
+      (!localOk || local.some((n) => matchServerModel(n, [id]) === id)),
+  );
 
   const out = [...visiveis];
   for (const name of local) {
