@@ -1,5 +1,13 @@
 # What's new
 
+## 0.22.1
+
+Installing the PrismML engine on Windows failed with "Access denied": the
+app ran the freshly extracted `llama-server --version` and moved the folder
+right after, while Windows still held the executable. The folder is now moved
+first and checked in place, and the move retries when the antivirus is still
+scanning new files.
+
 ## 0.22.0
 
 **Bonsai models run.** PrismML's Ternary Bonsai 2 files (`PTQ1_0`, `PQ2_0`)

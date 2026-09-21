@@ -1,5 +1,13 @@
 # Novidades
 
+## 0.22.1
+
+Instalar o motor da PrismML no Windows falhava com "Acesso negado": o app
+executava o `llama-server --version` recém-extraído e movia a pasta logo em
+seguida, enquanto o Windows ainda segurava o executável. A pasta agora é movida
+primeiro e conferida no lugar, e a movida repete quando o antivírus ainda está
+escaneando arquivos novos.
+
 ## 0.22.0
 
 **Modelos Bonsai rodam.** Os arquivos Ternary Bonsai 2 da PrismML (`PTQ1_0`,

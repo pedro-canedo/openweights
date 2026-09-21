@@ -10,6 +10,11 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.22.1] — 2026-09-21
+
+- Installing the PrismML engine failed on Windows with "Access denied (os error 5)": the execution check ran in the temporary folder and the folder move came right after, while the just-run executable still held it. The folder is now moved first and the check runs in place.
+- Moving a freshly extracted engine folder now retries with a pause, as removal already did, because antivirus software briefly holds new files.
+
 ## [0.22.0] — 2026-09-20
 
 - PrismML's Ternary Bonsai 2 models (PTQ1_0, PQ2_0) now run: the app reads the tensor types from the GGUF header, knows which files need PrismML's fork of llama.cpp, and installs that engine together with the download, in one click.
