@@ -298,20 +298,37 @@ impl RuntimeManager {
                 "runtime extraído suspeito de incompleto ({install_size} bytes no total)"
             )));
         }
-        if let Some(esperada) = build_esperada {
-            let (build, _) = crate::check::probe_build(&staging)
-                .await
-                .map_err(RuntimeError::Verification)?;
-            if build != esperada {
-                return Err(RuntimeError::Verification(format!(
-                    "o pacote {tag} se diz build {build}, esperava {esperada}"
-                )));
-            }
-        }
-
         // ---- Instalação atômica -----------------------------------------
         let final_dir = crate::runtime_dir(&self.data_dir, tag, variant);
         lr_fetch::install_atomically(&staging, &final_dir)?;
+
+        // ---- Prova por execução, DEPOIS de mover ------------------------
+        // Executar o binário no staging e mover a pasta em seguida falhava no
+        // Windows com "Acesso negado": o executável recém-rodado (ou o
+        // Defender, escaneando-o) ainda segura a pasta por instantes, e o
+        // `rename` bate nela. Na pasta final não há mais o que mover; se a
+        // build não for a esperada, a pasta inteira sai — com repetição,
+        // pelo mesmo motivo.
+        if let Some(esperada) = build_esperada {
+            let resultado = crate::check::probe_build(&final_dir)
+                .await
+                .map_err(RuntimeError::Verification)
+                .and_then(|(build, _)| {
+                    if build == esperada {
+                        Ok(())
+                    } else {
+                        Err(RuntimeError::Verification(format!(
+                            "o pacote {tag} se diz build {build}, esperava {esperada}"
+                        )))
+                    }
+                });
+            if let Err(e) = resultado {
+                if let Err(rm) = lr_fetch::remove_dir_all_retrying(&final_dir) {
+                    log::warn!("pacote reprovado ficou em {}: {rm}", final_dir.display());
+                }
+                return Err(e);
+            }
+        }
         log::info!(
             "runtime {tag}/{variant:?} instalado em {}",
             final_dir.display()

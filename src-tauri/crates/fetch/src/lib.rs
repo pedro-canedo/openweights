@@ -388,7 +388,27 @@ pub fn install_atomically(staging: &Path, final_dir: &Path) -> std::io::Result<(
     if final_dir.exists() {
         remove_dir_all_retrying(final_dir)?;
     }
-    std::fs::rename(staging, final_dir)
+    // O `rename` de uma pasta recém-extraída falha de forma intermitente no
+    // Windows, pelo mesmo motivo do `remove_dir_all`: o antivírus ainda
+    // segura um arquivo que acabou de aparecer. Repetir com pausa resolve.
+    const TENTATIVAS: u32 = 5;
+    let mut ultimo = None;
+    for tentativa in 0..TENTATIVAS {
+        match std::fs::rename(staging, final_dir) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                log::warn!(
+                    "falha ao mover {} para {} (tentativa {}/{TENTATIVAS}): {e}",
+                    staging.display(),
+                    final_dir.display(),
+                    tentativa + 1
+                );
+                ultimo = Some(e);
+                std::thread::sleep(Duration::from_millis(200 * u64::from(tentativa + 1)));
+            }
+        }
+    }
+    Err(ultimo.unwrap_or_else(|| std::io::Error::other("rename falhou sem erro registrado")))
 }
 
 /// `remove_dir_all` com repetição.
