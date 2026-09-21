@@ -145,5 +145,8 @@ ends up in your library without the engine (imported by hand, or the install
 failed), the model card and the chat show an **Install PrismML engine** button
 instead of an error.
 
+Tuning and optimization work the same way: a measurement runs a llama.cpp
+binary against the file, so for a Bonsai model they run the PrismML one.
+
 Not every Bonsai file needs the fork: the first-generation `Q1_0` and the
 `Q2_g64` file of Ternary Bonsai 27B run on the official build.

@@ -149,5 +149,8 @@ acabar na sua biblioteca sem o motor (importado à mão, ou a instalação
 falhou), o cartão do modelo e o chat mostram um botão **Instalar motor
 PrismML** em vez de um erro.
 
+O ajuste e a otimização seguem a mesma regra: medir é rodar um binário do
+llama.cpp contra o arquivo, então num Bonsai eles rodam o da PrismML.
+
 Nem todo arquivo Bonsai precisa do fork: o `Q1_0` da primeira geração e o
 `Q2_g64` do Ternary Bonsai 27B rodam na build oficial.

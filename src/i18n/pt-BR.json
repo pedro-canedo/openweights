@@ -1414,6 +1414,7 @@
     "keep": "Manter atual",
     "restore": "Restaurar configuração anterior",
     "errors": {
+      "prism-required": "Este modelo precisa do motor da PrismML. Instale-o em Meus Modelos e otimize de novo.",
       "busy": "Há trabalho em andamento. Termine ou cancele antes de comparar.",
       "failed": "A comparação não foi concluída. Consulte os detalhes.",
       "cancelled": "Teste cancelado. A configuração original foi preservada.",

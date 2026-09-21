@@ -973,10 +973,62 @@ pub(crate) fn select_engine(
         .map_err(err_str)
 }
 
+/// O motor capaz de MEDIR um arquivo, dado o que ele exige e o que está no
+/// disco. Puro, porque é a regra — e a regra é curta: quem não exige a
+/// PrismML mede no oficial; quem exige mede nela ou não mede.
+///
+/// Não é `alvo_do_motor`: aquele responde "com que motor CONVERSAR" e conhece
+/// o MoE-cache, que é um braço da própria medição, nunca a base dela.
+pub(crate) fn motor_de_medicao(
+    exige_prism: bool,
+    prism_instalado: bool,
+) -> Result<lr_types::tuning::EngineSource, &'static str> {
+    match (exige_prism, prism_instalado) {
+        (false, _) => Ok(lr_types::tuning::EngineSource::Official),
+        (true, true) => Ok(lr_types::tuning::EngineSource::Prism),
+        (true, false) => Err("optimization-prism-required"),
+    }
+}
+
+/// O runtime que consegue abrir este GGUF — e, portanto, medi-lo.
+///
+/// Toda medição roda um binário do llama.cpp contra o arquivo:
+/// `llama-fit-params` para saber se cabe, `llama-bench` para saber quanto
+/// rende, um `llama-server` de teste para cada configuração candidata. O
+/// binário oficial recusa um Bonsai com "unknown type", então medi-lo com
+/// ele é medir um erro — era assim que a otimização falhava sem explicar.
+pub(crate) fn runtime_de_medicao(
+    state: &AppState,
+    gguf: &std::path::Path,
+) -> CmdResult<lr_runtime::RuntimeState> {
+    let exige = lr_models::read_local_meta(gguf).exige_prism();
+    let prism = prism_state(state);
+    let runtime = match motor_de_medicao(exige, prism.installed)? {
+        lr_types::tuning::EngineSource::Prism => prism,
+        _ => state
+            .runtime_mgr
+            .state(lr_runtime::select_variant(&state.profile)),
+    };
+    if runtime.installed {
+        Ok(runtime)
+    } else {
+        Err("o runtime do llama.cpp ainda não está instalado".into())
+    }
+}
+
 /// O modelo local, pelo nome que a UI usa, só abre no motor da PrismML.
 ///
 /// Lê o cabeçalho do arquivo: é a prova, não o nome. Tolera o `.gguf` como
 /// `profile_for`, porque o chat às vezes chega sem ele.
+/// O GGUF principal de um modelo da biblioteca, pelo nome que a UI usa.
+pub(crate) fn caminho_do_modelo(state: &AppState, name: &str) -> Option<std::path::PathBuf> {
+    let stem = model_stem(name);
+    lr_models::scan_local(&state.models_dir)
+        .into_iter()
+        .find(|a| a.name == name || model_stem(&a.name) == stem)
+        .map(|a| a.primary_path)
+}
+
 pub(crate) fn modelo_exige_prism(state: &AppState, name: &str) -> bool {
     let stem = model_stem(name);
     lr_models::scan_local(&state.models_dir)
@@ -1866,4 +1918,24 @@ pub fn workspace_write(root: String, rel: String, content: String) -> CmdResult<
 #[tauri::command]
 pub fn workspace_reveal(root: String, rel: Option<String>) -> CmdResult<()> {
     crate::workspace::reveal(&root, rel.as_deref()).map_err(err_str)
+}
+
+#[cfg(test)]
+mod testes_motor {
+    use super::motor_de_medicao;
+    use lr_types::tuning::EngineSource;
+
+    /// Medir é abrir o arquivo. Quem não exige a PrismML mede no oficial;
+    /// quem exige e não a tem recebe o erro que a tela vira botão, nunca
+    /// uma medição no motor errado.
+    #[test]
+    fn measuring_uses_the_engine_that_can_open_the_file() {
+        assert_eq!(motor_de_medicao(false, false), Ok(EngineSource::Official));
+        assert_eq!(motor_de_medicao(false, true), Ok(EngineSource::Official));
+        assert_eq!(motor_de_medicao(true, true), Ok(EngineSource::Prism));
+        assert_eq!(
+            motor_de_medicao(true, false),
+            Err("optimization-prism-required")
+        );
+    }
 }

@@ -504,7 +504,7 @@ pub async fn compare_run(
         .as_ref()
         .is_some_and(|s| s.is_spawned());
     let preview = commands::preview_server_config(&state).await;
-    let config = state
+    let mut config = state
         .server
         .lock()
         .await
@@ -516,17 +516,22 @@ pub async fn compare_run(
         .into_iter()
         .find(|e| e.id == model)
         .ok_or("comparison-model-missing")?;
-    if commands::modelo_exige_prism(&state, &model) {
-        return Err("prism-unsupported-operation".into());
-    }
+    // Os dois braços sobem este arquivo: o motor tem de ser o que o abre,
+    // não o que está selecionado agora.
+    let arquivo = commands::caminho_do_modelo(&state, &model).ok_or("comparison-model-missing")?;
+    let exige_prism = lr_models::read_local_meta(&arquivo).exige_prism();
+    config.exe_path = commands::runtime_de_medicao(&state, &arquivo)?
+        .server_exe
+        .ok_or("optimization-official-missing")?;
     assert_idle(&state).await?;
     commands::stop_engine(&app, &state).await?;
     let measured = async {
-        let runtime_identity = match commands::selected_engine(&state) {
-            lr_types::tuning::EngineSource::MoeCache => lr_runtime::experimental::identity(),
-            lr_types::tuning::EngineSource::Prism => lr_runtime::prism::identity(&state.profile),
-            lr_types::tuning::EngineSource::Official => {
-                lr_runtime::experimental::official_identity(&state.profile)
+        let runtime_identity = if exige_prism {
+            lr_runtime::prism::identity(&state.profile)
+        } else {
+            match commands::selected_engine(&state) {
+                lr_types::tuning::EngineSource::MoeCache => lr_runtime::experimental::identity(),
+                _ => lr_runtime::experimental::official_identity(&state.profile),
             }
         };
         let reference = arm(

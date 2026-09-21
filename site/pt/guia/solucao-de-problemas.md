@@ -89,8 +89,10 @@ instala esse motor junto com o download; se mesmo assim ele faltar, o chat e o
 cartão do modelo mostram um botão **Instalar motor PrismML** — cerca de 150 MB
 de uma release fixada no GitHub, conferida executando o binário. O motor troca
 sozinho ao escolher o modelo e volta no seguinte; a faixa do Servidor Local diz
-qual está no ar. A otimização e a comparação de motores recusam modelos Bonsai
-de propósito, e a GPU pela rede (cluster) continua na build oficial.
+qual está no ar. A otimização e as ferramentas de desempenho medem um modelo
+Bonsai **nesse motor**, já que medir é abrir o arquivo com um binário. O que
+elas pulam é o braço do MoE-cache, que é outro fork e não abre esses arquivos;
+a GPU pela rede (cluster) também continua na build oficial.
 
 ## O servidor local não sobe
 

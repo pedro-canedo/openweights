@@ -88,8 +88,10 @@ chat and the model card show an **Install PrismML engine** button — about
 150 MB from a pinned GitHub release, verified by running the binary. The
 engine switches automatically when you pick the model and switches back on the
 next one; the Local Server header says which one is running. Optimization and
-the engine comparison refuse Bonsai models on purpose, and the network GPU
-(cluster) stays on the official build.
+the performance tools measure a Bonsai model **on that engine**, since a
+measurement is just the file being opened by a binary. The one thing they skip
+is the MoE-cache arm, which is a different fork and cannot open these files;
+the network GPU (cluster) also stays on the official build.
 
 ## The local server will not start
 

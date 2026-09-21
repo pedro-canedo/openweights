@@ -104,14 +104,23 @@ pub async fn optimize_run(
         .find(|e| e.id == model)
         .ok_or("comparison-model-missing")?;
     let meta = lr_models::read_local_meta(&artifact.primary_path);
-    // Os braços da otimização são oficial × MoE-cache; um Bonsai não carrega
-    // em nenhum dos dois, e medir isso seria medir um erro.
-    if meta.exige_prism() {
-        return Err("prism-unsupported-operation".into());
-    }
+    // Cada braço sobe um llama-server contra ESTE arquivo, então todos eles
+    // usam o motor que sabe abri-lo: um Bonsai se mede na PrismML. Sem isto,
+    // a medição rodava o binário oficial e falhava com "unknown type" —
+    // aparecendo na tela como "a comparação não foi concluída".
+    let motor = commands::runtime_de_medicao(&state, &artifact.primary_path)?;
+    let exe_de_medicao = motor
+        .server_exe
+        .clone()
+        .ok_or("optimization-official-missing")?;
+    config.exe_path = exe_de_medicao.clone();
     let mut warnings = Vec::new();
     progress(&app, &model, "installing");
+    // O braço do MoE-cache é um SEGUNDO fork, e ele é o llama.cpp oficial
+    // com um cache de especialistas: não abre um Bonsai. Modelo que exige a
+    // PrismML mede só os candidatos de configuração.
     let fork = if meta.n_experts.is_some_and(|n| n > 0)
+        && !meta.exige_prism()
         && lr_runtime::experimental::supported(&state.profile)
     {
         match state
@@ -134,12 +143,19 @@ pub async fn optimize_run(
     comparison::assert_idle(&state).await?;
     commands::stop_engine(&app, &state).await?;
     let measured = async {
-        let official_identity = lr_runtime::experimental::official_identity(&state.profile);
+        // A identidade carimba a medição: trocar de motor invalida o número,
+        // e um resultado da PrismML não pode passar por resultado do oficial.
+        let identidade_base = if meta.exige_prism() {
+            lr_runtime::prism::identity(&state.profile)
+        } else {
+            lr_runtime::experimental::official_identity(&state.profile)
+        };
         let fork_identity = lr_runtime::experimental::identity();
-        let original_identity = if original_engine == EngineSource::MoeCache {
+        let original_identity = if original_engine == EngineSource::MoeCache && !meta.exige_prism()
+        {
             fork_identity.clone()
         } else {
-            official_identity.clone()
+            identidade_base.clone()
         };
         let mut arms = vec![
             comparison::arm(
@@ -153,11 +169,8 @@ pub async fn optimize_run(
             )
             .await?,
         ];
-        let official = state
-            .runtime_mgr
-            .state(lr_runtime::select_variant(&state.profile));
-        let mut official_config = config.clone();
-        official_config.exe_path = official.server_exe.ok_or("optimization-official-missing")?;
+        let mut config_medicao = config.clone();
+        config_medicao.exe_path = exe_de_medicao.clone();
         let options = candidates(
             &original,
             lr_hw::physical_cores().unwrap_or(state.profile.cpu_cores),
@@ -167,12 +180,12 @@ pub async fn optimize_run(
         for p in &options {
             match comparison::arm(
                 Some(&app),
-                &official_config,
+                &config_medicao,
                 &model,
                 p,
                 &entry,
                 arms.len(),
-                official_identity.clone(),
+                identidade_base.clone(),
             )
             .await
             {

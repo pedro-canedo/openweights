@@ -1,5 +1,13 @@
 # Novidades
 
+## 0.22.2
+
+Otimizar ou ajustar um modelo Bonsai não termina mais em "a comparação não foi
+concluída". Toda medição roda um binário do llama.cpp contra o arquivo do
+modelo, e o app pegava sempre o oficial, que não abre esses arquivos. Agora
+cada medição usa o motor que consegue abrir: o da PrismML num Bonsai, o oficial
+no resto. O braço do MoE-cache é pulado em modelos Bonsai, porque é outro fork.
+
 ## 0.22.1
 
 Instalar o motor da PrismML no Windows falhava com "Acesso negado": o app

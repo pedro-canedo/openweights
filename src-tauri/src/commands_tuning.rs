@@ -192,10 +192,7 @@ async fn menor_ncmoe(
 pub async fn tune_advise(state: State<'_, AppState>, model: String) -> CmdResult<TuneAdvice> {
     let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
 
-    let runtime = {
-        let variant = lr_runtime::select_variant(&state.profile);
-        state.runtime_mgr.state(variant)
-    };
+    let runtime = crate::commands::runtime_de_medicao(&state, &artefato.primary_path)?;
     let dir = runtime
         .dir
         .ok_or("o runtime do llama.cpp ainda não está instalado")?;
@@ -576,10 +573,7 @@ pub async fn tune_sweep(
     }
 
     let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
-    let runtime = {
-        let variant = lr_runtime::select_variant(&state.profile);
-        state.runtime_mgr.state(variant)
-    };
+    let runtime = crate::commands::runtime_de_medicao(&state, &artefato.primary_path)?;
     let dir = runtime
         .dir
         .ok_or("o runtime do llama.cpp ainda não está instalado")?;
@@ -679,10 +673,7 @@ pub async fn tune_bench(
     }
 
     let artefato = local_by_name(&state, &model).ok_or("modelo não encontrado na biblioteca")?;
-    let runtime = {
-        let variant = lr_runtime::select_variant(&state.profile);
-        state.runtime_mgr.state(variant)
-    };
+    let runtime = crate::commands::runtime_de_medicao(&state, &artefato.primary_path)?;
     let dir = runtime
         .dir
         .ok_or("o runtime do llama.cpp ainda não está instalado")?;
@@ -1156,14 +1147,6 @@ pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
     };
     let chave = auto_key(state);
     let cluster = cluster_args(state);
-    let dir = {
-        let variant = lr_runtime::select_variant(&state.profile);
-        state.runtime_mgr.state(variant).dir
-    };
-    let Some(dir) = dir else {
-        AUTO_RODANDO.store(false, Ordering::SeqCst);
-        return;
-    };
 
     let mut mudou = 0usize;
     for a in lr_models::scan_local(&state.models_dir) {
@@ -1184,6 +1167,15 @@ pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
         {
             continue;
         }
+        // O motor é resolvido POR MODELO: um Bonsai se mede na PrismML, e um
+        // modelo cujo motor não está instalado é pulado, não derruba a volta
+        // inteira da varredura.
+        let Some(dir) = crate::commands::runtime_de_medicao(state, &a.primary_path)
+            .ok()
+            .and_then(|rt| rt.dir)
+        else {
+            continue;
+        };
         if let Some(mut perfil) = auto_profile_for(state, &dir, &a, cluster.as_ref()).await {
             if MEDINDO.load(Ordering::SeqCst) {
                 break;

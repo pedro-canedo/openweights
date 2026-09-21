@@ -1,5 +1,14 @@
 # What's new
 
+## 0.22.2
+
+Optimizing or tuning a Bonsai model no longer ends in "the comparison was not
+completed". Every measurement runs a llama.cpp binary against the model file,
+and the app was always reaching for the official one, which cannot open these
+files. Each measurement now uses the engine that can: the PrismML one for a
+Bonsai, the official one for everything else. The MoE-cache arm is skipped for
+Bonsai models, because that is a different fork.
+
 ## 0.22.1
 
 Installing the PrismML engine on Windows failed with "Access denied": the

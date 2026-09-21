@@ -10,6 +10,13 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.22.2] — 2026-09-21
+
+- Optimizing or tuning a Bonsai model ended in "the comparison was not completed". Every measurement runs a llama.cpp binary against the file, and the app always reached for the official one, which cannot open these files.
+- Each measurement now uses the engine that can open the model: the PrismML one for a Bonsai, the official one for everything else. This covers optimization, comparison, the sweep, "Measure now" and the background auto-tune.
+- The MoE-cache arm is skipped for Bonsai models, because it is a different fork that also cannot open these files.
+- When the required engine is not installed, the screen explains it and points to the install button instead of showing an error code.
+
 ## [0.22.1] — 2026-09-21
 
 - Installing the PrismML engine failed on Windows with "Access denied (os error 5)": the execution check ran in the temporary folder and the folder move came right after, while the just-run executable still held it. The folder is now moved first and the check runs in place.

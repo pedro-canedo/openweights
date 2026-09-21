@@ -1414,6 +1414,7 @@
     "keep": "Keep current",
     "restore": "Restore previous configuration",
     "errors": {
+      "prism-required": "This model needs the PrismML engine. Install it from My Models, then optimize again.",
       "busy": "Work is in progress. Finish or cancel it before comparing.",
       "failed": "Comparison did not complete. See details.",
       "cancelled": "Test cancelled. The original configuration was preserved.",
