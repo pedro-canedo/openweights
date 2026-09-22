@@ -1,5 +1,31 @@
 # What's new
 
+## 0.23.0
+
+**Decisions run on your GPU.** The Jev decision layer no longer depends on the
+OpenRouter API: a **local decider** — a second `llama-server` built from the
+parallel-decision fork of llama.cpp, with a small model dedicated to deciding
+(Qwen2.5-1.5B-Instruct by default) — answers how much reasoning each message
+needs in milliseconds, without the message leaving the machine. Install it with
+one click from the new **Decisions** tab in Model sources; the engine and the
+model show up in the downloads panel, and the decider starts and stops together
+with the local server. Jev on OpenRouter becomes the fallback, used only when
+the local decider is not installed, is still loading, or fails — and you can
+switch the fallback off to keep decisions strictly local. The chat's run details
+and the `x-openweights-jev` header now say which decider answered.
+
+The technique is the one the decider is named after: instead of writing JSON
+token by token, the server scores only the first token of each allowed value of
+each field, in parallel, from a cached prefix. Answers can never fall outside
+the schema. The local proxy on `127.0.0.1:11712` also forwards
+`POST /v1/decision`, so coding agents, the gateway and the decision playground
+can ask their own structured questions. See
+[External model sources](/integrations/providers#decisions-the-reflex-in-front-of-your-models).
+
+The decider holds about 2.6 GB of VRAM while it runs, so it switches itself on
+only on GPUs with 12 GB or more; below that the card shows the cost and lets you
+turn it on by hand. Windows and Linux with an NVIDIA GPU on CUDA 13 for now.
+
 ## 0.22.3
 
 The coding agent's panel window now opens the address the harness prints when

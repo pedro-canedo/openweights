@@ -20,34 +20,94 @@ são e quantos modelos o filtro atual encontrou.
 
 Com a chave definida, a tela mostra quanto você gastou e seu limite de crédito.
 
-## Jev — camada de decisão
+## Decisões — o reflexo na frente dos seus modelos
 
-Abaixo do cartão do OpenRouter fica o **Jev**, um modelo de decisão da TypeSafe
-que o app alcança pela mesma chave do OpenRouter. Ele não gera texto: recebe a
-mensagem atual mais um trecho curto da conversa e responde, em bem menos de um
-segundo, **quanto raciocínio a mensagem pede** — nenhum, médio ou alto. O app
+A aba **Decisões** guarda uma camada pequena e rápida que roda antes de cada
+mensagem: um *decisor* olha a mensagem atual mais um trecho curto da conversa e
+responde **quanto raciocínio a mensagem pede** — nenhum, médio ou alto. O app
 então liga ou desliga o raciocínio do modelo local por mensagem, em vez de usar
 o esforço fixo da conversa. Um "oi" deixa de pagar trinta segundos de thinking;
 um problema de lógica continua com o orçamento inteiro.
 
-Vem desligado e só fica disponível depois que a chave do OpenRouter está
-configurada. Ligado, essa mensagem e o trecho saem da sua máquina — o cartão diz
-isso onde você liga. Todo o resto continua local, e o custo é fração de centavo
-por mil mensagens (só tokens de entrada; a resposta é grátis).
+Um decisor não escreve texto. Ele recebe uma pergunta por campo, com os valores
+permitidos escritos, e só o primeiro token de cada valor permitido é pontuado —
+todos os campos em paralelo, a partir de um prefixo (instruções mais esquema)
+que fica em cache. É por isso que a resposta chega em milissegundos e nunca sai
+do esquema: o decisor pode errar o julgamento, nunca o formato.
 
-Dois interruptores dizem onde vale. **Chat do app** decide antes de cada envio
-e mostra a escolha nos detalhes da execução da resposta. **Agentes de código**
-sobe um proxy local pequeno em `127.0.0.1:11712` na frente do motor; o DeepSeek
-Harness e os outros agentes que o app abre passam a apontar para ele, e cada
-`chat/completions` que mandam recebe a mesma decisão aplicada ao corpo. Qualquer
-outra requisição atravessa intocada, streaming inclusive. O proxy só escuta no
-endereço de loopback: o que chega ao motor pela rede não passa por ele.
+Existem dois decisores, tentados nesta ordem. Tudo é fail-open: quando nenhum
+responde, o esforço que você configurou prevalece.
 
-**Só agir acima de** é o piso de confiança. Abaixo dele — ou sempre que o Jev
-está fora do ar, a chave falta ou a resposta se contradiz — nada muda e o
-esforço que você configurou prevalece. **Testar decisão** manda uma pergunta de
-amostra para você ver chave e endpoint funcionando antes de uma conversa
-depender deles.
+### Decisor local
+
+Um segundo `llama-server`, compilado do
+[fork parallel-decision do llama.cpp](https://github.com/thecodacus/llama.cpp/tree/parallel-decision),
+com um modelo pequeno só para decidir — por padrão o
+`Qwen/Qwen2.5-1.5B-Instruct-GGUF` em Q8_0 (1,9 GB, Apache-2.0), de atenção
+pura, que é a arquitetura que esta técnica recompensa. **Instalar** baixa o
+motor (cerca de 200 MB, um pacote que o próprio OpenWeights compila e publica) e
+o modelo; os dois aparecem no painel de downloads. Depois você pode escolher
+qualquer outro GGUF da biblioteca como decisor.
+
+Ele sobe junto do servidor local, em `127.0.0.1:11713`, e para com ele. Enquanto
+roda ocupa cerca de **2,6 GB de VRAM** ao lado do modelo do chat, e as medições
+de "cabe?" não descontam isso: ele liga sozinho só em GPUs com 12 GB ou mais, e
+abaixo disso o cartão mostra o custo e deixa você ligar à mão. Precisa de
+Windows ou Linux com GPU NVIDIA em CUDA 13 (driver 580 ou mais novo). Nada sai
+da sua máquina.
+
+### Reserva: Jev no OpenRouter
+
+O modelo de decisão **Jev**, da TypeSafe, alcançado pela chave do OpenRouter,
+responde quando o decisor local não está instalado, ainda está carregando ou
+falha. Quando isso acontece, a mensagem e o trecho saem da sua máquina — o
+cartão diz isso ao lado do interruptor — e o custo é fração de centavo por mil
+mensagens (só tokens de entrada). Desmarque a reserva para manter as decisões
+estritamente locais.
+
+### Onde vale, e o endpoint
+
+Dois interruptores dizem onde a decisão vale. **Chat do app** decide antes de
+cada envio e mostra quem decidiu nos detalhes da execução da resposta (*Local*
+ou *Jev*). **Agentes de código** sobe um proxy local pequeno em
+`127.0.0.1:11712` na frente do motor; o DeepSeek Harness e os outros agentes
+que o app abre passam a apontar para ele, e cada `chat/completions` que mandam
+recebe a decisão aplicada ao corpo. O cabeçalho de resposta `x-openweights-jev`
+conta o que aconteceu: `alto;0.91;local`, `medio;0.80;jev`, `nenhum;cache` ou
+`default;<motivo>`. Qualquer outra requisição atravessa intocada, streaming
+inclusive, e o proxy só escuta no endereço de loopback.
+
+O proxy também repassa `POST /v1/decision` ao decisor local, então qualquer
+coisa que alcance `127.0.0.1:11712` — um agente de código, o gateway, o
+[decision playground](https://github.com/thecodacus/decision-playground) — pode
+fazer as próprias perguntas. A requisição nomeia os campos com os valores
+permitidos e um ou mais contextos; a resposta traz o valor e a probabilidade de
+cada campo:
+
+```json
+POST /v1/decision
+{
+  "instructions": "Route this support ticket.",
+  "schema": {
+    "category": {"type": "enum", "choices": ["billing", "technical", "other"],
+                 "description": "What is the ticket about?"},
+    "urgent": {"type": "boolean", "description": "Does it need urgent handling?"}
+  },
+  "contexts": ["I was charged twice and need this fixed today."]
+}
+```
+
+```json
+{"results": [{"decision": {"category": "billing", "urgent": true},
+              "fields": {"category": {"value": "billing", "probability": 0.97},
+                         "urgent": {"value": true, "probability": 0.88}}}],
+ "timings": {"total_ms": 41.0}}
+```
+
+Os campos não enxergam as respostas uns dos outros: faça perguntas
+independentes. **Só agir acima de** é o piso de confiança, e **Testar decisão**
+manda uma pergunta de amostra e conta qual decisor respondeu e quanto tempo
+levou.
 
 ## 9router
 

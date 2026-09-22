@@ -10,6 +10,14 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.23.0] — 2026-09-22
+
+- The Jev decision layer no longer depends on the OpenRouter API. A local decider — a second `llama-server` built from the parallel-decision fork of llama.cpp, with a small model dedicated to deciding (Qwen2.5-1.5B-Instruct by default) — answers how much reasoning each message needs in milliseconds, without the message leaving the machine.
+- One-click install from the new Decisions tab in Model sources: the engine (built and published by OpenWeights itself) and the model show up in the downloads panel, and the decider starts and stops together with the local server. Any GGUF in the library can be picked as the decider.
+- Jev on OpenRouter becomes the fallback, used only when the local decider is not installed, is still loading, or fails; the fallback can be switched off. The chat and the `x-openweights-jev` header say which decider answered.
+- The local proxy on `127.0.0.1:11712` forwards `POST /v1/decision` to the local decider, so coding agents, the gateway and the decision playground can ask their own structured questions.
+- The decider holds about 2.6 GB of VRAM while it runs: it switches itself on only on GPUs with 12 GB or more; below that the screen shows the cost and lets you turn it on by hand. Windows and Linux with an NVIDIA GPU on CUDA 13.
+
 ## [0.22.3] — 2026-09-22
 
 - The DeepSeek Harness panel window used to rebuild the address from the port. It now opens the whole address the harness itself prints on startup, and the readiness check queries that same address.

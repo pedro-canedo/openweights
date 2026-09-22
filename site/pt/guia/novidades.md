@@ -1,5 +1,31 @@
 # Novidades
 
+## 0.23.0
+
+**As decisões rodam na sua GPU.** A camada de decisão do Jev deixa de depender
+da API do OpenRouter: um **decisor local** — um segundo `llama-server`
+compilado do fork parallel-decision do llama.cpp, com um modelo pequeno só para
+decidir (Qwen2.5-1.5B-Instruct por padrão) — responde quanto raciocínio cada
+mensagem pede em milissegundos, sem a mensagem sair da máquina. Instale com um
+clique na nova aba **Decisões** de Fontes de modelo; o motor e o modelo aparecem
+no painel de downloads, e o decisor sobe e para junto do servidor local. O Jev
+no OpenRouter vira a reserva, usada só quando o decisor local não está
+instalado, ainda está carregando ou falha — e dá para desligar a reserva para
+manter as decisões estritamente locais. Os detalhes da execução no chat e o
+cabeçalho `x-openweights-jev` passam a dizer qual decisor respondeu.
+
+A técnica é a que dá nome ao decisor: em vez de escrever o JSON token a token, o
+servidor pontua só o primeiro token de cada valor permitido de cada campo, em
+paralelo, a partir de um prefixo em cache. A resposta nunca sai do esquema. O
+proxy local em `127.0.0.1:11712` também repassa `POST /v1/decision`, então
+agentes de código, o gateway e o decision playground podem fazer as próprias
+perguntas estruturadas. Ver
+[Fontes externas de modelo](/pt/integracoes/provedores#decisoes-o-reflexo-na-frente-dos-seus-modelos).
+
+O decisor ocupa cerca de 2,6 GB de VRAM enquanto roda, então liga sozinho só em
+GPUs com 12 GB ou mais; abaixo disso o cartão mostra o custo e deixa você ligar
+à mão. Por enquanto, Windows e Linux com GPU NVIDIA em CUDA 13.
+
 ## 0.22.3
 
 A janela do painel do agente de código passa a abrir o endereço que o harness

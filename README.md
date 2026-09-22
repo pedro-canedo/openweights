@@ -76,12 +76,15 @@ Windows, macOS and Linux.
   its own dashboard that the app installs, runs and removes in an isolated
   folder — portable Node included, nothing touching your system. The 9router
   dashboard opens embedded in the app.
-- 🎚️ **Jev, a decision layer (optional)** — a TypeSafe decision model, reached
-  through the OpenRouter key, looks at each message and decides whether the
-  local model should think and how hard, instead of a fixed effort per
-  conversation. Simple messages answer faster; hard ones keep the full budget.
-  The same decision reaches the coding agents through a small local proxy. Off
-  by default, and the card says what leaves your machine when it is on.
+- 🎚️ **Decisions, a reflex in front of your models (optional)** — a local
+  decider (a second llama-server built from the parallel-decision fork of
+  llama.cpp, with a small model dedicated to deciding) looks at each message and
+  decides in milliseconds whether the local model should think and how hard,
+  instead of a fixed effort per conversation — without the message leaving your
+  machine. Simple messages answer faster; hard ones keep the full budget. The
+  same decision reaches the coding agents through a small local proxy, which
+  also serves `POST /v1/decision`. TypeSafe's Jev on OpenRouter is the optional
+  fallback.
 - 🌳 **Bonsai models, with the engine they need** — PrismML's Ternary Bonsai 2
   files use tensor types the standard llama.cpp refuses. The app reads the
   file header, installs PrismML's fork of llama.cpp together with the download

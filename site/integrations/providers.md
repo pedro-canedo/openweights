@@ -21,35 +21,91 @@ those are and how many models the current filter found.
 
 With a key set, the screen shows what you have spent and your credit limit.
 
-## Jev — a decision layer
+## Decisions — the reflex in front of your models
 
-Below the OpenRouter card sits **Jev**, a decision model from TypeSafe that the
-app reaches through the same OpenRouter key. It does not generate text: it
-receives the current message plus a short tail of the conversation and answers,
-in well under a second, **how much reasoning the message needs** — none, medium
-or high. The app then turns the local model's thinking on or off per message
-instead of using the conversation's fixed effort. A greeting stops paying thirty
-seconds of thinking; a logic problem still gets the full budget.
+The **Decisions** tab holds a small, fast layer that runs before each message:
+a *decider* looks at the current message plus a short tail of the conversation
+and answers **how much reasoning the message needs** — none, medium or high.
+The app then turns the local model's thinking on or off per message instead of
+using the conversation's fixed effort. A greeting stops paying thirty seconds of
+thinking; a logic problem still gets the full budget.
 
-It is off by default and only becomes available once the OpenRouter key is set.
-When it is on, that message and tail leave your machine — the card says so where
-you switch it on. Everything else stays local, and the cost is a fraction of a
-cent per thousand messages (input tokens only; the answer is free).
+A decider does not write text. It is asked one question per field, with the
+allowed values spelled out, and only the first token of each allowed value is
+scored — all fields in parallel, from a prefix (instructions plus schema) that
+stays cached. That is why an answer lands in milliseconds and can never fall
+outside the schema: the decider can misjudge, never malform.
 
-Two switches say where it applies. **Chat in the app** decides before each
-send and shows the choice in the answer's run details. **Coding agents** starts
-a small local proxy on `127.0.0.1:11712` in front of the engine; the DeepSeek
-Harness and the other agents the app launches are pointed at it, and every
-`chat/completions` they send gets the same decision applied to the body. Every
-other request passes through untouched, streaming included. The proxy only
-listens on the loopback address: anything reaching the engine from the network
-bypasses it.
+Two deciders exist, tried in order. Everything is fail-open: when neither
+answers, the effort you configured stands.
 
-**Only act above** is the confidence floor. Below it — or whenever Jev is
-unreachable, the key is missing, or the answer contradicts itself — nothing
-changes and the effort you configured stands. **Test decision** sends one
-sample question so you can see the key and endpoint working before a
-conversation depends on them.
+### Local decider
+
+A second `llama-server`, built from the
+[parallel-decision fork of llama.cpp](https://github.com/thecodacus/llama.cpp/tree/parallel-decision),
+with a small model dedicated to deciding — by default
+`Qwen/Qwen2.5-1.5B-Instruct-GGUF` in Q8_0 (1.9 GB, Apache-2.0), attention-only,
+which is the architecture this technique rewards. **Install** downloads the
+engine (about 200 MB, a package OpenWeights builds and publishes itself) and the
+model; both show up in the downloads panel. You can pick any other GGUF from
+your library as the decider afterwards.
+
+It starts together with the local server, on `127.0.0.1:11713`, and stops with
+it. While it runs it holds about **2.6 GB of VRAM** next to the chat model, and
+the fit measurements do not account for that: it switches itself on only on
+GPUs with 12 GB or more, and below that the card shows the cost and lets you
+switch it on by hand. It needs Windows or Linux with an NVIDIA GPU on CUDA 13
+(driver 580 or newer). Nothing leaves your machine.
+
+### Fallback: Jev on OpenRouter
+
+The **Jev** decision model from TypeSafe, reached through the OpenRouter key,
+answers when the local decider is not installed, is still loading, or fails.
+When it does, the message and tail leave your machine — the card says so next
+to the switch — and the cost is a fraction of a cent per thousand messages
+(input tokens only). Uncheck the fallback to keep decisions strictly local.
+
+### Where it applies, and the endpoint
+
+Two switches say where the decision applies. **Chat in the app** decides before
+each send and shows who decided in the answer's run details (*Local* or *Jev*).
+**Coding agents** starts a small local proxy on `127.0.0.1:11712` in front of
+the engine; the DeepSeek Harness and the other agents the app launches are
+pointed at it, and every `chat/completions` they send gets the decision applied
+to the body. The response header `x-openweights-jev` says what happened:
+`alto;0.91;local`, `medio;0.80;jev`, `nenhum;cache` or `default;<reason>`.
+Every other request passes through untouched, streaming included, and the proxy
+only listens on the loopback address.
+
+The proxy also forwards `POST /v1/decision` to the local decider, so anything
+that can reach `127.0.0.1:11712` — a coding agent, the gateway, the
+[decision playground](https://github.com/thecodacus/decision-playground) — can
+ask its own questions. A request names its fields with allowed values and one
+or more contexts; the answer carries each field's value and probability:
+
+```json
+POST /v1/decision
+{
+  "instructions": "Route this support ticket.",
+  "schema": {
+    "category": {"type": "enum", "choices": ["billing", "technical", "other"],
+                 "description": "What is the ticket about?"},
+    "urgent": {"type": "boolean", "description": "Does it need urgent handling?"}
+  },
+  "contexts": ["I was charged twice and need this fixed today."]
+}
+```
+
+```json
+{"results": [{"decision": {"category": "billing", "urgent": true},
+              "fields": {"category": {"value": "billing", "probability": 0.97},
+                         "urgent": {"value": true, "probability": 0.88}}}],
+ "timings": {"total_ms": 41.0}}
+```
+
+Fields cannot see each other's answers: ask independent questions. **Only act
+above** is the confidence floor, and **Test decision** sends one sample question
+and reports which decider answered and how long it took.
 
 ## 9router
 
