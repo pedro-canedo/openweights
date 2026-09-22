@@ -1,5 +1,14 @@
 # What's new
 
+## 0.22.3
+
+The coding agent's panel window now opens the address the harness prints when
+it starts, instead of rebuilding one from the port number, and the readiness
+check queries that same address. Newer harness releases announce an address
+that carries a session credential and refuse the page without it, so this is
+what keeps the panel opening. The harness version the app installs is
+unchanged: the one published after it does not finish starting up in our tests.
+
 ## 0.22.2
 
 Optimizing or tuning a Bonsai model no longer ends in "the comparison was not

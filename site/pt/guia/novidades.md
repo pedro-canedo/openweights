@@ -1,5 +1,15 @@
 # Novidades
 
+## 0.22.3
+
+A janela do painel do agente de código passa a abrir o endereço que o harness
+imprime ao subir, em vez de remontar um a partir do número da porta, e a
+verificação de prontidão consulta esse mesmo endereço. As versões mais novas do
+harness anunciam um endereço com credencial de sessão e recusam a página sem
+ela, então é isto que mantém o painel abrindo. A versão do harness que o app
+instala continua a mesma: a publicada depois dela não conclui a inicialização
+nos nossos testes.
+
 ## 0.22.2
 
 Otimizar ou ajustar um modelo Bonsai não termina mais em "a comparação não foi

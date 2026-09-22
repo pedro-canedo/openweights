@@ -10,6 +10,11 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.22.3] — 2026-09-22
+
+- The DeepSeek Harness panel window used to rebuild the address from the port. It now opens the whole address the harness itself prints on startup, and the readiness check queries that same address.
+- This prepares the app for the next harness releases, which announce the address with a session credential and refuse the page without it. The harness version the app installs is unchanged: the one published after it does not finish starting up in our tests.
+
 ## [0.22.2] — 2026-09-21
 
 - Optimizing or tuning a Bonsai model ended in "the comparison was not completed". Every measurement runs a llama.cpp binary against the file, and the app always reached for the official one, which cannot open these files.
