@@ -106,9 +106,7 @@ impl RuntimeManager {
         let resultado = self.instalar_decision(&on_event).await;
         match &resultado {
             Ok(_) => on_event(RuntimeEvent::Ready),
-            Err(e) => on_event(RuntimeEvent::Failed {
-                message: e.clone(),
-            }),
+            Err(e) => on_event(RuntimeEvent::Failed { message: e.clone() }),
         }
         resultado
     }
@@ -211,7 +209,11 @@ mod tests {
         assert!(!mgr.decision_state().installed, "sem manifesto");
         let mut wrong = identity();
         wrong.revision = "foreign".into();
-        std::fs::write(dir.join("runtime.json"), serde_json::to_vec(&wrong).unwrap()).unwrap();
+        std::fs::write(
+            dir.join("runtime.json"),
+            serde_json::to_vec(&wrong).unwrap(),
+        )
+        .unwrap();
         assert!(!mgr.decision_state().installed, "revisão estranha");
         std::fs::write(
             dir.join("runtime.json"),

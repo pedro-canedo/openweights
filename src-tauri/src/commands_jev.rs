@@ -20,8 +20,8 @@ use lr_providers::jev_esforco::{
     decidir_esforco, montar_estado, perguntas,
 };
 use lr_providers::{
-    CapacidadeModelo, ClienteDecisaoLocal, ClienteJev, ContextoDecisao, DecisaoEsforco,
-    Decisores, JEV_MODELO_PADRAO, MensagemResumida, Origem, ResumoContadores, Superficie,
+    CapacidadeModelo, ClienteDecisaoLocal, ClienteJev, ContextoDecisao, DecisaoEsforco, Decisores,
+    JEV_MODELO_PADRAO, MensagemResumida, Origem, ResumoContadores, Superficie,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager, State};
@@ -538,7 +538,8 @@ pub(crate) fn e_download_do_decisor(ev: &lr_models::DownloadEvent) -> bool {
     match ev {
         lr_models::DownloadEvent::Update { status } => {
             status.state == lr_models::DownloadState::Done
-                && status.id == lr_models::download_id(DECISOR_MODELO_PADRAO_REPO, DECISOR_MODELO_PADRAO)
+                && status.id
+                    == lr_models::download_id(DECISOR_MODELO_PADRAO_REPO, DECISOR_MODELO_PADRAO)
         }
         lr_models::DownloadEvent::Removed { .. } => false,
     }
@@ -592,9 +593,9 @@ pub(crate) async fn sincronizar_decisor_local(app: &tauri::AppHandle, state: &Ap
                 return;
             }
             let porta = lr_proc::free_port(lr_engine::DECISION_PORTA_PADRAO);
-            let mut servidor = lr_engine::DecisionServer::new(lr_engine::DecisionServerConfig::new(
-                exe, modelo, porta,
-            ));
+            let mut servidor = lr_engine::DecisionServer::new(
+                lr_engine::DecisionServerConfig::new(exe, modelo, porta),
+            );
             if let Err(e) = servidor.spawn() {
                 log::warn!("decisor local não subiu: {e}");
                 crate::gpu_lease::release("decisor");
@@ -657,7 +658,8 @@ enum Saida {
 async fn aguardar_decisor_local(app: tauri::AppHandle, base_url: String) {
     let state = app.state::<AppState>();
     let prazo = tokio::time::Instant::now() + std::time::Duration::from_secs(90);
-    let cliente = ClienteDecisaoLocal::novo(&base_url).with_timeout(std::time::Duration::from_secs(20));
+    let cliente =
+        ClienteDecisaoLocal::novo(&base_url).with_timeout(std::time::Duration::from_secs(20));
     loop {
         let atual = state
             .decisor_local
@@ -730,8 +732,12 @@ pub async fn jev_local_install(
                 cfg.local_model
             ));
         }
-        crate::commands::enfileirar_download(&state, DECISOR_MODELO_PADRAO_REPO, DECISOR_MODELO_PADRAO)
-            .await?;
+        crate::commands::enfileirar_download(
+            &state,
+            DECISOR_MODELO_PADRAO_REPO,
+            DECISOR_MODELO_PADRAO,
+        )
+        .await?;
     }
     if state.runtime_mgr.decision_state().installed {
         sincronizar_decisor_local(&app, &state).await;

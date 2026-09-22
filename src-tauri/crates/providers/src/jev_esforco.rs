@@ -542,7 +542,10 @@ impl Decisores {
             None => None,
         };
         match (&self.remoto, erro_local) {
-            (Some(remoto), _) => remoto.decidir(state, perguntas).await.map(|r| (Fonte::Jev, r)),
+            (Some(remoto), _) => remoto
+                .decidir(state, perguntas)
+                .await
+                .map(|r| (Fonte::Jev, r)),
             (None, Some(e)) => Err(e),
             (None, None) => Err(JevError::SemDecisor),
         }

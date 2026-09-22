@@ -47,7 +47,10 @@ pub const INSTRUCOES: &str = "Answer each field from the JSON state below. Judge
 
 /// O texto de cada opção entra na descrição do campo (o fork não tem
 /// descrição por valor). Formato: `<instructions> Options: a = ...; b = ...`.
-fn descricao_com_opcoes(instructions: &str, opcoes: impl Iterator<Item = (String, String)>) -> String {
+fn descricao_com_opcoes(
+    instructions: &str,
+    opcoes: impl Iterator<Item = (String, String)>,
+) -> String {
     let lista: Vec<String> = opcoes.map(|(k, v)| format!("{k} = {v}")).collect();
     if lista.is_empty() {
         instructions.trim().to_string()
@@ -134,7 +137,9 @@ pub fn traduzir_resposta(
                 let escolha = valor
                     .as_str()
                     .filter(|v| criteria.contains_key(*v))
-                    .ok_or_else(|| JevError::Formato(format!("`{id}`: valor fora das opções: {valor}")))?;
+                    .ok_or_else(|| {
+                        JevError::Formato(format!("`{id}`: valor fora das opções: {valor}"))
+                    })?;
                 RespostaJev::Choice {
                     choice: escolha.to_string(),
                     probabilities: BTreeMap::from([(escolha.to_string(), prob)]),
@@ -142,17 +147,17 @@ pub fn traduzir_resposta(
                 }
             }
             Pergunta::Noul { .. } => {
-                let sim = valor
-                    .as_bool()
-                    .ok_or_else(|| JevError::Formato(format!("`{id}`: esperava booleano: {valor}")))?;
+                let sim = valor.as_bool().ok_or_else(|| {
+                    JevError::Formato(format!("`{id}`: esperava booleano: {valor}"))
+                })?;
                 RespostaJev::Noul {
                     noul: if sim { prob } else { 1.0 - prob },
                 }
             }
             Pergunta::Score { .. } => {
-                let score = valor
-                    .as_f64()
-                    .ok_or_else(|| JevError::Formato(format!("`{id}`: esperava número: {valor}")))?;
+                let score = valor.as_f64().ok_or_else(|| {
+                    JevError::Formato(format!("`{id}`: esperava número: {valor}"))
+                })?;
                 RespostaJev::Score {
                     score,
                     confidence: prob,
@@ -336,9 +341,19 @@ mod tests {
         assert_eq!(s["nivel"]["type"], "enum");
         assert_eq!(s["nivel"]["choices"], json!(["alto", "medio", "nenhum"]));
         let d = s["nivel"]["description"].as_str().unwrap();
-        assert!(d.starts_with("How much reasoning? Options: alto = a lot; medio = some; nenhum = none."), "{d}");
+        assert!(
+            d.starts_with(
+                "How much reasoning? Options: alto = a lot; medio = some; nenhum = none."
+            ),
+            "{d}"
+        );
         assert_eq!(s["precisa"]["type"], "boolean");
-        assert!(s["precisa"]["description"].as_str().unwrap().contains("true = yes; false = no"));
+        assert!(
+            s["precisa"]["description"]
+                .as_str()
+                .unwrap()
+                .contains("true = yes; false = no")
+        );
         assert_eq!(s["gravidade"]["type"], "integer");
         assert_eq!(s["gravidade"]["minimum"], 0);
         assert_eq!(s["gravidade"]["maximum"], 2);
@@ -353,13 +368,19 @@ mod tests {
         assert_eq!(corpo["cache_prompt"], true);
         let contextos = corpo["contexts"].as_array().unwrap();
         assert_eq!(contextos.len(), 1);
-        assert!(contextos[0].as_str().unwrap().contains("\"mensagem_atual\": \"oi\""));
+        assert!(
+            contextos[0]
+                .as_str()
+                .unwrap()
+                .contains("\"mensagem_atual\": \"oi\"")
+        );
         assert!(corpo["schema"]["nivel"].is_object());
     }
 
     #[test]
     fn a_documented_response_becomes_jev_answers() {
-        let r = traduzir_resposta(&resposta_do_fork("alto", 0.74, true, 0.9), &perguntas()).unwrap();
+        let r =
+            traduzir_resposta(&resposta_do_fork("alto", 0.74, true, 0.9), &perguntas()).unwrap();
         assert_eq!(r.escolha("nivel"), Some(("alto", 0.74)));
         assert_eq!(r.noul("precisa"), Some(0.9));
         assert_eq!(r.usage.input_tokens, 137);
@@ -376,13 +397,15 @@ mod tests {
 
     #[test]
     fn a_false_boolean_is_the_complement_of_its_probability() {
-        let r = traduzir_resposta(&resposta_do_fork("nenhum", 0.6, false, 0.8), &perguntas()).unwrap();
+        let r =
+            traduzir_resposta(&resposta_do_fork("nenhum", 0.6, false, 0.8), &perguntas()).unwrap();
         assert!((r.noul("precisa").unwrap() - 0.2).abs() < 1e-9);
     }
 
     #[test]
     fn a_value_outside_the_options_is_a_format_error() {
-        let e = traduzir_resposta(&resposta_do_fork("talvez", 0.9, true, 0.9), &perguntas()).unwrap_err();
+        let e = traduzir_resposta(&resposta_do_fork("talvez", 0.9, true, 0.9), &perguntas())
+            .unwrap_err();
         assert!(matches!(e, JevError::Formato(_)), "{e}");
         let e = traduzir_resposta(&json!({"results": []}), &perguntas()).unwrap_err();
         assert!(matches!(e, JevError::Formato(_)), "{e}");
@@ -515,11 +538,15 @@ mod tests {
         }
     }
 
+    /// Linux recusa a conexão na hora; o Windows deixa o SYN morrer no
+    /// prazo. Os dois são "o decisor local não está lá", e a cadeia trata
+    /// os dois do mesmo jeito: cai no remoto.
     #[tokio::test]
-    async fn a_closed_port_is_a_network_error() {
-        let c = ClienteDecisaoLocal::novo("http://127.0.0.1:1").with_timeout(Duration::from_millis(500));
+    async fn a_closed_port_is_a_network_error_or_a_timeout() {
+        let c = ClienteDecisaoLocal::novo("http://127.0.0.1:1")
+            .with_timeout(Duration::from_millis(500));
         let e = c.decidir(&json!({}), &perguntas()).await.unwrap_err();
-        assert!(matches!(e, JevError::Rede(_)), "{e}");
+        assert!(matches!(e, JevError::Rede(_) | JevError::Tempo), "{e}");
     }
 
     // ---------------------------------------------------------- cadeia ---
@@ -553,7 +580,10 @@ mod tests {
     }
 
     fn mensagens() -> Vec<MensagemResumida> {
-        vec![MensagemResumida::nova("user", "prove que raiz de 2 é irracional")]
+        vec![MensagemResumida::nova(
+            "user",
+            "prove que raiz de 2 é irracional",
+        )]
     }
 
     fn remoto_em(falso: &Falso) -> ClienteJev {
@@ -570,7 +600,15 @@ mod tests {
             local: Some(local.cliente()),
             remoto: Some(remoto_em(&remoto)),
         };
-        let dec = decidir_esforco(&d, &mensagens(), &ContextoDecisao::default(), 0.6, Superficie::Chat, None).await;
+        let dec = decidir_esforco(
+            &d,
+            &mensagens(),
+            &ContextoDecisao::default(),
+            0.6,
+            Superficie::Chat,
+            None,
+        )
+        .await;
         assert_eq!(dec.origem, Origem::Local);
         assert_eq!(dec.fonte, Some(Fonte::Local));
         assert!(dec.aplicada());
@@ -581,10 +619,21 @@ mod tests {
     async fn when_the_local_decider_is_down_the_remote_one_answers() {
         let remoto = Falso::subir(|_, _| (200, resposta_do_jev("medio", 0.8)));
         let d = Decisores {
-            local: Some(ClienteDecisaoLocal::novo("http://127.0.0.1:1").with_timeout(Duration::from_millis(300))),
+            local: Some(
+                ClienteDecisaoLocal::novo("http://127.0.0.1:1")
+                    .with_timeout(Duration::from_millis(300)),
+            ),
             remoto: Some(remoto_em(&remoto)),
         };
-        let dec = decidir_esforco(&d, &mensagens(), &ContextoDecisao::default(), 0.6, Superficie::Chat, None).await;
+        let dec = decidir_esforco(
+            &d,
+            &mensagens(),
+            &ContextoDecisao::default(),
+            0.6,
+            Superficie::Chat,
+            None,
+        )
+        .await;
         assert_eq!(dec.origem, Origem::Jev);
         assert_eq!(dec.fonte, Some(Fonte::Jev));
         assert!(dec.custo.is_some(), "o remoto informa custo");
@@ -593,17 +642,40 @@ mod tests {
     #[tokio::test]
     async fn a_low_confidence_local_answer_names_its_source_in_the_reason() {
         let local = Falso::subir(|_, _| (200, resposta_local("alto", 0.4)));
-        let d = Decisores { local: Some(local.cliente()), remoto: None };
-        let dec = decidir_esforco(&d, &mensagens(), &ContextoDecisao::default(), 0.6, Superficie::Chat, None).await;
+        let d = Decisores {
+            local: Some(local.cliente()),
+            remoto: None,
+        };
+        let dec = decidir_esforco(
+            &d,
+            &mensagens(),
+            &ContextoDecisao::default(),
+            0.6,
+            Superficie::Chat,
+            None,
+        )
+        .await;
         assert_eq!(dec.origem, Origem::Padrao);
         assert_eq!(dec.fonte, Some(Fonte::Local));
-        assert!(dec.motivo.as_deref().unwrap().starts_with("local: confian"), "{:?}", dec.motivo);
+        assert!(
+            dec.motivo.as_deref().unwrap().starts_with("local: confian"),
+            "{:?}",
+            dec.motivo
+        );
     }
 
     #[tokio::test]
     async fn without_any_decider_the_default_stays_with_a_reason() {
         let contadores = crate::jev_esforco::Contadores::default();
-        let dec = decidir_esforco(&Decisores::default(), &mensagens(), &ContextoDecisao::default(), 0.6, Superficie::Proxy, Some(&contadores)).await;
+        let dec = decidir_esforco(
+            &Decisores::default(),
+            &mensagens(),
+            &ContextoDecisao::default(),
+            0.6,
+            Superficie::Proxy,
+            Some(&contadores),
+        )
+        .await;
         assert_eq!(dec.origem, Origem::Padrao);
         assert_eq!(dec.motivo.as_deref(), Some("nenhum decisor configurado"));
         let r = contadores.resumo();

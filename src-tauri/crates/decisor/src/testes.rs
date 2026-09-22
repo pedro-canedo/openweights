@@ -302,7 +302,15 @@ async fn when_jev_is_unreachable_the_body_reaches_the_engine_untouched() {
     let motor = Falso::subir(Arc::new(|_| Resposta::Json(200, json!({"ok": true})))).await;
     // Porta fechada: nada escuta ali.
     let jev = jev_em("http://127.0.0.1:1");
-    let (s, contadores) = shim(&motor.url(), Decisores { local: None, remoto: Some(jev) }, qwen3()).await;
+    let (s, contadores) = shim(
+        &motor.url(),
+        Decisores {
+            local: None,
+            remoto: Some(jev),
+        },
+        qwen3(),
+    )
+    .await;
 
     let corpo = corpo_chat(false);
     let r = reqwest::Client::new()
@@ -405,12 +413,7 @@ async fn a_model_that_cannot_reason_never_costs_a_jev_call() {
         Resposta::Json(200, resposta_jev("alto", 0.9, 0.9))
     }))
     .await;
-    let (s, _) = shim(
-        &motor.url(),
-        remoto(&jev_falso.url()),
-        sem_raciocinio(),
-    )
-    .await;
+    let (s, _) = shim(&motor.url(), remoto(&jev_falso.url()), sem_raciocinio()).await;
 
     let r = reqwest::Client::new()
         .post(format!("{}/v1/chat/completions", s.base_url()))
@@ -572,7 +575,12 @@ async fn a_local_decision_is_preferred_and_marked_local() {
     assert_eq!(r.headers()["x-openweights-jev"], "alto;0.90;local");
     assert_eq!(jev_falso.chamadas(), 0, "o remoto é reserva");
     let pedido: Value = serde_json::from_slice(&local.registros()[0].corpo).unwrap();
-    assert!(pedido["contexts"][0].as_str().unwrap().contains("raiz de 2"));
+    assert!(
+        pedido["contexts"][0]
+            .as_str()
+            .unwrap()
+            .contains("raiz de 2")
+    );
     assert_eq!(pedido["schema"]["nivel"]["type"], "enum");
     let visto: Value = serde_json::from_slice(&motor.registros()[0].corpo).unwrap();
     assert_eq!(visto["chat_template_kwargs"]["enable_thinking"], true);
@@ -613,7 +621,10 @@ async fn when_the_local_decider_fails_the_remote_answers() {
 
 #[tokio::test]
 async fn v1_decision_is_forwarded_to_the_local_decider() {
-    let motor = Falso::subir(Arc::new(|_| panic!("o motor principal não tem /v1/decision"))).await;
+    let motor = Falso::subir(Arc::new(|_| {
+        panic!("o motor principal não tem /v1/decision")
+    }))
+    .await;
     let local = Falso::subir(Arc::new(|reg| {
         assert_eq!(reg.caminho, "/v1/decision");
         Resposta::Json(200, resposta_local("nenhum", 0.7))
@@ -625,7 +636,8 @@ async fn v1_decision_is_forwarded_to_the_local_decider() {
     };
     let (s, _) = shim(&motor.url(), decisores, qwen3()).await;
 
-    let corpo = json!({"schema": {"x": {"type": "boolean", "description": "?"}}, "contexts": ["oi"]});
+    let corpo =
+        json!({"schema": {"x": {"type": "boolean", "description": "?"}}, "contexts": ["oi"]});
     let r = reqwest::Client::new()
         .post(format!("{}/v1/decision", s.base_url()))
         .json(&corpo)
@@ -633,7 +645,10 @@ async fn v1_decision_is_forwarded_to_the_local_decider() {
         .await
         .unwrap();
     assert_eq!(r.status(), 200);
-    assert!(r.headers().get("x-openweights-jev").is_none(), "não é uma decisão do proxy");
+    assert!(
+        r.headers().get("x-openweights-jev").is_none(),
+        "não é uma decisão do proxy"
+    );
     let v: Value = r.json().await.unwrap();
     assert_eq!(v["object"], "decision");
     let visto: Value = serde_json::from_slice(&local.registros()[0].corpo).unwrap();
@@ -654,7 +669,12 @@ async fn v1_decision_without_a_local_decider_is_a_503() {
         .unwrap();
     assert_eq!(r.status(), 503);
     let v: Value = r.json().await.unwrap();
-    assert!(v["error"]["message"].as_str().unwrap().contains("decisor local"));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("decisor local")
+    );
     assert_eq!(motor.chamadas(), 0, "nunca chega ao motor");
     s.parar().await;
 }
@@ -664,7 +684,10 @@ async fn v1_decision_without_a_local_decider_is_a_503() {
 #[tokio::test]
 async fn v1_decision_is_served_even_when_the_gate_is_off() {
     let motor = Falso::subir(Arc::new(|_| Resposta::Json(200, json!({"ok": true})))).await;
-    let local = Falso::subir(Arc::new(|_| Resposta::Json(200, resposta_local("nenhum", 0.7)))).await;
+    let local = Falso::subir(Arc::new(|_| {
+        Resposta::Json(200, resposta_local("nenhum", 0.7))
+    }))
+    .await;
     let contadores = Arc::new(Contadores::default());
     let s = Shim::iniciar(ConfigShim {
         upstream: motor.url(),
@@ -693,6 +716,10 @@ async fn v1_decision_is_served_even_when_the_gate_is_off() {
         .await
         .unwrap();
     assert_eq!(r.status(), 200);
-    assert_eq!(local.chamadas(), 1, "só o repasse, nenhuma decisão do proxy");
+    assert_eq!(
+        local.chamadas(),
+        1,
+        "só o repasse, nenhuma decisão do proxy"
+    );
     s.parar().await;
 }

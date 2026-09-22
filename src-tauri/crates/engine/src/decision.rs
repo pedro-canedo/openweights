@@ -214,8 +214,16 @@ mod tests {
         );
         let args = cfg.to_args();
         let linha = args.join(" ");
-        assert!(linha.starts_with("-m /models/q.gguf --host 127.0.0.1 --port 11713 --decision-seqs 16 --parallel 1"), "{linha}");
-        assert!(linha.contains("-ngl 99 -fa on -c 8192 --no-webui"), "{linha}");
+        assert!(
+            linha.starts_with(
+                "-m /models/q.gguf --host 127.0.0.1 --port 11713 --decision-seqs 16 --parallel 1"
+            ),
+            "{linha}"
+        );
+        assert!(
+            linha.contains("-ngl 99 -fa on -c 8192 --no-webui"),
+            "{linha}"
+        );
         assert!(!linha.contains("--models-dir"));
         assert!(!linha.contains("--models-preset"));
         assert!(!linha.contains("--metrics"));
