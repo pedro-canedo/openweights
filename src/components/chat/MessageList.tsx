@@ -295,7 +295,7 @@ export default function MessageList({
                   {m.reasoning && (
                     <ThinkingBlock
                       reasoning={m.reasoning}
-                      badge={m.metrics?.jev ? t("generation.jevBadge", { effort: m.metrics.jev.effort }) : null}
+                      badge={m.metrics?.jev ? t(m.metrics.jev.source === "local" ? "generation.jevBadgeLocal" : "generation.jevBadge", { effort: m.metrics.jev.effort }) : null}
                       thinkingMs={
                         liveTimes(m, generating && i === messages.length - 1)
                           .thinkingMs
@@ -363,7 +363,7 @@ function RunMetrics({ metrics }: { metrics: GenerationMetrics }) {
       <dt>{t("generation.total")}</dt><dd>{time(metrics.totalMs)}</dd>
       <dt>{t("generation.prompt")}</dt><dd>{metrics.promptTokens ?? t("generation.unavailable")}</dd>
       <dt>{t("generation.cache")}</dt><dd>{metrics.cachedTokens ?? t("generation.unavailable")}</dd>
-      {metrics.jev && <><dt>{t("generation.jev")}</dt><dd>{t("generation.jevValue", { effort: metrics.jev.effort, confidence: metrics.jev.confidence == null ? "?" : Math.round(metrics.jev.confidence * 100) })}</dd></>}
+      {metrics.jev && <><dt>{t(metrics.jev.source === "local" ? "generation.jevLocal" : "generation.jev")}</dt><dd>{t("generation.jevValue", { effort: metrics.jev.effort, confidence: metrics.jev.confidence == null ? "?" : Math.round(metrics.jev.confidence * 100) })}</dd></>}
     </dl>
   </details>;
 }

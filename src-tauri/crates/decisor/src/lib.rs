@@ -68,9 +68,12 @@ pub struct ConfigShim {
     /// Raiz do motor, sem `/v1` (`http://127.0.0.1:11711`).
     pub upstream: String,
     pub porta_preferida: u16,
-    /// Vazia = sem decisão: o proxy vira passagem direta (e `/v1/decision`
-    /// responde 503).
+    /// Vazia = sem decisão no `chat/completions`: o proxy vira passagem direta.
     pub decisores: Decisores,
+    /// Raiz do decisor local, para repassar `POST /v1/decision`. Separada de
+    /// `decisores` de propósito: o portão dos harnesses pode estar desligado
+    /// e o endpoint continuar servido.
+    pub decisor_local_url: Option<String>,
     pub min_confianca: f32,
     pub capacidade: ResolverCapacidade,
     pub contadores: Arc<Contadores>,
@@ -79,6 +82,7 @@ pub struct ConfigShim {
 
 pub(crate) struct Politica {
     pub decisores: Decisores,
+    pub decisor_local_url: Option<String>,
     pub min_confianca: f32,
 }
 
@@ -146,6 +150,7 @@ impl Shim {
             upstream: cfg.upstream.trim_end_matches('/').to_string(),
             politica: RwLock::new(Politica {
                 decisores: cfg.decisores,
+                decisor_local_url: cfg.decisor_local_url,
                 min_confianca: cfg.min_confianca,
             }),
             capacidade: cfg.capacidade,
@@ -205,9 +210,15 @@ impl Shim {
     }
 
     /// Troca decisores e limiar sem derrubar conexões em curso.
-    pub async fn atualizar(&self, decisores: Decisores, min_confianca: f32) {
+    pub async fn atualizar(
+        &self,
+        decisores: Decisores,
+        decisor_local_url: Option<String>,
+        min_confianca: f32,
+    ) {
         let mut p = self.ctx.politica.write().await;
         p.decisores = decisores;
+        p.decisor_local_url = decisor_local_url;
         p.min_confianca = min_confianca;
     }
 

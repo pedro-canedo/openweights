@@ -109,10 +109,8 @@ async fn tratar(req: Request<Incoming>, ctx: &Ctx) -> Result<Response<Corpo>, Er
     // explica — não um 404 do motor.
     let destino = if e_decision(&partes.method, partes.uri.path()) {
         let p = ctx.politica.read().await;
-        p.decisores
-            .local
-            .as_ref()
-            .map(|c| c.base_url().to_string())
+        p.decisor_local_url
+            .clone()
             .ok_or(ErroProxy::SemDecisor)?
     } else {
         ctx.upstream.clone()

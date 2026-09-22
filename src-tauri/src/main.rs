@@ -58,6 +58,17 @@ fn main() {
                 loop {
                     match rx.recv().await {
                         Ok(ev) => {
+                            // O modelo do decisor local acabou de chegar: o
+                            // processo pode subir agora, sem esperar ninguém
+                            // reiniciar o motor.
+                            if commands_jev::e_download_do_decisor(&ev) {
+                                let app = handle.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    let state = app.state::<state::AppState>();
+                                    commands_jev::sincronizar_decisor_local(&app, &state).await;
+                                    commands_jev::sincronizar_shim(&app, &state).await;
+                                });
+                            }
                             let _ = handle.emit("download", &ev);
                         }
                         Err(RecvError::Lagged(n)) => {
@@ -236,6 +247,7 @@ fn main() {
             commands_jev::jev_status,
             commands_jev::jev_testar,
             commands_jev::jev_decidir_esforco,
+            commands_jev::jev_local_install,
         ])
         .build(tauri::generate_context!())
         .expect("erro ao iniciar o OpenWeights")

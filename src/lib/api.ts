@@ -58,6 +58,10 @@ export const ensurePrism = () =>
 export const onPrismEvent = (h: (e: RuntimeEvent) => void) =>
   listen<RuntimeEvent>("runtime-prism", h);
 
+/** O motor de decisão (fork `parallel-decision`) sendo instalado. */
+export const onDecisionEvent = (h: (e: RuntimeEvent) => void) =>
+  listen<RuntimeEvent>("runtime-decision", h);
+
 /**
  * Verificação funcional do motor: o que está no disco, se executa e se é a
  * build que esta versão do app espera.

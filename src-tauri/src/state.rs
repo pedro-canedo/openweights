@@ -61,6 +61,14 @@ pub struct AppState {
     /// Proxy do Jev na frente do motor, quando o portão dos harnesses está
     /// ligado. Opcional: o chat decide pelo IPC, sem passar por ele.
     pub decisor: tokio::sync::Mutex<Option<lr_decisor::Shim>>,
+    /// O decisor local (o llama-server do fork `parallel-decision`, com um
+    /// modelo pequeno só para decidir), quando instalado e ligado. Vive
+    /// junto do motor principal: sobe depois dele e cai com ele.
+    pub decisor_local: tokio::sync::Mutex<Option<lr_engine::DecisionServer>>,
+    /// PID do decisor local (0 = nenhum) — mesma rede de segurança dos outros.
+    pub decisor_local_pid: AtomicU32,
+    /// O decisor local respondeu ao `/health` e foi aquecido.
+    pub decisor_local_pronto: std::sync::atomic::AtomicBool,
     /// O que cada modelo local sabe fazer com raciocínio, lido do GGUF uma
     /// vez por nome. Compartilhado com o proxy.
     pub jev_capacidades:
@@ -250,6 +258,9 @@ impl AppState {
             gateway: tokio::sync::Mutex::new(None),
             gateway_pid: AtomicU32::new(0),
             decisor: tokio::sync::Mutex::new(None),
+            decisor_local: tokio::sync::Mutex::new(None),
+            decisor_local_pid: AtomicU32::new(0),
+            decisor_local_pronto: std::sync::atomic::AtomicBool::new(false),
             jev_capacidades: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             jev_contadores: Arc::new(lr_providers::Contadores::default()),
             motor_ativo: std::sync::Mutex::new(None),
@@ -297,6 +308,12 @@ impl AppState {
             }
             *guard = None;
         }
+        if let Ok(mut guard) = self.decisor_local.try_lock() {
+            if let Some(d) = guard.as_mut() {
+                d.stop_blocking();
+            }
+            *guard = None;
+        }
         if let Ok(mut guard) = self.ninerouter.try_lock() {
             if let Some(nr) = guard.as_mut() {
                 nr.stop_blocking();
@@ -329,6 +346,7 @@ impl AppState {
     fn kill_orphan_pids(&self) {
         for slot in [
             &*self.server_pid,
+            &self.decisor_local_pid,
             &self.ninerouter_pid,
             &self.dsh_pid,
             &self.gateway_pid,

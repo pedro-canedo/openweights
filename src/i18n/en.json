@@ -117,7 +117,8 @@
     "done": "Done",
     "error": "Error",
     "empty": "No downloads at the moment.",
-    "prismEngine": "PrismML engine (for Bonsai models)"
+    "prismEngine": "PrismML engine (for Bonsai models)",
+    "decisionEngine": "Decision engine (llama.cpp parallel-decision)"
   },
   "jobs": {
     "title": "Generating",
@@ -1002,15 +1003,51 @@
       "routesTitle": "Active addresses",
       "noRoutes": "No provider running. Start the local server or 9router."
     },
+    "decisions": {
+      "tab": "Decisions",
+      "title": "Decisions — the reflex in front of your models",
+      "subtitle": "Before each message, a decider picks how hard the local model should think: none, medium or high. It answers in milliseconds by scoring the options instead of writing text. The local decider runs on your GPU; the Jev model on OpenRouter is the fallback.",
+      "needsOne": "Install the local decider or set the OpenRouter key to enable.",
+      "source": {
+        "local": "local decider",
+        "jev": "Jev (OpenRouter)"
+      },
+      "testOk": "Sample decision: {{level}} ({{confidence}}% confidence) from the {{source}} in {{ms}} ms.",
+      "counters": "This session: {{calls}} calls ({{local}} local, {{remote}} remote), {{applied}} applied, {{failures}} failed, US$ {{cost}}",
+      "last": "last: {{level}} ({{confidence}}%) from {{where}}, by the {{source}}",
+      "local": {
+        "title": "Local decider",
+        "what": "A second llama-server, built from the parallel-decision fork of llama.cpp, with a small model dedicated to deciding. It starts with the local server and takes about 2.6 GB of VRAM while it runs. Nothing leaves this machine.",
+        "unsupported": "Needs Windows or Linux with an NVIDIA GPU on CUDA 13 (driver 580+).",
+        "notInstalled": "Not installed.",
+        "installing": "Installing the decision engine…",
+        "install": "Install ({{engine}} engine + {{model}} model)",
+        "missingModel": "The engine is installed; the model {{model}} is not in the library yet.",
+        "missingEngine": "The model is in the library; the engine is not installed yet.",
+        "both": "Downloads the engine and {{model}} to the library. Both show up in the downloads panel.",
+        "ready": "Ready at {{url}}.",
+        "loading": "Starting (loading the model)…",
+        "idle": "Installed. Starts with the local server.",
+        "off": "Installed, but switched off.",
+        "enable": "Use the local decider",
+        "autoOn": "(automatic: enough VRAM)",
+        "autoOff": "(automatic: off, less than 12 GB of VRAM)",
+        "model": "Model",
+        "vram": "This GPU has less than 12 GB. The decider holds about 2.6 GB next to the chat model, so it stays off unless you switch it on here."
+      },
+      "remote": {
+        "title": "Fallback: Jev on OpenRouter",
+        "model": "{{model}}, when the local decider does not answer.",
+        "enable": "Use Jev on OpenRouter as fallback"
+      }
+    },
     "jev": {
-      "title": "Jev — decision layer",
-      "subtitle": "A TypeSafe decision model, reached through OpenRouter, decides per message whether the local model should think and how hard. Faster on simple messages, no lost reasoning on hard ones. Costs a fraction of a cent per thousand messages.",
       "enable": "Enable",
-      "needsKey": "Set the OpenRouter key above to use Jev.",
+      "needsKey": "Set the OpenRouter key in the OpenRouter tab.",
       "on": "Deciding effort per message.",
       "off": "Off: each conversation uses its fixed effort.",
       "proxy": "harnesses go through {{url}}",
-      "privacy": "With this on, the current message and a short tail of the conversation are sent to TypeSafe via OpenRouter. Everything else stays local. Off by default.",
+      "privacy": "When the fallback answers, the current message and a short tail of the conversation are sent to TypeSafe via OpenRouter. Everything else stays local.",
       "gateChat": "Chat in the app",
       "gateHarness": "Coding agents (via local proxy)",
       "minConfidence": "Only act above",
@@ -1388,8 +1425,10 @@
     "prompt": "Processed tokens",
     "cache": "Cached tokens",
     "jev": "Effort decided by Jev",
+    "jevLocal": "Effort decided by the local decider",
     "jevValue": "{{effort}} ({{confidence}}% confidence)",
-    "jevBadge": "Jev: {{effort}}"
+    "jevBadge": "Jev: {{effort}}",
+    "jevBadgeLocal": "Local: {{effort}}"
   },
   "comparison": {
     "title": "Optimization",

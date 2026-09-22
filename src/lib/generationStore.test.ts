@@ -88,7 +88,13 @@ describe("generation coordination", () => {
     store.start({ ...opts(1), params: { effort: "high" } as any }); await vi.advanceTimersByTimeAsync(10);
     expect(mocks.jev).toHaveBeenCalledWith("m", [{ role: "user", content: "hi" }], "high");
     expect(mocks.stream.mock.calls[0][0].params.effort).toBe("low");
-    expect(store.jobFor(1)?.metrics.jev).toEqual({ effort: "low", confidence: 0.82 });
+    expect(store.jobFor(1)?.metrics.jev).toEqual({ effort: "low", confidence: 0.82, source: "jev" });
+  });
+  it("applies a decision from the local decider and remembers the source", async () => {
+    mocks.jev.mockResolvedValue({ effort: "high", source: "local", confidence: 0.91, cost: null, reason: null });
+    store.start({ ...opts(1), params: { effort: "low" } as any }); await vi.advanceTimersByTimeAsync(10);
+    expect(mocks.stream.mock.calls[0][0].params.effort).toBe("high");
+    expect(store.jobFor(1)?.metrics.jev).toEqual({ effort: "high", confidence: 0.91, source: "local" });
   });
   it("keeps the conversation effort when Jev falls back to the default", async () => {
     mocks.jev.mockResolvedValue({ effort: "high", source: "padrao", confidence: 0.41, cost: 1e-6, reason: "confiança baixa" });

@@ -117,7 +117,8 @@
     "done": "Concluído",
     "error": "Erro",
     "empty": "Nenhum download no momento.",
-    "prismEngine": "Motor PrismML (para modelos Bonsai)"
+    "prismEngine": "Motor PrismML (para modelos Bonsai)",
+    "decisionEngine": "Motor de decisão (llama.cpp parallel-decision)"
   },
   "jobs": {
     "title": "Gerando",
@@ -1002,15 +1003,51 @@
       "routesTitle": "Endereços ativos",
       "noRoutes": "Nenhum provedor no ar. Inicie o servidor local ou o 9router."
     },
+    "decisions": {
+      "tab": "Decisões",
+      "title": "Decisões — o reflexo na frente dos seus modelos",
+      "subtitle": "Antes de cada mensagem, um decisor escolhe quanto o modelo local deve pensar: nada, médio ou alto. Responde em milissegundos pontuando as opções em vez de escrever texto. O decisor local roda na sua GPU; o modelo Jev no OpenRouter é a reserva.",
+      "needsOne": "Instale o decisor local ou configure a chave do OpenRouter para ativar.",
+      "source": {
+        "local": "decisor local",
+        "jev": "Jev (OpenRouter)"
+      },
+      "testOk": "Decisão de amostra: {{level}} ({{confidence}}% de confiança) pelo {{source}} em {{ms}} ms.",
+      "counters": "Nesta sessão: {{calls}} consultas ({{local}} locais, {{remote}} remotas), {{applied}} aplicadas, {{failures}} falhas, US$ {{cost}}",
+      "last": "última: {{level}} ({{confidence}}%) vinda de {{where}}, pelo {{source}}",
+      "local": {
+        "title": "Decisor local",
+        "what": "Um segundo llama-server, compilado do fork parallel-decision do llama.cpp, com um modelo pequeno só para decidir. Sobe junto do servidor local e ocupa cerca de 2,6 GB de VRAM enquanto roda. Nada sai desta máquina.",
+        "unsupported": "Precisa de Windows ou Linux com GPU NVIDIA em CUDA 13 (driver 580+).",
+        "notInstalled": "Não instalado.",
+        "installing": "Instalando o motor de decisão…",
+        "install": "Instalar (motor de {{engine}} + modelo de {{model}})",
+        "missingModel": "O motor está instalado; o modelo {{model}} ainda não está na biblioteca.",
+        "missingEngine": "O modelo está na biblioteca; o motor ainda não está instalado.",
+        "both": "Baixa o motor e o {{model}} para a biblioteca. Os dois aparecem no painel de downloads.",
+        "ready": "Pronto em {{url}}.",
+        "loading": "Subindo (carregando o modelo)…",
+        "idle": "Instalado. Sobe junto do servidor local.",
+        "off": "Instalado, mas desligado.",
+        "enable": "Usar o decisor local",
+        "autoOn": "(automático: VRAM suficiente)",
+        "autoOff": "(automático: desligado, menos de 12 GB de VRAM)",
+        "model": "Modelo",
+        "vram": "Esta GPU tem menos de 12 GB. O decisor ocupa cerca de 2,6 GB ao lado do modelo do chat, então fica desligado a menos que você o ligue aqui."
+      },
+      "remote": {
+        "title": "Reserva: Jev no OpenRouter",
+        "model": "{{model}}, quando o decisor local não responde.",
+        "enable": "Usar o Jev do OpenRouter como reserva"
+      }
+    },
     "jev": {
-      "title": "Jev — camada de decisão",
-      "subtitle": "Um modelo de decisão da TypeSafe, acessado pelo OpenRouter, decide a cada mensagem se o modelo local deve pensar e quanto. Mais rápido nas mensagens simples, sem perder raciocínio nas difíceis. Custa fração de centavo por mil mensagens.",
       "enable": "Ativar",
-      "needsKey": "Configure a chave do OpenRouter acima para usar o Jev.",
+      "needsKey": "Configure a chave do OpenRouter na aba OpenRouter.",
       "on": "Decidindo o esforço a cada mensagem.",
       "off": "Desligado: cada conversa usa o esforço fixo dela.",
       "proxy": "agentes passam por {{url}}",
-      "privacy": "Com isto ligado, a mensagem atual e um trecho curto da conversa são enviados à TypeSafe pelo OpenRouter. Todo o resto continua local. Vem desligado.",
+      "privacy": "Quando a reserva responde, a mensagem atual e um trecho curto da conversa são enviados à TypeSafe pelo OpenRouter. Todo o resto continua local.",
       "gateChat": "Chat do app",
       "gateHarness": "Agentes de código (via proxy local)",
       "minConfidence": "Só agir acima de",
@@ -1388,8 +1425,10 @@
     "prompt": "Tokens processados",
     "cache": "Tokens de cache",
     "jev": "Esforço decidido pelo Jev",
+    "jevLocal": "Esforço decidido pelo decisor local",
     "jevValue": "{{effort}} ({{confidence}}% de confiança)",
-    "jevBadge": "Jev: {{effort}}"
+    "jevBadge": "Jev: {{effort}}",
+    "jevBadgeLocal": "Local: {{effort}}"
   },
   "comparison": {
     "title": "Otimização",

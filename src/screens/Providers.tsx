@@ -62,6 +62,7 @@ export default function Providers() {
   const abas: TabDef[] = [
     { id: "local", label: t("providers.name.local") },
     { id: "openrouter", label: t("providers.name.openrouter") },
+    { id: "decisions", label: t("providers.decisions.tab") },
     { id: "9router", label: t("providers.name.9router") },
     { id: "gateway", label: t("providers.gateway.tab") },
   ];
@@ -112,8 +113,8 @@ export default function Providers() {
         {aba === "openrouter" && <>
           <p className="text-xs text-dim">{t("providers.cloudUpdates")}</p>
           <OpenRouterCard />
-          <JevCard />
         </>}
+        {aba === "decisions" && <JevCard />}
         {aba === "gateway" && <GatewayCard />}
         {aba === "9router" && (
           <>

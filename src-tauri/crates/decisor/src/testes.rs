@@ -172,10 +172,12 @@ async fn shim(
     capacidade: ResolverCapacidade,
 ) -> (Shim, Arc<Contadores>) {
     let contadores = Arc::new(Contadores::default());
+    let decisor_local_url = decisores.local.as_ref().map(|c| c.base_url().to_string());
     let s = Shim::iniciar(ConfigShim {
         upstream: upstream.to_string(),
         porta_preferida: 0,
         decisores,
+        decisor_local_url,
         min_confianca: 0.6,
         capacidade,
         contadores: contadores.clone(),
@@ -498,6 +500,7 @@ async fn a_busy_preferred_port_falls_back_to_an_ephemeral_one() {
         upstream: "http://127.0.0.1:1".into(),
         porta_preferida: porta,
         decisores: Decisores::default(),
+        decisor_local_url: None,
         min_confianca: 0.6,
         capacidade: qwen3(),
         contadores: Arc::new(Contadores::default()),
@@ -529,7 +532,7 @@ async fn updating_the_policy_switches_decisions_on_without_a_restart() {
         .unwrap();
     assert_eq!(r.headers()["x-openweights-jev"], "default;jev desligado");
 
-    s.atualizar(remoto(&jev_falso.url()), 0.6).await;
+    s.atualizar(remoto(&jev_falso.url()), None, 0.6).await;
     let r = cliente
         .post(&url)
         .json(&corpo_chat(false))
@@ -653,5 +656,43 @@ async fn v1_decision_without_a_local_decider_is_a_503() {
     let v: Value = r.json().await.unwrap();
     assert!(v["error"]["message"].as_str().unwrap().contains("decisor local"));
     assert_eq!(motor.chamadas(), 0, "nunca chega ao motor");
+    s.parar().await;
+}
+
+/// Portão dos harnesses desligado: o proxy não decide, mas o endpoint do
+/// decisor local continua servido.
+#[tokio::test]
+async fn v1_decision_is_served_even_when_the_gate_is_off() {
+    let motor = Falso::subir(Arc::new(|_| Resposta::Json(200, json!({"ok": true})))).await;
+    let local = Falso::subir(Arc::new(|_| Resposta::Json(200, resposta_local("nenhum", 0.7)))).await;
+    let contadores = Arc::new(Contadores::default());
+    let s = Shim::iniciar(ConfigShim {
+        upstream: motor.url(),
+        porta_preferida: 0,
+        decisores: Decisores::default(),
+        decisor_local_url: Some(local.url()),
+        min_confianca: 0.6,
+        capacidade: qwen3(),
+        contadores,
+        tempo_decisao: Duration::from_millis(800),
+    })
+    .await
+    .unwrap();
+    let cliente = reqwest::Client::new();
+    let r = cliente
+        .post(format!("{}/v1/chat/completions", s.base_url()))
+        .json(&corpo_chat(false))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.headers()["x-openweights-jev"], "default;jev desligado");
+    let r = cliente
+        .post(format!("{}/v1/decision", s.base_url()))
+        .json(&json!({"schema": {}, "contexts": ["oi"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert_eq!(local.chamadas(), 1, "só o repasse, nenhuma decisão do proxy");
     s.parar().await;
 }

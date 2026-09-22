@@ -640,11 +640,22 @@ pub async fn download_start(
             }
         });
     }
+    enfileirar_download(&state, &repo_id, &artifact_name).await
+}
+
+/// Enfileira o download de um artefato do Hub. Compartilhado com o decisor
+/// local, que baixa o próprio modelo pelo mesmo caminho (e aparece no mesmo
+/// painel).
+pub(crate) async fn enfileirar_download(
+    state: &AppState,
+    repo_id: &str,
+    artifact_name: &str,
+) -> CmdResult<String> {
     // Renova a sessão antes de listar e de baixar: quem entrou com a conta
     // tem um token com hora para morrer, e um download começa agora e termina
     // em horas.
-    let hf = hf_pronto(&state).await;
-    let files = hf.repo_files(&repo_id).await.map_err(err_str)?;
+    let hf = hf_pronto(state).await;
+    let files = hf.repo_files(repo_id).await.map_err(err_str)?;
     let artifact = lr_models::group_artifacts(&files)
         .into_iter()
         .find(|a| a.name == artifact_name)
@@ -654,8 +665,8 @@ pub async fn download_start(
     state
         .downloads
         .enqueue(DownloadRequest {
-            repo_id,
-            artifact_name,
+            repo_id: repo_id.to_string(),
+            artifact_name: artifact_name.to_string(),
             files: artifact.files,
             token,
         })
@@ -1414,6 +1425,8 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
     // O conjunto de modelos pode ter mudado; e com o motor de pé o proxy do
     // Jev tem para onde encaminhar.
     crate::commands_jev::esquecer_capacidades(state);
+    // O decisor local sobe ANTES do proxy: o proxy nasce já sabendo a URL dele.
+    crate::commands_jev::sincronizar_decisor_local(app, state).await;
     crate::commands_jev::sincronizar_shim(app, state).await;
     // Com o motor de pé, a varredura automática pode perguntar quanto cada
     // configuração custa. Vai em segundo plano: a garantia barata do boot já
@@ -1449,7 +1462,9 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
     state
         .server_pid
         .store(0, std::sync::atomic::Ordering::SeqCst);
-    // Sem motor não há para onde encaminhar: o proxy do Jev desce junto.
+    // Sem motor não há para onde encaminhar: o decisor local e o proxy do
+    // Jev descem junto.
+    crate::commands_jev::sincronizar_decisor_local(app, state).await;
     crate::commands_jev::sincronizar_shim(app, state).await;
     *state.motor_ativo.lock().unwrap_or_else(|e| e.into_inner()) = None;
     let prefs = server_prefs(state);

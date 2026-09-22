@@ -6,6 +6,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import type { DownloadStatus } from "../lib/types";
 import { carregarPrism, prismStore } from "../lib/prism";
+import { assinarDecisor, decisionStore } from "../lib/decision";
 import {
   cancelDownload,
   listDownloads,
@@ -196,16 +197,57 @@ function PrismRow() {
   );
 }
 
+// A linha do motor de decisão (o llama-server do fork `parallel-decision`),
+// instalado a partir do cartão do Jev. O modelo dele é um download comum e
+// aparece como qualquer outro.
+function DecisionRow() {
+  const { t } = useTranslation();
+  const snap = useSyncExternalStore(decisionStore.subscribe, decisionStore.get);
+  if (!snap.installing && !snap.error) return null;
+  const pct =
+    snap.progress?.kind === "progress" && snap.progress.totalBytes > 0
+      ? Math.min(100, (snap.progress.receivedBytes / snap.progress.totalBytes) * 100)
+      : null;
+  return (
+    <div className="border-b border-edge px-4 py-3 last:border-b-0">
+      <p className="truncate text-xs font-medium text-ink">{t("downloadsPanel.decisionEngine")}</p>
+      <p className="truncate text-[11px] text-dim">thecodacus/llama.cpp · parallel-decision</p>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel2">
+        <div
+          className={`h-full rounded-full transition-[width] duration-300 ${snap.error ? "bg-bad" : "bg-accent"} ${pct == null && !snap.error ? "w-1/3 animate-pulse" : ""}`}
+          style={pct == null ? undefined : { width: `${pct}%` }}
+        />
+      </div>
+      <div className="mt-1.5 text-[11px] tabular-nums text-dim">
+        {snap.error ? (
+          <span className="font-medium text-bad" title={snap.error}>
+            {t("downloadsPanel.error")} — {snap.error}
+          </span>
+        ) : snap.progress?.kind === "progress" ? (
+          <span>
+            {formatBytes(snap.progress.receivedBytes)} / {formatBytes(snap.progress.totalBytes)}
+          </span>
+        ) : (
+          <span>{t("providers.decisions.local.installing")}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DownloadsPanel() {
   const { t } = useTranslation();
   const [items, setItems] = useState<DownloadStatus[]>([]);
   const [open, setOpen] = useState(false);
   const prism = useSyncExternalStore(prismStore.subscribe, prismStore.get);
+  const decision = useSyncExternalStore(decisionStore.subscribe, decisionStore.get);
 
-  // Assina o canal do motor da PrismML: a instalação começa no backend,
-  // junto do download, e o painel é onde ela tem de aparecer.
+  // Assina os canais dos motores opcionais: a instalação começa no backend
+  // (junto do download, ou pelo cartão do Jev) e o painel é onde ela tem de
+  // aparecer.
   useEffect(() => {
     void carregarPrism();
+    assinarDecisor();
   }, []);
 
   useEffect(() => {
@@ -237,7 +279,9 @@ export default function DownloadsPanel() {
   }, []);
 
   const prismAtivo = prism.installing || !!prism.error;
-  if (items.length === 0 && !prismAtivo) return null;
+  const decisionAtivo = decision.installing || !!decision.error;
+  const extras = (prismAtivo ? 1 : 0) + (decisionAtivo ? 1 : 0);
+  if (items.length === 0 && extras === 0) return null;
 
   const active = items.filter((d) => ACTIVE_STATES.has(d.state));
   const totalBytes = active.reduce((s, d) => s + d.totalBytes, 0);
@@ -253,7 +297,7 @@ export default function DownloadsPanel() {
               {t("downloadsPanel.title")}
             </span>
             <span className="rounded-full bg-panel2 px-2 py-0.5 text-[11px] text-dim">
-              {items.length + (prismAtivo ? 1 : 0)}
+              {items.length + extras}
             </span>
             <button
               onClick={() => setOpen(false)}
@@ -275,6 +319,7 @@ export default function DownloadsPanel() {
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <PrismRow />
+            <DecisionRow />
             {items.map((d) => (
               <DownloadRow key={d.id} status={d} />
             ))}
@@ -288,7 +333,7 @@ export default function DownloadsPanel() {
         className="flex items-center gap-2.5 rounded-full border border-edge bg-panel py-2 pr-4 pl-3 shadow-lg transition-colors hover:border-accent"
       >
         <svg
-          className={`h-4 w-4 ${active.length > 0 || prism.installing ? "text-accent" : "text-dim"}`}
+          className={`h-4 w-4 ${active.length > 0 || prism.installing || decision.installing ? "text-accent" : "text-dim"}`}
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
@@ -311,7 +356,7 @@ export default function DownloadsPanel() {
             </span>
           </>
         ) : (
-          <span className="text-xs font-medium text-ink">{items.length + (prismAtivo ? 1 : 0)}</span>
+          <span className="text-xs font-medium text-ink">{items.length + extras}</span>
         )}
       </button>
     </div>

@@ -28,8 +28,8 @@ export interface GenerationMetrics {
   firstTokenMs: number | null; firstAnswerMs: number | null; totalMs: number | null;
   promptTokens: number | null; cachedTokens: number | null; promptTps: number | null;
   thinkingMs: number | null;
-  /** Presente quando o Jev decidiu o esforço desta resposta. */
-  jev?: { effort: EffortLevel; confidence: number | null };
+  /** Presente quando um decisor (local ou o Jev remoto) decidiu o esforço desta resposta. */
+  jev?: { effort: EffortLevel; confidence: number | null; source?: "local" | "jev" };
 }
 export interface GenerationJob {
   createdAt: number;
@@ -289,9 +289,9 @@ async function runJob(row: InternalJob): Promise<void> {
     if (provider === "local" && params?.effort) {
       const d = await jevDecideEffort(resolved, summarizeForJev(row.opts.messages), params.effort);
       if (cancelled()) return;
-      if (d?.source === "jev") {
+      if (d && d.source !== "padrao") {
         params = { ...params, effort: d.effort };
-        patch(chatId, { metrics: { ...row.public.metrics, jev: { effort: d.effort, confidence: d.confidence } } });
+        patch(chatId, { metrics: { ...row.public.metrics, jev: { effort: d.effort, confidence: d.confidence, source: d.source } } });
       }
     }
     // Sem evento confirmado do motor, espera não significa carregamento.
