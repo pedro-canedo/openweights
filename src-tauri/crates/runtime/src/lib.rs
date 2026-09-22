@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 mod check;
+pub mod decision;
 pub mod experimental;
 mod manager;
 pub mod prism;

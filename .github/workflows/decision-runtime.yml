@@ -1,0 +1,94 @@
+name: Decision runtime
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+        description: Publish verified packages for the app
+permissions:
+  contents: read
+concurrency:
+  group: decision-runtime-14d04e75-v1
+  cancel-in-progress: false
+env:
+  # Ponta de `parallel-decision` (thecodacus/llama.cpp): o llama-server com
+  # `POST /v1/decision`. Sem releases lá em cima, o pacote é nosso.
+  DECISION_REVISION: 14d04e755fa28653e87b9a07072892265bdc0fad
+  DECISION_TAG: decision-runtime-14d04e75-v1
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: thecodacus/llama.cpp
+          ref: 14d04e755fa28653e87b9a07072892265bdc0fad
+          path: engine-source
+      # A action desse ponto do upstream conhece 11.7/12.4/13.1/13.4 — não 13.3.
+      - uses: ./engine-source/.github/actions/windows-setup-cuda
+        with:
+          cuda_version: '13.4'
+          cuda_arch: x64
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake -S engine-source -B engine-build -DGGML_CUDA=ON -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF '-DCMAKE_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120'
+          if ($LASTEXITCODE) { throw 'Configure failed' }
+          cmake --build engine-build --config Release --parallel 3 --target llama-server
+          if ($LASTEXITCODE) { throw 'Build failed' }
+      - name: Package and smoke test
+        shell: pwsh
+        run: python scripts/package-runtime.py engine-source engine-build/bin/Release output --tag $env:DECISION_TAG --revision $env:DECISION_REVISION --source-id decision --backend cuda-13.4 --require-flag --decision-seqs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decision-windows
+          path: output/*
+  linux:
+    runs-on: ubuntu-24.04
+    container: nvidia/cuda:13.4.1-devel-ubuntu24.04
+    steps:
+      - name: Dependencies
+        run: apt-get update && apt-get install -y git cmake build-essential python3 libgomp1
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: thecodacus/llama.cpp
+          ref: 14d04e755fa28653e87b9a07072892265bdc0fad
+          path: engine-source
+      - name: Build
+        run: |
+          cmake -S engine-source -B engine-build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF '-DCMAKE_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120' '-DCMAKE_BUILD_RPATH=$ORIGIN' '-DCMAKE_INSTALL_RPATH=$ORIGIN'
+          cmake --build engine-build --parallel 3 --target llama-server
+      - name: Package and smoke test
+        run: python3 scripts/package-runtime.py engine-source engine-build/bin output --tag "$DECISION_TAG" --revision "$DECISION_REVISION" --source-id decision --backend cuda-13.4 --require-flag --decision-seqs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decision-linux
+          path: output/*
+  publish:
+    if: inputs.publish
+    needs: [windows, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: decision-*
+          merge-multiple: true
+          path: output
+      - name: Publish immutable runtime release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # A tag é imutável, mas uma publicação parcial (um dos dois sistemas
+          # falhou) precisa de caminho de volta: reenviar os anexos na release
+          # que já existe, em vez de deixar a tag travada.
+          if gh release view "$DECISION_TAG" >/dev/null 2>&1; then
+            gh release upload "$DECISION_TAG" output/* --clobber
+          else
+            gh release create "$DECISION_TAG" output/* --target "$GITHUB_SHA" --prerelease --title 'Decision runtime' --notes "CUDA 13.4 llama-server built from thecodacus/llama.cpp (parallel-decision) at $DECISION_REVISION: the local decider behind OpenWeights' Jev (POST /v1/decision). Install through OpenWeights."
+          fi
