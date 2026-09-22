@@ -15,6 +15,8 @@ if __name__ == "__main__":
         str(Path(__file__).with_name("package-runtime.py")),
         *sys.argv[1:4],
         "--tag", TAG, "--revision", REVISION, "--source-id", "moeCache", "--backend", "cuda-13.3",
-        "--require-flag", "--moe-expert-cache-size", "--binaries", "llama-server,llama-bench,llama-fit-params",
+        # `--require-flag=` com o igual: o valor começa com dois traços e o
+        # argparse o tomaria por outra opção se viesse separado.
+        "--require-flag=--moe-expert-cache-size", "--binaries", "llama-server,llama-bench,llama-fit-params",
     ]
     runpy.run_path(sys.argv[0], run_name="__main__")

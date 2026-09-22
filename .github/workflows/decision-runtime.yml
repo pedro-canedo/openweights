@@ -44,7 +44,7 @@ jobs:
           cmake --build engine-build --config Release --parallel 3 --target llama-server || exit /b 1
       - name: Package and smoke test
         shell: pwsh
-        run: python scripts/package-runtime.py engine-source engine-build/bin/Release output --tag $env:DECISION_TAG --revision $env:DECISION_REVISION --source-id decision --backend cuda-13.4 --require-flag --decision-seqs
+        run: python scripts/package-runtime.py engine-source engine-build/bin/Release output --tag $env:DECISION_TAG --revision $env:DECISION_REVISION --source-id decision --backend cuda-13.4 --require-flag=--decision-seqs
       - uses: actions/upload-artifact@v4
         with:
           name: decision-windows
@@ -70,7 +70,7 @@ jobs:
           cmake -S engine-source -B engine-build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CUDA_NO_VMM=ON -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF '-DCMAKE_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120' '-DCMAKE_BUILD_RPATH=$ORIGIN' '-DCMAKE_INSTALL_RPATH=$ORIGIN'
           cmake --build engine-build --parallel 3 --target llama-server
       - name: Package and smoke test
-        run: python3 scripts/package-runtime.py engine-source engine-build/bin output --tag "$DECISION_TAG" --revision "$DECISION_REVISION" --source-id decision --backend cuda-13.4 --require-flag --decision-seqs
+        run: python3 scripts/package-runtime.py engine-source engine-build/bin output --tag "$DECISION_TAG" --revision "$DECISION_REVISION" --source-id decision --backend cuda-13.4 --require-flag=--decision-seqs
       - uses: actions/upload-artifact@v4
         with:
           name: decision-linux
