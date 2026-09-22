@@ -31,13 +31,17 @@ jobs:
         with:
           cuda_version: '13.4'
           cuda_arch: x64
+      # A action instala o toolkit a partir dos zips do redist, sem a
+      # integração CUDA do Visual Studio — o gerador do VS morre com "No CUDA
+      # toolset found". Ninja depois do vcvarsall é o que o upstream faz.
+      - name: Install Ninja
+        run: choco install ninja
       - name: Build
-        shell: pwsh
+        shell: cmd
         run: |
-          cmake -S engine-source -B engine-build -DGGML_CUDA=ON -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF '-DCMAKE_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120'
-          if ($LASTEXITCODE) { throw 'Configure failed' }
-          cmake --build engine-build --config Release --parallel 3 --target llama-server
-          if ($LASTEXITCODE) { throw 'Build failed' }
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          cmake -S engine-source -B engine-build -G "Ninja Multi-Config" -DGGML_CUDA=ON -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF "-DCMAKE_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120" || exit /b 1
+          cmake --build engine-build --config Release --parallel 3 --target llama-server || exit /b 1
       - name: Package and smoke test
         shell: pwsh
         run: python scripts/package-runtime.py engine-source engine-build/bin/Release output --tag $env:DECISION_TAG --revision $env:DECISION_REVISION --source-id decision --backend cuda-13.4 --require-flag --decision-seqs
@@ -59,7 +63,11 @@ jobs:
           path: engine-source
       - name: Build
         run: |
-          cmake -S engine-source -B engine-build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF '-DCMAKE_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120' '-DCMAKE_BUILD_RPATH=$ORIGIN' '-DCMAKE_INSTALL_RPATH=$ORIGIN'
+          # Sem VMM o ggml-cuda não linka a API de driver (libcuda.so.1), que
+          # não existe no container — só o stub — e faria o link do
+          # llama-server falhar. Para um decisor de 1,5B o pool de VMM não
+          # faz diferença.
+          cmake -S engine-source -B engine-build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=ON -DGGML_CUDA_NO_VMM=ON -DGGML_NATIVE=OFF -DLLAMA_CURL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF '-DCMAKE_CUDA_ARCHITECTURES=75-real;80-real;86-real;89-real;90-real;100-real;120' '-DCMAKE_BUILD_RPATH=$ORIGIN' '-DCMAKE_INSTALL_RPATH=$ORIGIN'
           cmake --build engine-build --parallel 3 --target llama-server
       - name: Package and smoke test
         run: python3 scripts/package-runtime.py engine-source engine-build/bin output --tag "$DECISION_TAG" --revision "$DECISION_REVISION" --source-id decision --backend cuda-13.4 --require-flag --decision-seqs
