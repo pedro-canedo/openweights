@@ -20,6 +20,7 @@
 //!   num crash; `taskkill /T` é o cinto se o job não puder ser criado.
 
 pub mod client;
+pub mod decision;
 pub mod metrics;
 pub mod props;
 
@@ -28,6 +29,7 @@ pub use client::{
     ImageUrl, LlamaClient, MessageContent, NamedFunction, NamedToolChoice, Timings, ToolCallMsg,
     ToolCallReq, ToolChoice,
 };
+pub use decision::{DECISION_PORTA_PADRAO, DecisionServer, DecisionServerConfig};
 pub use props::{ChatTemplateCaps, ServerProps, parse_props};
 
 /// Onde o modelo atende.
@@ -492,24 +494,19 @@ impl LlamaServer {
         if self.child.is_some() {
             return Ok(());
         }
-        let mut cmd = Command::new(&self.config.exe_path);
-        cmd.args(self.config.to_args())
-            // A chave de API entra por ambiente, nunca por argv (vazaria no
-            // process list e no `log::info!` logo abaixo).
-            .envs(self.config.env_vars())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        lr_proc::prepare(&mut cmd);
-        if let Some(dir) = self.config.exe_path.parent() {
-            cmd.current_dir(dir);
-        }
         log::info!(
             "iniciando llama-server: {} {}",
             self.config.exe_path.display(),
             self.config.to_args().join(" ")
         );
-        let child = lr_proc::spawn_supervised(&mut cmd)?;
-        self.job = lr_proc::attach_job(&child);
+        // A chave de API entra por ambiente, nunca por argv (vazaria no
+        // process list e no `log::info!` acima).
+        let (child, job) = spawn_llama(
+            &self.config.exe_path,
+            &self.config.to_args(),
+            &self.config.env_vars(),
+        )?;
+        self.job = job;
         self.child = Some(child);
         Ok(())
     }
@@ -675,15 +672,44 @@ impl LlamaServer {
         if pid.is_some() {
             log::info!("encerrando llama-server pid={pid:?}");
         }
-        if let Some(job) = self.job.take() {
-            lr_proc::terminate_job(&job);
-        } else if let Some(pid) = pid {
-            kill_process_tree(pid);
-        }
-        if let Some(mut child) = self.child.take() {
-            let _ = child.start_kill();
-            lr_proc::reap_child(&mut child);
-        }
+        stop_llama(&mut self.child, &mut self.job);
+    }
+}
+
+/// Sobe um binário do llama.cpp como sidecar supervisionado, com stdout e
+/// stderr em pipes e a pasta do executável como diretório de trabalho (as
+/// DLLs do CUDA moram ao lado dele). Compartilhado pelo roteador e pelo
+/// decisor local.
+pub(crate) fn spawn_llama(
+    exe: &Path,
+    args: &[String],
+    envs: &[(String, String)],
+) -> Result<(Child, Option<lr_proc::JobGuard>), EngineError> {
+    let mut cmd = Command::new(exe);
+    cmd.args(args)
+        .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    lr_proc::prepare(&mut cmd);
+    if let Some(dir) = exe.parent() {
+        cmd.current_dir(dir);
+    }
+    let child = lr_proc::spawn_supervised(&mut cmd)?;
+    let job = lr_proc::attach_job(&child);
+    Ok((child, job))
+}
+
+/// Mata o processo e os netos de forma síncrona.
+pub(crate) fn stop_llama(child: &mut Option<Child>, job: &mut Option<lr_proc::JobGuard>) {
+    let pid = child.as_ref().and_then(Child::id);
+    if let Some(job) = job.take() {
+        lr_proc::terminate_job(&job);
+    } else if let Some(pid) = pid {
+        kill_process_tree(pid);
+    }
+    if let Some(mut child) = child.take() {
+        let _ = child.start_kill();
+        lr_proc::reap_child(&mut child);
     }
 }
 

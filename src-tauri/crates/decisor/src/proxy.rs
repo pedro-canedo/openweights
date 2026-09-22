@@ -1,5 +1,6 @@
 //! O tratamento de cada requisição: passagem direta para tudo, decisão e
-//! reescrita só no `chat/completions`.
+//! reescrita só no `chat/completions`, e o `POST /v1/decision` repassado ao
+//! decisor local.
 
 use std::convert::Infallible;
 use std::sync::Arc;
@@ -51,12 +52,15 @@ enum ErroProxy {
     CorpoGrande,
     #[error("falha ao ler o corpo: {0}")]
     Corpo(String),
+    #[error("decisor local desligado: instale o motor de decisão em Fontes → Decisões")]
+    SemDecisor,
 }
 
 impl ErroProxy {
     fn status(&self) -> StatusCode {
         match self {
             Self::Upstream(_) => StatusCode::BAD_GATEWAY,
+            Self::SemDecisor => StatusCode::SERVICE_UNAVAILABLE,
             Self::CorpoGrande => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Http(_) | Self::Uri(_) | Self::Corpo(_) => StatusCode::BAD_REQUEST,
         }
@@ -92,9 +96,27 @@ fn e_chat_completions(metodo: &Method, caminho: &str) -> bool {
     *metodo == Method::POST && matches!(caminho, "/v1/chat/completions" | "/chat/completions")
 }
 
+/// O endpoint do decisor local, que o motor principal não tem.
+fn e_decision(metodo: &Method, caminho: &str) -> bool {
+    *metodo == Method::POST && matches!(caminho, "/v1/decision" | "/decision")
+}
+
 async fn tratar(req: Request<Incoming>, ctx: &Ctx) -> Result<Response<Corpo>, ErroProxy> {
     let (mut partes, corpo) = req.into_parts();
     let chat = e_chat_completions(&partes.method, partes.uri.path());
+    // Uma decisão crua vai para o decisor local, que fala o mesmo HTTP: o
+    // corpo atravessa sem leitura, e sem decisor a resposta é um 503 que
+    // explica — não um 404 do motor.
+    let destino = if e_decision(&partes.method, partes.uri.path()) {
+        let p = ctx.politica.read().await;
+        p.decisores
+            .local
+            .as_ref()
+            .map(|c| c.base_url().to_string())
+            .ok_or(ErroProxy::SemDecisor)?
+    } else {
+        ctx.upstream.clone()
+    };
 
     let (corpo, marca): (Corpo, Option<String>) = if chat {
         let bytes = Limited::new(corpo, TETO_CORPO)
@@ -125,7 +147,7 @@ async fn tratar(req: Request<Incoming>, ctx: &Ctx) -> Result<Response<Corpo>, Er
         .path_and_query()
         .map(|p| p.as_str())
         .unwrap_or("/");
-    let uri: Uri = format!("{}{caminho}", ctx.upstream).parse()?;
+    let uri: Uri = format!("{destino}{caminho}").parse()?;
     let mut pedido = Request::builder().method(partes.method).uri(uri);
     for (nome, valor) in &partes.headers {
         if !SALTO_A_SALTO.contains(nome) {
@@ -168,13 +190,13 @@ async fn decidir_e_reescrever(bytes: Bytes, ctx: &Ctx) -> (Bytes, String) {
     if corpo.get("messages").and_then(Value::as_array).is_none() {
         return (bytes, "default;sem messages".into());
     }
-    let (cliente, min) = {
+    let (decisores, min) = {
         let p = ctx.politica.read().await;
-        (p.jev.clone(), p.min_confianca)
+        (p.decisores.clone(), p.min_confianca)
     };
-    let Some(cliente) = cliente else {
+    if decisores.vazio() {
         return (bytes, "default;jev desligado".into());
-    };
+    }
     let modelo = corpo
         .get("model")
         .and_then(Value::as_str)
@@ -201,7 +223,7 @@ async fn decidir_e_reescrever(bytes: Bytes, ctx: &Ctx) -> (Bytes, String) {
             let decisao = match tokio::time::timeout(
                 ctx.tempo_decisao,
                 decidir_esforco(
-                    &cliente,
+                    &decisores,
                     &mensagens,
                     &contexto,
                     min,
@@ -219,7 +241,14 @@ async fn decidir_e_reescrever(bytes: Bytes, ctx: &Ctx) -> (Bytes, String) {
                     if let Some(k) = chave {
                         ctx.guardar(k, n).await;
                     }
-                    (n, format!("{:.2}", decisao.confianca.unwrap_or(0.0)))
+                    (
+                        n,
+                        format!(
+                            "{:.2};{}",
+                            decisao.confianca.unwrap_or(0.0),
+                            decisao.fonte.map(|f| f.as_str()).unwrap_or("jev")
+                        ),
+                    )
                 }
                 None => {
                     let motivo = decisao.motivo.unwrap_or_else(|| "sem decisao".into());

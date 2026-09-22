@@ -181,6 +181,8 @@ pub enum JevError {
     Rede(reqwest::Error),
     #[error("resposta inesperada do Jev: {0}")]
     Formato(String),
+    #[error("nenhum decisor configurado")]
+    SemDecisor,
 }
 
 impl From<reqwest::Error> for JevError {
@@ -321,7 +323,7 @@ impl ClienteJev {
 
 /// A mensagem de um erro JSON do OpenRouter (`{"error":{"message":…}}`), ou
 /// o começo do texto cru quando não é JSON.
-fn resumo_de_erro(texto: &str) -> String {
+pub(crate) fn resumo_de_erro(texto: &str) -> String {
     let msg = serde_json::from_str::<Value>(texto)
         .ok()
         .and_then(|v| {

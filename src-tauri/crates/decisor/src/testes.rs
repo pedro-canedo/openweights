@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 
-use lr_providers::{CapacidadeModelo, ClienteJev, Contadores};
+use lr_providers::{CapacidadeModelo, ClienteDecisaoLocal, ClienteJev, Contadores, Decisores};
 
 use super::*;
 
@@ -168,14 +168,14 @@ fn sem_raciocinio() -> ResolverCapacidade {
 
 async fn shim(
     upstream: &str,
-    jev: Option<ClienteJev>,
+    decisores: Decisores,
     capacidade: ResolverCapacidade,
 ) -> (Shim, Arc<Contadores>) {
     let contadores = Arc::new(Contadores::default());
     let s = Shim::iniciar(ConfigShim {
         upstream: upstream.to_string(),
         porta_preferida: 0,
-        jev,
+        decisores,
         min_confianca: 0.6,
         capacidade,
         contadores: contadores.clone(),
@@ -190,6 +190,29 @@ fn jev_em(url: &str) -> ClienteJev {
     ClienteJev::openrouter("sk-teste")
         .with_base_url(url)
         .with_timeout(Duration::from_millis(500))
+}
+
+fn remoto(url: &str) -> Decisores {
+    Decisores {
+        local: None,
+        remoto: Some(jev_em(url)),
+    }
+}
+
+fn local_em(url: &str) -> ClienteDecisaoLocal {
+    ClienteDecisaoLocal::novo(url).with_timeout(Duration::from_millis(500))
+}
+
+fn resposta_local(nivel: &str, p: f64) -> Value {
+    json!({
+        "object": "decision", "model": "qwen2.5-1.5b-instruct-q8_0.gguf",
+        "results": [{"fields": {
+            "nivel": {"value": nivel, "probability": p, "scored_nodes": 1, "tree": true},
+            "precisa_raciocinar": {"value": true, "probability": 0.9, "scored_nodes": 1, "tree": true}
+        }}],
+        "usage": {"prompt_tokens": 120, "cached_tokens": 100},
+        "timings": {"total_ms": 40.0}
+    })
 }
 
 fn corpo_chat(stream: bool) -> Value {
@@ -208,7 +231,7 @@ async fn a_get_passes_through_with_its_authorization_header() {
         Resposta::Json(200, json!({"data": [{"id": "qwen3"}]}))
     }))
     .await;
-    let (s, _) = shim(&motor.url(), None, qwen3()).await;
+    let (s, _) = shim(&motor.url(), Decisores::default(), qwen3()).await;
 
     let r = reqwest::Client::new()
         .get(format!("{}/v1/models", s.base_url()))
@@ -240,7 +263,7 @@ async fn sse_is_forwarded_chunk_by_chunk_without_buffering() {
         Resposta::Sse(rx.lock().unwrap().take().expect("uma resposta só"))
     }))
     .await;
-    let (s, _) = shim(&motor.url(), None, qwen3()).await;
+    let (s, _) = shim(&motor.url(), Decisores::default(), qwen3()).await;
 
     let resp = reqwest::Client::new()
         .post(format!("{}/v1/chat/completions", s.base_url()))
@@ -277,7 +300,7 @@ async fn when_jev_is_unreachable_the_body_reaches_the_engine_untouched() {
     let motor = Falso::subir(Arc::new(|_| Resposta::Json(200, json!({"ok": true})))).await;
     // Porta fechada: nada escuta ali.
     let jev = jev_em("http://127.0.0.1:1");
-    let (s, contadores) = shim(&motor.url(), Some(jev), qwen3()).await;
+    let (s, contadores) = shim(&motor.url(), Decisores { local: None, remoto: Some(jev) }, qwen3()).await;
 
     let corpo = corpo_chat(false);
     let r = reqwest::Client::new()
@@ -310,7 +333,7 @@ async fn a_confident_alto_turns_thinking_on_before_the_engine_sees_it() {
         Resposta::Json(200, resposta_jev("alto", 0.9, 0.95))
     }))
     .await;
-    let (s, contadores) = shim(&motor.url(), Some(jev_em(&jev_falso.url())), qwen3()).await;
+    let (s, contadores) = shim(&motor.url(), remoto(&jev_falso.url()), qwen3()).await;
 
     let r = reqwest::Client::new()
         .post(format!("{}/v1/chat/completions", s.base_url()))
@@ -318,7 +341,7 @@ async fn a_confident_alto_turns_thinking_on_before_the_engine_sees_it() {
         .send()
         .await
         .unwrap();
-    assert_eq!(r.headers()["x-openweights-jev"], "alto;0.90");
+    assert_eq!(r.headers()["x-openweights-jev"], "alto;0.90;jev");
 
     let visto: Value = serde_json::from_slice(&motor.registros()[0].corpo).unwrap();
     assert_eq!(visto["chat_template_kwargs"]["enable_thinking"], true);
@@ -347,7 +370,7 @@ async fn an_agent_continuation_reuses_the_cached_decision() {
         Resposta::Json(200, resposta_jev("nenhum", 0.8, 0.1))
     }))
     .await;
-    let (s, _) = shim(&motor.url(), Some(jev_em(&jev_falso.url())), qwen3()).await;
+    let (s, _) = shim(&motor.url(), remoto(&jev_falso.url()), qwen3()).await;
     let cliente = reqwest::Client::new();
     let url = format!("{}/v1/chat/completions", s.base_url());
 
@@ -357,7 +380,7 @@ async fn an_agent_continuation_reuses_the_cached_decision() {
         .send()
         .await
         .unwrap();
-    assert_eq!(r1.headers()["x-openweights-jev"], "nenhum;0.80");
+    assert_eq!(r1.headers()["x-openweights-jev"], "nenhum;0.80;jev");
 
     let mut continuacao = corpo_chat(false);
     continuacao["messages"].as_array_mut().unwrap().extend([
@@ -382,7 +405,7 @@ async fn a_model_that_cannot_reason_never_costs_a_jev_call() {
     .await;
     let (s, _) = shim(
         &motor.url(),
-        Some(jev_em(&jev_falso.url())),
+        remoto(&jev_falso.url()),
         sem_raciocinio(),
     )
     .await;
@@ -408,7 +431,7 @@ async fn low_confidence_keeps_the_body_as_it_came() {
         Resposta::Json(200, resposta_jev("alto", 0.3, 0.9))
     }))
     .await;
-    let (s, _) = shim(&motor.url(), Some(jev_em(&jev_falso.url())), qwen3()).await;
+    let (s, _) = shim(&motor.url(), remoto(&jev_falso.url()), qwen3()).await;
 
     let r = reqwest::Client::new()
         .post(format!("{}/v1/chat/completions", s.base_url()))
@@ -420,7 +443,7 @@ async fn low_confidence_keeps_the_body_as_it_came() {
         .to_str()
         .unwrap()
         .to_string();
-    assert!(marca.starts_with("default;confian"), "{marca}");
+    assert!(marca.starts_with("default;jev: confian"), "{marca}");
     let visto: Value = serde_json::from_slice(&motor.registros()[0].corpo).unwrap();
     assert_eq!(visto["chat_template_kwargs"]["enable_thinking"], false);
     s.parar().await;
@@ -433,7 +456,7 @@ async fn a_non_json_body_is_forwarded_untouched() {
         Resposta::Json(200, resposta_jev("alto", 0.9, 0.9))
     }))
     .await;
-    let (s, _) = shim(&motor.url(), Some(jev_em(&jev_falso.url())), qwen3()).await;
+    let (s, _) = shim(&motor.url(), remoto(&jev_falso.url()), qwen3()).await;
 
     let r = reqwest::Client::new()
         .post(format!("{}/v1/chat/completions", s.base_url()))
@@ -450,7 +473,7 @@ async fn a_non_json_body_is_forwarded_untouched() {
 
 #[tokio::test]
 async fn an_engine_that_is_down_is_a_502_with_a_json_error() {
-    let (s, _) = shim("http://127.0.0.1:1", None, qwen3()).await;
+    let (s, _) = shim("http://127.0.0.1:1", Decisores::default(), qwen3()).await;
     let r = reqwest::Client::new()
         .get(format!("{}/v1/models", s.base_url()))
         .send()
@@ -474,7 +497,7 @@ async fn a_busy_preferred_port_falls_back_to_an_ephemeral_one() {
     let s = Shim::iniciar(ConfigShim {
         upstream: "http://127.0.0.1:1".into(),
         porta_preferida: porta,
-        jev: None,
+        decisores: Decisores::default(),
         min_confianca: 0.6,
         capacidade: qwen3(),
         contadores: Arc::new(Contadores::default()),
@@ -494,7 +517,7 @@ async fn updating_the_policy_switches_decisions_on_without_a_restart() {
         Resposta::Json(200, resposta_jev("medio", 0.9, 0.5))
     }))
     .await;
-    let (s, _) = shim(&motor.url(), None, qwen3()).await;
+    let (s, _) = shim(&motor.url(), Decisores::default(), qwen3()).await;
     let cliente = reqwest::Client::new();
     let url = format!("{}/v1/chat/completions", s.base_url());
 
@@ -506,13 +529,129 @@ async fn updating_the_policy_switches_decisions_on_without_a_restart() {
         .unwrap();
     assert_eq!(r.headers()["x-openweights-jev"], "default;jev desligado");
 
-    s.atualizar(Some(jev_em(&jev_falso.url())), 0.6).await;
+    s.atualizar(remoto(&jev_falso.url()), 0.6).await;
     let r = cliente
         .post(&url)
         .json(&corpo_chat(false))
         .send()
         .await
         .unwrap();
-    assert_eq!(r.headers()["x-openweights-jev"], "medio;0.90");
+    assert_eq!(r.headers()["x-openweights-jev"], "medio;0.90;jev");
+    s.parar().await;
+}
+
+// ------------------------------------------------------- decisor local ---
+
+#[tokio::test]
+async fn a_local_decision_is_preferred_and_marked_local() {
+    let motor = Falso::subir(Arc::new(|_| Resposta::Json(200, json!({"ok": true})))).await;
+    let local = Falso::subir(Arc::new(|reg| {
+        assert_eq!(reg.caminho, "/v1/decision");
+        Resposta::Json(200, resposta_local("alto", 0.9))
+    }))
+    .await;
+    let jev_falso = Falso::subir(Arc::new(|_| {
+        Resposta::Json(200, resposta_jev("nenhum", 0.9, 0.1))
+    }))
+    .await;
+    let decisores = Decisores {
+        local: Some(local_em(&local.url())),
+        remoto: Some(jev_em(&jev_falso.url())),
+    };
+    let (s, contadores) = shim(&motor.url(), decisores, qwen3()).await;
+
+    let r = reqwest::Client::new()
+        .post(format!("{}/v1/chat/completions", s.base_url()))
+        .json(&corpo_chat(false))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.headers()["x-openweights-jev"], "alto;0.90;local");
+    assert_eq!(jev_falso.chamadas(), 0, "o remoto é reserva");
+    let pedido: Value = serde_json::from_slice(&local.registros()[0].corpo).unwrap();
+    assert!(pedido["contexts"][0].as_str().unwrap().contains("raiz de 2"));
+    assert_eq!(pedido["schema"]["nivel"]["type"], "enum");
+    let visto: Value = serde_json::from_slice(&motor.registros()[0].corpo).unwrap();
+    assert_eq!(visto["chat_template_kwargs"]["enable_thinking"], true);
+    let resumo = contadores.resumo();
+    assert_eq!((resumo.locais, resumo.remotas, resumo.aplicadas), (1, 0, 1));
+    s.parar().await;
+}
+
+#[tokio::test]
+async fn when_the_local_decider_fails_the_remote_answers() {
+    let motor = Falso::subir(Arc::new(|_| Resposta::Json(200, json!({"ok": true})))).await;
+    // O decisor local ainda está carregando o modelo.
+    let local = Falso::subir(Arc::new(|_| {
+        Resposta::Json(503, json!({"error": {"message": "Loading model"}}))
+    }))
+    .await;
+    let jev_falso = Falso::subir(Arc::new(|_| {
+        Resposta::Json(200, resposta_jev("medio", 0.85, 0.5))
+    }))
+    .await;
+    let decisores = Decisores {
+        local: Some(local_em(&local.url())),
+        remoto: Some(jev_em(&jev_falso.url())),
+    };
+    let (s, _) = shim(&motor.url(), decisores, qwen3()).await;
+
+    let r = reqwest::Client::new()
+        .post(format!("{}/v1/chat/completions", s.base_url()))
+        .json(&corpo_chat(false))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.headers()["x-openweights-jev"], "medio;0.85;jev");
+    assert_eq!(local.chamadas(), 1);
+    assert_eq!(jev_falso.chamadas(), 1);
+    s.parar().await;
+}
+
+#[tokio::test]
+async fn v1_decision_is_forwarded_to_the_local_decider() {
+    let motor = Falso::subir(Arc::new(|_| panic!("o motor principal não tem /v1/decision"))).await;
+    let local = Falso::subir(Arc::new(|reg| {
+        assert_eq!(reg.caminho, "/v1/decision");
+        Resposta::Json(200, resposta_local("nenhum", 0.7))
+    }))
+    .await;
+    let decisores = Decisores {
+        local: Some(local_em(&local.url())),
+        remoto: None,
+    };
+    let (s, _) = shim(&motor.url(), decisores, qwen3()).await;
+
+    let corpo = json!({"schema": {"x": {"type": "boolean", "description": "?"}}, "contexts": ["oi"]});
+    let r = reqwest::Client::new()
+        .post(format!("{}/v1/decision", s.base_url()))
+        .json(&corpo)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    assert!(r.headers().get("x-openweights-jev").is_none(), "não é uma decisão do proxy");
+    let v: Value = r.json().await.unwrap();
+    assert_eq!(v["object"], "decision");
+    let visto: Value = serde_json::from_slice(&local.registros()[0].corpo).unwrap();
+    assert_eq!(visto, corpo, "o corpo atravessa intocado");
+    assert_eq!(motor.chamadas(), 0);
+    s.parar().await;
+}
+
+#[tokio::test]
+async fn v1_decision_without_a_local_decider_is_a_503() {
+    let motor = Falso::subir(Arc::new(|_| Resposta::Json(200, json!({"ok": true})))).await;
+    let (s, _) = shim(&motor.url(), Decisores::default(), qwen3()).await;
+    let r = reqwest::Client::new()
+        .post(format!("{}/v1/decision", s.base_url()))
+        .json(&json!({"schema": {}, "contexts": ["oi"]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 503);
+    let v: Value = r.json().await.unwrap();
+    assert!(v["error"]["message"].as_str().unwrap().contains("decisor local"));
+    assert_eq!(motor.chamadas(), 0, "nunca chega ao motor");
     s.parar().await;
 }

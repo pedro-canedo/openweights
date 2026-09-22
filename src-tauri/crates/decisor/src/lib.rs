@@ -17,8 +17,15 @@
 //!
 //! **Fail-open.** Jev fora do ar, chave ausente, prazo estourado, corpo
 //! ilegível: a requisição segue como veio. O cabeçalho de resposta
-//! `x-openweights-jev` conta o que aconteceu (`alto;0.87`, `nenhum;cache`,
-//! `default;<motivo>`), para o `curl` e os testes verem sem adivinhar.
+//! `x-openweights-jev` conta o que aconteceu (`alto;0.87;local`,
+//! `alto;0.87;jev`, `nenhum;cache`, `default;<motivo>`), para o `curl` e os
+//! testes verem sem adivinhar.
+//!
+//! **Decisores.** A decisão vem de uma cadeia ([`Decisores`]): o decisor
+//! local (o `/v1/decision` do llama-server do fork, na máquina) primeiro, o
+//! Jev remoto como reserva. O proxy também REPASSA `POST /v1/decision` ao
+//! decisor local, para que harnesses, o gateway e o playground usem o mesmo
+//! endpoint sem descobrir a porta dele.
 
 mod proxy;
 pub mod reescrita;
@@ -33,7 +40,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
 use tokio::sync::{Mutex, Notify, RwLock};
 
-use lr_providers::{CapacidadeModelo, ClienteJev, Contadores, NivelRaciocinio};
+use lr_providers::{CapacidadeModelo, Contadores, Decisores, NivelRaciocinio};
 
 /// Porta preferida: o motor está em 11711, e "a seguinte" é fácil de
 /// lembrar quando alguém cola a URL num harness à mão.
@@ -61,8 +68,9 @@ pub struct ConfigShim {
     /// Raiz do motor, sem `/v1` (`http://127.0.0.1:11711`).
     pub upstream: String,
     pub porta_preferida: u16,
-    /// `None` = sem decisão: o proxy vira passagem direta.
-    pub jev: Option<ClienteJev>,
+    /// Vazia = sem decisão: o proxy vira passagem direta (e `/v1/decision`
+    /// responde 503).
+    pub decisores: Decisores,
     pub min_confianca: f32,
     pub capacidade: ResolverCapacidade,
     pub contadores: Arc<Contadores>,
@@ -70,7 +78,7 @@ pub struct ConfigShim {
 }
 
 pub(crate) struct Politica {
-    pub jev: Option<ClienteJev>,
+    pub decisores: Decisores,
     pub min_confianca: f32,
 }
 
@@ -137,7 +145,7 @@ impl Shim {
         let ctx = Arc::new(Ctx {
             upstream: cfg.upstream.trim_end_matches('/').to_string(),
             politica: RwLock::new(Politica {
-                jev: cfg.jev,
+                decisores: cfg.decisores,
                 min_confianca: cfg.min_confianca,
             }),
             capacidade: cfg.capacidade,
@@ -196,10 +204,10 @@ impl Shim {
         format!("http://127.0.0.1:{}", self.porta)
     }
 
-    /// Troca cliente e limiar sem derrubar conexões em curso.
-    pub async fn atualizar(&self, jev: Option<ClienteJev>, min_confianca: f32) {
+    /// Troca decisores e limiar sem derrubar conexões em curso.
+    pub async fn atualizar(&self, decisores: Decisores, min_confianca: f32) {
         let mut p = self.ctx.politica.write().await;
-        p.jev = jev;
+        p.decisores = decisores;
         p.min_confianca = min_confianca;
     }
 

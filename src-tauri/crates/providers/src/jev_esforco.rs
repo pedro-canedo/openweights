@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::jev::{ClienteJev, JevError, Pergunta, RespostasJev};
+use crate::jev_local::ClienteDecisaoLocal;
 
 // --- limiares (o único lugar) --------------------------------------------
 
@@ -92,12 +93,39 @@ impl NivelRaciocinio {
     }
 }
 
-/// Quem decidiu: o Jev, ou o padrão da pessoa (por qualquer motivo).
+/// Quem decidiu: o Jev remoto, o decisor local, ou o padrão da pessoa (por
+/// qualquer motivo).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Origem {
     Jev,
+    Local,
     Padrao,
+}
+
+/// Qual decisor RESPONDEU — mesmo quando a resposta não valeu (confiança
+/// baixa vira `Padrao`, mas alguém foi consultado e a tela quer saber quem).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Fonte {
+    Local,
+    Jev,
+}
+
+impl Fonte {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Jev => "jev",
+        }
+    }
+
+    fn origem(self) -> Origem {
+        match self {
+            Self::Local => Origem::Local,
+            Self::Jev => Origem::Jev,
+        }
+    }
 }
 
 /// O resultado de uma consulta, sempre — inclusive quando nada foi decidido.
@@ -105,7 +133,10 @@ pub enum Origem {
 #[serde(rename_all = "camelCase")]
 pub struct DecisaoEsforco {
     pub origem: Origem,
-    /// Só com `origem == Jev`.
+    /// Quem respondeu, quando alguém chegou a responder.
+    #[serde(default)]
+    pub fonte: Option<Fonte>,
+    /// Só com `origem != Padrao`.
     pub nivel: Option<NivelRaciocinio>,
     pub confianca: Option<f32>,
     /// Em dólares, quando o OpenRouter informou. Vem mesmo em `Padrao` por
@@ -119,6 +150,7 @@ impl DecisaoEsforco {
     pub fn padrao(motivo: impl Into<String>) -> Self {
         Self {
             origem: Origem::Padrao,
+            fonte: None,
             nivel: None,
             confianca: None,
             custo: None,
@@ -127,7 +159,7 @@ impl DecisaoEsforco {
     }
 
     pub fn aplicada(&self) -> bool {
-        self.origem == Origem::Jev
+        self.origem != Origem::Padrao
     }
 }
 
@@ -364,6 +396,7 @@ pub fn interpretar(resp: &RespostasJev, min_confianca: f32) -> DecisaoEsforco {
     }
     DecisaoEsforco {
         origem: Origem::Jev,
+        fonte: None,
         nivel: Some(nivel),
         confianca: Some(conf),
         custo,
@@ -409,6 +442,8 @@ pub struct Contadores {
     chamadas: AtomicU64,
     aplicadas: AtomicU64,
     falhas: AtomicU64,
+    locais: AtomicU64,
+    remotas: AtomicU64,
     custo: Mutex<f64>,
     ultima: Mutex<Option<UltimaDecisao>>,
 }
@@ -419,6 +454,11 @@ pub struct ResumoContadores {
     pub chamadas: u64,
     pub aplicadas: u64,
     pub falhas: u64,
+    /// Quantas respostas vieram do decisor local e quantas do Jev remoto.
+    #[serde(default)]
+    pub locais: u64,
+    #[serde(default)]
+    pub remotas: u64,
     pub custo: f64,
     pub ultima: Option<UltimaDecisao>,
 }
@@ -432,6 +472,15 @@ impl Contadores {
         }
         if falhou {
             self.falhas.fetch_add(1, Ordering::Relaxed);
+        }
+        match decisao.fonte {
+            Some(Fonte::Local) => {
+                self.locais.fetch_add(1, Ordering::Relaxed);
+            }
+            Some(Fonte::Jev) => {
+                self.remotas.fetch_add(1, Ordering::Relaxed);
+            }
+            None => {}
         }
         if let Some(c) = decisao.custo {
             *self.custo.lock().unwrap_or_else(|e| e.into_inner()) += c;
@@ -447,6 +496,8 @@ impl Contadores {
             chamadas: self.chamadas.load(Ordering::Relaxed),
             aplicadas: self.aplicadas.load(Ordering::Relaxed),
             falhas: self.falhas.load(Ordering::Relaxed),
+            locais: self.locais.load(Ordering::Relaxed),
+            remotas: self.remotas.load(Ordering::Relaxed),
             custo: *self.custo.lock().unwrap_or_else(|e| e.into_inner()),
             ultima: self
                 .ultima
@@ -457,13 +508,54 @@ impl Contadores {
     }
 }
 
+// --- a cadeia de decisores --------------------------------------------------
+
+/// Os decisores disponíveis, na ordem em que são tentados: o local (o
+/// `/v1/decision` do llama-server do fork, na máquina) e o Jev remoto (via
+/// OpenRouter) como reserva. Qualquer falha do local — fora do ar, ainda
+/// carregando, prazo, resposta inconsistente — cai no remoto na hora; sem
+/// remoto, o erro do local é o erro da cadeia.
+#[derive(Debug, Clone, Default)]
+pub struct Decisores {
+    pub local: Option<ClienteDecisaoLocal>,
+    pub remoto: Option<ClienteJev>,
+}
+
+impl Decisores {
+    pub fn vazio(&self) -> bool {
+        self.local.is_none() && self.remoto.is_none()
+    }
+
+    pub async fn decidir(
+        &self,
+        state: &Value,
+        perguntas: &BTreeMap<String, Pergunta>,
+    ) -> Result<(Fonte, RespostasJev), JevError> {
+        let erro_local = match &self.local {
+            Some(local) => match local.decidir(state, perguntas).await {
+                Ok(r) => return Ok((Fonte::Local, r)),
+                Err(e) => {
+                    log::debug!("decisor local falhou ({e}); tentando o remoto");
+                    Some(e)
+                }
+            },
+            None => None,
+        };
+        match (&self.remoto, erro_local) {
+            (Some(remoto), _) => remoto.decidir(state, perguntas).await.map(|r| (Fonte::Jev, r)),
+            (None, Some(e)) => Err(e),
+            (None, None) => Err(JevError::SemDecisor),
+        }
+    }
+}
+
 // --- a consulta inteira ---------------------------------------------------
 
-/// Monta o estado, pergunta ao Jev e interpreta. Nunca devolve erro: tudo
-/// que dá errado vira `Padrao` com motivo. `contadores` recebe só as
-/// consultas que chegaram a sair para a rede.
+/// Monta o estado, pergunta aos decisores e interpreta. Nunca devolve erro:
+/// tudo que dá errado vira `Padrao` com motivo. `contadores` recebe só as
+/// consultas que chegaram a sair para um decisor.
 pub async fn decidir_esforco(
-    cliente: &ClienteJev,
+    decisores: &Decisores,
     mensagens: &[MensagemResumida],
     contexto: &ContextoDecisao,
     min_confianca: f32,
@@ -474,8 +566,17 @@ pub async fn decidir_esforco(
         return DecisaoEsforco::padrao("sem mensagem do usuário");
     };
     let min = min_confianca.clamp(LIMIAR_CONFIANCA_MIN, LIMIAR_CONFIANCA_MAX);
-    let (decisao, falhou) = match cliente.decidir(&estado, &perguntas()).await {
-        Ok(resp) => (interpretar(&resp, min), false),
+    let (decisao, falhou) = match decisores.decidir(&estado, &perguntas()).await {
+        Ok((fonte, resp)) => {
+            let mut d = interpretar(&resp, min);
+            d.fonte = Some(fonte);
+            if d.aplicada() {
+                d.origem = fonte.origem();
+            } else if let Some(m) = d.motivo.take() {
+                d.motivo = Some(format!("{}: {m}", fonte.as_str()));
+            }
+            (d, false)
+        }
         Err(e) => (DecisaoEsforco::padrao(motivo_do_erro(&e)), true),
     };
     if let Some(c) = contadores {
