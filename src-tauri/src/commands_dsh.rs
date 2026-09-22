@@ -440,6 +440,7 @@ pub(crate) async fn dsh_start_inner(app: &AppHandle, state: &AppState) -> CmdRes
     // 4. Spawn sob o lock; a espera de readiness fica FORA dele — mesmo
     // desenho do 9router e do start_engine.
     let porta_handle;
+    let painel_handle;
     {
         let mut guard = state.dsh.lock().await;
         if guard.is_some() {
@@ -455,6 +456,7 @@ pub(crate) async fn dsh_start_inner(app: &AppHandle, state: &AppState) -> CmdRes
             state.dsh_pid.store(pid, Ordering::SeqCst);
         }
         porta_handle = host.porta_handle();
+        painel_handle = host.painel_handle();
 
         // stdout: é onde a porta real aparece (`dsh web: http://127.0.0.1:N`)
         // — e o log vai para a mesma janela da instalação.
@@ -462,12 +464,16 @@ pub(crate) async fn dsh_start_inner(app: &AppHandle, state: &AppState) -> CmdRes
         if let Some(saida) = stdout {
             let app2 = app.clone();
             let handle = porta_handle.clone();
+            let painel = painel_handle.clone();
             tauri::async_runtime::spawn(async move {
                 use tokio::io::AsyncBufReadExt as _;
                 let mut linhas = tokio::io::BufReader::new(saida).lines();
                 while let Ok(Some(line)) = linhas.next_line().await {
                     if let Some(p) = lr_dshhost::parse_porta(&line) {
                         handle.store(p, Ordering::SeqCst);
+                    }
+                    if let Some(url) = lr_dshhost::parse_painel(&line) {
+                        *painel.lock().unwrap_or_else(|e| e.into_inner()) = Some(url);
                     }
                     let _ = app2.emit(EVENTO, &DshEvent::Log { line });
                 }
@@ -491,7 +497,11 @@ pub(crate) async fn dsh_start_inner(app: &AppHandle, state: &AppState) -> CmdRes
     let resultado = async {
         let porta = lr_dshhost::aguardar_porta(&porta_handle, lr_dshhost::READY_TIMEOUT).await?;
         let restante = lr_dshhost::READY_TIMEOUT.saturating_sub(inicio.elapsed());
-        lr_dshhost::aguardar_pronto(porta, restante).await
+        let painel = painel_handle
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        lr_dshhost::aguardar_pronto(porta, painel.as_deref(), restante).await
     }
     .await;
     if let Err(e) = resultado {
@@ -522,10 +532,16 @@ pub async fn dsh_start(app: AppHandle, state: State<'_, AppState>) -> CmdResult<
 /// fora das capabilities. A UI web do dsh não tem autenticação; a proteção é
 /// o bind em loopback, e a janela conversa com ele como um navegador local.
 pub(crate) async fn abrir_painel(app: &AppHandle, state: &AppState) -> CmdResult<()> {
-    let porta = {
+    // O endereço vem do próprio dsh: desde a 0.1.5-rc.2 ele carrega a
+    // credencial da sessão, e a porta sozinha abre uma página recusada.
+    let endereco = {
         let guard = state.dsh.lock().await;
-        match guard.as_ref().and_then(|d| d.porta()) {
-            Some(p) => p,
+        let host = guard.as_ref().ok_or("o dsh não está no ar")?;
+        match host
+            .painel()
+            .or_else(|| host.porta().map(|p| format!("http://127.0.0.1:{p}")))
+        {
+            Some(u) => u,
             None => return Err("o dsh não está no ar".to_string()),
         }
     };
@@ -538,9 +554,7 @@ pub(crate) async fn abrir_painel(app: &AppHandle, state: &AppState) -> CmdResult
         return Ok(());
     }
 
-    let url = format!("http://127.0.0.1:{porta}")
-        .parse::<tauri::Url>()
-        .map_err(err_str)?;
+    let url = endereco.parse::<tauri::Url>().map_err(err_str)?;
     tauri::WebviewWindowBuilder::new(app, JANELA_PAINEL, tauri::WebviewUrl::External(url))
         .title("DeepSeek Harness")
         .inner_size(1180.0, 820.0)

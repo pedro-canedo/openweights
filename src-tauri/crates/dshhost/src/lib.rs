@@ -472,6 +472,24 @@ pub fn parse_porta(linha: &str) -> Option<u16> {
     digitos.parse().ok()
 }
 
+/// O endereço do painel INTEIRO, como o dsh o imprimiu.
+///
+/// Desde a 0.1.5-rc.2 a URL anunciada é a `connection.authenticatedUrl`: ela
+/// carrega a credencial da sessão, e o índice do painel só responde com ela
+/// (`dsh-host-frontend-static`: "every index response first passes
+/// Connection's browser authentication"). Remontar
+/// `http://127.0.0.1:<porta>` a partir da porta dá uma página recusada — por
+/// isso o que se guarda é a linha, não o número.
+///
+/// O sufixo ` (LAN: …)` nunca aparece com bind em loopback; se aparecer, é
+/// cortado no primeiro espaço.
+pub fn parse_painel(linha: &str) -> Option<String> {
+    let resto = linha.trim().strip_prefix("dsh web: ")?;
+    let url = resto.split_whitespace().next()?;
+    url.starts_with("http://127.0.0.1:")
+        .then(|| url.to_string())
+}
+
 /// Espera a porta aparecer no handle preenchido pelo leitor de stdout.
 ///
 /// Função livre (como o `aguardar_pronto` do 9router) para quem chama poder
@@ -492,16 +510,25 @@ pub async fn aguardar_porta(porta: &Arc<AtomicU16>, prazo: Duration) -> Result<u
 
 /// Espera o servidor web do dsh atender: TCP primeiro (distingue "subindo" de
 /// "morto"), depois `GET /` respondendo 200 (o SPA estático).
-pub async fn aguardar_pronto(porta: u16, prazo: Duration) -> Result<(), DshError> {
+pub async fn aguardar_pronto(
+    porta: u16,
+    painel: Option<&str>,
+    prazo: Duration,
+) -> Result<(), DshError> {
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap_or_default();
+    // O endereço anunciado, não o remontado: é ele que a janela do painel vai
+    // abrir, e desde a 0.1.5-rc.2 é ele que a autenticação do índice aceita.
+    let alvo = painel
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("http://127.0.0.1:{porta}/"));
     let limite = tokio::time::Instant::now() + prazo;
     loop {
         if lr_proc::port_in_use(porta)
             && http
-                .get(format!("http://127.0.0.1:{porta}/"))
+                .get(&alvo)
                 .send()
                 .await
                 .is_ok_and(|r| r.status().is_success())
@@ -521,6 +548,8 @@ pub struct DshHost {
     job: Option<lr_proc::JobGuard>,
     /// Porta real, preenchida por quem lê o stdout (0 = ainda desconhecida).
     porta: Arc<AtomicU16>,
+    /// Endereço do painel, com a credencial da sessão, como o dsh o anunciou.
+    painel: Arc<std::sync::Mutex<Option<String>>>,
     http: reqwest::Client,
 }
 
@@ -561,6 +590,7 @@ impl DshHost {
             filho: Some(filho),
             job,
             porta: Arc::new(AtomicU16::new(0)),
+            painel: Arc::new(std::sync::Mutex::new(None)),
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(5))
                 .build()
@@ -576,6 +606,20 @@ impl DshHost {
     /// espera de readiness consultar sem segurar o mutex do processo.
     pub fn porta_handle(&self) -> Arc<AtomicU16> {
         Arc::clone(&self.porta)
+    }
+
+    /// Handle compartilhado do endereço do painel, preenchido pelo mesmo
+    /// leitor de stdout que preenche a porta.
+    pub fn painel_handle(&self) -> Arc<std::sync::Mutex<Option<String>>> {
+        Arc::clone(&self.painel)
+    }
+
+    /// Endereço do painel, quando já anunciado.
+    pub fn painel(&self) -> Option<String> {
+        self.painel
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// O processo já morreu? Consulta sem bloquear.
@@ -704,6 +748,50 @@ mod tests {
         assert_eq!(parse_porta(""), None);
         // Porta fora do u16 é lixo, não pânico.
         assert_eq!(parse_porta("dsh web: http://127.0.0.1:99999999"), None);
+    }
+
+    /// As DUAS linhas reais, capturadas rodando cada versão nesta máquina
+    /// (2026-09-22): a 0.1.1-rc.2 anuncia a URL nua, a 0.1.5-rc.2 anuncia a
+    /// URL com a credencial da sessão. Guardar a linha inteira é o que faz
+    /// o painel abrir nas duas.
+    #[test]
+    fn the_panel_address_is_taken_whole_from_the_line() {
+        assert_eq!(
+            parse_painel("dsh web: http://127.0.0.1:57848").as_deref(),
+            Some("http://127.0.0.1:57848")
+        );
+        assert_eq!(
+            parse_painel(
+                "dsh web: http://127.0.0.1:54718/?token=XDx4IkqfIx-LDcma62_Cr2yeUGs_VUGHgLpXpJMH1JY"
+            )
+            .as_deref(),
+            Some("http://127.0.0.1:54718/?token=XDx4IkqfIx-LDcma62_Cr2yeUGs_VUGHgLpXpJMH1JY")
+        );
+        // O sufixo de LAN é cortado; o endereço é o loopback.
+        assert_eq!(
+            parse_painel(
+                "dsh web: http://127.0.0.1:3080/?token=abc (LAN: http://192.168.0.5:3080)"
+            )
+            .as_deref(),
+            Some("http://127.0.0.1:3080/?token=abc")
+        );
+        // A porta continua saindo da mesma linha, com token ou sem.
+        assert_eq!(
+            parse_porta("dsh web: http://127.0.0.1:54718/?token=abc"),
+            Some(54718)
+        );
+    }
+
+    /// O que não é endereço não vira endereço.
+    #[test]
+    fn other_lines_do_not_parse_as_a_panel_address() {
+        assert_eq!(
+            parse_painel("dsh web: opening the default browser; pass --no-open to disable"),
+            None
+        );
+        assert_eq!(parse_painel("dsh web: https://exemplo.com"), None);
+        assert_eq!(parse_painel("qualquer coisa"), None);
+        assert_eq!(parse_painel(""), None);
     }
 
     // ---------------------------------------------------- npm install ---
