@@ -65,9 +65,9 @@ it is the same configuration for chat and for any app consuming the API. See
 ## When you want work done, not just answers
 
 Chat is chat: the model talks. For agent work — reading and editing files,
-running commands — there is the
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), a full
-coding agent with **its own item in the sidebar**, right below Chat. The app
-installs it, supervises it and runs it embedded, already pointed at every
-provider and model you have. The **Agent** button in the composer just takes
+running commands — there is **AgenticOw**, a full coding agent with **its
+own item in the sidebar**, right below Chat. It is OpenWeights' own fork of the
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness); the app
+installs it, supervises it and shows it inside its window, already pointed at
+every provider and model you have. The **Agent** button in the composer just takes
 you there. See [the coding agent](/guide/harness).

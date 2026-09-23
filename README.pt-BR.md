@@ -23,7 +23,7 @@ OpenWeights é um app desktop open-source que esconde o [llama.cpp](https://gith
   ferramentas, raciocínio) e o cartão que o autor escreveu, lido dentro do app.
 - 🤗 **Modelos do Hugging Face, já filtrados** — busca GGUF e recomenda a quantização para o *seu* PC: verde roda inteiro na GPU, amarelo divide com a CPU, cinza fica só no processador.
 - 💬 **Chat local** — streaming, markdown e histórico no disco.
-- 🤖 **Um agente de código com tela própria** — o [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) é um item da barra lateral, ao lado do chat: instalar, subir, parar e remover acontecem ali, e ele roda embutido no aplicativo. Quem instala e supervisiona é o próprio OpenWeights (pasta isolada, Node portátil incluído, nunca instalação global), ele escuta só em loopback e já vem pré-configurado com todos os seus provedores e modelos — sua chave de API viaja por variável de ambiente, nunca na linha de comando nem em arquivo. Para os outros agentes — Claude Code, Aider, OpenCode — o app monta o comando pronto, apontado para a API local.
+- 🤖 **Um agente de código com tela própria** — o **AgenticOw**, nosso fork do [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) ([pedro-canedo/agenticow](https://github.com/pedro-canedo/agenticow)), é um item da barra lateral, ao lado do chat, e roda dentro da janela do app: trocar de tela nunca recarrega a sessão. Ele vem como runtime pré-compilado pela nossa CI e conferido contra o sha256 gravado no app — nada de `npm install` na sua máquina — e se atualiza junto com o OpenWeights. Fala português e inglês, escuta só em loopback, tem a telemetria do projeto original desligada e sempre enxerga os seus provedores e modelos atuais: a lista se atualiza ao vivo quando você sobe o motor, baixa um modelo ou troca uma chave, e as chaves de API ficam só na memória do processo, nunca em arquivo. Para os outros agentes — Claude Code, Aider, OpenCode — o app monta o comando pronto, apontado para a API local.
 - 🎛️ **Se ajusta à sua máquina sozinho** — ninguém precisa aprender o que são `-ts`, `-ub` ou `-ctk`. O app pergunta ao motor quais dispositivos existem e quanto sobra em cada um, lê o número real de camadas no arquivo e pergunta ao próprio llama.cpp quanto cada configuração custa de memória — então converge numa, em segundo plano, e refaz quando o retrato do hardware muda. O que você definiu na mão nunca é tocado. Se quiser os números, o painel mostra cada candidato e mede tokens/s de verdade em vez de confiar na estimativa.
 - 🔌 **API compatível com OpenAI** — outros apps apontam para `localhost` e usam o mesmo modelo.
 - 🩺 **O motor é verificado, não presumido** — o llama.cpp do app vive numa pasta dele, isolado do que você tenha no sistema. Pouco depois de abrir, o app **executa** o binário e lê a build que ele reporta: é o que separa "os arquivos estão lá" de "o motor funciona" (um pacote CUDA sem as DLLs ao lado passa na primeira checagem e falha na primeira carga). Build antiga depois de uma atualização, variante errada porque a placa mudou, pacote incompleto — cada caso tem uma frase e um botão, e as builds que ficaram para trás aparecem com o tamanho e a opção de devolver o espaço.
@@ -173,11 +173,11 @@ IA (build do llama.cpp adequado à sua GPU, ~100–600 MB) — isso acontece uma
 src/                  frontend React (telas, componentes, i18n pt-BR/en)
 src-tauri/src/        app Tauri (comandos, estado, telemetria)
 src-tauri/crates/     núcleo Rust, um crate por assunto:
-                        hw, runtime, models, advisor    hardware e modelos
-                        engine, store, types            llama-server, SQLite, contratos
-                        providers, ninerouter, dshhost  fontes externas, roteador local,
-                        gateway, nodejs                 harness gerenciado, entrada única, Node
-                        proc, fetch                     supervisão de processos, HTTP
+                        hw, runtime, models, advisor      hardware e modelos
+                        engine, store, types              llama-server, SQLite, contratos
+                        providers, ninerouter, agenticow  fontes externas, roteador local,
+                        gateway, nodejs                   harness gerenciado, entrada única, Node
+                        proc, fetch                       supervisão de processos, HTTP
 ```
 
 ## Contribuir

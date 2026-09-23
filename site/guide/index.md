@@ -17,9 +17,9 @@ installer of a few MB, no Electron.
   whether it fits fully on your GPU, splits with the CPU, or is CPU-only.
 - **Chats locally**, with streaming, markdown, code highlighting and history on
   disk.
-- **Runs a coding agent of its own** — the DeepSeek Harness has an item in the
-  sidebar: installed, supervised and embedded by the app, pre-configured with
-  all your providers and models. Claude Code, Aider and OpenCode get a
+- **Runs a coding agent of its own** — AgenticOw, our fork of the DeepSeek
+  Harness, has an item in the sidebar: installed, supervised and shown inside
+  the app's window, pre-configured with all your providers and models. Claude Code, Aider and OpenCode get a
   ready-made command pointed at the local API.
 - **Tunes itself for your machine**: it asks llama.cpp how much memory each
   configuration costs on *your* card, applies one, and rolls back on its own if
@@ -44,6 +44,7 @@ installer of a few MB, no Electron.
 | Conversations and settings | Local SQLite database in the app's data folder |
 | Models | The folder you chose when downloading them |
 | The llama.cpp runtime | App data folder, downloaded on first launch |
+| AgenticOw (runtime and sessions) | App data folder, the runtime downloaded on its first open |
 | API keys (Hugging Face, OpenRouter) | The same SQLite database, in plain text |
 
 ::: warning About the API keys
@@ -60,7 +61,7 @@ running as your user can read it.
 - [First run](/guide/first-run) — hardware detection and the engine download.
 - [Chat performance](/guide/performance) — the waiting phases, and how to
   compare two configurations honestly.
-- [The coding agent](/guide/harness) — the DeepSeek Harness, installed and run
-  by the app, pre-configured with your models.
+- [The coding agent](/guide/harness) — AgenticOw, installed and run by the
+  app, pre-configured with your models.
 - [Training Studio](/guide/studio) — prepare a book, train on your GPU, and open
   the resulting GGUF in chat.

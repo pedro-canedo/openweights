@@ -24,7 +24,7 @@ site/                 This documentation site (VitePress)
 | `cluster` | llama.cpp RPC cluster: one host and one worker on the local network |
 | `providers` | LLM providers: the remote catalogue (OpenRouter) and endpoint resolution |
 | `ninerouter` | Installs, supervises and removes 9router in isolation |
-| `dshhost` | Installs, supervises and configures the DeepSeek Harness (dsh) in isolation |
+| `agenticow` | AgenticOw, our fork of the DeepSeek Harness: installs its prebuilt runtime against the sha256 pins built into the app, supervises the Host through a JSON-lines control protocol and pushes the model catalogue to it (details in `docs/agenticow.md`) |
 | `gateway` | Single entry point (a local Traefik) for the LLM providers |
 | `nodejs` | Portable Node.js runtime, isolated from the system's Node |
 | `proc` | Long-lived child process supervision: process tree, Job Object and free port |

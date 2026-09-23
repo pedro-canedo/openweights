@@ -18,9 +18,10 @@ poucos MB, sem Electron.
   inteira na GPU, divide com a CPU ou é só CPU.
 - **Conversa localmente**, com streaming, markdown, destaque de código e
   histórico em disco.
-- **Roda um agente de código próprio** — o DeepSeek Harness tem item na barra
-  lateral: instalado, supervisionado e embutido pelo app, pré-configurado com
-  todos os seus provedores e modelos. Claude Code, Aider e OpenCode ganham o
+- **Roda um agente de código próprio** — o AgenticOw, nosso fork do DeepSeek
+  Harness, tem item na barra lateral: instalado, supervisionado e mostrado
+  dentro da janela do app, pré-configurado com todos os seus provedores e
+  modelos. Claude Code, Aider e OpenCode ganham o
   comando pronto, apontado para a API local.
 - **Se ajusta para a sua máquina**: pergunta ao llama.cpp quanta memória cada
   configuração custa na *sua* placa, aplica uma e desfaz sozinho se o modelo
@@ -46,6 +47,7 @@ poucos MB, sem Electron.
 | Conversas e ajustes | Banco SQLite local, na pasta de dados do app |
 | Modelos | A pasta que você escolheu ao baixar |
 | O runtime do llama.cpp | Pasta de dados do app, baixado na primeira execução |
+| AgenticOw (runtime e sessões) | Pasta de dados do app; o runtime é baixado na primeira abertura |
 | Chaves de API (Hugging Face, OpenRouter) | O mesmo banco SQLite, em texto puro |
 
 ::: warning Sobre as chaves de API
@@ -63,7 +65,7 @@ máquina, mas um programa rodando como seu usuário consegue ler.
   download do motor.
 - [Desempenho no chat](/pt/guia/desempenho) — as fases de espera, e como
   comparar duas configurações com honestidade.
-- [O agente de código](/pt/guia/harness) — o DeepSeek Harness, instalado e
-  rodado pelo app, pré-configurado com os seus modelos.
+- [O agente de código](/pt/guia/harness) — o AgenticOw, instalado e rodado
+  pelo app, pré-configurado com os seus modelos.
 - [Studio de treinamento](/pt/guia/studio) — prepare um livro, treine na GPU e
   abra o GGUF no chat.

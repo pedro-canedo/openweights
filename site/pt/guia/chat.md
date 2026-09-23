@@ -65,9 +65,9 @@ qualquer app que consuma a API. Veja
 ## Quando você quer trabalho feito, não só resposta
 
 Chat é chat: o modelo fala. Para trabalho de agente — ler e editar arquivos,
-rodar comandos — existe o
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), um agente
-de código completo com **item próprio na barra lateral**, logo abaixo do Chat.
-O app instala, supervisiona e roda ele embutido, já apontado para todos os
-provedores e modelos que você tem. O botão **Agente** no compositor só leva
+rodar comandos — existe o **AgenticOw**, um agente de código completo com
+**item próprio na barra lateral**, logo abaixo do Chat. Ele é o fork do próprio
+OpenWeights do [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness);
+o app instala, supervisiona e mostra ele dentro da janela, já apontado para
+todos os provedores e modelos que você tem. O botão **Agente** no compositor só leva
 até lá. Veja [o agente de código](/pt/guia/harness).

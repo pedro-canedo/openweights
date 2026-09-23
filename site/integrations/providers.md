@@ -70,8 +70,8 @@ to the switch — and the cost is a fraction of a cent per thousand messages
 Two switches say where the decision applies. **Chat in the app** decides before
 each send and shows who decided in the answer's run details (*Local* or *Jev*).
 **Coding agents** starts a small local proxy on `127.0.0.1:11712` in front of
-the engine; the DeepSeek Harness and the other agents the app launches are
-pointed at it, and every `chat/completions` they send gets the decision applied
+the engine; AgenticOw and the other agents the app launches are pointed at
+it, and every `chat/completions` they send gets the decision applied
 to the body. The response header `x-openweights-jev` says what happened:
 `alto;0.91;local`, `medio;0.80;jev`, `nenhum;cache` or `default;<reason>`.
 Every other request passes through untouched, streaming included, and the proxy

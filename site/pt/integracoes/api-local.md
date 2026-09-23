@@ -154,7 +154,7 @@ chat-com-ferramentas próprio.
 
 | Harness | Como |
 |---|---|
-| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | Tem tela própria na barra lateral — instalar, subir, parar e remover acontecem ali, e ele roda embutido no app. O app instala o `dsh` numa pasta isolada (Node portátil incluído) e escreve **todos** os seus provedores e modelos numa pasta de configuração própria. O cartão daqui leva até essa tela |
+| [**AgenticOw**](/pt/guia/harness) | Nosso fork do [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), com tela própria na barra lateral — subir, parar e remover acontecem ali, e ele aparece dentro da janela do app. O app instala um runtime pré-compilado e verificado numa pasta do app (no Node portátil dele) e entrega **todos** os seus provedores e modelos, mantendo a lista em dia enquanto ele roda. O cartão daqui leva até essa tela |
 | **Claude Code** | Lançado contra a sua API local, com o modelo já escolhido |
 | **Aider** | Sobe apontado para a sua API, com o modelo já escolhido |
 | **OpenCode** | Idem, pelas variáveis de ambiente que ele espera |
@@ -163,18 +163,18 @@ Cada cartão diz se o programa está instalado, mostra o comando (copiável) e
 oferece o botão **Abrir**. Quando não está instalado mas o `npx` existe, o app
 usa o `npx` e mostra o comando de instalação definitiva.
 
-A tela do DeepSeek Harness é onde o ciclo de vida dele inteiro mora: o estado
-da instalação, o log ao vivo da primeira (Node portátil mais ~190 pacotes npm,
-de dez a trinta minutos), o painel embutido quando está no ar, e uma
-desinstalação que pode levar junto as sessões e credenciais criadas lá dentro.
+A tela do AgenticOw é onde o ciclo de vida dele inteiro mora: o progresso da
+primeira abertura (download, verificação, subida), a interface dele quando está
+no ar, e uma desinstalação que pode levar junto as sessões e configurações
+criadas lá dentro.
 O botão **Agente** no compositor do Chat leva para essa mesma tela.
 
-O app também conta ao harness duas coisas sobre cada modelo local que antes
-ficavam no chute. O **teto de saída** passa a sair da janela de contexto do
-próprio modelo (metade dela), em vez de o harness assumir 32k para todo mundo
+O app também conta ao AgenticOw duas coisas sobre cada modelo local que, sem
+isso, ficariam no chute. O **teto de saída** sai da janela de contexto do
+próprio modelo (metade dela), em vez de o AgenticOw assumir 32k para todo mundo
 — número que um modelo pequeno não tem como honrar. E quando o chat template
 do modelo lê `enable_thinking` — o caso do Qwen3 e afins — o app declara o
-interruptor de raciocínio, e o harness passa a mostrar um seletor de esforço
+interruptor de raciocínio, e o AgenticOw passa a mostrar um seletor de esforço
 com um **Off** que desliga o raciocínio de verdade. Isso pesa mais do que
 parece: um modelo de raciocínio diante de um pedido aberto ("faça um site
 bonito") gasta o orçamento inteiro de saída pensando, e para antes de escrever

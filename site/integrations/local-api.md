@@ -154,7 +154,7 @@ own.
 
 | Harness | How |
 |---|---|
-| [**DeepSeek Harness**](https://github.com/deepseek-ai/deepseek-harness) | Has a screen of its own in the sidebar — install, start, stop and remove it from there, and use it embedded in the app. The app installs `dsh` in an isolated folder (portable Node included) and writes **all** your providers and models into a configuration folder of its own. The card here takes you to that screen |
+| [**AgenticOw**](/guide/harness) | Our fork of the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), with a screen of its own in the sidebar — start, stop and remove it from there, and use it inside the app's window. The app installs a prebuilt, verified runtime in an app folder (on its portable Node) and hands it **all** your providers and models, keeping them current while it runs. The card here takes you to that screen |
 | **Claude Code** | Launched against your local API, with the model already selected |
 | **Aider** | Starts pointed at your API, with the model already selected |
 | **OpenCode** | Same, through the environment variables it expects |
@@ -163,18 +163,17 @@ Each card says whether the program is installed, shows the command (copyable)
 and offers the **Open** button. When it is not installed but `npx` exists, the
 app uses `npx` and shows the command for installing it for good.
 
-The DeepSeek Harness screen is where its whole life cycle lives: the state of
-the install, the live log of the first one (portable Node plus ~190 npm
-packages, ten to thirty minutes), the embedded panel once it is up, and an
-uninstall that can also take the sessions and credentials created inside it.
+The AgenticOw screen is where its whole life cycle lives: the progress of the
+first open (download, verification, start), its interface once it is up, and
+an uninstall that can also take the sessions and settings created inside it.
 The **Agent** button in the Chat composer takes you to the same screen.
 
-The app also tells the harness two things about each local model that it used
-to leave to guesswork. The **output cap** is declared from the model's own
-context window (half of it), instead of the harness assuming 32k for every
+The app also tells AgenticOw two things about each local model that it would
+otherwise leave to guesswork. The **output cap** is declared from the model's
+own context window (half of it), instead of AgenticOw assuming 32k for every
 model — a number that a small model cannot honour. And when the model's chat
 template reads `enable_thinking` — Qwen3 and friends — the app declares the
-reasoning switch, so the harness shows an effort selector with an **Off** that
+reasoning switch, so AgenticOw shows an effort selector with an **Off** that
 really turns thinking off. That matters more than it sounds: a reasoning model
 asked for something open-ended ("build me a beautiful site") can spend its
 entire output budget thinking, and stop before writing a single file.

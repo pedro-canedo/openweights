@@ -70,8 +70,8 @@ estritamente locais.
 Dois interruptores dizem onde a decisão vale. **Chat do app** decide antes de
 cada envio e mostra quem decidiu nos detalhes da execução da resposta (*Local*
 ou *Jev*). **Agentes de código** sobe um proxy local pequeno em
-`127.0.0.1:11712` na frente do motor; o DeepSeek Harness e os outros agentes
-que o app abre passam a apontar para ele, e cada `chat/completions` que mandam
+`127.0.0.1:11712` na frente do motor; o AgenticOw e os outros agentes que o
+app abre passam a apontar para ele, e cada `chat/completions` que mandam
 recebe a decisão aplicada ao corpo. O cabeçalho de resposta `x-openweights-jev`
 conta o que aconteceu: `alto;0.91;local`, `medio;0.80;jev`, `nenhum;cache` ou
 `default;<motivo>`. Qualquer outra requisição atravessa intocada, streaming

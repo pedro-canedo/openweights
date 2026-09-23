@@ -31,16 +31,18 @@ Windows, macOS and Linux.
   quantization for *your* PC: green runs fully on the GPU, yellow splits with the
   CPU, grey is CPU-only.
 - 💬 **Local chat** — streaming, markdown and history on disk.
-- 🤖 **A coding agent with a screen of its own** — the
-  [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) is a
-  sidebar item next to the chat: install it, start it, stop it and remove it
-  from there, and use it embedded right in the app. It is installed and
-  supervised by OpenWeights itself (isolated folder, portable Node included,
-  never a global install), it listens on loopback only, and it comes
-  pre-configured with all your providers and models — your API key travels by
-  environment variable, never on the command line or in a file. Other agents —
-  Claude Code, Aider, OpenCode — get a ready-made command pointed at the local
-  API.
+- 🤖 **A coding agent with a screen of its own** — **AgenticOw**, our fork of
+  the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
+  ([pedro-canedo/agenticow](https://github.com/pedro-canedo/agenticow)), is a
+  sidebar item next to the chat and runs inside the app's window: switching
+  screens never reloads the session. It ships as a runtime prebuilt by our CI
+  and verified against the sha256 built into the app — no `npm install` on your
+  machine — and it updates together with OpenWeights. It speaks Portuguese and
+  English, listens on loopback only, has the upstream telemetry switched off,
+  and always sees your current providers and models: the list updates live as
+  you start the engine, download a model or change a key, and API keys stay in
+  the process memory, never in a file. Other agents — Claude Code, Aider,
+  OpenCode — get a ready-made command pointed at the local API.
 - 🎛️ **Tunes itself for your machine** — no one has to learn what `-ts`, `-ub`
   or `-ctk` mean. The app asks the engine which devices exist and how much is
   free on each, reads the real layer count from the file, and asks llama.cpp
@@ -232,11 +234,11 @@ engine (the llama.cpp build suited to your GPU, ~100–600 MB) — once only.
 src/                  React frontend (screens, components, i18n pt-BR/en)
 src-tauri/src/        Tauri app (commands, state, telemetry)
 src-tauri/crates/     Rust core, one crate per concern:
-                        hw, runtime, models, advisor    hardware and models
-                        engine, store, types            llama-server, SQLite, contracts
-                        providers, ninerouter, dshhost  external sources, local router,
-                        gateway, nodejs                 managed harness, entry point, Node
-                        proc, fetch                     process supervision, HTTP
+                        hw, runtime, models, advisor      hardware and models
+                        engine, store, types              llama-server, SQLite, contracts
+                        providers, ninerouter, agenticow  external sources, local router,
+                        gateway, nodejs                   managed harness, entry point, Node
+                        proc, fetch                       process supervision, HTTP
 ```
 
 ## Contributing
