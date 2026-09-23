@@ -10,6 +10,14 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.23.1] — 2026-09-23
+
+- On Linux, engine setup stopped at "llama-server not found inside llama-…-bin-win-cpu-x64.zip": the app downloaded the llama.cpp package built for Windows. It now downloads the Linux one — Vulkan when there is a graphics card, CPU when there is not.
+- GPUs are now detected on Linux — NVIDIA through the driver (NVML), AMD and Intel through what the kernel reports — and the welcome screen no longer says "No dedicated GPU" on machines that have one. The hardware monitor shows usage, VRAM, temperature and power draw.
+- NVIDIA cards on Linux run the official engine through Vulkan: the llama.cpp version the app uses does not publish CUDA builds for Linux.
+- The power limit of NVIDIA cards now shows on Linux too; applying a new one asks for the system password.
+- The one-line installer gives the AppImage shortcut the app icon, and the open window is tied to it in the dock instead of showing the generic gear.
+
 ## [0.23.0] — 2026-09-22
 
 - The Jev decision layer no longer depends on the OpenRouter API. A local decider — a second `llama-server` built from the parallel-decision fork of llama.cpp, with a small model dedicated to deciding (Qwen2.5-1.5B-Instruct by default) — answers how much reasoning each message needs in milliseconds, without the message leaving the machine.

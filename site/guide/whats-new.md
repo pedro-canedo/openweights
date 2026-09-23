@@ -1,5 +1,25 @@
 # What's new
 
+## 0.23.1
+
+**Linux gets its engine and its GPU.** Until now the app on Linux asked for the
+llama.cpp package built for Windows, and setup stopped at "llama-server not
+found inside …-bin-win-cpu-x64.zip". It now downloads the Linux package:
+Vulkan when there is a graphics card, CPU when there is not. The llama.cpp
+version the app uses does not publish CUDA builds for Linux, so NVIDIA cards
+run through Vulkan too, which the proprietary driver already installs.
+
+GPU detection, which only existed on Windows, now works on Linux: NVIDIA is
+read through the driver (NVML), with the same numbers as on Windows, and AMD
+and Intel through what the kernel reports. That is why the welcome screen no
+longer says "No dedicated GPU" on a machine that has one, the hardware monitor
+shows usage, VRAM, temperature and power draw, and the power limit of NVIDIA
+cards shows on Linux too — applying a new one asks for the system password.
+
+The one-line installer now gives the AppImage shortcut the app icon, and the
+open window is tied to it in the dock instead of showing the generic gear. If
+you already installed it, run the installer again.
+
 ## 0.23.0
 
 **Decisions run on your GPU.** The Jev decision layer no longer depends on the

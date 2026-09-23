@@ -1,5 +1,25 @@
 # Novidades
 
+## 0.23.1
+
+**O Linux ganha motor e GPU.** Até aqui o app no Linux pedia o pacote do
+llama.cpp feito para o Windows, e a preparação parava em "llama-server não
+encontrado dentro de …-bin-win-cpu-x64.zip". Agora ele baixa o pacote do
+Linux: Vulkan quando há placa de vídeo, CPU quando não há. A versão do
+llama.cpp que o app usa não publica CUDA para Linux, então as placas NVIDIA
+também rodam pelo Vulkan, que o driver proprietário já instala.
+
+A detecção de GPU, que só existia no Windows, passa a funcionar no Linux: a
+NVIDIA é lida pelo driver (NVML), com os mesmos números do Windows, e AMD e
+Intel pelo que o kernel informa. Por isso a tela de boas-vindas deixa de dizer
+"Sem GPU dedicada" numa máquina com placa, o monitor de hardware mostra uso,
+VRAM, temperatura e consumo, e o limite de energia das placas NVIDIA aparece
+também no Linux — aplicar um novo pede a senha do sistema.
+
+O instalador de uma linha passa a deixar o atalho do AppImage com o ícone do
+app, e a janela aberta fica associada a ele no dock, em vez da engrenagem
+genérica. Quem já instalou pode rodar o instalador de novo.
+
 ## 0.23.0
 
 **As decisões rodam na sua GPU.** A camada de decisão do Jev deixa de depender
