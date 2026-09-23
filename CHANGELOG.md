@@ -10,6 +10,14 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.24.1] — 2026-09-23
+
+- AgenticOw no longer asks for a DeepSeek key when it opens. It has no provider of its own: the native DeepSeek provider and its web search are out of the build, and models come only from OpenWeights' sources — the Local Server, OpenRouter and 9router.
+- Running with no model at all, the AgenticOw screen shows those three sources instead of an empty interface, with what each has right now and the next step. With a model in the library, the Local Server starts right there; the rest opens the matching tab in Sources. The interface comes back as soon as the first model arrives.
+- AgenticOw's default model is now the app's first model — local, else OpenRouter, else 9router — including for anyone who brought over from the DeepSeek Harness a default pointing at DeepSeek.
+- AgenticOw's Models page says models come from OpenWeights and no longer offers "Add provider", which the app's list would replace.
+- The `web_search` tool tells the model search is unavailable; `web_fetch` still reads the pages it is given.
+
 ## [0.24.0] — 2026-09-23
 
 - The coding agent is now AgenticOw, OpenWeights' fork of the DeepSeek Harness (MIT), kept at `pedro-canedo/agenticow`. Its runtime is built by our CI for Windows, Linux and macOS and pinned by each app version, so the agent updates together with OpenWeights — the DeepSeek Harness from npm was stuck on an old version, because the newer ones crash while starting in the mode the app uses.

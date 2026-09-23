@@ -1,5 +1,17 @@
 # What's new
 
+## 0.24.1
+
+**AgenticOw thinks only with OpenWeights' models.** Opening AgenticOw with no
+local server running and no provider set up used to land on the upstream's
+onboarding, asking for a DeepSeek API key — a provider that has nothing to do
+with the app. AgenticOw now has no provider of its own: DeepSeek's provider
+and its web search are out of the build, and its brain always comes from the
+sources you set up in OpenWeights. When there is no model yet, the screen shows
+the Local Server, OpenRouter and 9router with what each has and the next step,
+starting the Local Server right there when the library already has a model.
+See [the coding agent](/guide/harness).
+
 ## 0.24.0
 
 **The coding agent is now AgenticOw, and it updates with the app.** Until

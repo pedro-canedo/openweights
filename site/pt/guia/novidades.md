@@ -1,5 +1,17 @@
 # Novidades
 
+## 0.24.1
+
+**O AgenticOw pensa só com os modelos do OpenWeights.** Abrir o AgenticOw sem
+servidor local no ar e sem provedor configurado caía no onboarding do projeto
+original, pedindo a chave de API da DeepSeek — um provedor que não tem nada a
+ver com o app. Agora o AgenticOw não tem provedor próprio: o da DeepSeek e a
+busca na web dela ficam fora do build, e o cérebro dele vem sempre das fontes
+que você configura no OpenWeights. Quando ainda não há modelo, a tela mostra o
+Servidor Local, o OpenRouter e o 9router com o que cada um tem e o próximo
+passo, subindo o Servidor Local ali mesmo quando a biblioteca já tem um modelo.
+Veja [o agente de código](/pt/guia/harness).
+
 ## 0.24.0
 
 **O agente de código agora é o AgenticOw, e ele se atualiza com o app.** Até
