@@ -1,5 +1,33 @@
 # Novidades
 
+## 0.24.0
+
+**O agente de código agora é o AgenticOw, e ele se atualiza com o app.** Até
+esta versão o app instalava o DeepSeek Harness pelo npm, numa versão fixada em
+cada release — e não conseguia sair dela. As versões mais novas caem ao subir
+no modo que o app usa e passaram a exigir um cookie de login que o painel
+embutido nunca recebia, então o app ficava numa versão antiga enquanto o
+projeto andava. O AgenticOw é o nosso fork do DeepSeek Harness (MIT), mantido
+do jeito que o Cursor mantém o VS Code: o núcleo do original, a nossa camada
+por cima, sincronização periódica. O runtime dele é compilado na nossa própria
+CI, então um AgenticOw novo vem dentro de um OpenWeights novo e chega pela
+mesma atualização.
+
+A primeira abertura deixa de gastar de dez a trinta minutos resolvendo pacotes
+npm. Ela baixa um pacote pré-compilado para o seu sistema, confere contra o
+sha256 e o tamanho gravados no app e sobe; dali em diante, abre em segundos. A
+interface mora dentro da janela principal em vez de um painel separado, então
+ir ao Chat e voltar nunca recarrega a sessão, e ela fala português além de
+inglês, acompanhando o idioma do app.
+
+Os modelos que ele enxerga ficam em dia enquanto ele roda: subir o motor,
+baixar ou apagar um modelo, ligar o Jev, trocar a chave ou os favoritos do
+OpenRouter e subir o 9router atualizam o seletor de modelos sem reiniciar. As
+chaves de API passam a ficar só na memória do processo. A telemetria e o envio
+de feedback do projeto original estão desligados. As sessões e configurações
+do DeepSeek Harness são copiadas na primeira abertura, e a pasta original fica
+intacta. Veja [o agente de código](/pt/guia/harness).
+
 ## 0.23.1
 
 **O Linux ganha motor e GPU.** Até aqui o app no Linux pedia o pacote do

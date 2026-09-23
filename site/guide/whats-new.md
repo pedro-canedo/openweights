@@ -1,5 +1,32 @@
 # What's new
 
+## 0.24.0
+
+**The coding agent is now AgenticOw, and it updates with the app.** Until
+this version the app installed the DeepSeek Harness from npm, at a version
+fixed in each release — and it could not move past it. The newer releases
+crash while starting in the mode the app uses and switched to a login cookie
+that the embedded panel never received, so the app stayed on an old version
+while the project moved on. AgenticOw is our own fork of the DeepSeek Harness
+(MIT), kept the way Cursor keeps VS Code: the upstream core, our layer on top,
+regular syncs. We build its runtime in our own CI, so a new AgenticOw ships
+inside a new OpenWeights and arrives through the same update.
+
+The first open no longer spends ten to thirty minutes resolving npm packages.
+It downloads one prebuilt package for your system, checks it against the
+sha256 and size built into the app, and starts; after that it opens in
+seconds. The interface lives inside the main window instead of a separate
+panel, so going to Chat and back never reloads the session, and it speaks
+Portuguese as well as English, following the app language.
+
+The models it sees stay current while it runs: starting the engine,
+downloading or deleting a model, turning Jev on, changing the OpenRouter key
+or favourites and starting 9router all update its model picker without a
+restart. API keys now live only in the process memory. The upstream telemetry
+and feedback reporting are switched off. Your DeepSeek Harness sessions and
+settings are copied over on the first open, and the original folder is left
+alone. See [the coding agent](/guide/harness).
+
 ## 0.23.1
 
 **Linux gets its engine and its GPU.** Until now the app on Linux asked for the

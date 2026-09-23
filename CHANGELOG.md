@@ -10,6 +10,17 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.24.0] — 2026-09-23
+
+- The coding agent is now AgenticOw, OpenWeights' fork of the DeepSeek Harness (MIT), kept at `pedro-canedo/agenticow`. Its runtime is built by our CI for Windows, Linux and macOS and pinned by each app version, so the agent updates together with OpenWeights — the DeepSeek Harness from npm was stuck on an old version, because the newer ones crash while starting in the mode the app uses.
+- The first open downloads one prebuilt package (33 to 43 MB depending on the system), checked against the sha256 and size built into the app binary, instead of resolving about 190 npm packages for ten to thirty minutes. After that it opens in seconds. The previous runtime version is only deleted once the new one has started successfully.
+- The interface shows inside the main window, no longer in a separate panel or window: switching screens does not reload the session, and the app's dialogs stay on top of it.
+- Portuguese and English interface, following the app language without a restart.
+- Local Server models, OpenRouter favourites and 9router arrive through a channel of their own and stay current while the agent runs — starting or stopping the engine, downloading or deleting a model, changing Jev, the OpenRouter key or favourites, or 9router updates the model picker without a restart. API keys live only in the process memory.
+- With no local server and no provider on, the AgenticOw bar says there are no OpenWeights models and links to the Local Server; the notice goes away once the engine starts.
+- Session telemetry, message and command feedback, and the plugin inventory sent to DeepSeek's API are switched off.
+- On the first open, DeepSeek Harness sessions and settings are copied into AgenticOw; the original folder is left untouched, and going back to an earlier version finds everything. The old DeepSeek Harness install (`providers/dsh`, in the app data folder) is not deleted and can be removed by hand.
+
 ## [0.23.1] — 2026-09-23
 
 - On Linux, engine setup stopped at "llama-server not found inside llama-…-bin-win-cpu-x64.zip": the app downloaded the llama.cpp package built for Windows. It now downloads the Linux one — Vulkan when there is a graphics card, CPU when there is not.
