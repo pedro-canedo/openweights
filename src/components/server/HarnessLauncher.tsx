@@ -46,13 +46,11 @@ export default function HarnessLauncher({
     setLaunching(id);
     setError(null);
     try {
-      if (id === "dsh") {
-        // O dsh é gerenciado pelo app e tem tela própria: instalar, subir,
-        // parar e usar acontecem lá, com progresso e log à vista. Aqui o
-        // cartão só leva até ela — instalar por trás deste botão escondia
-        // minutos de trabalho numa tela sobre outra coisa. O preview de
-        // comando continua aí para quem prefere o terminal.
-        navigate("harness");
+      if (id === "agenticow") {
+        // O AgenticOw é gerenciado pelo app e tem tela própria: preparar,
+        // abrir e parar acontecem lá, com o progresso à vista. Aqui o cartão
+        // só leva até ela.
+        navigate("agenticow");
       } else {
         await harnessLaunch(id, model);
       }
@@ -104,7 +102,7 @@ export default function HarnessLauncher({
               <button
                 type="button"
                 disabled={
-                  (h.id !== "dsh" && (!loaded || !h.launchable)) ||
+                  (h.id !== "agenticow" && (!loaded || !h.launchable)) ||
                   launching != null
                 }
                 onClick={() => void open(h.id)}

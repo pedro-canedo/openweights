@@ -6,7 +6,7 @@ export type Screen =
   | "studio"
   | "models"
   | "chat"
-  | "harness"
+  | "agenticow"
   | "server"
   | "providers"
   | "settings";

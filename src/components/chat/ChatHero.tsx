@@ -2,7 +2,7 @@
 // uma tela de entrada (saudação + cards + brilho).
 
 import { useTranslation } from "react-i18next";
-import { HarnessHeroCard } from "./HarnessCta";
+import { AgenticowHeroCard } from "./AgenticowCta";
 
 const CARDS = [
   {
@@ -105,8 +105,8 @@ export default function ChatHero({
           ))}
         </div>
 
-        {/* O modo agente virou o DeepSeek Harness — o convite mora aqui. */}
-        <HarnessHeroCard />
+        {/* O modo agente agora é o AgenticOw — o convite mora aqui. */}
+        <AgenticowHeroCard />
       </div>
     </div>
   );

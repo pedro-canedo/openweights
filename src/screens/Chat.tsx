@@ -54,7 +54,7 @@ import {
   WorkspaceToggle,
   WorkspaceTrigger,
 } from "../components/chat/WorkspacePanel";
-import { HarnessComposerButton } from "../components/chat/HarnessCta";
+import { AgenticowComposerButton } from "../components/chat/AgenticowCta";
 import MessageList, { type UiMessage } from "../components/chat/MessageList";
 import ModelSelect from "../components/chat/ModelSelect";
 import ContextMeter from "../components/chat/ContextMeter";
@@ -884,7 +884,7 @@ export default function Chat() {
                   leftActions={
                     <>
                       {/* Onde vivia o toggle de agente: o CTA do harness. */}
-                      <HarnessComposerButton />
+                      <AgenticowComposerButton />
                       <ApprovalSelect
                         params={params}
                         onChange={setParams}

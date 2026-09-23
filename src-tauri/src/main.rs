@@ -2,8 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod commands_agenticow;
 mod commands_cluster;
-mod commands_dsh;
 mod commands_flags;
 mod commands_harness;
 mod commands_jev;
@@ -13,6 +13,7 @@ mod commands_tuning;
 mod comparison;
 mod desktop_host;
 mod gpu_lease;
+mod janela;
 mod optimization;
 mod serve_stats;
 mod spec_bench;
@@ -35,6 +36,9 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // A janela principal nasce em código: nua, com a interface do app
+            // numa webview filha — o que deixa a UI do AgenticOw entrar noutra.
+            janela::criar(app)?;
             let profile = lr_hw::detect();
             log::info!(
                 "hardware: {} | {} cores | {:.1} GiB RAM | {} GPU(s)",
@@ -120,7 +124,6 @@ fn main() {
             commands::runtime_prism_status,
             commands::runtime_prism_ensure,
             commands::models_search,
-            commands_dsh::dsh_check,
             commands::runtime_check,
             commands::runtime_prune,
             commands::models_readme,
@@ -176,13 +179,16 @@ fn main() {
             // Abrir o modelo carregado num harness externo.
             commands_harness::harness_list,
             commands_harness::harness_launch,
-            // DeepSeek Harness gerenciado (instala, supervisiona, painel).
-            commands_dsh::dsh_status,
-            commands_dsh::dsh_install,
-            commands_dsh::dsh_start,
-            commands_dsh::dsh_stop,
-            commands_dsh::dsh_open_panel,
-            commands_dsh::dsh_uninstall,
+            // AgenticOw: o fork do DeepSeek Harness, dentro da janela.
+            commands_agenticow::agenticow_status,
+            commands_agenticow::agenticow_start,
+            commands_agenticow::agenticow_stop,
+            commands_agenticow::agenticow_uninstall,
+            commands_agenticow::agenticow_set_locale,
+            commands_agenticow::agenticow_refresh_catalog,
+            commands_agenticow::agenticow_show,
+            commands_agenticow::agenticow_hide,
+            commands_agenticow::agenticow_set_bounds,
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,
@@ -259,8 +265,8 @@ fn main() {
                     #[cfg(windows)]
                     webview_perm::allow_microphone(app);
                 }
-                // A janela principal fechou: os painéis do 9router e do dsh
-                // não podem segurar o app de pé sozinhos. Sem isto o processo
+                // A janela principal fechou: o painel do 9router não pode
+                // segurar o app de pé sozinho. Sem isto o processo
                 // continua vivo — e os sidecars junto, que é o que o
                 // `shutdown_blocking` abaixo existe para evitar.
                 tauri::RunEvent::WindowEvent {
@@ -269,7 +275,6 @@ fn main() {
                     ..
                 } if label == "main" => {
                     commands_providers::fechar_painel(app);
-                    commands_dsh::fechar_painel(app);
                 }
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit => {
                     if let Some(state) = app.try_state::<state::AppState>() {

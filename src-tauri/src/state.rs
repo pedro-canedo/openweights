@@ -49,11 +49,23 @@ pub struct AppState {
     /// PID do 9router (0 = nenhum), pelo mesmo motivo do `server_pid`: no
     /// exit o mutex pode estar ocupado e o processo não pode sobreviver.
     pub ninerouter_pid: AtomicU32,
-    /// DeepSeek Harness (dsh) em execução, quando aberto pelo caminho
-    /// gerenciado.
-    pub dsh: tokio::sync::Mutex<Option<lr_dshhost::DshHost>>,
-    /// PID do dsh (0 = nenhum) — mesma rede de segurança do `ninerouter_pid`.
-    pub dsh_pid: AtomicU32,
+    /// Host do AgenticOw em execução (o runtime do fork do DeepSeek Harness).
+    pub agenticow: tokio::sync::Mutex<Option<lr_agenticow::AgenticowHost>>,
+    /// PID do Host do AgenticOw (0 = nenhum) — mesma rede de segurança do
+    /// `ninerouter_pid`.
+    pub agenticow_pid: AtomicU32,
+    /// Serializa iniciar/parar/desinstalar, sem bloquear o status.
+    pub agenticow_operacao: tokio::sync::Mutex<()>,
+    /// Revisão do último catálogo enviado ao Host.
+    pub agenticow_catalogo: std::sync::atomic::AtomicU64,
+    /// Geração do último pedido de catálogo (rajadas viram um envio).
+    pub agenticow_agendado: std::sync::atomic::AtomicU64,
+    /// Último erro de subida, para a tela.
+    pub agenticow_erro: std::sync::Mutex<Option<String>>,
+    /// Tag do upstream que o Host informou na saudação.
+    pub agenticow_upstream: std::sync::Mutex<Option<String>>,
+    /// Idioma que a tela pediu (`pt-BR` ou `en`).
+    pub agenticow_idioma: std::sync::Mutex<Option<String>>,
     /// Ponto de entrada único (Traefik), quando ligado. Opcional: nada no
     /// chat depende dele.
     pub gateway: tokio::sync::Mutex<Option<lr_gateway::Gateway>>,
@@ -253,8 +265,14 @@ impl AppState {
             ninerouter: tokio::sync::Mutex::new(None),
             ninerouter_operation: tokio::sync::Mutex::new(()),
             ninerouter_pid: AtomicU32::new(0),
-            dsh: tokio::sync::Mutex::new(None),
-            dsh_pid: AtomicU32::new(0),
+            agenticow: tokio::sync::Mutex::new(None),
+            agenticow_pid: AtomicU32::new(0),
+            agenticow_operacao: tokio::sync::Mutex::new(()),
+            agenticow_catalogo: std::sync::atomic::AtomicU64::new(0),
+            agenticow_agendado: std::sync::atomic::AtomicU64::new(0),
+            agenticow_erro: std::sync::Mutex::new(None),
+            agenticow_upstream: std::sync::Mutex::new(None),
+            agenticow_idioma: std::sync::Mutex::new(None),
             gateway: tokio::sync::Mutex::new(None),
             gateway_pid: AtomicU32::new(0),
             decisor: tokio::sync::Mutex::new(None),
@@ -320,9 +338,9 @@ impl AppState {
             }
             *guard = None;
         }
-        if let Ok(mut guard) = self.dsh.try_lock() {
-            if let Some(d) = guard.as_mut() {
-                d.stop_blocking();
+        if let Ok(mut guard) = self.agenticow.try_lock() {
+            if let Some(h) = guard.as_mut() {
+                h.parar_bloqueando();
             }
             *guard = None;
         }
@@ -348,7 +366,7 @@ impl AppState {
             &*self.server_pid,
             &self.decisor_local_pid,
             &self.ninerouter_pid,
-            &self.dsh_pid,
+            &self.agenticow_pid,
             &self.gateway_pid,
             &*self.rpc_pid,
         ] {

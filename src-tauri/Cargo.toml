@@ -43,7 +43,7 @@ description = "OpenWeights — rode LLMs localmente, sem conhecimento técnico"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "unstable"] }
 tauri-plugin-opener = "2"
 # Aviso do sistema (cluster: pareamento, empréstimo de GPU). Quem faz isso
 # direito em cada sistema é o plugin oficial.
@@ -78,7 +78,7 @@ lr_providers = { path = "crates/providers" }
 lr_nodejs = { path = "crates/nodejs" }
 lr_fetch = { path = "crates/fetch" }
 lr_ninerouter = { path = "crates/ninerouter" }
-lr_dshhost = { path = "crates/dshhost" }
+lr_agenticow = { path = "crates/agenticow" }
 lr_proc = { path = "crates/proc" }
 lr_gateway = { path = "crates/gateway" }
 lr_decisor = { path = "crates/decisor" }

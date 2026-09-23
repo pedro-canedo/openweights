@@ -6,24 +6,18 @@
 //! comando, então nunca vira injeção. A chave de API só viaja por variável de
 //! ambiente: argv é visível na lista de processos de qualquer usuário.
 //!
-//! DeepSeek Harness (`dsh`): não abre em terminal e nem por este caminho — ele
-//! tem TELA PRÓPRIA no app (barra lateral), onde a instalação, a subida, a
-//! parada e o uso embutido acontecem à vista, sobre o gerenciado de
-//! `commands_dsh`: Node portátil + pacote pinado numa pasta do app,
-//! `settings.yaml` multi-provider escrito cirurgicamente no `DSH_HOME`
-//! gerenciado (`<data>/dsh-home`, ver `lr_dshhost::settings`) e processo
-//! supervisionado. O cartão daqui só leva até essa tela; `harness_launch`
-//! ainda delega ao caminho gerenciado para quem chamar o comando direto. Os
-//! DEMAIS harnesses continuam abrindo em terminal, exatamente como antes.
+//! AgenticOw: não abre em terminal — ele tem TELA PRÓPRIA no app (barra
+//! lateral), com a interface dentro da janela principal, sobre o runtime
+//! gerenciado de `commands_agenticow` (pacote verificado, Host supervisionado,
+//! catálogo de modelos pelo canal de controle). O cartão daqui só leva até essa
+//! tela; `harness_launch` ainda delega ao caminho gerenciado para quem chamar o
+//! comando direto. Os DEMAIS harnesses abrem em terminal.
 
 use crate::state::AppState;
 use serde::Serialize;
 use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
-
-/// Variável que carrega a chave de API local até o harness.
-const API_KEY_ENV: &str = "OPENWEIGHTS_API_KEY";
 
 /// Um harness externo que o app sabe lançar.
 struct HarnessSpec {
@@ -43,22 +37,24 @@ struct HarnessSpec {
     npx_package: Option<&'static str>,
 }
 
+/// Id do cartão do AgenticOw (a tela navega para ele em vez de lançar).
+const ID_AGENTICOW: &str = "agenticow";
+
 /// O registro. Ordem = ordem dos cartões na tela.
 fn registry() -> &'static [HarnessSpec] {
     &[
-        // O dsh é o único harness GERENCIADO: `harness_launch` delega ao
-        // `commands_dsh` (instala, escreve o settings.yaml, supervisiona e
-        // abre em janela do app). `launch`/`env` daqui não são executados —
-        // ficam como documentação do equivalente em terminal.
+        // O AgenticOw é o único harness GERENCIADO: runtime verificado,
+        // supervisionado pelo app e mostrado na tela dele, dentro da janela
+        // (`commands_agenticow`). Não há comando de terminal equivalente.
         HarnessSpec {
-            id: "dsh",
-            name: "DeepSeek Harness",
-            probe_bin: "dsh",
-            install_cmd: "npm install -g @deepseek-ai/dsh",
-            launch: &["{bin}", "web"],
-            env: &[("DSH_HOME", "{dshHome}"), (API_KEY_ENV, "{apiKey}")],
-            docs_url: "https://github.com/deepseek-ai/deepseek-harness",
-            npx_package: Some("@deepseek-ai/dsh"),
+            id: ID_AGENTICOW,
+            name: "AgenticOw",
+            probe_bin: "",
+            install_cmd: "",
+            launch: &[],
+            env: &[],
+            docs_url: "https://github.com/pedro-canedo/agenticow",
+            npx_package: None,
         },
         HarnessSpec {
             id: "aider",
@@ -176,7 +172,6 @@ struct Fill {
     base_root_url: String,
     model: String,
     api_key: Option<String>,
-    dsh_home: String,
     bin: String,
 }
 
@@ -194,7 +189,6 @@ fn fill(template: &str, f: &Fill, mask_secret: bool) -> String {
         // Clientes OpenAI recusam chave vazia mesmo quando o servidor não
         // exige; "local" é o valor de cortesia consagrado.
         .replace("{apiKeyOrDummy}", key.as_deref().unwrap_or("local"))
-        .replace("{dshHome}", &f.dsh_home)
         .replace("{bin}", &f.bin)
 }
 
@@ -223,11 +217,6 @@ async fn server_fill(state: &AppState, model: &str) -> CmdResult<Fill> {
         base_url: format!("{base_url}/v1"),
         model: model.to_string(),
         api_key,
-        dsh_home: state
-            .data_dir
-            .join("dsh-home")
-            .to_string_lossy()
-            .into_owned(),
         bin: String::new(),
     })
 }
@@ -235,13 +224,12 @@ async fn server_fill(state: &AppState, model: &str) -> CmdResult<Fill> {
 /// O Fill de FALLBACK do `harness_list`, para o preview com o servidor
 /// parado. A raiz é derivada aqui TAMBÉM — sem ela o cartão do claude-code
 /// mostraria `{baseRootUrl}` literal enquanto o servidor não sobe.
-fn fallback_fill(model: &str, dsh_home: String) -> Fill {
+fn fallback_fill(model: &str) -> Fill {
     Fill {
         base_url: "http://127.0.0.1:11711/v1".into(),
         base_root_url: "http://127.0.0.1:11711".into(),
         model: model.to_string(),
         api_key: None,
-        dsh_home,
         bin: String::new(),
     }
 }
@@ -253,35 +241,25 @@ pub async fn harness_list(
 ) -> CmdResult<Vec<HarnessStatus>> {
     let mut f = match server_fill(&state, model.trim()).await {
         Ok(f) => f,
-        Err(_) => fallback_fill(
-            model.trim(),
-            state
-                .data_dir
-                .join("dsh-home")
-                .to_string_lossy()
-                .into_owned(),
-        ),
+        Err(_) => fallback_fill(model.trim()),
     };
 
     let mut out = Vec::new();
     for spec in registry() {
-        // dsh: o cartão reflete o caminho GERENCIADO — instalado é a nossa
-        // pasta isolada (não o PATH), sempre lançável (a primeira abertura
-        // instala com progresso) e o preview mostra o comando supervisionado.
-        if spec.id == "dsh" {
-            let l = crate::commands_dsh::layout(&state);
+        // AgenticOw: o cartão reflete o runtime GERENCIADO — instalado é a
+        // pasta verificada do app (não o PATH) e lançável quando há pacote para
+        // esta máquina; a primeira abertura instala com progresso, na tela dele.
+        if spec.id == ID_AGENTICOW {
+            let l = crate::commands_agenticow::layout(&state);
             let instalado = l.instalado();
             out.push(HarnessStatus {
                 id: spec.id.to_string(),
                 name: spec.name.to_string(),
                 installed: instalado,
-                path: instalado.then(|| l.bin_js().display().to_string()),
-                launchable: true,
-                install_cmd: spec.install_cmd.to_string(),
-                command_preview: format!(
-                    "DSH_HOME={} dsh web --port 0 --no-open  # gerenciado pelo app",
-                    f.dsh_home
-                ),
+                path: instalado.then(|| l.atual().display().to_string()),
+                launchable: lr_agenticow::pins::asset_atual().is_some(),
+                install_cmd: String::new(),
+                command_preview: String::new(),
                 docs_url: spec.docs_url.to_string(),
             });
             continue;
@@ -337,13 +315,13 @@ pub async fn harness_launch(
         .find(|s| s.id == id)
         .ok_or("harness desconhecido")?;
 
-    // dsh: DELEGA ao caminho gerenciado. Não exige modelo selecionado nem
-    // servidor previamente no ar — o `dsh_start` sobe o que faltar e escreve
-    // o settings.yaml com TODOS os modelos; depois o painel abre em janela
-    // do app, não em terminal.
-    if spec.id == "dsh" {
-        crate::commands_dsh::dsh_start_inner(&app, &state).await?;
-        return crate::commands_dsh::abrir_painel(&app, &state).await;
+    // AgenticOw: DELEGA ao caminho gerenciado. Não exige modelo selecionado
+    // nem servidor no ar — o catálogo entrega o que houver, e a interface
+    // aparece na tela dele, não em terminal.
+    if spec.id == ID_AGENTICOW {
+        return crate::commands_agenticow::iniciar(&app, &state, None)
+            .await
+            .map(|_| ());
     }
 
     let model = model.trim();
@@ -435,8 +413,7 @@ mod tests {
             base_root_url: "http://127.0.0.1:11711".into(),
             model: "Qwen3.6-27B-MTP.gguf".into(),
             api_key: Some("sk-segredo".into()),
-            dsh_home: "/data/dsh-home".into(),
-            bin: "dsh".into(),
+            bin: "aider".into(),
         }
     }
 
@@ -456,20 +433,15 @@ mod tests {
         assert_eq!(fill("{apiKey}", &sem, false), "");
     }
 
-    /// O settings.yaml do dsh não é mais gerado aqui: virou escrita
-    /// cirúrgica multi-provider em `lr_dshhost::settings` (testada lá), e o
-    /// launch do dsh delega ao caminho gerenciado. Este teste trava a env
-    /// referenciada pelo yaml para não divergir entre os dois módulos.
-    #[test]
-    fn the_dsh_key_env_matches_the_managed_settings_writer() {
-        assert_eq!(API_KEY_ENV, lr_dshhost::settings::OPENWEIGHTS_KEY_ENV);
-    }
-
     #[test]
     fn every_registry_entry_is_consistent() {
         let mut ids = std::collections::HashSet::new();
         for s in registry() {
             assert!(ids.insert(s.id), "id repetido: {}", s.id);
+            // O gerenciado abre na tela dele; não tem comando de terminal.
+            if s.id == ID_AGENTICOW {
+                continue;
+            }
             assert!(!s.launch.is_empty());
             assert!(
                 s.launch[0].contains("{bin}"),
@@ -508,7 +480,7 @@ mod tests {
     /// senão o preview do claude-code quebrava com `{baseRootUrl}` literal.
     #[test]
     fn the_fallback_fill_also_derives_the_root_url() {
-        let f = fallback_fill("m.gguf", "/data/dsh-home".into());
+        let f = fallback_fill("m.gguf");
         assert_eq!(f.base_url, "http://127.0.0.1:11711/v1");
         assert_eq!(f.base_root_url, "http://127.0.0.1:11711");
         assert_eq!(fill("{baseRootUrl}", &f, true), "http://127.0.0.1:11711");

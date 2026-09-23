@@ -260,66 +260,6 @@ export const nineRouterOpenPanel = (): Promise<void> =>
 export const nineRouterUninstall = (removeData: boolean): Promise<NineRouterStatus> =>
   invoke<NineRouterStatus>("ninerouter_uninstall", { removeData });
 
-// --------------------------------------------------------------------- dsh ---
-
-/**
- * DeepSeek Harness (dsh) gerenciado pelo app, no mesmo molde do 9router:
- * instalação isolada em pasta própria com Node portátil, progresso e log
- * chegando pelo MESMO evento "provider" (`onProviderEvent`).
- */
-export interface DshStatus {
-  nodeInstalled: boolean;
-  installed: boolean;
-  running: boolean;
-  port: number;
-  /** URL da UI web quando no ar — é o que a janela do painel carrega. */
-  panelUrl: string | null;
-  /** A versão que está no disco — vazio quando nada instalado. */
-  version: string;
-  /** A versão que esta build do aplicativo instala. */
-  pinnedVersion: string;
-  /** Disco e build divergem: atualizar o harness é a providência. */
-  updatePending: boolean;
-}
-
-/** "Tem atualização?" — inclui a ida ao registry do npm, então demora. */
-export interface DshCheck {
-  installed: boolean;
-  version: string;
-  pinnedVersion: string;
-  updatePending: boolean;
-  latestNpm: string | null;
-  npmNewer: boolean;
-}
-
-export const dshStatus = (): Promise<DshStatus> =>
-  invoke<DshStatus>("dsh_status");
-
-export const dshCheck = (): Promise<DshCheck> => invoke<DshCheck>("dsh_check");
-
-export const dshInstall = (): Promise<DshStatus> =>
-  invoke<DshStatus>("dsh_install");
-
-/**
- * Instala se preciso, sobe o servidor local se preciso, escreve o
- * settings.yaml com todos os provedores/modelos e spawna o `dsh web`.
- * Demorado na primeira vez (Node + npm install) — acompanhe o progresso
- * com `onProviderEvent`; a UI não deve travar esperando.
- */
-export const dshStart = (): Promise<DshStatus> => invoke<DshStatus>("dsh_start");
-
-/// Janela Tauri própria, como o painel do 9router (não iframe).
-export const dshOpenPanel = (): Promise<void> => invoke<void>("dsh_open_panel");
-
-export const dshStop = (): Promise<DshStatus> => invoke<DshStatus>("dsh_stop");
-
-/**
- * Apaga a instalação gerenciada. `removeData` leva junto o DSH_HOME — as
- * sessões e credenciais criadas dentro do harness.
- */
-export const dshUninstall = (removeData: boolean): Promise<DshStatus> =>
-  invoke<DshStatus>("dsh_uninstall", { removeData });
-
 // ----------------------------------------------------------------- gateway ---
 
 export interface GatewayStatus {

@@ -1,0 +1,138 @@
+name: AgenticOw runtime
+# O runtime do AgenticOw (o fork pedro-canedo/agenticow do DeepSeek Harness)
+# empacotado para o app: a árvore de produção autocontida do Host, sem npm
+# install na máquina da pessoa. Compila a revisão pinada, prova o PACOTE
+# extraído com a suíte de ponta a ponta do próprio fork e publica numa tag
+# imutável com um pins.json (sha256 e tamanho por alvo), que o app copia para
+# src-tauri/crates/agenticow/pins.json — o pin vai no binário, então herda a
+# assinatura do updater.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+        description: Publish verified runtime packages for the app
+permissions:
+  contents: read
+concurrency:
+  group: agenticow-runtime-758a924f-v1
+  cancel-in-progress: false
+env:
+  AGENTICOW_REPOSITORY: pedro-canedo/agenticow
+  AGENTICOW_REVISION: 758a924fdb1d7e18b0b98682469f93516353fc57
+  AGENTICOW_TAG: agenticow-runtime-758a924f-v1
+  # O mesmo PINNED_NODE do app (lr_nodejs): o runtime roda nele.
+  NODE_VERSION: 22.20.0
+jobs:
+  build:
+    name: runtime (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, target: linux-x64, ext: tar.gz }
+          - { os: windows-2022, target: win32-x64, ext: zip }
+          - { os: macos-14, target: darwin-arm64, ext: tar.gz }
+          # Mac Intel: o único runner Intel que resta; se não houver, o app
+          # diz que o AgenticOw não está disponível nesta máquina.
+          - { os: macos-15-intel, target: darwin-x64, ext: tar.gz, optional: true }
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional == true }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.AGENTICOW_REPOSITORY }}
+          ref: ${{ env.AGENTICOW_REVISION }}
+          path: agenticow
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: pnpm (corepack)
+        run: corepack enable
+
+      - name: Install e build do fork
+        working-directory: agenticow
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Runtime
+        working-directory: agenticow
+        run: node apps/openweights-host/scripts/prepare-runtime.mjs --out "${{ runner.temp }}/runtime" --target ${{ matrix.target }} --revision ${{ env.AGENTICOW_REVISION }}
+
+      - name: Empacotar
+        shell: bash
+        run: |
+          mkdir -p output
+          NOME="openweights-${AGENTICOW_TAG}-${{ matrix.target }}.${{ matrix.ext }}"
+          cd "$RUNNER_TEMP/runtime"
+          if [ "${{ matrix.ext }}" = zip ]; then
+            7z a -tzip -mx=7 "$GITHUB_WORKSPACE/output/$NOME" . > /dev/null
+          else
+            tar -czf "$GITHUB_WORKSPACE/output/$NOME" .
+          fi
+          ls -la "$GITHUB_WORKSPACE/output"
+
+      - name: Fumaça — o pacote extraído, pela suíte do fork
+        shell: bash
+        run: |
+          NOME="openweights-${AGENTICOW_TAG}-${{ matrix.target }}.${{ matrix.ext }}"
+          mkdir -p "$RUNNER_TEMP/extraido"
+          if [ "${{ matrix.ext }}" = zip ]; then
+            7z x -y "output/$NOME" -o"$RUNNER_TEMP/extraido" > /dev/null
+          else
+            tar -xzf "output/$NOME" -C "$RUNNER_TEMP/extraido"
+          fi
+          AGENTICOW_RUNTIME="$RUNNER_TEMP/extraido" node --test --test-reporter=spec \
+            "agenticow/apps/openweights-host/tests/*.test.mjs" "agenticow/apps/openweights-plugins/tests/*.test.mjs"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agenticow-${{ matrix.target }}
+          path: output/*
+
+  publish:
+    if: always() && inputs.publish
+    needs: [build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: agenticow-*
+          merge-multiple: true
+          path: output
+      - name: pins.json
+        run: |
+          # Os três alvos obrigatórios têm de estar aqui; o Mac Intel é opcional.
+          for alvo in linux-x64 win32-x64 darwin-arm64; do
+            ls output/ | grep -q -- "-$alvo\." || { echo "falta o pacote de $alvo"; exit 1; }
+          done
+          node -e '
+            const fs = require("fs"), crypto = require("crypto"), path = require("path")
+            const assets = {}
+            for (const nome of fs.readdirSync("output").sort()) {
+              const m = /-(linux-x64|win32-x64|darwin-arm64|darwin-x64)\.(zip|tar\.gz)$/.exec(nome)
+              if (!m) continue
+              const buf = fs.readFileSync(path.join("output", nome))
+              assets[m[1]] = { name: nome, sha256: crypto.createHash("sha256").update(buf).digest("hex"), size: buf.length }
+            }
+            const pins = { format: 1, repository: process.env.GITHUB_REPOSITORY, tag: process.env.AGENTICOW_TAG, revision: process.env.AGENTICOW_REVISION, assets }
+            fs.writeFileSync("output/pins.json", JSON.stringify(pins, null, 2) + "\n")
+            console.log(JSON.stringify(pins, null, 2))
+          '
+      - name: Publicar a release imutável
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$AGENTICOW_TAG" >/dev/null 2>&1; then
+            gh release upload "$AGENTICOW_TAG" output/* --clobber
+          else
+            gh release create "$AGENTICOW_TAG" output/* --target "$GITHUB_SHA" --prerelease --title 'AgenticOw runtime' --notes "AgenticOw runtime (pedro-canedo/agenticow at $AGENTICOW_REVISION, based on DeepSeek Harness, MIT): the self-contained Host tree OpenWeights installs. Install through OpenWeights; pins.json carries the sha256 and size the app embeds."
+          fi

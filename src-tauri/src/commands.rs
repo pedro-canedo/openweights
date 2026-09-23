@@ -744,6 +744,7 @@ pub async fn model_delete(
         std::fs::remove_file(f).map_err(err_str)?;
     }
     crate::commands_jev::esquecer_capacidades(&state);
+    crate::commands_agenticow::agendar_catalogo(&app);
 
     let rodando = {
         let guard = state.server.lock().await;

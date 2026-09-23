@@ -55,15 +55,19 @@ const mockProfile: HardwareProfile = {
   ],
 };
 
-// Estado simulado do DeepSeek Harness gerenciado: começa não instalado para
-// que o CTA do Chat exercite o caminho completo (instalar → subir → abrir).
-let dshMock = {
-  nodeInstalled: false,
+// Estado simulado do AgenticOw: começa não instalado para que a tela
+// exercite o caminho completo (preparar → abrir). No navegador não há webview
+// nativa: o palco fica vazio, e mostrar/esconder são no-ops.
+let agenticowMock = {
+  supported: true,
   installed: false,
   running: false,
-  port: 0,
-  panelUrl: null as string | null,
-  version: "",
+  ready: false,
+  port: null as number | null,
+  tag: "agenticow-runtime-dev-v1",
+  revision: "0".repeat(40),
+  upstreamTag: null as string | null,
+  lastError: null as string | null,
 };
 
 let nineMock = {
@@ -98,32 +102,24 @@ async function mockInvoke(cmd: string, _args?: Record<string, unknown>) {
     case "ninerouter_uninstall":
       nineMock = { ...nineMock, installed: false, running: false, dashboardUrl: null, version: "", password: _args?.removeData ? "" : nineMock.password };
       return { ...nineMock };
-    case "dsh_status":
-      return { ...dshMock };
-    case "dsh_install":
-      dshMock = {
-        ...dshMock,
-        nodeInstalled: true,
-        installed: true,
-        version: "0.1.1-rc.2",
-      };
-      return { ...dshMock };
-    case "dsh_start":
-      dshMock = {
-        nodeInstalled: true,
-        installed: true,
-        running: true,
-        port: 3080,
-        panelUrl: "http://127.0.0.1:3080/",
-        version: "0.1.1-rc.2",
-      };
-      return { ...dshMock };
-    case "dsh_open_panel":
-      // Navegador: não há janela Tauri para abrir — no-op coerente.
+    case "agenticow_status":
+      return { ...agenticowMock };
+    case "agenticow_start":
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      agenticowMock = { ...agenticowMock, installed: true, running: true, ready: true, port: 11730, upstreamTag: "dsh-v0.1.5-rc.3" };
+      return { ...agenticowMock };
+    case "agenticow_stop":
+      agenticowMock = { ...agenticowMock, running: false, ready: false, port: null };
+      return { ...agenticowMock };
+    case "agenticow_uninstall":
+      agenticowMock = { ...agenticowMock, installed: false, running: false, ready: false, port: null };
+      return { ...agenticowMock };
+    case "agenticow_set_locale":
+    case "agenticow_refresh_catalog":
+    case "agenticow_show":
+    case "agenticow_hide":
+    case "agenticow_set_bounds":
       return undefined;
-    case "dsh_stop":
-      dshMock = { ...dshMock, running: false, port: 0, panelUrl: null };
-      return { ...dshMock };
     case "provider_endpoint":
       // Endpoint local simulado, sem chave — defesa em profundidade para
       // qualquer chamador que chegue aqui fora do Tauri.

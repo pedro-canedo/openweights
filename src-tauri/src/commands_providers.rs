@@ -521,6 +521,7 @@ async fn ninerouter_start_inner(
     }
 
     let _ = app.emit(EVENTO, &NineRouterEvent::Ready);
+    crate::commands_agenticow::agendar_catalogo(&app);
     ninerouter_status(state).await
 }
 
@@ -622,6 +623,7 @@ pub async fn ninerouter_stop(
     ninerouter_stop_inner(&state).await?;
     fechar_painel(&app);
     sincronizar_rotas(&state).await;
+    crate::commands_agenticow::agendar_catalogo(&app);
     ninerouter_status(state.clone()).await
 }
 

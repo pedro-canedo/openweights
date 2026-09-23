@@ -5,11 +5,11 @@
 use tauri::Manager;
 
 pub fn allow_microphone(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        log::warn!("janela principal ausente; microfone não será liberado");
+    let Some(webview) = app.get_webview(crate::janela::WEBVIEW_DO_APP) else {
+        log::warn!("webview principal ausente; microfone não será liberado");
         return;
     };
-    if let Err(e) = window.with_webview(|webview| {
+    if let Err(e) = webview.with_webview(|webview| {
         grant(webview);
     }) {
         log::warn!("falha ao configurar permissão de microfone: {e}");

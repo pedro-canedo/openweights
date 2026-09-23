@@ -245,14 +245,14 @@ export function harnessList(model: string): Promise<HarnessStatus[]> {
   if (!isTauri) {
     return Promise.resolve([
       {
-        id: "dsh",
-        name: "DeepSeek Harness",
+        id: "agenticow",
+        name: "AgenticOw",
         installed: false,
         path: null,
         launchable: true,
-        installCmd: "npm install -g @deepseek-ai/dsh",
-        commandPreview: "DSH_HOME=/dados/dsh-home npx -y @deepseek-ai/dsh web",
-        docsUrl: "https://github.com/deepseek-ai/deepseek-harness",
+        installCmd: "",
+        commandPreview: "",
+        docsUrl: "https://github.com/pedro-canedo/agenticow",
       },
       {
         id: "aider",

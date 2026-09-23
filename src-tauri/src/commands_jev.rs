@@ -466,7 +466,7 @@ pub async fn jev_decidir_esforco(
 /// desceu, a configuração do Jev mudou, a chave do OpenRouter mudou. Fazer
 /// isso no backend (e não na tela) garante que vale também quando quem sobe
 /// o motor é o agendador ou o próprio dsh.
-pub(crate) async fn sincronizar_shim(_app: &tauri::AppHandle, state: &AppState) {
+pub(crate) async fn sincronizar_shim(app: &tauri::AppHandle, state: &AppState) {
     let cfg = jev_config(state);
     let decisores = decisores(state).await.unwrap_or_default();
     let decisor_local_url = if cfg.enabled {
@@ -529,6 +529,8 @@ pub(crate) async fn sincronizar_shim(_app: &tauri::AppHandle, state: &AppState) 
         }
         (false, None) => {}
     }
+    // O proxy, o motor ou as chaves mudaram: o catálogo do AgenticOw também.
+    crate::commands_agenticow::agendar_catalogo(app);
 }
 
 // --------------------------------------------------------- decisor local ---
