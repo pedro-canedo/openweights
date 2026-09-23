@@ -121,8 +121,33 @@ instala_linux() {
     baixar "$url" "$alvo"
     chmod +x "$alvo"
 
+    # O ícone mora dentro do AppImage. Sem copiá-lo para o tema do usuário, o
+    # atalho fica sem ícone e o dock mostra a engrenagem genérica. O
+    # `--appimage-extract` com padrão tira só os PNGs, e não precisa de FUSE.
+    # A pasta vem do tamanho real da imagem: o bundler grava a de 256 px em
+    # `256x256@2`, que no tema quer dizer 512 px.
+    icones="$HOME/.local/share/icons/hicolor"
+    if (cd "$TMP" && "$alvo" --appimage-extract 'usr/share/icons/hicolor/*/apps/openweights.png' >/dev/null 2>&1); then
+        for png in "$TMP"/squashfs-root/usr/share/icons/hicolor/*/apps/openweights.png; do
+            [ -f "$png" ] || continue
+            tamanho=$(basename "$(dirname "$(dirname "$png")")")
+            tamanho=${tamanho%@*}
+            mkdir -p "$icones/$tamanho/apps"
+            cp "$png" "$icones/$tamanho/apps/openweights.png"
+        done
+        # Só atualiza um cache que já existe: criar um aqui esconderia os
+        # ícones de outros apps que não o atualizam.
+        if [ -f "$icones/icon-theme.cache" ]; then
+            gtk-update-icon-cache -q -t -f "$icones" 2>/dev/null || true
+        fi
+    else
+        aviso "Could not extract the icon from the AppImage — the shortcut will use a generic one"
+    fi
+
     # Sem o atalho o AppImage não aparece no menu, e "instalado" viraria "está
-    # num arquivo em algum lugar".
+    # num arquivo em algum lugar". O `StartupWMClass` liga a janela ao atalho:
+    # o GTK a identifica pelo nome do binário (`openweights`), como faz o
+    # atalho que o próprio `.deb` instala.
     atalhos="$HOME/.local/share/applications"
     mkdir -p "$atalhos"
     cat >"$atalhos/openweights.desktop" <<EOF
@@ -130,9 +155,11 @@ instala_linux() {
 Type=Application
 Name=OpenWeights
 Comment=Run local LLMs with an agent
-Exec=$alvo
+Exec="$alvo"
+Icon=openweights
+StartupWMClass=openweights
 Terminal=false
-Categories=Development;Utility;
+Categories=Development;
 EOF
 
     aviso "Done: $alvo"

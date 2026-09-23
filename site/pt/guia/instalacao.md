@@ -77,7 +77,7 @@ disco: conte alguns GB por modelo.
 | Windows | *Configurações → Aplicativos → OpenWeights → Desinstalar* |
 | macOS | Arraste `OpenWeights.app` para o Lixo |
 | Linux (`.deb`) | `sudo apt remove openweights` |
-| Linux (AppImage) | Apague o arquivo |
+| Linux (AppImage) | Apague o arquivo, o atalho `~/.local/share/applications/openweights.desktop` e os ícones `~/.local/share/icons/hicolor/*/apps/openweights.png` |
 
 Modelos e conversas ficam fora do pacote do app e sobrevivem à desinstalação —
 apague a pasta de dados na mão se quiser tudo fora.

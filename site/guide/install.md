@@ -76,7 +76,7 @@ plan for a few GB per model.
 | Windows | *Settings → Apps → OpenWeights → Uninstall* |
 | macOS | Drag `OpenWeights.app` to the Trash |
 | Linux (`.deb`) | `sudo apt remove openweights` |
-| Linux (AppImage) | Delete the file |
+| Linux (AppImage) | Delete the file, the shortcut `~/.local/share/applications/openweights.desktop` and the icons `~/.local/share/icons/hicolor/*/apps/openweights.png` |
 
 Models and conversations live outside the app bundle and survive uninstalling —
 delete the data folder by hand if you want them gone.
