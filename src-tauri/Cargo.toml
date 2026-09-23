@@ -90,6 +90,13 @@ lr_cluster = { path = "crates/cluster" }
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
 
+# No Linux o Tauri empilha as webviews filhas numa GtkBox e ignora posição e
+# tamanho; a janela monta a sobreposição dela mesma (ver `janela.rs`). As
+# versões são as que o wry já traz — custo zero de lockfile.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+webkit2gtk = "2.0"
+
 [profile.release]
 lto = true
 codegen-units = 1

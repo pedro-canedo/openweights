@@ -26,7 +26,7 @@ pub fn criar(app: &tauri::App) -> tauri::Result<()> {
     let tamanho = janela
         .inner_size()?
         .to_logical::<f64>(janela.scale_factor()?);
-    janela.add_child(
+    let _app = janela.add_child(
         WebviewBuilder::new(WEBVIEW_DO_APP, WebviewUrl::default())
             // O app trata arrastar arquivo na própria UI (dragDropEnabled: false).
             .disable_drag_drop_handler()
@@ -34,5 +34,98 @@ pub fn criar(app: &tauri::App) -> tauri::Result<()> {
         LogicalPosition::new(0.0, 0.0),
         tamanho,
     )?;
+    #[cfg(target_os = "linux")]
+    gtk_sobreposicao::montar(&_app);
     Ok(())
+}
+
+/// Põe uma webview filha sobre o retângulo `(x, y, largura, altura)` da
+/// janela, em pixels lógicos (os do CSS).
+pub fn posicionar(
+    webview: &tauri::Webview,
+    x: f64,
+    y: f64,
+    largura: f64,
+    altura: f64,
+) -> tauri::Result<()> {
+    let (largura, altura) = (largura.max(1.0), altura.max(1.0));
+    #[cfg(target_os = "linux")]
+    {
+        gtk_sobreposicao::posicionar(webview, x, y, largura, altura);
+        Ok(())
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        webview.set_position(LogicalPosition::new(x, y))?;
+        webview.set_size(tauri::LogicalSize::new(largura, altura))
+    }
+}
+
+/// No Linux o Tauri põe TODA webview da janela numa `GtkBox` vertical, com
+/// expand — duas webviews dividem a janela ao meio — e o `set_bounds` do wry
+/// não faz nada ali (só age num `GtkFixed` ou numa filha X11). Então a janela
+/// monta a sobreposição dela: a webview do app vira o conteúdo de um
+/// `GtkOverlay` (preenche tudo, acompanha o tamanho sozinha) e a filha sai da
+/// caixa para uma camada por cima, posicionada por margens.
+#[cfg(target_os = "linux")]
+mod gtk_sobreposicao {
+    use gtk::prelude::*;
+    use std::cell::RefCell;
+
+    // Objetos GTK só vivem na thread principal — e é nela que o
+    // `with_webview` roda.
+    thread_local! {
+        static SOBREPOSICAO: RefCell<Option<gtk::Overlay>> = const { RefCell::new(None) };
+    }
+
+    pub fn montar(app: &tauri::Webview) {
+        let resultado = app.with_webview(|pw| {
+            let wv = pw.inner();
+            let Some(caixa) = wv.parent().and_then(|p| p.downcast::<gtk::Box>().ok()) else {
+                log::warn!("webview do app fora de uma GtkBox: sem sobreposição");
+                return;
+            };
+            let sobreposicao = gtk::Overlay::new();
+            caixa.remove(&wv);
+            sobreposicao.add(&wv);
+            caixa.pack_start(&sobreposicao, true, true, 0);
+            sobreposicao.show_all();
+            SOBREPOSICAO.with(|s| *s.borrow_mut() = Some(sobreposicao));
+        });
+        if let Err(e) = resultado {
+            log::warn!("sobreposição da janela: {e}");
+        }
+    }
+
+    pub fn posicionar(filha: &tauri::Webview, x: f64, y: f64, largura: f64, altura: f64) {
+        let resultado = filha.with_webview(move |pw| {
+            let wv = pw.inner();
+            SOBREPOSICAO.with(|s| {
+                let Some(sobreposicao) = s.borrow().clone() else {
+                    return;
+                };
+                let ja_esta = wv
+                    .parent()
+                    .is_some_and(|p| &p == sobreposicao.upcast_ref::<gtk::Widget>());
+                if !ja_esta {
+                    // Recém-criada: o Tauri a empilhou na caixa da janela.
+                    if let Some(pai) = wv
+                        .parent()
+                        .and_then(|p| p.downcast::<gtk::Container>().ok())
+                    {
+                        pai.remove(&wv);
+                    }
+                    wv.set_halign(gtk::Align::Start);
+                    wv.set_valign(gtk::Align::Start);
+                    sobreposicao.add_overlay(&wv);
+                }
+                wv.set_margin_start(x.round() as i32);
+                wv.set_margin_top(y.round() as i32);
+                wv.set_size_request(largura.round() as i32, altura.round() as i32);
+            });
+        });
+        if let Err(e) = resultado {
+            log::warn!("posição da webview filha: {e}");
+        }
+    }
 }

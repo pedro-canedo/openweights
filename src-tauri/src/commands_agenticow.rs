@@ -740,11 +740,7 @@ pub struct Area {
 }
 
 fn aplicar_area(webview: &tauri::Webview, area: Area) -> tauri::Result<()> {
-    webview.set_position(tauri::LogicalPosition::new(area.x, area.y))?;
-    webview.set_size(tauri::LogicalSize::new(
-        area.width.max(1.0),
-        area.height.max(1.0),
-    ))
+    crate::janela::posicionar(webview, area.x, area.y, area.width, area.height)
 }
 
 /// Mostra a UI do AgenticOw sobre a área de conteúdo. A webview nasce na
@@ -780,13 +776,15 @@ pub async fn agenticow_show(
     let janela = app
         .get_window(crate::janela::JANELA)
         .ok_or("janela principal ausente")?;
-    janela
+    let webview = janela
         .add_child(
             tauri::webview::WebviewBuilder::new(WEBVIEW, tauri::WebviewUrl::External(destino)),
             tauri::LogicalPosition::new(area.x, area.y),
             tauri::LogicalSize::new(area.width.max(1.0), area.height.max(1.0)),
         )
         .map_err(|e| e.to_string())?;
+    // No Linux é aqui que ela sai da caixa da janela para a sobreposição.
+    aplicar_area(&webview, area).map_err(|e| e.to_string())?;
     Ok(())
 }
 

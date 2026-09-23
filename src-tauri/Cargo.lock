@@ -3180,6 +3180,7 @@ version = "0.23.1"
 dependencies = [
  "env_logger",
  "getrandom 0.3.4",
+ "gtk",
  "if-addrs",
  "log",
  "lr_advisor",
@@ -3210,6 +3211,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-updater",
  "tokio",
+ "webkit2gtk",
  "webview2-com",
  "zip 8.6.0",
 ]
