@@ -25,12 +25,6 @@ use std::collections::HashMap;
 
 use lr_types::{GpuInfo, GpuTelemetry, GpuVendor};
 use nvml_wrapper::Nvml;
-
-/// O NVML fala em miliwatts; a tela fala em watts.
-fn mw_para_w(mw: u32) -> u32 {
-    mw.div_ceil(1000)
-}
-use nvml_wrapper::enum_wrappers::device::TemperatureSensor;
 use windows::Win32::Foundation::LUID;
 use windows::Win32::Graphics::Direct3D::D3D_FEATURE_LEVEL_11_0;
 use windows::Win32::Graphics::Direct3D12::{
@@ -71,48 +65,15 @@ pub fn detect() -> Vec<GpuInfo> {
         }
     }
 }
-/// Banda de memória da placa, em bytes por segundo.
-///
-/// `relógio de memória × 2 × largura do barramento / 8` — o ×2 é o "double
-/// data rate" das memórias GDDR, e é o que faz a conta bater com a ficha
-/// técnica: uma RTX 3090 reporta 9751 MHz em 384 bits, que dão os 936 GB/s
-/// anunciados. Qualquer dos dois números faltando devolve `None`: metade da
-/// conta não é uma banda.
-fn banda_nvml(dev: &nvml_wrapper::Device<'_>) -> Option<u64> {
-    use nvml_wrapper::enum_wrappers::device::Clock;
-    let mhz = dev.max_clock_info(Clock::Memory).ok()? as u64;
-    let bits = dev.memory_bus_width().ok()? as u64;
-    (mhz > 0 && bits > 0).then(|| mhz * 1_000_000 * 2 * bits / 8)
-}
-
 /// Devices NVIDIA via NVML: nome, driver, compute capability e VRAM confiáveis.
 fn detect_nvml() -> Vec<GpuInfo> {
-    let mut gpus = Vec::new();
-    if let Ok(nvml) = Nvml::init() {
-        let driver = nvml.sys_driver_version().ok();
-        let count = nvml.device_count().unwrap_or(0);
-        for i in 0..count {
-            let Ok(dev) = nvml.device_by_index(i) else {
-                continue;
-            };
-            let name = dev.name().unwrap_or_else(|_| "GPU NVIDIA".to_string());
-            let vram = dev.memory_info().map(|m| m.total).unwrap_or(0);
-            let cc = dev
-                .cuda_compute_capability()
-                .ok()
-                .map(|c| (c.major as u32, c.minor as u32));
-            gpus.push(GpuInfo {
-                name,
-                vendor: GpuVendor::Nvidia,
-                vram_total_bytes: vram,
-                is_integrated: false,
-                driver_version: driver.clone(),
-                cuda_compute: cc,
-                bandwidth_bytes_s: banda_nvml(&dev),
-            });
-        }
+    match Nvml::init() {
+        Ok(nvml) => crate::nvml::placas(&nvml)
+            .into_iter()
+            .map(|p| p.info)
+            .collect(),
+        Err(_) => Vec::new(),
     }
-    gpus
 }
 
 /// Enumera todos os adaptadores de hardware via DXGI, mesclando os dados NVML
@@ -334,25 +295,19 @@ impl WinGpuMonitor {
                     && let Some(Some(idx)) = self.nvml_indices.get(i)
                     && let Ok(dev) = nvml.device_by_index(*idx)
                 {
-                    util = dev.utilization_rates().ok().map(|u| u.gpu as f32);
+                    let a = crate::nvml::amostra(&dev);
+                    util = a.util_percent;
                     // NVML é mais preciso que o DXGI para VRAM de NVIDIA.
-                    if let Ok(mem) = dev.memory_info() {
-                        vram_used = Some(mem.used);
-                        vram_total = mem.total;
+                    if let (Some(usada), Some(total)) = (a.vram_used_bytes, a.vram_total_bytes) {
+                        vram_used = Some(usada);
+                        vram_total = total;
                     }
                     // O payload tem UM campo de temperatura: vale a primeira
                     // GPU com leitura (na ordem do profile — a dedicada que o
                     // usuário usa para inferência vem primeiro).
-                    if temp_c.is_none() {
-                        temp_c = dev
-                            .temperature(TemperatureSensor::Gpu)
-                            .ok()
-                            .map(|t| t as f32);
-                    }
-                    // Watts na mesma passada: o NVML já está aberto e o
-                    // device já está em mãos.
-                    power_w = dev.power_usage().ok().map(mw_para_w);
-                    power_limit_w = dev.power_management_limit().ok().map(mw_para_w);
+                    temp_c = temp_c.or(a.temp_c);
+                    power_w = a.power_w;
+                    power_limit_w = a.power_limit_w;
                 }
             } else if let (Some(map), Some(slot)) = (pdh_util.as_ref(), slot) {
                 util = map.get(&slot.luid).copied();

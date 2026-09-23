@@ -11,12 +11,18 @@ serde.workspace = true
 log.workspace = true
 sysinfo = "0.39"
 
-# O teste de contrato do payload (camelCase + null) serializa de verdade.
+# O teste de contrato do payload (camelCase + null) serializa de verdade; os
+# testes do Linux montam um `/sys/class/drm` de mentira numa pasta temporária.
 [dev-dependencies]
 serde_json.workspace = true
+tempfile = "3"
+
+# O NVML é carregado em tempo de execução (`nvml.dll` no Windows,
+# `libnvidia-ml.so.1` no Linux): sem driver NVIDIA só a inicialização falha.
+[target.'cfg(any(windows, target_os = "linux"))'.dependencies]
+nvml-wrapper = "0.12"
 
 [target.'cfg(windows)'.dependencies]
-nvml-wrapper = "0.12"
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Graphics_Dxgi",

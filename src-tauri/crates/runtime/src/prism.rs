@@ -5,8 +5,9 @@
 //! "unknown type". O fork em `PrismML-Eng/llama.cpp` traz os kernels e
 //! publica releases com o MESMO padrão de nome e o MESMO layout de pacote do
 //! upstream (`llama-<tag>-bin-win-cuda-13.3-x64.zip`, launcher de 9 KB +
-//! `llama-server-impl.dll`, cudart à parte) — por isso a instalação reaproveita
-//! o pipeline do motor oficial e só troca repositório e tag.
+//! `llama-server-impl.dll`, cudart à parte; `…-bin-ubuntu-vulkan-x64.tar.gz`
+//! no Linux) — por isso a instalação reaproveita o pipeline do motor oficial
+//! e só troca repositório e tag.
 //!
 //! Pino explícito, como o oficial: a tag carrega a build do upstream em que o
 //! fork se baseia, e a prova de instalação é o próprio binário reportar essa
@@ -31,10 +32,10 @@ pub const REPOSITORY: &str = "PrismML-Eng/llama.cpp";
 /// quanto vai baixar antes de a pessoa clicar.
 pub const TAMANHO_APROXIMADO_BYTES: u64 = 150 * 1024 * 1024;
 
-/// O fork publica para as mesmas plataformas que o app já sabe instalar
-/// (Windows x64 e macOS); Linux fica de fora como no oficial.
+/// O fork publica para as mesmas plataformas que o app sabe instalar
+/// (Windows x64, Linux x64 e macOS), com os mesmos nomes do upstream.
 pub fn supported(profile: &HardwareProfile) -> bool {
-    matches!(profile.os.as_str(), "windows" | "macos")
+    matches!(profile.os.as_str(), "windows" | "linux" | "macos")
 }
 
 /// Identidade das medições feitas sob este motor — mesma forma da do
@@ -80,28 +81,37 @@ mod tests {
     /// asset publicado na release (conferido em 2026-09-20).
     #[test]
     fn the_fork_assets_follow_the_upstream_naming() {
+        let nome = |os, v| crate::asset_name_for(os, TAG, v);
         assert_eq!(
-            crate::asset_name(TAG, BackendVariant::Cuda13),
-            "llama-prism-b10709-9a9394a-bin-win-cuda-13.3-x64.zip"
+            nome("windows", BackendVariant::Cuda13).as_deref(),
+            Some("llama-prism-b10709-9a9394a-bin-win-cuda-13.3-x64.zip")
         );
         assert_eq!(
-            crate::asset_name(TAG, BackendVariant::Cuda12),
-            "llama-prism-b10709-9a9394a-bin-win-cuda-12.4-x64.zip"
+            nome("windows", BackendVariant::Cuda12).as_deref(),
+            Some("llama-prism-b10709-9a9394a-bin-win-cuda-12.4-x64.zip")
         );
         assert_eq!(
-            crate::asset_name(TAG, BackendVariant::Vulkan),
-            "llama-prism-b10709-9a9394a-bin-win-vulkan-x64.zip"
+            nome("windows", BackendVariant::Vulkan).as_deref(),
+            Some("llama-prism-b10709-9a9394a-bin-win-vulkan-x64.zip")
         );
         assert_eq!(
-            crate::asset_name(TAG, BackendVariant::Cpu),
-            "llama-prism-b10709-9a9394a-bin-win-cpu-x64.zip"
+            nome("windows", BackendVariant::Cpu).as_deref(),
+            Some("llama-prism-b10709-9a9394a-bin-win-cpu-x64.zip")
         );
         assert_eq!(
-            crate::asset_name(TAG, BackendVariant::MacosArm64),
-            "llama-prism-b10709-9a9394a-bin-macos-arm64.tar.gz"
+            nome("linux", BackendVariant::Vulkan).as_deref(),
+            Some("llama-prism-b10709-9a9394a-bin-ubuntu-vulkan-x64.tar.gz")
         );
         assert_eq!(
-            crate::cudart_asset_name(TAG, BackendVariant::Cuda13).as_deref(),
+            nome("linux", BackendVariant::Cpu).as_deref(),
+            Some("llama-prism-b10709-9a9394a-bin-ubuntu-x64.tar.gz")
+        );
+        assert_eq!(
+            nome("macos", BackendVariant::MacosArm64).as_deref(),
+            Some("llama-prism-b10709-9a9394a-bin-macos-arm64.tar.gz")
+        );
+        assert_eq!(
+            crate::cudart_asset_name_for("windows", TAG, BackendVariant::Cuda13).as_deref(),
             Some("cudart-llama-bin-win-cuda-13.3-x64.zip")
         );
         assert_eq!(
@@ -149,6 +159,10 @@ mod tests {
         assert_eq!(id.revision, TAG);
         assert_eq!(id.backend, "cpu");
         assert!(supported(&profile));
+        assert!(supported(&HardwareProfile {
+            os: "linux".into(),
+            ..profile
+        }));
     }
 
     /// Teste live — confere que a release existe e cobre os assets que o app
@@ -160,14 +174,16 @@ mod tests {
         let digests = lr_fetch::github_release_digests(&client, REPOSITORY, TAG)
             .await
             .expect("release do fork indisponível");
-        for v in [
-            BackendVariant::Cuda13,
-            BackendVariant::Cuda12,
-            BackendVariant::Vulkan,
-            BackendVariant::Cpu,
-            BackendVariant::MacosArm64,
+        for (os, v) in [
+            ("windows", BackendVariant::Cuda13),
+            ("windows", BackendVariant::Cuda12),
+            ("windows", BackendVariant::Vulkan),
+            ("windows", BackendVariant::Cpu),
+            ("linux", BackendVariant::Vulkan),
+            ("linux", BackendVariant::Cpu),
+            ("macos", BackendVariant::MacosArm64),
         ] {
-            let a = crate::asset_name(TAG, v);
+            let a = crate::asset_name_for(os, TAG, v).expect("variante publicada");
             assert!(digests.contains_key(&a), "asset sem digest: {a}");
         }
         assert!(digests.contains_key("cudart-llama-bin-win-cuda-13.3-x64.zip"));

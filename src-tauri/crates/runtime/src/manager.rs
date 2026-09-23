@@ -223,7 +223,12 @@ impl RuntimeManager {
         let digests = lr_fetch::github_release_digests(&client, repo, tag).await;
 
         // ---- Asset principal -------------------------------------------
-        let asset = crate::asset_name(tag, variant);
+        let asset = crate::asset_name(tag, variant).ok_or_else(|| {
+            RuntimeError::Verification(format!(
+                "a release {tag} não tem pacote {variant:?} para {}",
+                std::env::consts::OS
+            ))
+        })?;
         let part = self
             .baixar_asset(
                 &client,
@@ -542,7 +547,34 @@ mod tests {
         assert!(lr_fetch::dir_size(broken.path()) < MIN_INSTALL_SIZE);
     }
 
-    /// Teste live contra a API do GitHub — roda só com `--ignored`.
+    /// Teste live da instalação no Linux, de ponta a ponta: baixa o pacote
+    /// Vulkan da release pinada, confere o digest, extrai (as `.so` chegam
+    /// por symlink de versão, `libllama.so.0 -> libllama.so.0.1.0`, e o
+    /// executável acha as vizinhas pelo `RUNPATH=$ORIGIN`) e executa o
+    /// `llama-server --version` na pasta final. Roda só com `--ignored`.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "rede: baixa ~33 MB da release pinada do llama.cpp"]
+    async fn live_linux_vulkan_package_installs_and_runs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mgr = RuntimeManager::new(tmp.path().to_path_buf());
+        let state = mgr
+            .ensure(BackendVariant::Vulkan, |_| {})
+            .await
+            .expect("instalação do pacote Vulkan");
+        assert!(state.installed);
+        assert!(state.rpc_ready, "o pacote Linux traz o ggml-rpc-server");
+        let dir = state.dir.expect("pasta instalada");
+        assert!(dir.join(crate::exe_name("llama-fit-params")).is_file());
+        assert!(dir.join(crate::exe_name("llama-bench")).is_file());
+        let (build, _) = crate::check::probe_build(&dir)
+            .await
+            .expect("o motor instalado executa");
+        assert_eq!(Some(build), crate::build_number(crate::PINNED_TAG));
+    }
+
+    /// Teste live contra a API do GitHub — roda só com `--ignored`. Cobre
+    /// todo pacote que algum sistema pode pedir, não só o deste.
     #[tokio::test]
     #[ignore = "rede: consulta a API de releases do GitHub"]
     async fn live_release_digests_cover_pinned_assets() {
@@ -550,10 +582,21 @@ mod tests {
         let digests = lr_fetch::github_release_digests(&client, REPO, crate::PINNED_TAG)
             .await
             .expect("API do GitHub indisponível ou rate-limited");
-        let asset = crate::asset_name(crate::PINNED_TAG, BackendVariant::Cpu);
-        assert!(
-            digests.contains_key(&asset),
-            "release pinada deve ter digest para {asset}"
-        );
+        for (os, v) in [
+            ("windows", BackendVariant::Cuda13),
+            ("windows", BackendVariant::Cuda12),
+            ("windows", BackendVariant::Vulkan),
+            ("windows", BackendVariant::Cpu),
+            ("linux", BackendVariant::Vulkan),
+            ("linux", BackendVariant::Cpu),
+            ("macos", BackendVariant::MacosArm64),
+            ("macos", BackendVariant::MacosX64),
+        ] {
+            let asset = crate::asset_name_for(os, crate::PINNED_TAG, v).expect("publicada");
+            assert!(
+                digests.contains_key(&asset),
+                "release pinada deve ter digest para {asset}"
+            );
+        }
     }
 }

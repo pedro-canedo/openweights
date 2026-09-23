@@ -36,10 +36,12 @@ pub struct DecisionIdentity {
     pub platform: String,
 }
 
+/// O pacote é CUDA 13 para Windows e Linux x64: pergunta pela placa, não
+/// pela variante do motor oficial — que no Linux é Vulkan.
 pub fn supported(profile: &HardwareProfile) -> bool {
     matches!(profile.os.as_str(), "windows" | "linux")
         && profile.arch == "x86_64"
-        && matches!(crate::select_variant(profile), BackendVariant::Cuda13)
+        && crate::cuda13_capable(profile)
 }
 
 pub fn identity() -> DecisionIdentity {

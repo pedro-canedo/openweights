@@ -11,6 +11,9 @@
 //!   nunca confiar apenas em `DedicatedVideoMemory > 0`. Telemetria: VRAM
 //!   usada via `QueryVideoMemoryInfo` e utilização AMD/Intel via contadores
 //!   PDH (`\GPU Engine(*)\Utilization Percentage`) — ver `windows_gpu`.
+//! - Linux (qualquer vendor): o DRM no sysfs (`/sys/class/drm/cardN`) para
+//!   enumeração, casado com o NVML pelo endereço PCI; AMD lê VRAM, ocupação e
+//!   sensores dos arquivos do amdgpu — ver `linux_gpu`.
 //! - macOS: memória unificada (`recommendedMaxWorkingSetSize` ≈ 75% da RAM).
 
 use std::path::{Path, PathBuf};
@@ -25,9 +28,13 @@ mod windows_gpu;
 mod windows_ram;
 
 #[cfg(target_os = "linux")]
+mod linux_gpu;
+#[cfg(target_os = "linux")]
 mod linux_ram;
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
+mod nvml;
+#[cfg(any(windows, target_os = "linux"))]
 pub mod power;
 pub mod smbios;
 
@@ -122,7 +129,11 @@ fn detect_gpus() -> Vec<GpuInfo> {
     {
         macos_gpu_stub()
     }
-    #[cfg(all(not(windows), not(target_os = "macos")))]
+    #[cfg(target_os = "linux")]
+    {
+        linux_gpu::detect()
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         Vec::new()
     }
@@ -174,6 +185,10 @@ pub struct Monitor {
     /// PDH) — handles abertos uma vez e reutilizados a cada amostra.
     #[cfg(windows)]
     win_gpu: windows_gpu::WinGpuMonitor,
+    /// O mesmo no Linux: NVML aberto uma vez e a fonte de cada GPU (NVML ou
+    /// arquivos do amdgpu) resolvida na criação.
+    #[cfg(target_os = "linux")]
+    linux_gpu: linux_gpu::LinuxGpuMonitor,
 }
 
 /// Leitura acumulada (desde o boot) de rx/tx somada em todas as interfaces,
@@ -210,6 +225,8 @@ impl Monitor {
             },
             #[cfg(windows)]
             win_gpu: windows_gpu::WinGpuMonitor::new(&profile.gpus),
+            #[cfg(target_os = "linux")]
+            linux_gpu: linux_gpu::LinuxGpuMonitor::new(&profile.gpus),
         }
     }
 
@@ -245,10 +262,14 @@ impl Monitor {
         {
             self.win_gpu.sample(&self.profile_gpus)
         }
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
         {
-            // Fora do Windows ainda não há caminho de telemetria de GPU —
-            // logo também não há temperatura (sem inventar valor).
+            self.linux_gpu.sample(&self.profile_gpus)
+        }
+        #[cfg(not(any(windows, target_os = "linux")))]
+        {
+            // No macOS ainda não há caminho de telemetria de GPU — logo
+            // também não há temperatura (sem inventar valor).
             let gpus = self
                 .profile_gpus
                 .iter()

@@ -11,6 +11,7 @@
 //! próprio NVML documenta que o valor não sobrevive a reiniciar a máquina nem
 //! a recarregar o driver — por isso o app informa em vez de prometer.
 
+use crate::nvml::mw_para_w;
 use nvml_wrapper::Nvml;
 use serde::Serialize;
 
@@ -61,24 +62,9 @@ pub fn status() -> Vec<PowerStatus> {
     out
 }
 
-/// O NVML fala em miliwatts; a tela e o `nvidia-smi` falam em watts.
-fn mw_para_w(mw: u32) -> u32 {
-    mw.div_ceil(1000)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Arredondar para cima evita o "349 W" de um limite de 350 000 mW que
-    /// perdeu um milésimo no caminho.
-    #[test]
-    fn milliwatts_become_whole_watts() {
-        assert_eq!(mw_para_w(350_000), 350);
-        assert_eq!(mw_para_w(250_000), 250);
-        assert_eq!(mw_para_w(349_999), 350);
-        assert_eq!(mw_para_w(0), 0);
-    }
 
     /// Sem placa NVIDIA a lista é vazia — não é erro, é uma máquina sem NVML.
     #[test]

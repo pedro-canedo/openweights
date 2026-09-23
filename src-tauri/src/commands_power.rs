@@ -12,7 +12,8 @@
 //! - **Lê** pelo NVML, sem privilégio nenhum.
 //! - **Escreve** por `nvidia-smi -i <n> -pl <w>` num processo elevado — o
 //!   NVML exige administrador, e um app de desktop não roda elevado. É um
-//!   comando de uma linha, visível na tela antes de rodar.
+//!   comando de uma linha, visível na tela antes de rodar. A elevação é a do
+//!   próprio sistema: o UAC no Windows, o polkit (`pkexec`) no Linux.
 //! - **Não promete persistência**: o próprio NVML documenta que o limite cai
 //!   ao reiniciar a máquina ou recarregar o driver. A tela diz isso.
 
@@ -21,14 +22,14 @@ use tauri::State;
 
 type CmdResult<T> = Result<T, String>;
 
-/// Estado de energia de cada placa NVIDIA (vazio fora do Windows/NVML).
+/// Estado de energia de cada placa NVIDIA (vazio sem NVML, e no macOS).
 #[tauri::command]
 pub async fn gpu_power_status(_state: State<'_, AppState>) -> CmdResult<serde_json::Value> {
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "linux"))]
     {
         Ok(serde_json::to_value(lr_hw::power::status()).unwrap_or(serde_json::Value::Null))
     }
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Ok(serde_json::Value::Array(Vec::new()))
     }
@@ -70,7 +71,37 @@ pub async fn gpu_power_set(
         }
         Ok(comando)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        // `pkexec` abre o pedido de senha do próprio sistema (polkit), o
+        // equivalente do UAC — o `sudo` precisaria de um terminal.
+        let mut cmd = std::process::Command::new("pkexec");
+        lr_proc::no_window_std(&mut cmd);
+        let saida = cmd
+            .args([
+                "nvidia-smi",
+                "-i",
+                &index.to_string(),
+                "-pl",
+                &watts.to_string(),
+            ])
+            .output()
+            .map_err(|e| format!("pkexec indisponível ({e}); rode num terminal: sudo {comando}"))?;
+        match saida.status.code() {
+            Some(0) => Ok(comando),
+            // 126: a pessoa fechou o pedido de senha (ou o polkit negou).
+            Some(126) => Err("o pedido de permissão foi recusado".into()),
+            _ => {
+                let texto = format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&saida.stderr),
+                    String::from_utf8_lossy(&saida.stdout)
+                );
+                Err(texto.trim().to_string())
+            }
+        }
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Err(format!("rode como administrador: sudo {comando}"))
     }
