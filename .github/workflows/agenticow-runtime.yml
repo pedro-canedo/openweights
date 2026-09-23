@@ -16,12 +16,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: agenticow-runtime-758a924f-v1
+  group: agenticow-runtime-524ad892-v1
   cancel-in-progress: false
 env:
   AGENTICOW_REPOSITORY: pedro-canedo/agenticow
-  AGENTICOW_REVISION: 758a924fdb1d7e18b0b98682469f93516353fc57
-  AGENTICOW_TAG: agenticow-runtime-758a924f-v1
+  AGENTICOW_REVISION: 524ad89236fa11af706734ff2f1315a1e715a0a1
+  AGENTICOW_TAG: agenticow-runtime-524ad892-v1
   # O mesmo PINNED_NODE do app (lr_nodejs): o runtime roda nele.
   NODE_VERSION: 22.20.0
 jobs:
