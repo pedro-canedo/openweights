@@ -66,7 +66,12 @@ pub fn posicionar(
 /// não faz nada ali (só age num `GtkFixed` ou numa filha X11). Então a janela
 /// monta a sobreposição dela: a webview do app vira o conteúdo de um
 /// `GtkOverlay` (preenche tudo, acompanha o tamanho sozinha) e a filha sai da
-/// caixa para uma camada por cima, posicionada por margens.
+/// caixa para uma camada por cima.
+///
+/// O retângulo da camada é dado pelo sinal `get-child-position`, não por
+/// margens e `set_size_request`: o overlay aloca a camada pelo tamanho
+/// NATURAL dela, e o da webview não encolhe junto com a área — ao diminuir a
+/// janela, a filha passava por cima da barra de status do app.
 #[cfg(target_os = "linux")]
 mod gtk_sobreposicao {
     use gtk::prelude::*;
@@ -76,6 +81,8 @@ mod gtk_sobreposicao {
     // `with_webview` roda.
     thread_local! {
         static SOBREPOSICAO: RefCell<Option<gtk::Overlay>> = const { RefCell::new(None) };
+        /// Cada camada e o retângulo dela.
+        static AREAS: RefCell<Vec<(gtk::Widget, gtk::gdk::Rectangle)>> = const { RefCell::new(Vec::new()) };
     }
 
     pub fn montar(app: &tauri::Webview) {
@@ -86,6 +93,9 @@ mod gtk_sobreposicao {
                 return;
             };
             let sobreposicao = gtk::Overlay::new();
+            sobreposicao.connect_get_child_position(|_, filho| {
+                AREAS.with(|a| a.borrow().iter().find(|(w, _)| w == filho).map(|(_, r)| *r))
+            });
             caixa.remove(&wv);
             sobreposicao.add(&wv);
             caixa.pack_start(&sobreposicao, true, true, 0);
@@ -99,11 +109,26 @@ mod gtk_sobreposicao {
 
     pub fn posicionar(filha: &tauri::Webview, x: f64, y: f64, largura: f64, altura: f64) {
         let resultado = filha.with_webview(move |pw| {
-            let wv = pw.inner();
+            let wv: gtk::Widget = pw.inner().upcast();
             SOBREPOSICAO.with(|s| {
                 let Some(sobreposicao) = s.borrow().clone() else {
                     return;
                 };
+                let area = gtk::gdk::Rectangle::new(
+                    x.round() as i32,
+                    y.round() as i32,
+                    largura.round() as i32,
+                    altura.round() as i32,
+                );
+                AREAS.with(|a| {
+                    let mut a = a.borrow_mut();
+                    // Camada que já saiu da janela não conta mais.
+                    a.retain(|(w, _)| w.parent().is_some());
+                    match a.iter_mut().find(|(w, _)| *w == wv) {
+                        Some((_, r)) => *r = area,
+                        None => a.push((wv.clone(), area)),
+                    }
+                });
                 let ja_esta = wv
                     .parent()
                     .is_some_and(|p| &p == sobreposicao.upcast_ref::<gtk::Widget>());
@@ -115,13 +140,9 @@ mod gtk_sobreposicao {
                     {
                         pai.remove(&wv);
                     }
-                    wv.set_halign(gtk::Align::Start);
-                    wv.set_valign(gtk::Align::Start);
                     sobreposicao.add_overlay(&wv);
                 }
-                wv.set_margin_start(x.round() as i32);
-                wv.set_margin_top(y.round() as i32);
-                wv.set_size_request(largura.round() as i32, altura.round() as i32);
+                sobreposicao.queue_resize();
             });
         });
         if let Err(e) = resultado {
