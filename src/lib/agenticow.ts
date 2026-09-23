@@ -29,6 +29,8 @@ export interface AgenticowStatus {
   /** Tag do DeepSeek Harness em que a revisão se baseia (depois da saudação). */
   upstreamTag: string | null;
   lastError: string | null;
+  /** Modelos no último catálogo entregue (null antes do primeiro). */
+  models: number | null;
 }
 
 export type AgenticowEvent =
@@ -129,6 +131,8 @@ function garantirOuvinte() {
         break;
       case "catalog":
         set({ catalogError: e.ok ? null : (e.message ?? "") });
+        // A contagem de modelos mudou junto: o aviso de "sem modelos" segue.
+        void refreshStatus();
         break;
       case "ready":
       case "failed":

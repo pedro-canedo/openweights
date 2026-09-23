@@ -66,6 +66,8 @@ pub struct AppState {
     pub agenticow_upstream: std::sync::Mutex<Option<String>>,
     /// Idioma que a tela pediu (`pt-BR` ou `en`).
     pub agenticow_idioma: std::sync::Mutex<Option<String>>,
+    /// Quantos modelos foram no último catálogo (None antes do primeiro).
+    pub agenticow_modelos: std::sync::Mutex<Option<usize>>,
     /// Ponto de entrada único (Traefik), quando ligado. Opcional: nada no
     /// chat depende dele.
     pub gateway: tokio::sync::Mutex<Option<lr_gateway::Gateway>>,
@@ -273,6 +275,7 @@ impl AppState {
             agenticow_erro: std::sync::Mutex::new(None),
             agenticow_upstream: std::sync::Mutex::new(None),
             agenticow_idioma: std::sync::Mutex::new(None),
+            agenticow_modelos: std::sync::Mutex::new(None),
             gateway: tokio::sync::Mutex::new(None),
             gateway_pid: AtomicU32::new(0),
             decisor: tokio::sync::Mutex::new(None),

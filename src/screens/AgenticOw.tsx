@@ -26,6 +26,7 @@ import {
 import { formatBytes, formatEta } from "../lib/format";
 import { Card, Page, StatusDot } from "../components/ui/Shell";
 import Icon from "../components/ui/Icon";
+import { navigate } from "../lib/nav";
 
 const botao =
   "rounded-lg border border-edge px-3 py-2 text-sm text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50";
@@ -136,6 +137,14 @@ function Palco() {
             title={s.catalogError}
           >
             {t("agenticow.catalogError")}
+          </span>
+        )}
+        {s.status?.models === 0 && (
+          <span className="flex items-center gap-2 text-[11px] text-dim">
+            {t("agenticow.noModels")}
+            <button onClick={() => navigate("server")} className="text-accent hover:underline">
+              {t("agenticow.openServer")}
+            </button>
           </span>
         )}
         {erro && <span className="truncate text-[11px] text-bad">{erro}</span>}

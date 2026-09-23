@@ -372,6 +372,8 @@
     "log": "Details",
     "error": "AgenticOw did not open",
     "catalogError": "the app's models did not arrive",
+    "noModels": "No OpenWeights models: start the Local Server or turn on a provider.",
+    "openServer": "Open the Local Server",
     "phase": {
       "node": "preparing portable Node",
       "migrating": "bringing over your DeepSeek Harness sessions",

@@ -73,6 +73,13 @@ fn main() {
                                     commands_jev::sincronizar_shim(&app, &state).await;
                                 });
                             }
+                            // Modelo novo no disco: o AgenticOw o vê assim
+                            // que o Router passa a atendê-lo.
+                            if matches!(&ev, lr_models::DownloadEvent::Update { status }
+                                if status.state == lr_models::DownloadState::Done)
+                            {
+                                commands_agenticow::agendar_catalogo(&handle);
+                            }
                             let _ = handle.emit("download", &ev);
                         }
                         Err(RecvError::Lagged(n)) => {

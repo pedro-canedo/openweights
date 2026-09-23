@@ -68,6 +68,7 @@ let agenticowMock = {
   revision: "0".repeat(40),
   upstreamTag: null as string | null,
   lastError: null as string | null,
+  models: null as number | null,
 };
 
 let nineMock = {

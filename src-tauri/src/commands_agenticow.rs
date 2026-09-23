@@ -83,6 +83,10 @@ pub struct AgenticowStatus {
     /// Host já saudou.
     pub upstream_tag: Option<String>,
     pub last_error: Option<String>,
+    /// Modelos no último catálogo entregue (None antes do primeiro). Zero é o
+    /// caso que a tela explica: sem servidor local nem provedor, o AgenticOw
+    /// abre sem modelo e o upstream oferece a conta da DeepSeek.
+    pub models: Option<usize>,
 }
 
 /// Eventos da tela.
@@ -154,6 +158,10 @@ async fn status_atual(state: &AppState) -> AgenticowStatus {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone(),
+        models: *state
+            .agenticow_modelos
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()),
     }
 }
 
@@ -354,6 +362,10 @@ async fn montar_catalogo(state: &AppState) -> (Vec<(String, Rota)>, BTreeMap<Str
 /// Monta e manda o catálogo ao Host, se ele estiver de pé.
 async fn empurrar_catalogo(state: &AppState) {
     let (rotas, chaves) = montar_catalogo(state).await;
+    *state
+        .agenticow_modelos
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = Some(rotas.iter().map(|(_, r)| r.models.len()).sum());
     let revisao = state.agenticow_catalogo.fetch_add(1, Ordering::SeqCst) + 1;
     let comando = Comando::Catalog {
         revision: revisao,
