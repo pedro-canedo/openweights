@@ -1,7 +1,28 @@
 {
   "format": 1,
   "repository": "pedro-canedo/openweights",
-  "tag": "agenticow-runtime-758a924f-v1",
-  "revision": "758a924fdb1d7e18b0b98682469f93516353fc57",
-  "assets": {}
+  "tag": "agenticow-runtime-524ad892-v1",
+  "revision": "524ad89236fa11af706734ff2f1315a1e715a0a1",
+  "assets": {
+    "darwin-arm64": {
+      "name": "openweights-agenticow-runtime-524ad892-v1-darwin-arm64.tar.gz",
+      "sha256": "1a254b84db9aca7fed56a064388be0ff3263456f360f0613961c0fad90c534e8",
+      "size": 32841131
+    },
+    "darwin-x64": {
+      "name": "openweights-agenticow-runtime-524ad892-v1-darwin-x64.tar.gz",
+      "sha256": "85e00a4f477fc7b1a23880fd4e77789b7d86a6dc8d02ea3ed0763ce3fad62c55",
+      "size": 33717507
+    },
+    "linux-x64": {
+      "name": "openweights-agenticow-runtime-524ad892-v1-linux-x64.tar.gz",
+      "sha256": "64871f45d40fc50b05cf92ed6cf4bd28c1e7a12b37167f145a70cb31028531d7",
+      "size": 33145537
+    },
+    "win32-x64": {
+      "name": "openweights-agenticow-runtime-524ad892-v1-win32-x64.zip",
+      "sha256": "59bdb9d7441eda2cf1f3b51bde2832c4423ae368d05e85d954b38e74ca3ba490",
+      "size": 42954577
+    }
+  }
 }
