@@ -114,6 +114,39 @@ for (const [rotulo, caminho] of [
   }
 }
 
+// ── o runtime do AgenticOw ─────────────────────────────────────────────────
+// O pin vai dentro do binário: um pins.json vazio ou de outra release faria o
+// AgenticOw dizer "não disponível nesta máquina" a todo mundo, sem erro nenhum
+// no build. E a revisão e a tag do pin têm de ser as que o workflow compila.
+{
+  const pins = JSON.parse(ler("src-tauri", "crates", "agenticow", "pins.json"));
+  const workflow = ler(".github", "workflows", "agenticow-runtime.yml");
+  const doWorkflow = (nome) =>
+    new RegExp(`^\\s*${nome}:\\s*(\\S+)`, "m").exec(workflow)?.[1];
+  const problemas = [];
+  for (const alvo of ["linux-x64", "win32-x64", "darwin-arm64"]) {
+    const a = pins.assets?.[alvo];
+    if (!a || !/^[0-9a-f]{64}$/.test(a.sha256 ?? "") || !(a.size > 0)) {
+      problemas.push(`sem pacote válido para ${alvo}`);
+    }
+  }
+  if (pins.tag !== doWorkflow("AGENTICOW_TAG")) {
+    problemas.push(`tag ${pins.tag}, o workflow publica ${doWorkflow("AGENTICOW_TAG")}`);
+  }
+  if (pins.revision !== doWorkflow("AGENTICOW_REVISION")) {
+    problemas.push(`revisão ${pins.revision}, o workflow compila ${doWorkflow("AGENTICOW_REVISION")}`);
+  }
+  if (problemas.length) {
+    nao(
+      `pins.json do AgenticOw: ${problemas.join("; ")}`,
+      "rode o agenticow-runtime.yml com publish=true e copie o pins.json da release " +
+        "para src-tauri/crates/agenticow/pins.json",
+    );
+  } else {
+    ok(`pins.json do AgenticOw fixa ${pins.tag} (${Object.keys(pins.assets).join(", ")})`);
+  }
+}
+
 // ── relatório ──────────────────────────────────────────────────────────────
 const reprovadas = checagens.filter((c) => !c.ok);
 const linhas = [
