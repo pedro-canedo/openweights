@@ -75,14 +75,28 @@ As chaves de API vão só para a memória do processo do AgenticOw. Nunca são
 gravadas em arquivo, então uma pasta que alguém leia depois não tem segredo
 nenhum.
 
+Esse é o **único** lugar de onde vem o cérebro dele. O AgenticOw não tem
+provedor próprio: o provedor nativo da DeepSeek do projeto original não faz
+parte do nosso build, então ele nunca pede a chave da DeepSeek. Quando o
+AgenticOw está no ar sem modelo nenhum — Servidor Local parado, OpenRouter sem
+chave, 9router desligado —, a tela mostra essas três fontes no lugar de uma
+interface vazia, com o que cada uma tem agora e o próximo passo: encontrar um
+modelo, **iniciar o Servidor Local** ali mesmo quando a biblioteca já tem um, ou
+abrir a aba certa de **Fontes**. A interface volta assim que chega o primeiro
+modelo. A página de Modelos dele só aponta de volta para o OpenWeights:
+acrescentar um provedor ali seria substituído pela lista do app de qualquer
+jeito.
+
 ## Privacidade
 
 A telemetria do projeto original está desligada: a telemetria de sessão, o
 feedback de mensagens e de comandos e o inventário de plugins anexado às
 requisições à API da DeepSeek vêm desativados no nosso build, e um teste no
 fork confere, a cada sincronização com o original, que todos continuam
-desligados. Nada vai para a DeepSeek a menos que você mesmo escolha a DeepSeek
-como provedor.
+desligados. O provedor da DeepSeek e a busca na web do original, que é um
+pedido à API da DeepSeek, também ficam fora do build: a ferramenta
+`web_search` responde ao modelo que a busca não está disponível, e a
+`web_fetch` continua lendo as páginas que ele recebe.
 
 ## Vindo do DeepSeek Harness
 

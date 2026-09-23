@@ -71,13 +71,26 @@ the model picker without restarting anything.
 API keys travel only to the AgenticOw process memory. They are never written to
 a file, so a folder someone reads later has no secret in it.
 
+This is the **only** place its brain comes from. AgenticOw has no provider of
+its own: the upstream's native DeepSeek provider is not part of our build, so
+it never asks for a DeepSeek key. When AgenticOw is running with no model at
+all — the Local Server stopped, OpenRouter without a key, 9router off — the
+screen shows those three sources instead of an empty interface, with what each
+one has right now and the next step: find a model, **start the Local Server**
+right there when the library already has one, or open the matching tab in
+**Sources**. The interface comes back as soon as the first model arrives. Its
+own Models page only points back to OpenWeights: adding a provider there would
+be replaced by the app's list anyway.
+
 ## Privacy
 
 The upstream project's telemetry is off: session telemetry, message and
 command feedback, and the plugin inventory attached to requests to DeepSeek's
 API are all disabled in our build, and a test in the fork checks after every
-sync with the upstream that each of them is still off. Nothing goes to DeepSeek
-unless you choose DeepSeek as a provider yourself.
+sync with the upstream that each of them is still off. The DeepSeek provider
+and the upstream's web search, which is a request to DeepSeek's API, are not
+in the build either: the `web_search` tool tells the model search is
+unavailable, while `web_fetch` still reads the pages it is given.
 
 ## Coming from the DeepSeek Harness
 

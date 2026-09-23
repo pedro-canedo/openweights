@@ -155,10 +155,16 @@ antes as chaves do app, confere cada uma pelo próprio serviço e responde
 `catalog-error` se alguma não chegar. Trocar uma chave não reinicia nada, e nenhuma
 toca arquivo.
 
-Com o catálogo vazio (sem servidor local nem provedor), o onboarding do upstream
-oferece a conta da DeepSeek; o status do app conta os modelos do último catálogo
-(`models`) e a barra da tela avisa que não há modelos do OpenWeights, com o atalho para
-o Servidor Local.
+**O cérebro vem só do app.** A composição do fork não tem provedor próprio: o
+`llm-deepseek` e o `web-search-deepseek` estão desligados, e o modelo padrão aponta para
+a rota `openweights` (o reparo do catálogo troca qualquer padrão fora das rotas do app
+pelo primeiro modelo: local, OpenRouter, 9router). Sem o adaptador da DeepSeek, o
+onboarding do upstream que pedia a chave dela se encerra sozinho. Com o catálogo vazio, o
+status conta zero modelos (`models`) e diz o que cada fonte tem (`sources`, lido pelos
+PIDs para não esperar atrás de uma partida do motor); a tela troca a webview pelo painel
+"Escolha o cérebro do AgenticOw", que sobe o Servidor Local ali mesmo ou leva à aba certa
+de Fontes (`providersTab` na navegação). A página de Modelos do AgenticOw ganha o aviso de
+que os modelos vêm do app e perde os botões de acrescentar provedor.
 
 `agendar_catalogo` reenvia com debounce de 400 ms (rajadas viram um envio). É chamado
 pelo `sincronizar_shim` do Jev — que já roda quando o motor sobe ou desce, a
