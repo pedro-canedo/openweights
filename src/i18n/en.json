@@ -372,8 +372,40 @@
     "log": "Details",
     "error": "AgenticOw did not open",
     "catalogError": "the app's models did not arrive",
-    "noModels": "No OpenWeights models: start the Local Server or turn on a provider.",
-    "openServer": "Open the Local Server",
+    "brain": {
+      "title": "Choose AgenticOw's brain",
+      "body": "AgenticOw thinks with the models OpenWeights already knows how to serve — nothing is configured inside it. Turn on one of the sources below and the interface comes back here, with the models ready in the picker.",
+      "configure": "Set up in Sources",
+      "footnote": "Keys stay in OpenWeights and reach AgenticOw only in the process memory. Switching sources later needs no restart: the model list follows.",
+      "local": {
+        "name": "Local Server",
+        "hint": "Your models running on this machine — nothing leaves it.",
+        "none": "No models in the library yet.",
+        "find": "Find a model",
+        "stopped_one": "{{count}} model in the library, server stopped.",
+        "stopped_other": "{{count}} models in the library, server stopped.",
+        "start": "Start the Local Server",
+        "running": "Server running, no model to offer yet.",
+        "open": "Open the Local Server"
+      },
+      "openrouter": {
+        "name": "OpenRouter",
+        "hint": "Hundreds of cloud models with a single key; the ones you mark as favourites come in.",
+        "noKey": "Off or without a key.",
+        "noFavorites": "Key set, no favourites picked.",
+        "pick": "Pick favourites",
+        "ready_one": "{{count}} favourite.",
+        "ready_other": "{{count}} favourites."
+      },
+      "ninerouter": {
+        "name": "9router",
+        "hint": "Your subscriptions (Claude, Codex, Gemini and others) behind a local router.",
+        "notInstalled": "Not installed.",
+        "install": "Install in Sources",
+        "stopped": "Installed, but stopped.",
+        "noModels": "Running, no models connected."
+      }
+    },
     "phase": {
       "node": "preparing portable Node",
       "migrating": "bringing over your DeepSeek Harness sessions",

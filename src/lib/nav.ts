@@ -24,6 +24,8 @@ export interface NavPayload {
    * aba lembrada — sem sinal nenhum de que o que veio buscar está em outra.
    */
   serverTab?: "overview" | "performance" | "network" | "advanced";
+  /** Aba da tela Fontes a abrir (a tela também lembra a última visitada). */
+  providersTab?: "local" | "openrouter" | "decisions" | "9router" | "gateway";
 }
 
 /** Payload pendente da última navegação; a tela de destino consome e limpa. */
@@ -66,4 +68,10 @@ export function takePendingServerTab(): NavPayload["serverTab"] | undefined {
   const t = pendingNav.serverTab;
   delete pendingNav.serverTab;
   return t ?? (pendingNav.serverModel ? "performance" : undefined);
+}
+
+export function takePendingProvidersTab(): NavPayload["providersTab"] | undefined {
+  const t = pendingNav.providersTab;
+  delete pendingNav.providersTab;
+  return t;
 }

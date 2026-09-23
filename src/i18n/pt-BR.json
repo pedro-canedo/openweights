@@ -372,8 +372,40 @@
     "log": "Detalhes",
     "error": "O AgenticOw não abriu",
     "catalogError": "os modelos do app não chegaram",
-    "noModels": "Sem modelos do OpenWeights: inicie o Servidor Local ou ligue um provedor.",
-    "openServer": "Abrir o Servidor Local",
+    "brain": {
+      "title": "Escolha o cérebro do AgenticOw",
+      "body": "O AgenticOw pensa com os modelos que o OpenWeights já sabe servir — nada se configura dentro dele. Ligue uma das fontes abaixo e a interface volta aqui, com os modelos prontos no seletor.",
+      "configure": "Configurar em Fontes",
+      "footnote": "As chaves ficam no OpenWeights e chegam ao AgenticOw só na memória do processo. Trocar de fonte depois não exige reiniciar: a lista de modelos acompanha.",
+      "local": {
+        "name": "Servidor Local",
+        "hint": "Os seus modelos rodando nesta máquina — nada sai dela.",
+        "none": "Nenhum modelo na biblioteca ainda.",
+        "find": "Encontrar um modelo",
+        "stopped_one": "{{count}} modelo na biblioteca, servidor parado.",
+        "stopped_other": "{{count}} modelos na biblioteca, servidor parado.",
+        "start": "Iniciar o Servidor Local",
+        "running": "Servidor no ar, ainda sem modelo para oferecer.",
+        "open": "Abrir o Servidor Local"
+      },
+      "openrouter": {
+        "name": "OpenRouter",
+        "hint": "Centenas de modelos na nuvem com uma chave só; entram os que você marcar como favoritos.",
+        "noKey": "Desligado ou sem chave.",
+        "noFavorites": "Chave configurada, nenhum favorito escolhido.",
+        "pick": "Escolher favoritos",
+        "ready_one": "{{count}} favorito.",
+        "ready_other": "{{count}} favoritos."
+      },
+      "ninerouter": {
+        "name": "9router",
+        "hint": "As suas assinaturas (Claude, Codex, Gemini e outras) atrás de um roteador local.",
+        "notInstalled": "Não instalado.",
+        "install": "Instalar em Fontes",
+        "stopped": "Instalado, mas parado.",
+        "noModels": "No ar, sem modelos conectados."
+      }
+    },
     "phase": {
       "node": "preparando o Node portátil",
       "migrating": "trazendo as sessões do DeepSeek Harness",

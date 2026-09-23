@@ -20,7 +20,7 @@ import NineRouterPanel from "../components/providers/NineRouterPanel";
 import OpenRouterCard from "../components/providers/OpenRouterCard";
 import EngineCard from "../components/settings/EngineCard";
 import Icon from "../components/ui/Icon";
-import { navigate } from "../lib/nav";
+import { navigate, takePendingProvidersTab } from "../lib/nav";
 import { Page, StatusDot, Tabs, useTab, type TabDef } from "../components/ui/Shell";
 import {
   providersList,
@@ -39,6 +39,12 @@ const ABA_DA_FONTE: Record<string, string | null> = {
 export default function Providers() {
   const { t } = useTranslation();
   const [aba, setAba] = useTab("ow.providers.tab", "openrouter");
+  // A aba lembrada cede a vez para a que a navegação pediu (ex.: o AgenticOw
+  // mandando configurar o OpenRouter).
+  useEffect(() => {
+    const pedida = takePendingProvidersTab();
+    if (pedida) setAba(pedida);
+  }, [setAba]);
   const [estado, setEstado] = useState<ProviderView[] | null>(null);
   const [nove, setNove] = useState<NineRouterStatus | null>(null);
 

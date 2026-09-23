@@ -31,6 +31,17 @@ export interface AgenticowStatus {
   lastError: string | null;
   /** Modelos no último catálogo entregue (null antes do primeiro). */
   models: number | null;
+  /** O que cada fonte do OpenWeights tem agora. */
+  sources: AgenticowSources;
+}
+
+export interface AgenticowSources {
+  localModels: number;
+  serverRunning: boolean;
+  openrouterKey: boolean;
+  openrouterFavorites: number;
+  ninerouterInstalled: boolean;
+  ninerouterRunning: boolean;
 }
 
 export type AgenticowEvent =

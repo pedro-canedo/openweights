@@ -69,6 +69,14 @@ let agenticowMock = {
   upstreamTag: null as string | null,
   lastError: null as string | null,
   models: null as number | null,
+  sources: {
+    localModels: 2,
+    serverRunning: false,
+    openrouterKey: false,
+    openrouterFavorites: 0,
+    ninerouterInstalled: false,
+    ninerouterRunning: false,
+  },
 };
 
 let nineMock = {

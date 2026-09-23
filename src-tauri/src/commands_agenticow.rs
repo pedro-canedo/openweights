@@ -87,6 +87,39 @@ pub struct AgenticowStatus {
     /// caso que a tela explica: sem servidor local nem provedor, o AgenticOw
     /// abre sem modelo e o upstream oferece a conta da DeepSeek.
     pub models: Option<usize>,
+    /// O que cada fonte do OpenWeights tem agora: é o que a tela mostra para a
+    /// pessoa escolher o cérebro do AgenticOw quando não há modelo nenhum.
+    pub sources: Fontes,
+}
+
+/// As fontes do OpenWeights, do ponto de vista do AgenticOw.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Fontes {
+    /// Modelos GGUF na biblioteca.
+    pub local_models: usize,
+    /// O Servidor Local está no ar.
+    pub server_running: bool,
+    /// OpenRouter ligado e com chave.
+    pub openrouter_key: bool,
+    /// Favoritos do OpenRouter (só eles entram no catálogo).
+    pub openrouter_favorites: usize,
+    pub ninerouter_installed: bool,
+    pub ninerouter_running: bool,
+}
+
+fn fontes(state: &AppState) -> Fontes {
+    let cfg = crate::commands_providers::load_config(state);
+    // PIDs, não os mutexes: uma partida do motor segura o dele enquanto espera
+    // o /health, e o status desta tela não pode ficar preso atrás disso.
+    Fontes {
+        local_models: lr_models::scan_local(&state.models_dir).len(),
+        server_running: state.server_pid.load(Ordering::SeqCst) != 0,
+        openrouter_key: cfg.open_router.enabled && !cfg.open_router.api_key.trim().is_empty(),
+        openrouter_favorites: cfg.open_router.favorites.len(),
+        ninerouter_installed: cfg.nine_router.installed,
+        ninerouter_running: state.ninerouter_pid.load(Ordering::SeqCst) != 0,
+    }
 }
 
 /// Eventos da tela.
@@ -132,6 +165,7 @@ fn registrar_erro(state: &AppState, erro: Option<String>) {
 }
 
 async fn status_atual(state: &AppState) -> AgenticowStatus {
+    let fontes = fontes(state);
     let l = layout(state);
     let mut guard = state.agenticow.lock().await;
     if guard.as_mut().is_some_and(|h| h.morreu()) {
@@ -162,6 +196,7 @@ async fn status_atual(state: &AppState) -> AgenticowStatus {
             .agenticow_modelos
             .lock()
             .unwrap_or_else(|e| e.into_inner()),
+        sources: fontes,
     }
 }
 

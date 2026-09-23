@@ -25,8 +25,10 @@ import {
 } from "../lib/agenticow";
 import { formatBytes, formatEta } from "../lib/format";
 import { Card, Page, StatusDot } from "../components/ui/Shell";
-import Icon from "../components/ui/Icon";
+import Icon, { type IconName } from "../components/ui/Icon";
 import { navigate } from "../lib/nav";
+import { startServer } from "../lib/api";
+import { errorMessage } from "../lib/serverSession";
 
 const botao =
   "rounded-lg border border-edge px-3 py-2 text-sm text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50";
@@ -56,7 +58,11 @@ export default function AgenticOw() {
     void definirIdioma(i18n.language);
   }, [i18n.language]);
 
-  return s.status?.ready ? <Palco /> : <Controle />;
+  if (!s.status?.ready) return <Controle />;
+  // No ar mas sem modelo nenhum: a interface do AgenticOw só mostraria um
+  // seletor vazio. A pessoa escolhe aqui de qual fonte do OpenWeights vem o
+  // cérebro — e a interface volta assim que o primeiro modelo chega.
+  return s.status.models === 0 ? <Cerebro /> : <Palco />;
 }
 
 /** Algum modal do app aberto? A webview nativa ficaria por cima dele. */
@@ -66,8 +72,6 @@ function haModalAberto(): boolean {
 
 /** No ar: a interface do AgenticOw ocupa a tela, com uma barra fina em cima. */
 function Palco() {
-  const { t, i18n } = useTranslation();
-  const s = useSyncExternalStore(agenticowStore.subscribe, agenticowStore.get);
   const palco = useRef<HTMLDivElement>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -126,43 +130,188 @@ function Palco() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-edge bg-panel px-4 py-2">
-        <span className="text-sm font-medium">{t("agenticow.title")}</span>
-        <span className="rounded-full border border-ok/40 bg-ok/10 px-2 py-0.5 text-[10px] text-ok">
-          {t("agenticow.running")}
-        </span>
-        {s.catalogError !== null && (
-          <span
-            className="rounded-full border border-warn/40 bg-warn/10 px-2 py-0.5 text-[10px] text-warn"
-            title={s.catalogError}
-          >
-            {t("agenticow.catalogError")}
-          </span>
-        )}
-        {s.status?.models === 0 && (
-          <span className="flex items-center gap-2 text-[11px] text-dim">
-            {t("agenticow.noModels")}
-            <button onClick={() => navigate("server")} className="text-accent hover:underline">
-              {t("agenticow.openServer")}
-            </button>
-          </span>
-        )}
-        {erro && <span className="truncate text-[11px] text-bad">{erro}</span>}
-        <div className="ml-auto flex flex-wrap gap-2">
-          <button
-            onClick={() => void parar().then((ok) => ok && iniciar(i18n.language))}
-            disabled={s.busy !== null}
-            className={botao}
-          >
-            {t("agenticow.restart")}
-          </button>
-          <button onClick={() => void parar()} disabled={s.busy !== null} className={botao}>
-            {s.busy === "stop" ? t("common.loading") : t("agenticow.stop")}
-          </button>
-        </div>
-      </div>
+      <Barra erro={erro} />
       {/* O lugar da webview do AgenticOw: vazio aqui, ocupado por ela. */}
       <div ref={palco} className="min-h-0 flex-1 bg-panel2" />
+    </div>
+  );
+}
+
+/** A barra fina de cima enquanto o AgenticOw está no ar. */
+function Barra({ erro }: { erro: string | null }) {
+  const { t, i18n } = useTranslation();
+  const s = useSyncExternalStore(agenticowStore.subscribe, agenticowStore.get);
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-edge bg-panel px-4 py-2">
+      <span className="text-sm font-medium">{t("agenticow.title")}</span>
+      <span className="rounded-full border border-ok/40 bg-ok/10 px-2 py-0.5 text-[10px] text-ok">
+        {t("agenticow.running")}
+      </span>
+      {s.catalogError !== null && (
+        <span
+          className="rounded-full border border-warn/40 bg-warn/10 px-2 py-0.5 text-[10px] text-warn"
+          title={s.catalogError}
+        >
+          {t("agenticow.catalogError")}
+        </span>
+      )}
+      {erro && <span className="truncate text-[11px] text-bad">{erro}</span>}
+      <div className="ml-auto flex flex-wrap gap-2">
+        <button
+          onClick={() => void parar().then((ok) => ok && iniciar(i18n.language))}
+          disabled={s.busy !== null}
+          className={botao}
+        >
+          {t("agenticow.restart")}
+        </button>
+        <button onClick={() => void parar()} disabled={s.busy !== null} className={botao}>
+          {s.busy === "stop" ? t("common.loading") : t("agenticow.stop")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * No ar, sem modelo: o cérebro do AgenticOw vem sempre do OpenWeights, e aqui a
+ * pessoa vê o que cada fonte tem e o próximo passo de cada uma. Nada se
+ * configura no AgenticOw — as ações levam às telas do app (ou sobem o Servidor
+ * Local direto, quando já há modelo na biblioteca).
+ */
+function Cerebro() {
+  const { t } = useTranslation();
+  const s = useSyncExternalStore(agenticowStore.subscribe, agenticowStore.get);
+  const f = s.status?.sources;
+  const [subindo, setSubindo] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  // A webview do AgenticOw sai da frente enquanto este painel está à vista.
+  useEffect(() => {
+    void esconder();
+  }, []);
+
+  const subirServidor = async () => {
+    setSubindo(true);
+    setErro(null);
+    try {
+      await startServer();
+      // O catálogo chega sozinho (o motor subindo reenvia); o status vem junto.
+      await refreshStatus();
+    } catch (e) {
+      setErro(errorMessage(e));
+    } finally {
+      setSubindo(false);
+    }
+  };
+
+  const fontes = (tab: "openrouter" | "9router") => navigate("providers", { providersTab: tab });
+
+  let local: Fonte;
+  if (!f || f.localModels === 0) {
+    local = {
+      estado: t("agenticow.brain.local.none"),
+      acao: t("agenticow.brain.local.find"),
+      aoClicar: () => navigate("discover"),
+    };
+  } else if (!f.serverRunning) {
+    local = {
+      estado: t("agenticow.brain.local.stopped", { count: f.localModels }),
+      acao: subindo ? t("common.loading") : t("agenticow.brain.local.start"),
+      aoClicar: () => void subirServidor(),
+      primaria: true,
+      ocupada: subindo,
+    };
+  } else {
+    local = {
+      estado: t("agenticow.brain.local.running"),
+      acao: t("agenticow.brain.local.open"),
+      aoClicar: () => navigate("server"),
+    };
+  }
+
+  const openrouter: Fonte = !f?.openrouterKey
+    ? { estado: t("agenticow.brain.openrouter.noKey"), acao: t("agenticow.brain.configure"), aoClicar: () => fontes("openrouter") }
+    : f.openrouterFavorites === 0
+      ? { estado: t("agenticow.brain.openrouter.noFavorites"), acao: t("agenticow.brain.openrouter.pick"), aoClicar: () => fontes("openrouter") }
+      : { estado: t("agenticow.brain.openrouter.ready", { count: f.openrouterFavorites }), acao: t("agenticow.brain.configure"), aoClicar: () => fontes("openrouter") };
+
+  const nove: Fonte = !f?.ninerouterInstalled
+    ? { estado: t("agenticow.brain.ninerouter.notInstalled"), acao: t("agenticow.brain.ninerouter.install"), aoClicar: () => fontes("9router") }
+    : !f.ninerouterRunning
+      ? { estado: t("agenticow.brain.ninerouter.stopped"), acao: t("agenticow.brain.configure"), aoClicar: () => fontes("9router") }
+      : { estado: t("agenticow.brain.ninerouter.noModels"), acao: t("agenticow.brain.configure"), aoClicar: () => fontes("9router") };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <Barra erro={null} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-3xl px-6 py-10">
+          <h2 className="text-xl font-semibold">{t("agenticow.brain.title")}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-dim">{t("agenticow.brain.body")}</p>
+          <div className="mt-6 space-y-3">
+            <CartaoFonte
+              icone="cpu"
+              nome={t("agenticow.brain.local.name")}
+              descricao={t("agenticow.brain.local.hint")}
+              fonte={local}
+            />
+            <CartaoFonte
+              icone="network"
+              nome={t("agenticow.brain.openrouter.name")}
+              descricao={t("agenticow.brain.openrouter.hint")}
+              fonte={openrouter}
+            />
+            <CartaoFonte
+              icone="layers"
+              nome={t("agenticow.brain.ninerouter.name")}
+              descricao={t("agenticow.brain.ninerouter.hint")}
+              fonte={nove}
+            />
+          </div>
+          {erro && <p className="mt-4 text-sm text-bad">{erro}</p>}
+          <p className="mt-6 text-xs leading-relaxed text-dim">{t("agenticow.brain.footnote")}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface Fonte {
+  estado: string;
+  acao: string;
+  aoClicar: () => void;
+  primaria?: boolean;
+  ocupada?: boolean;
+}
+
+function CartaoFonte({
+  icone,
+  nome,
+  descricao,
+  fonte,
+}: {
+  icone: IconName;
+  nome: string;
+  descricao: string;
+  fonte: Fonte;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-edge bg-panel px-5 py-4">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-panel2 text-accent">
+        <Icon name={icone} className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium">{nome}</div>
+        <div className="mt-0.5 text-xs leading-relaxed text-dim">{descricao}</div>
+        <div className="mt-1.5 text-[12px] text-ink">{fonte.estado}</div>
+      </div>
+      <button
+        onClick={fonte.aoClicar}
+        disabled={fonte.ocupada}
+        className={fonte.primaria ? botaoPrimario : botao}
+      >
+        {fonte.acao}
+      </button>
     </div>
   );
 }
