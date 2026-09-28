@@ -622,6 +622,7 @@
       "notInstalled": "not installed",
       "docs": "docs",
       "open": "Open",
+      "openExternal": "External terminal",
       "installHint": "To install for good: {{cmd}}"
     },
     "tabs": {

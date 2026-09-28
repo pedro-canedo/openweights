@@ -281,9 +281,23 @@ export function harnessList(model: string): Promise<HarnessStatus[]> {
   return invoke<HarnessStatus[]>("harness_list", { model });
 }
 
-export function harnessLaunch(id: string, model: string, workdir?: string | null): Promise<void> {
-  if (!isTauri) return Promise.resolve();
-  return invoke<void>("harness_launch", { id, model, workdir: workdir ?? null });
+/**
+ * Abre o harness e devolve a sessão de terminal do OwCLI onde ele roda
+ * (`null` para o AgenticOw e para o terminal externo do Windows).
+ */
+export function harnessLaunch(
+  id: string,
+  model: string,
+  workdir?: string | null,
+  externo = false,
+): Promise<number | null> {
+  if (!isTauri) return Promise.resolve(null);
+  return invoke<number | null>("harness_launch", {
+    id,
+    model,
+    workdir: workdir ?? null,
+    externo,
+  });
 }
 
 // ------------------------------------------------------------- simulação ---

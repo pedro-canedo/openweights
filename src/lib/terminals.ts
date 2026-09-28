@@ -469,6 +469,20 @@ export async function novoShell(pasta: string | null = null): Promise<number | n
  * senão ela entra no painel com foco (saindo de um painel escondido, se
  * estava num).
  */
+/**
+ * Uma sessão aberta por outro caminho (um harness lançado da tela do
+ * Servidor) passa a ser deste store e entra no painel com foco.
+ */
+export async function adotar(id: number) {
+  await iniciar();
+  if (!vivos.has(id)) {
+    const v = criarXterm(id);
+    mudar({ sessoes: await backend.listar() });
+    await anexar(id, v);
+  }
+  ativar(id);
+}
+
 export function ativar(id: number, focar = true) {
   const paineis = [...estado.paineis];
   const j = paineis.indexOf(id);

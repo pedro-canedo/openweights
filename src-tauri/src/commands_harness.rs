@@ -11,7 +11,9 @@
 //! gerenciado de `commands_agenticow` (pacote verificado, Host supervisionado,
 //! catálogo de modelos pelo canal de controle). O cartão daqui só leva até essa
 //! tela; `harness_launch` ainda delega ao caminho gerenciado para quem chamar o
-//! comando direto. Os DEMAIS harnesses abrem em terminal.
+//! comando direto. Os DEMAIS harnesses abrem num terminal DO APP (sessão do
+//! `lr_pty`, tela do OwCLI) — no Linux e no macOS eles rodavam com stdio em
+//! `null`, sem terminal nenhum. No Windows o terminal externo segue como opção.
 
 use crate::state::AppState;
 use serde::Serialize;
@@ -303,6 +305,27 @@ pub async fn harness_list(
     Ok(out)
 }
 
+/// Programa e argumentos para o pseudoterminal. No Windows, `.cmd`/`.bat`
+/// (como o `npx` e os pacotes globais do npm) não são executáveis para o
+/// `CreateProcess` do ConPTY: vão pelo `cmd.exe /c`.
+fn programa_do_pty(argv: &[String]) -> (std::ffi::OsString, Vec<std::ffi::OsString>) {
+    #[cfg(windows)]
+    {
+        let primeiro = argv[0].to_ascii_lowercase();
+        if primeiro.ends_with(".cmd") || primeiro.ends_with(".bat") || primeiro == "npx" {
+            let mut args = vec![std::ffi::OsString::from("/c")];
+            args.extend(argv.iter().map(std::ffi::OsString::from));
+            return ("cmd.exe".into(), args);
+        }
+    }
+    (
+        argv[0].clone().into(),
+        argv[1..].iter().map(std::ffi::OsString::from).collect(),
+    )
+}
+
+/// Abre o harness e devolve a sessão de terminal onde ele roda (`None` para
+/// o AgenticOw, que tem tela própria, e para o terminal externo do Windows).
 #[tauri::command]
 pub async fn harness_launch(
     app: tauri::AppHandle,
@@ -310,7 +333,8 @@ pub async fn harness_launch(
     id: String,
     model: String,
     workdir: Option<String>,
-) -> CmdResult<()> {
+    externo: Option<bool>,
+) -> CmdResult<Option<lr_pty::SessaoId>> {
     let spec = registry()
         .iter()
         .find(|s| s.id == id)
@@ -322,7 +346,7 @@ pub async fn harness_launch(
     if spec.id == ID_AGENTICOW {
         return crate::commands_agenticow::iniciar(&app, &state, None)
             .await
-            .map(|_| ());
+            .map(|_| None);
     }
 
     let model = model.trim();
@@ -366,10 +390,18 @@ pub async fn harness_launch(
         })
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-    // Terminal interativo próprio: o harness é um programa de terminal, não
-    // um daemon — precisa de console visível e independente do app.
+    let env: Vec<(std::ffi::OsString, std::ffi::OsString)> = spec
+        .env
+        .iter()
+        .filter_map(|(k, t)| {
+            let v = fill(t, &f, false);
+            (!v.is_empty()).then(|| ((*k).into(), v.into()))
+        })
+        .collect();
+
+    // Windows, a pedido: console externo, independente do app.
     #[cfg(windows)]
-    {
+    if externo.unwrap_or(false) {
         let mut c = std::process::Command::new("cmd");
         let linha = argv.join(" ");
         // O `cmd /c` de fora fica sem janela (no_window_std); quem abre o
@@ -377,32 +409,35 @@ pub async fn harness_launch(
         c.args(["/c", "start", "", "cmd", "/k", &linha])
             .current_dir(&cwd);
         lr_proc::no_window_std(&mut c);
-        for (k, t) in spec.env {
-            let v = fill(t, &f, false);
-            if !v.is_empty() {
-                c.env(k, v);
-            }
-        }
+        c.envs(env.iter().map(|(k, v)| (k, v)));
         c.spawn().map_err(|e| e.to_string())?;
+        return Ok(None);
     }
     #[cfg(not(windows))]
-    {
-        let mut c = std::process::Command::new(&argv[0]);
-        c.args(&argv[1..])
-            .current_dir(&cwd)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null());
-        for (k, t) in spec.env {
-            let v = fill(t, &f, false);
-            if !v.is_empty() {
-                c.env(k, v);
-            }
-        }
-        lr_proc::host_env_std(&mut c);
-        c.spawn().map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    let _ = externo;
+
+    // O harness é um programa de terminal: roda numa sessão do OwCLI.
+    let (programa, args) = programa_do_pty(&argv);
+    let mut env = env;
+    env.push(("TERM_PROGRAM".into(), "OpenWeights".into()));
+    let pedido = lr_pty::Pedido {
+        programa,
+        args,
+        pasta: cwd,
+        env,
+        colunas: 120,
+        linhas: 32,
+        titulo: spec.name.to_string(),
+        tipo: lr_pty::Tipo::Harness {
+            id: spec.id.to_string(),
+        },
+    };
+    let gerente = state.terminais.clone();
+    let sessao = tauri::async_runtime::spawn_blocking(move || gerente.abrir(pedido))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("não foi possível abrir {}: {e}", spec.name))?;
+    Ok(Some(sessao))
 }
 
 #[cfg(test)]
@@ -433,6 +468,17 @@ mod tests {
         };
         assert_eq!(fill("{apiKeyOrDummy}", &sem, false), "local");
         assert_eq!(fill("{apiKey}", &sem, false), "");
+    }
+
+    /// Fora do Windows o harness roda direto no pseudoterminal, com o argv
+    /// que o registro montou (nada de shell no meio).
+    #[cfg(not(windows))]
+    #[test]
+    fn the_harness_runs_straight_in_the_pty() {
+        let argv = ["aider", "--model", "openai/x"].map(String::from);
+        let (programa, args) = programa_do_pty(&argv);
+        assert_eq!(programa, "aider");
+        assert_eq!(args, ["--model", "openai/x"]);
     }
 
     #[test]

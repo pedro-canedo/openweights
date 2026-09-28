@@ -11,6 +11,10 @@ import {
   type HarnessStatus,
 } from "../../lib/flags";
 import { navigate } from "../../lib/nav";
+import { adotar } from "../../lib/terminals";
+
+/** O terminal externo só existe como opção no Windows (lá ele funciona de verdade). */
+const WINDOWS = typeof navigator !== "undefined" && navigator.platform.startsWith("Win");
 
 export default function HarnessLauncher({
   model,
@@ -42,7 +46,7 @@ export default function HarnessLauncher({
 
   if (!list.length) return null;
 
-  const open = async (id: string) => {
+  const open = async (id: string, externo = false) => {
     setLaunching(id);
     setError(null);
     try {
@@ -52,7 +56,12 @@ export default function HarnessLauncher({
         // só leva até ela.
         navigate("agenticow");
       } else {
-        await harnessLaunch(id, model);
+        // O harness roda numa sessão do OwCLI: a tela vai até ela.
+        const sessao = await harnessLaunch(id, model, null, externo);
+        if (sessao != null) {
+          navigate("owcli");
+          await adotar(sessao);
+        }
       }
     } catch (e) {
       setError(String(e));
@@ -112,6 +121,16 @@ export default function HarnessLauncher({
                   ? t("common.loading")
                   : t("server.harness.open")}
               </button>
+              {WINDOWS && h.id !== "agenticow" && (
+                <button
+                  type="button"
+                  disabled={!loaded || !h.launchable || launching != null}
+                  onClick={() => void open(h.id, true)}
+                  className="rounded-lg px-2 py-1.5 text-xs text-dim hover:bg-panel2 hover:text-ink disabled:opacity-50"
+                >
+                  {t("server.harness.openExternal")}
+                </button>
+              )}
             </div>
             <div className="relative mt-2">
               <pre className="select-text overflow-x-auto rounded-lg border border-edge bg-panel2 p-2 font-mono text-[11px] leading-relaxed text-dim">

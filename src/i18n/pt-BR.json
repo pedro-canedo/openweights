@@ -622,6 +622,7 @@
       "notInstalled": "não instalado",
       "docs": "docs",
       "open": "Abrir",
+      "openExternal": "Terminal externo",
       "installHint": "Para instalar de vez: {{cmd}}"
     },
     "tabs": {
