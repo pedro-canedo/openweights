@@ -67,17 +67,60 @@ mod appimage;
 /// sistema. Quem monta uma variável a partir da do app parte de [`host_var`]. O [`spawn_supervised`]
 /// já chama; os demais spawns chamam antes do `.spawn()`/`.output()` — há um
 /// teste (`no_process_spawn_escapes_the_host_env_rule`) que cobra isso.
+///
+/// No Linux, um executável cujo pacote traz o próprio CUDA runtime ao lado
+/// ganha também a pasta dele na frente do `LD_LIBRARY_PATH` (ver
+/// [`ld_library_path_do_pacote`]). É aqui, e não em cada spawn, porque todo
+/// binário do pacote precisa disso — o servidor e também o `llama-bench`, o
+/// `llama-fit-params`, o `--list-devices` e o `--help` que medem e descrevem
+/// o motor: medir com outro cuBLAS é medir outro motor.
 pub fn host_env_std(cmd: &mut std::process::Command) -> &mut std::process::Command {
     #[cfg(target_os = "linux")]
-    appimage::aplicar(cmd);
+    {
+        appimage::aplicar(cmd);
+        bibliotecas_do_pacote_na_frente(cmd);
+    }
     cmd
 }
 
 /// A irmã assíncrona de [`host_env_std`], para `tokio::process::Command`.
 pub fn host_env(cmd: &mut Command) -> &mut Command {
     #[cfg(target_os = "linux")]
-    appimage::aplicar(cmd.as_std_mut());
+    {
+        appimage::aplicar(cmd.as_std_mut());
+        bibliotecas_do_pacote_na_frente(cmd.as_std_mut());
+    }
     cmd
+}
+
+/// Põe a pasta do executável na frente do `LD_LIBRARY_PATH` do filho quando
+/// ela traz o próprio CUDA runtime. A base é o que o comando já define (a
+/// variável dos Ajustes, ou a limpa pelo [`host_env`]); sem nada definido, a
+/// do sistema. Aplicar duas vezes dá o mesmo valor.
+#[cfg(target_os = "linux")]
+fn bibliotecas_do_pacote_na_frente(cmd: &mut std::process::Command) {
+    let programa = std::path::Path::new(cmd.get_program());
+    // Só caminho absoluto: um programa chamado pelo nome (`zenity`, `git`)
+    // vem do PATH, e a pasta de trabalho do app não diz nada sobre ele.
+    if !programa.is_absolute() {
+        return;
+    }
+    let Some(dir) = programa.parent().map(std::path::Path::to_path_buf) else {
+        return;
+    };
+    let definido = cmd
+        .get_envs()
+        .find(|(k, _)| *k == "LD_LIBRARY_PATH")
+        .map(|(_, v)| v.map(std::ffi::OsStr::to_os_string));
+    let valor = match definido {
+        // Removida de propósito pelo comando: só a pasta do pacote.
+        Some(None) => ld_library_path_do_pacote(&dir, Some(std::ffi::OsStr::new(""))),
+        Some(Some(v)) => ld_library_path_do_pacote(&dir, Some(&v)),
+        None => ld_library_path_do_pacote(&dir, None),
+    };
+    if let Some(v) = valor {
+        cmd.env("LD_LIBRARY_PATH", v);
+    }
 }
 
 /// O valor de `nome` como um programa do sistema o veria — o `var_os` sem o
@@ -91,6 +134,49 @@ pub fn host_var(nome: &str) -> Option<std::ffi::OsString> {
     #[cfg(not(target_os = "linux"))]
     {
         std::env::var_os(nome)
+    }
+}
+
+/// O `LD_LIBRARY_PATH` de um binário cujo pacote traz o próprio CUDA runtime
+/// ao lado dele (`libcudart.so.12` na pasta — hoje, o motor CUDA 12.8 da
+/// PrismML no Linux). `None` para qualquer outro pacote e fora do Linux: aí
+/// o filho segue com o que herdaria.
+///
+/// O pacote acha as vizinhas pelo `RUNPATH=$ORIGIN`, mas o `LD_LIBRARY_PATH`
+/// vence o RUNPATH no carregador — e o [`host_env`] devolve ao filho o do
+/// usuário, que pode apontar para um toolkit com OUTRO cuBLAS 12.x. Carregar
+/// esse no lugar do fixado não dá erro de link; dá um motor diferente do que
+/// foi provado. Por isso a pasta do pacote vai na frente — o [`host_env`]
+/// aplica isto a todo filho; esta é a regra pura, exposta para teste e para
+/// quem monta o ambiente à mão.
+///
+/// `definido` é o valor que o próprio comando já passa ao filho (a variável
+/// escolhida nos Ajustes); sem ele, a base é a do sistema ([`host_var`]),
+/// nunca a do AppImage.
+pub fn ld_library_path_do_pacote(
+    dir: &std::path::Path,
+    definido: Option<&std::ffi::OsStr>,
+) -> Option<std::ffi::OsString> {
+    #[cfg(target_os = "linux")]
+    {
+        if !dir.join("libcudart.so.12").is_file() {
+            return None;
+        }
+        let base = definido
+            .map(std::ffi::OsString::from)
+            .or_else(|| host_var("LD_LIBRARY_PATH"));
+        let mut partes = vec![dir.to_path_buf()];
+        if let Some(base) = base {
+            partes.extend(
+                std::env::split_paths(&base).filter(|p| !p.as_os_str().is_empty() && p != dir),
+            );
+        }
+        std::env::join_paths(partes).ok()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (dir, definido);
+        None
     }
 }
 
@@ -577,5 +663,92 @@ mod tests {
         prepare(&mut cmd);
         let mut child = spawn_supervised(&mut cmd).expect("spawn");
         reap_child(&mut child);
+    }
+
+    /// A pasta de um pacote que traz o `libcudart.so.12` vai na FRENTE do
+    /// `LD_LIBRARY_PATH` — sem repetir, e mantendo o resto na ordem. Pacote
+    /// sem CUDA próprio (o Vulkan, o oficial) não ganha nada.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_package_with_its_own_cuda_runtime_comes_first_in_the_library_path() {
+        let tmp = tempfile_dir();
+        let dir = tmp.join("cuda-12.8");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(
+            ld_library_path_do_pacote(&dir, Some(std::ffi::OsStr::new("/opt/cuda/lib64"))),
+            None,
+            "sem libcudart.so.12 ao lado, nada muda"
+        );
+
+        std::fs::write(dir.join("libcudart.so.12"), b"x").unwrap();
+        let esperado = format!("{}:/opt/cuda/lib64:/usr/local/lib", dir.display());
+        let definido = format!("/opt/cuda/lib64:{}::/usr/local/lib", dir.display());
+        assert_eq!(
+            ld_library_path_do_pacote(&dir, Some(std::ffi::OsStr::new(&definido))),
+            Some(std::ffi::OsString::from(esperado))
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// O `host_env` faz isso para TODO filho vindo da pasta do pacote — o
+    /// `llama-bench` e o `llama-fit-params` medem com o cuBLAS fixado, não
+    /// com o do toolkit que a pessoa tem no `LD_LIBRARY_PATH`. Programa pelo
+    /// nome, ou de outra pasta, não ganha nada; aplicar de novo não repete.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn host_env_puts_a_cuda_package_first_for_every_binary_in_it() {
+        let ld = |cmd: &std::process::Command| {
+            cmd.get_envs()
+                .find(|(k, _)| *k == "LD_LIBRARY_PATH")
+                .and_then(|(_, v)| v.map(|v| v.to_string_lossy().into_owned()))
+        };
+        let tmp = tempfile_dir();
+        let dir = tmp.join("cuda-12.8");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("libcudart.so.12"), b"x").unwrap();
+
+        let mut bench = std::process::Command::new(dir.join("llama-bench"));
+        bench.env("LD_LIBRARY_PATH", "/usr/local/cuda-12.4/lib64");
+        host_env_std(&mut bench);
+        let esperado = format!("{}:/usr/local/cuda-12.4/lib64", dir.display());
+        assert_eq!(ld(&bench).as_deref(), Some(esperado.as_str()));
+        host_env_std(&mut bench);
+        assert_eq!(ld(&bench).as_deref(), Some(esperado.as_str()));
+
+        // Sem nada definido, a base é a do sistema — a pasta vem primeiro.
+        let mut fit = tokio::process::Command::new(dir.join("llama-fit-params"));
+        host_env(&mut fit);
+        let valor = ld(fit.as_std()).expect("a pasta do pacote entra");
+        assert!(valor.starts_with(&dir.display().to_string()), "{valor}");
+
+        // Removida de propósito pelo comando: só a pasta.
+        let mut limpo = std::process::Command::new(dir.join("llama-server"));
+        limpo.env_remove("LD_LIBRARY_PATH");
+        host_env_std(&mut limpo);
+        assert_eq!(ld(&limpo), Some(dir.display().to_string()));
+
+        let mut pelo_nome = std::process::Command::new("llama-server");
+        pelo_nome.env("LD_LIBRARY_PATH", "/opt/x");
+        host_env_std(&mut pelo_nome);
+        assert_eq!(ld(&pelo_nome).as_deref(), Some("/opt/x"));
+
+        let vulkan = tmp.join("vulkan");
+        std::fs::create_dir_all(&vulkan).unwrap();
+        let mut outro = std::process::Command::new(vulkan.join("llama-server"));
+        outro.env("LD_LIBRARY_PATH", "/opt/x");
+        host_env_std(&mut outro);
+        assert_eq!(ld(&outro).as_deref(), Some("/opt/x"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[cfg(target_os = "linux")]
+    fn tempfile_dir() -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("lr-proc-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
     }
 }

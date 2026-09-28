@@ -9,6 +9,7 @@
 // velocidade que ele está entregando.
 
 import { useTranslation } from "react-i18next";
+import { variantLabel } from "../../lib/prism";
 import type { ServerStatus } from "../../lib/types";
 import { StatusDot } from "../ui/Shell";
 import { CopyValue } from "../ui/Copy";
@@ -32,6 +33,11 @@ export default function ServerHeader({
 }) {
   const { t } = useTranslation();
   const running = !!status?.running;
+  // A variante do motor da PrismML DO PROCESSO de pé (no Linux, o CUDA 12.8
+  // ou o Vulkan): a faixa diz qual, para "por que está lento?" ter resposta à
+  // vista. Não a melhor instalada — logo depois de o CUDA chegar, quem ainda
+  // está no ar é o Vulkan, até o próximo modelo reiniciar o motor.
+  const prismVariant = status?.engine === "prism" ? (status.engineVariant ?? null) : null;
 
   return (
     <div className="sticky top-0 z-10 -mx-8 mb-2 bg-bg/95 px-8 pb-2 pt-4 backdrop-blur">
@@ -93,7 +99,10 @@ export default function ServerHeader({
             {status?.engine === "prism" && (
               <>
                 <span aria-hidden>·</span>
-                <span className="text-accent">{t("server.header.enginePrism")}</span>
+                <span className="text-accent">
+                  {t("server.header.enginePrism")}
+                  {prismVariant ? ` · ${variantLabel(prismVariant)}` : ""}
+                </span>
               </>
             )}
             {status?.engine === "moeCache" && (

@@ -526,14 +526,16 @@ pub async fn compare_run(
     // não o que está selecionado agora.
     let arquivo = commands::caminho_do_modelo(&state, &model).ok_or("comparison-model-missing")?;
     let exige_prism = lr_models::read_local_meta(&arquivo).exige_prism();
-    config.exe_path = commands::runtime_de_medicao(&state, &arquivo)?
+    let motor_do_arquivo = commands::runtime_de_medicao(&state, &arquivo)?;
+    config.exe_path = motor_do_arquivo
         .server_exe
+        .clone()
         .ok_or("optimization-official-missing")?;
     assert_idle(&state).await?;
     commands::stop_engine(&app, &state).await?;
     let measured = async {
         let runtime_identity = if exige_prism {
-            lr_runtime::prism::identity(&state.profile)
+            lr_runtime::prism::identity(&state.profile, motor_do_arquivo.variant)
         } else {
             match commands::selected_engine(&state) {
                 lr_types::tuning::EngineSource::MoeCache => lr_runtime::experimental::identity(),

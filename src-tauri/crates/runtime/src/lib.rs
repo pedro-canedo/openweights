@@ -18,6 +18,9 @@
 //!   fallback de CPU embutido.
 //! - CUDA 13.x exige driver >= 580 e GPU Turing+ (CC >= 7.5); CUDA 12.4 roda
 //!   com driver >= 527.41 e cobre Maxwell/Pascal.
+//! - O fork da PrismML publica também `…-bin-linux-cuda-12.8-x64.tar.gz`
+//!   (prefixo `linux-`, não `ubuntu-`), SEM o cudart/cuBLAS dentro — ver
+//!   [`prism`], que completa o pacote com as bibliotecas fixadas da NVIDIA.
 
 use lr_types::{GpuInfo, GpuVendor, HardwareProfile};
 use serde::{Deserialize, Serialize};
@@ -30,7 +33,7 @@ mod manager;
 pub mod prism;
 pub use check::{
     EngineCheck, InstalledRuntime, PruneResult, Verdict, build_number, check, is_prism_tag, prune,
-    scan_installed,
+    scan_installed, variant_of_dir,
 };
 pub use manager::{RuntimeError, RuntimeEvent, RuntimeManager, RuntimeState};
 
@@ -48,6 +51,9 @@ pub enum BackendVariant {
     Cuda13,
     /// CUDA 12.4 — NVIDIA com driver >= 527.41 (inclui Maxwell/Pascal).
     Cuda12,
+    /// CUDA 12.8 — só o fork da PrismML, Linux x64 (NVIDIA com driver >=
+    /// 570). O motor oficial não publica CUDA para Linux.
+    Cuda128,
     /// Vulkan — AMD/Intel (e NVIDIA como fallback).
     Vulkan,
     /// CPU puro (dispatch de microarquitetura em runtime).
@@ -64,6 +70,7 @@ impl BackendVariant {
         match self {
             BackendVariant::Cuda13 => Some(BackendVariant::Cuda12),
             BackendVariant::Cuda12 => Some(BackendVariant::Vulkan),
+            BackendVariant::Cuda128 => Some(BackendVariant::Vulkan),
             BackendVariant::Vulkan => Some(BackendVariant::Cpu),
             _ => None,
         }
@@ -78,6 +85,14 @@ fn parse_driver_version(v: &str) -> Option<f64> {
     let major = partes.next()?;
     let minor = partes.next().unwrap_or("0");
     format!("{major}.{minor}").parse::<f64>().ok()
+}
+
+/// O ramo do driver NVIDIA como INTEIRO: "570.124.04" -> 570, "581.42" ->
+/// 581. É o que um limiar de ramo compara. O [`parse_driver_version`] não
+/// serve para isso no Linux: o minor tem três dígitos lá, e "570.124" vira
+/// 570,124 — MENOR que 570,26, embora seja um driver mais novo.
+pub(crate) fn driver_major(v: &str) -> Option<u32> {
+    v.trim().split('.').next()?.trim().parse().ok()
 }
 
 /// O pacote CUDA que a placa NVIDIA aguenta, pelo driver e pela compute
@@ -162,6 +177,10 @@ pub fn asset_name_for(os: &str, tag: &str, variant: BackendVariant) -> Option<St
         ("windows", BackendVariant::Cuda12) => "win-cuda-12.4-x64.zip",
         ("windows", BackendVariant::Vulkan) => "win-vulkan-x64.zip",
         ("windows", BackendVariant::Cpu) => "win-cpu-x64.zip",
+        // Só o fork publica CUDA para Linux; a release oficial pinada não.
+        ("linux", BackendVariant::Cuda128) if check::is_prism_tag(tag) => {
+            "linux-cuda-12.8-x64.tar.gz"
+        }
         ("linux", BackendVariant::Vulkan) => "ubuntu-vulkan-x64.tar.gz",
         ("linux", BackendVariant::Cpu) => "ubuntu-x64.tar.gz",
         ("macos", BackendVariant::MacosArm64) => "macos-arm64.tar.gz",
@@ -235,12 +254,25 @@ pub fn runtime_dir(data_dir: &std::path::Path, tag: &str, variant: BackendVarian
     let v = match variant {
         BackendVariant::Cuda13 => "cuda-13.3",
         BackendVariant::Cuda12 => "cuda-12.4",
+        BackendVariant::Cuda128 => "cuda-12.8",
         BackendVariant::Vulkan => "vulkan",
         BackendVariant::Cpu => "cpu",
         BackendVariant::MacosArm64 => "macos-arm64",
         BackendVariant::MacosX64 => "macos-x64",
     };
     data_dir.join("runtimes").join(tag).join(v)
+}
+
+/// A pasta ao lado da de uma variante onde um pacote conferido espera a
+/// prova por execução (`<tag>/cuda-12.8.pending`). O estado não a enxerga —
+/// "instalado" é só a pasta da variante —, e a limpeza a trata como
+/// qualquer pacote que o app não usa.
+pub(crate) fn pending_dir(final_dir: &std::path::Path) -> PathBuf {
+    let nome = format!(
+        "{}.pending",
+        final_dir.file_name().unwrap_or_default().to_string_lossy()
+    );
+    final_dir.with_file_name(nome)
 }
 
 #[cfg(test)]
@@ -372,11 +404,33 @@ mod tests {
     /// sistema não tem é `None`, nunca o pacote de outro sistema.
     #[test]
     fn a_variant_the_system_does_not_have_has_no_asset() {
-        for v in [BackendVariant::Cuda13, BackendVariant::Cuda12] {
+        for v in [
+            BackendVariant::Cuda13,
+            BackendVariant::Cuda12,
+            BackendVariant::Cuda128,
+        ] {
             assert_eq!(asset_name_for("linux", "b10441", v), None);
             assert_eq!(cudart_asset_name_for("linux", "b10441", v), None);
             assert_eq!(asset_name_for("macos", "b10441", v), None);
         }
+        // O CUDA 12.8 é do fork, e só no Linux: nem o oficial nem o Windows.
+        assert_eq!(
+            asset_name_for("windows", "b10441", BackendVariant::Cuda128),
+            None
+        );
+        assert_eq!(
+            asset_name_for("windows", prism::TAG, BackendVariant::Cuda128),
+            None
+        );
+        assert_eq!(
+            asset_name_for("macos", prism::TAG, BackendVariant::Cuda128),
+            None
+        );
+        assert_eq!(
+            cudart_asset_name_for("linux", prism::TAG, BackendVariant::Cuda128),
+            None,
+            "o fork não publica cudart para Linux: as bibliotecas vêm fixadas à parte"
+        );
         assert_eq!(
             asset_name_for("windows", "b10441", BackendVariant::MacosArm64),
             None
@@ -453,6 +507,38 @@ mod tests {
         assert!(!cuda13_capable(&profile(vec![])));
     }
 
+    /// O limiar de ramo compara inteiros: "570.124.04" é driver 570, e
+    /// ">= 570" tem de valer para ele — o `parse_driver_version` f64 diria
+    /// 570,124 < 570,26.
+    #[test]
+    fn the_driver_branch_is_an_integer() {
+        assert_eq!(driver_major("570.124.04"), Some(570));
+        assert_eq!(driver_major("615.71.09"), Some(615));
+        assert_eq!(driver_major("581.42"), Some(581));
+        assert_eq!(driver_major(" 565 "), Some(565));
+        assert_eq!(driver_major("abc"), None);
+        assert_eq!(driver_major(""), None);
+        assert!(parse_driver_version("570.124.04").unwrap() < 570.26);
+    }
+
+    /// O TS recebe `"cuda128"` (kebab-case do serde) e a pasta é `cuda-12.8`.
+    #[test]
+    fn the_cuda128_variant_serializes_and_lives_in_its_own_folder() {
+        assert_eq!(
+            serde_json::to_string(&BackendVariant::Cuda128).unwrap(),
+            "\"cuda128\""
+        );
+        assert_eq!(
+            serde_json::from_str::<BackendVariant>("\"cuda128\"").unwrap(),
+            BackendVariant::Cuda128
+        );
+        let d = std::path::Path::new("/dados");
+        assert_eq!(
+            runtime_dir(d, prism::TAG, BackendVariant::Cuda128),
+            d.join("runtimes").join(prism::TAG).join("cuda-12.8")
+        );
+    }
+
     #[test]
     fn fallback_chain_ends_at_cpu() {
         let mut v = BackendVariant::Cuda13;
@@ -463,5 +549,10 @@ mod tests {
             assert!(steps < 10);
         }
         assert_eq!(v, BackendVariant::Cpu);
+
+        assert_eq!(
+            BackendVariant::Cuda128.fallback(),
+            Some(BackendVariant::Vulkan)
+        );
     }
 }

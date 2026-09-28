@@ -294,6 +294,89 @@ fn extract_zip(archive: &Path, dest: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Extrai de um zip SÓ as entradas pedidas, cada uma com o nome de destino
+/// dado, direto em `dest` (sem a estrutura de pastas do pacote).
+///
+/// Existe para os wheels (`.whl` é zip) das bibliotecas da NVIDIA: o do
+/// cuBLAS pesa 594 MB e traz cabeçalhos, `libnvblas` e metadados que o motor
+/// não usa. Extrair por entrada deixa no disco só o que vai ao lado do
+/// binário. Entrada ausente é erro — quem pede um arquivo fixado não pode
+/// seguir sem ele. Os membros saem com `0o644` no Unix, como as bibliotecas
+/// do toolkit: o carregador não exige o bit de execução numa `.so`.
+pub fn extract_zip_members(
+    archive: &Path,
+    members: &[(&str, &str)],
+    dest: &Path,
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(dest)?;
+    let file = std::fs::File::open(archive)?;
+    let mut zip = zip::ZipArchive::new(file).map_err(std::io::Error::other)?;
+    for (membro, destino) in members {
+        // O nome de destino é um nome de arquivo, nunca um caminho: nada de
+        // `../` escapando da pasta, mesmo que a lista venha errada.
+        if destino.is_empty() || destino.contains(['/', '\\']) || *destino == ".." {
+            return Err(std::io::Error::other(format!(
+                "nome de destino inválido para {membro}: {destino}"
+            )));
+        }
+        let mut entry = zip
+            .by_name(membro)
+            .map_err(|e| std::io::Error::other(format!("{membro} não está no pacote ({e})")))?;
+        let out_path = dest.join(destino);
+        let mut out = std::fs::File::create(&out_path)?;
+        std::io::copy(&mut entry, &mut out)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&out_path, std::fs::Permissions::from_mode(0o644))?;
+        }
+    }
+    Ok(())
+}
+
+/// A irmã assíncrona de [`extract_zip_members`], em thread de blocking.
+pub async fn extract_zip_members_async(
+    archive: PathBuf,
+    members: Vec<(String, String)>,
+    dest: PathBuf,
+) -> std::io::Result<()> {
+    tokio::task::spawn_blocking(move || {
+        let pares: Vec<(&str, &str)> = members
+            .iter()
+            .map(|(m, d)| (m.as_str(), d.as_str()))
+            .collect();
+        extract_zip_members(&archive, &pares, &dest)
+    })
+    .await
+    .map_err(std::io::Error::other)?
+}
+
+/// Espaço livre (bytes disponíveis para um usuário comum) no sistema de
+/// arquivos que contém `path`. `None` quando o sistema não diz — quem chama
+/// segue sem a checagem em vez de travar por causa dela.
+#[cfg(unix)]
+pub fn available_space(path: &Path) -> Option<u64> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut st = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // SAFETY: `c` é uma string C válida e `st` é um buffer do tamanho certo,
+    // que o `statvfs` preenche por inteiro quando devolve 0.
+    let r = unsafe { libc::statvfs(c.as_ptr(), st.as_mut_ptr()) };
+    if r != 0 {
+        return None;
+    }
+    // SAFETY: `statvfs` devolveu 0, então a estrutura foi preenchida.
+    let st = unsafe { st.assume_init() };
+    #[allow(clippy::unnecessary_cast)]
+    Some((st.f_bavail as u64).saturating_mul(st.f_frsize as u64))
+}
+
+/// Fora do Unix a checagem não existe (o único pacote que a usa é de Linux).
+#[cfg(not(unix))]
+pub fn available_space(_path: &Path) -> Option<u64> {
+    None
+}
+
 fn extract_tar_gz(archive: &Path, dest: &Path) -> std::io::Result<()> {
     let file = std::fs::File::open(archive)?;
     let decoder = flate2::read::GzDecoder::new(file);
@@ -447,13 +530,27 @@ pub fn remove_dir_all_retrying(dir: &Path) -> std::io::Result<()> {
 /// Tudo — o `.part` do download, a árvore extraída, o staging — vive aqui, de
 /// modo que jobs concorrentes não colidem e a limpeza é um `rmdir` só. O
 /// `Drop` limpa em qualquer desfecho, inclusive em erro e em `?` no meio.
+///
+/// O `Drop` não roda quando o processo morre no meio: o app fechado durante
+/// um download (o Tauri sai por `exit`, sem desmontar as tarefas), um crash,
+/// um `kill`. Por isso abrir uma sessão varre antes as que sobraram de
+/// processos que não existem mais — no motor CUDA 12.8 da PrismML uma
+/// sessão interrompida deixava até 1,6 GB esquecidos.
 pub struct Session {
     path: PathBuf,
 }
 
 impl Session {
     pub fn new(root: &Path) -> std::io::Result<Self> {
-        let path = root.join(".tmp").join(format!("job-{}", unique_suffix()));
+        let tmp = root.join(".tmp");
+        let liberado = sweep_stale_sessions(&tmp);
+        if liberado > 0 {
+            log::info!(
+                "{liberado} bytes de sessões abandonadas apagados de {}",
+                tmp.display()
+            );
+        }
+        let path = tmp.join(format!("job-{}", unique_suffix()));
         std::fs::create_dir_all(&path)?;
         Ok(Self { path })
     }
@@ -469,12 +566,72 @@ impl Drop for Session {
     }
 }
 
-fn unique_suffix() -> String {
-    let nanos = std::time::SystemTime::now()
+/// Apaga de `tmp` as sessões (`job-<pid>-<nanos>`) de processos que não
+/// existem mais e devolve quantos bytes voltaram ao disco. A sessão de um
+/// processo vivo — este, ou outra instância do app baixando agora — fica;
+/// o que não tem o formato de sessão também.
+pub fn sweep_stale_sessions(tmp: &Path) -> u64 {
+    let Ok(entradas) = std::fs::read_dir(tmp) else {
+        return 0;
+    };
+    let agora = agora_nanos();
+    let mut liberado = 0;
+    for entrada in entradas.flatten() {
+        let nome = entrada.file_name();
+        let Some((pid, nanos)) = sessao_do_nome(&nome.to_string_lossy()) else {
+            continue;
+        };
+        if pid == std::process::id() || !sessao_abandonada(pid, nanos, agora) {
+            continue;
+        }
+        let tamanho = dir_size(&entrada.path());
+        if std::fs::remove_dir_all(entrada.path()).is_ok() {
+            liberado += tamanho;
+        }
+    }
+    liberado
+}
+
+/// `job-4242-1759000000000000000` → `(4242, 1759000000000000000)`.
+fn sessao_do_nome(nome: &str) -> Option<(u32, u128)> {
+    let (pid, nanos) = nome.strip_prefix("job-")?.split_once('-')?;
+    Some((pid.parse().ok()?, nanos.parse().ok()?))
+}
+
+/// No Unix, o processo dono não existe mais (`kill(pid, 0)` dá `ESRCH`). Um
+/// PID reaproveitado por outro processo deixa a sessão para a próxima
+/// varredura — sobra, nunca apaga a de alguém vivo.
+#[cfg(unix)]
+fn sessao_abandonada(pid: u32, _nanos: u128, _agora: u128) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    if pid <= 0 {
+        return false;
+    }
+    // SAFETY: o sinal 0 não é entregue; o `kill` só confere se o processo
+    // existe e se haveria permissão.
+    let r = unsafe { libc::kill(pid, 0) };
+    r != 0 && std::io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+}
+
+/// Fora do Unix não há como perguntar pelo PID sem API nova: vale a idade.
+/// Dois dias cobrem com folga o download mais lento de uma sessão viva.
+#[cfg(not(unix))]
+fn sessao_abandonada(_pid: u32, nanos: u128, agora: u128) -> bool {
+    const DOIS_DIAS: u128 = 2 * 24 * 3600 * 1_000_000_000;
+    agora.saturating_sub(nanos) > DOIS_DIAS
+}
+
+fn agora_nanos() -> u128 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_nanos();
-    format!("{}-{nanos}", std::process::id())
+        .as_nanos()
+}
+
+fn unique_suffix() -> String {
+    format!("{}-{}", std::process::id(), agora_nanos())
 }
 
 // ---------------------------------------------------------------------------
@@ -587,6 +744,102 @@ mod tests {
         );
     }
 
+    /// Um `.whl` como o do cuBLAS: extrai só os membros pedidos, com o nome
+    /// de destino, e deixa de fora cabeçalhos, `libnvblas` e metadados.
+    #[test]
+    fn only_the_requested_wheel_members_are_extracted() {
+        let dir = tempfile::tempdir().unwrap();
+        let wheel = dir
+            .path()
+            .join("nvidia_cublas_cu12-12.8.4.1-py3-none-manylinux_2_27_x86_64.whl");
+        {
+            let file = std::fs::File::create(&wheel).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default();
+            for (nome, conteudo) in [
+                ("nvidia/__init__.py", b"".as_slice()),
+                ("nvidia/cublas/include/cublas.h", b"header"),
+                ("nvidia/cublas/lib/libcublas.so.12", b"cublas"),
+                ("nvidia/cublas/lib/libcublasLt.so.12", b"cublaslt"),
+                ("nvidia/cublas/lib/libnvblas.so.12", b"nvblas"),
+                ("nvidia_cublas_cu12-12.8.4.1.dist-info/License.txt", b"eula"),
+            ] {
+                zip.start_file(nome, opts).unwrap();
+                zip.write_all(conteudo).unwrap();
+            }
+            zip.finish().unwrap();
+        }
+        let dest = dir.path().join("staging");
+        extract_zip_members(
+            &wheel,
+            &[
+                ("nvidia/cublas/lib/libcublas.so.12", "libcublas.so.12"),
+                ("nvidia/cublas/lib/libcublasLt.so.12", "libcublasLt.so.12"),
+                (
+                    "nvidia_cublas_cu12-12.8.4.1.dist-info/License.txt",
+                    "NVIDIA-LICENSE-cublas.txt",
+                ),
+            ],
+            &dest,
+        )
+        .unwrap();
+
+        let mut nomes: Vec<String> = std::fs::read_dir(&dest)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        nomes.sort();
+        assert_eq!(
+            nomes,
+            [
+                "NVIDIA-LICENSE-cublas.txt",
+                "libcublas.so.12",
+                "libcublasLt.so.12"
+            ]
+        );
+        assert_eq!(
+            std::fs::read(dest.join("libcublasLt.so.12")).unwrap(),
+            b"cublaslt"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let modo = std::fs::metadata(dest.join("libcublas.so.12"))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(modo & 0o777, 0o644);
+        }
+
+        // Membro fixado que não está no pacote: erro, nunca instalação pela metade.
+        let err = extract_zip_members(
+            &wheel,
+            &[("nvidia/cublas/lib/libcublas.so.13", "libcublas.so.13")],
+            &dir.path().join("outra"),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("libcublas.so.13"));
+
+        // Nome de destino com caminho não escapa da pasta.
+        assert!(
+            extract_zip_members(
+                &wheel,
+                &[("nvidia/cublas/lib/libcublas.so.12", "../fora.so")],
+                &dir.path().join("mais"),
+            )
+            .is_err()
+        );
+        assert!(!dir.path().join("fora.so").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_free_space_of_an_existing_directory_is_known() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(available_space(dir.path()).is_some_and(|b| b > 0));
+        assert_eq!(available_space(&dir.path().join("nao/existe")), None);
+    }
+
     #[test]
     fn an_unknown_archive_format_is_rejected() {
         let dir = tempfile::tempdir().unwrap();
@@ -652,6 +905,34 @@ mod tests {
             p
         };
         assert!(!caminho.exists());
+    }
+
+    /// O app fechado no meio de um download não roda o `Drop`: a sessão do
+    /// processo morto sai na próxima que abrir; a de um processo vivo (este)
+    /// e o que não é sessão ficam.
+    #[cfg(unix)]
+    #[test]
+    fn opening_a_session_sweeps_the_ones_left_by_dead_processes() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join(".tmp");
+        // `i32::MAX` nunca é PID válido (o `pid_max` do Linux é 2^22).
+        let morta = tmp.join(format!("job-{}-1", i32::MAX));
+        let viva = tmp.join(format!("job-{}-2", std::process::id()));
+        let estranha = tmp.join("outra-coisa");
+        for p in [&morta, &viva, &estranha] {
+            std::fs::create_dir_all(p).unwrap();
+        }
+        std::fs::write(morta.join("cublas.whl.part"), vec![0u8; 64]).unwrap();
+
+        let session = Session::new(dir.path()).unwrap();
+        assert!(!morta.exists(), "a sessão do processo morto sai");
+        assert!(viva.is_dir(), "a de um processo vivo fica");
+        assert!(estranha.is_dir(), "o que não é sessão fica");
+        assert!(session.path().is_dir());
+        assert_eq!(sweep_stale_sessions(&tmp), 0);
+        assert_eq!(sessao_do_nome("job-12-34"), Some((12, 34)));
+        assert_eq!(sessao_do_nome("job-12"), None);
+        assert_eq!(sessao_do_nome("sessao-12-34"), None);
     }
 
     #[test]

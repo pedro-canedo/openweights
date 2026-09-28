@@ -86,13 +86,27 @@ lento, mas roda. Veja a
 
 Arquivos `PTQ1_0` e `PQ2_0` só carregam no fork da PrismML do llama.cpp. O app
 instala esse motor junto com o download; se mesmo assim ele faltar, o chat e o
-cartão do modelo mostram um botão **Instalar motor PrismML** — cerca de 150 MB
-de uma release fixada no GitHub, conferida executando o binário. O motor troca
+cartão do modelo mostram um botão **Instalar motor PrismML** com o tamanho do
+download para a sua máquina — uns 30 MB na versão Vulkan, cerca de 511 MB no
+CUDA 13.3 do Windows, cerca de 727 MB (cerca de 1 GB no disco) no CUDA 12.8 do
+Linux com placa NVIDIA —, de uma release fixada no GitHub, conferida
+executando o binário. O motor troca
 sozinho ao escolher o modelo e volta no seguinte; a faixa do Servidor Local diz
 qual está no ar. A otimização e as ferramentas de desempenho medem um modelo
 Bonsai **nesse motor**, já que medir é abrir o arquivo com um binário. O que
 elas pulam é o braço do MoE-cache, que é outro fork e não abre esses arquivos;
 a GPU pela rede (cluster) também continua na build oficial.
+
+No Linux, a versão Vulkan do fork não tem kernels de `PQ2_0` e roda esse
+formato na CPU — bem menos de 1 token/s de prompt no 27B. Com placa NVIDIA
+(driver 570 ou mais novo, fora a RTX 50), um arquivo `PQ2_0` pede a versão
+CUDA 12.8, e o cartão oferece **Instalar a versão CUDA**. Onde o CUDA não é
+possível (AMD ou Intel, driver antigo) ou não subiu na sua máquina, o cartão
+avisa e sugere o arquivo `PTQ1_0` do mesmo repositório, que roda na GPU pelo
+Vulkan. **Tentar a versão CUDA de novo** repete a tentativa depois que você
+resolver a causa; atualizar o driver repete sozinho. Se a verificação só disser
+que a placa não respondeu *agora* (cheia ou ocupada), os arquivos baixados
+ficam guardados e a próxima tentativa só refaz a verificação.
 
 ## O servidor local não sobe
 

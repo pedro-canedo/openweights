@@ -41,9 +41,11 @@ pub struct FlagCatalog {
 
 /// Curadas + dinâmicas, com degradação explícita quando o binário não ajuda.
 async fn full_catalog(state: &AppState) -> FlagCatalog {
-    let variant = lr_runtime::select_variant(&state.profile);
     let rt = crate::commands::active_runtime(state);
-    let vname = format!("{variant:?}").to_lowercase();
+    // A variante do pacote que VAI responder o `--help`, não a do oficial:
+    // o Vulkan e o CUDA 12.8 do fork têm a mesma tag e não podem dividir a
+    // chave do cache.
+    let vname = format!("{:?}", rt.variant).to_lowercase();
 
     let help = match &rt.server_exe {
         Some(exe) => {

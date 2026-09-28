@@ -6,7 +6,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { useDismiss } from "./ui/camada";
 import type { DownloadStatus } from "../lib/types";
-import { carregarPrism, prismStore } from "../lib/prism";
+import { cancelarPrism, carregarPrism, prismStore } from "../lib/prism";
 import { assinarDecisor, decisionStore } from "../lib/decision";
 import {
   cancelDownload,
@@ -186,12 +186,22 @@ function PrismRow() {
           <span className="font-medium text-bad" title={snap.error}>
             {t("downloadsPanel.error")} — {snap.error}
           </span>
-        ) : snap.progress?.kind === "progress" ? (
-          <span>
-            {formatBytes(snap.progress.receivedBytes)} / {formatBytes(snap.progress.totalBytes)}
-          </span>
         ) : (
-          <span>{t("models.prismInstalling")}</span>
+          <span className="flex items-center gap-2">
+            <span className="min-w-0 truncate">
+              {snap.progress?.kind === "progress"
+                ? `${formatBytes(snap.progress.receivedBytes)} / ${formatBytes(snap.progress.totalBytes)}`
+                : t("models.prismInstalling")}
+            </span>
+            {/* Um PQ2_0 baixado por engano leva 727 MB de motor junto: dá para desistir. */}
+            <button
+              type="button"
+              onClick={() => void cancelarPrism()}
+              className="ml-auto shrink-0 rounded px-1.5 text-dim transition-colors hover:bg-panel2 hover:text-ink"
+            >
+              {t("models.prismCancel")}
+            </button>
+          </span>
         )}
       </div>
     </div>

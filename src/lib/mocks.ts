@@ -12,6 +12,7 @@ import type {
   PresetRow,
   QuantsView,
   QuantView,
+  PrismStatus,
   RuntimeState,
   ServeAgg,
   ServerProps,
@@ -44,7 +45,7 @@ export async function ensureRuntime(): Promise<RuntimeState> {
 }
 
 let prismInstalado = false;
-export async function prismStatus(): Promise<RuntimeState> {
+export async function prismStatus(): Promise<PrismStatus> {
   return {
     tag: "prism-b10709-9a9394a",
     variant: "cuda13",
@@ -52,6 +53,14 @@ export async function prismStatus(): Promise<RuntimeState> {
     serverExe: prismInstalado ? "C:/fake/runtimes/prism-b10709-9a9394a/cuda-13.3/llama-server.exe" : null,
     rpcReady: false,
     rpcExe: null,
+    preferred: "cuda13",
+    installedVariant: prismInstalado ? "cuda13" : null,
+    downloadBytes: prismInstalado ? 0 : 536_001_917,
+    diskBytes: null,
+    cudaDownloadBytes: null,
+    cudaFailed: false,
+    pq2: false,
+    pq2OnCpu: false,
   };
 }
 

@@ -84,14 +84,28 @@ See the [configuration reference](/integrations/configuration).
 
 `PTQ1_0` and `PQ2_0` files only load on PrismML's fork of llama.cpp. The app
 installs that engine together with the download; if it is missing anyway, the
-chat and the model card show an **Install PrismML engine** button — about
-150 MB from a pinned GitHub release, verified by running the binary. The
+chat and the model card show an **Install PrismML engine** button with the
+download size for your machine — around 30 MB for the Vulkan build, about
+511 MB for CUDA 13.3 on Windows, about 727 MB (about 1 GB on disk) for
+CUDA 12.8 on Linux with an NVIDIA card — from a pinned GitHub release,
+verified by running the binary. The
 engine switches automatically when you pick the model and switches back on the
 next one; the Local Server header says which one is running. Optimization and
 the performance tools measure a Bonsai model **on that engine**, since a
 measurement is just the file being opened by a binary. The one thing they skip
 is the MoE-cache arm, which is a different fork and cannot open these files;
 the network GPU (cluster) also stays on the official build.
+
+On Linux, the fork's Vulkan build has no `PQ2_0` kernels and runs that format
+on the CPU — well under 1 token/s of prompt on the 27B. With an NVIDIA card
+(driver 570 or newer, not an RTX 50) a `PQ2_0` file asks for the CUDA 12.8
+build instead, and the card offers **Install the CUDA version**. Where CUDA is
+not possible (AMD or Intel, an older driver) or did not come up on your
+machine, the card says so and suggests the `PTQ1_0` file from the same
+repository, which runs on the GPU through Vulkan. **Try the CUDA version
+again** retries once you have fixed the cause; a driver update retries on its
+own. If the check only says the card did not respond *now* (full or busy), the
+downloaded files are kept and the next attempt only repeats the check.
 
 ## The local server will not start
 

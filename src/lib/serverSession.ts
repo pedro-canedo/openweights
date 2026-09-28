@@ -7,6 +7,7 @@
 // preparação, e mantê-la aqui evita duplicá-la.
 
 import { getServerStatus, getSetting, startServer } from "./api";
+import { isPrismRequired, marcarModeloExigido } from "./prism";
 import { providerEndpoint, splitModelRef, type ProviderId } from "./providers";
 import { isTauri, invoke } from "./tauri";
 
@@ -66,7 +67,15 @@ async function startSession(): Promise<ServerSession> {
 export async function ensureEndpoint(modelRef: string): Promise<EndpointSession> {
   const { provider } = splitModelRef(modelRef);
   if (provider === "local") {
-    if (isTauri) await invoke("optimize_prepare_model", { model: modelRef });
+    if (isTauri) {
+      await invoke("optimize_prepare_model", { model: modelRef }).catch((e: unknown) => {
+        // O cartão que substitui a bolha de erro não recebe o modelo: é por
+        // aqui que ele sabe para qual arquivo oferecer o motor (um PQ2_0
+        // pede a versão CUDA mesmo com o Vulkan instalado).
+        if (isPrismRequired(e)) marcarModeloExigido(modelRef);
+        throw e;
+      });
+    }
     // O auto-start vem PRIMEIRO — subir o llama-server se preciso é o
     // comportamento de sempre, e a chave só existe com o processo de pé.
     const { baseUrl } = await ensureServer();

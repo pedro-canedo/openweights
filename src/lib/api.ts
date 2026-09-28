@@ -17,6 +17,7 @@ import type {
   EngineCheck,
   PruneResult,
   RuntimeEvent,
+  PrismStatus,
   RuntimeState,
   ServerProps,
   ServerStatus,
@@ -47,13 +48,27 @@ export const ensureRuntime = () =>
 export const onRuntimeEvent = (h: (e: RuntimeEvent) => void) =>
   listen<RuntimeEvent>("runtime", h);
 
-/** O motor da PrismML (modelos Bonsai 2): instalado ou não nesta máquina. */
-export const getPrismStatus = () =>
-  isTauri ? invoke<RuntimeState>("runtime_prism_status") : mocks.prismStatus();
+/**
+ * O motor da PrismML (modelos Bonsai 2): instalado ou não, a variante e quanto
+ * baixa. Com `model`, responde para o ARQUIVO dele (um PQ2_0 pede o CUDA 12.8
+ * no Linux mesmo com o Vulkan instalado).
+ */
+export const getPrismStatus = (model?: string) =>
+  isTauri
+    ? invoke<PrismStatus>("runtime_prism_status", { model: model ?? null })
+    : mocks.prismStatus();
 
 /** Baixa/instala o motor da PrismML; o progresso chega por `onPrismEvent`. */
 export const ensurePrism = () =>
   isTauri ? invoke<RuntimeState>("runtime_prism_ensure") : mocks.ensurePrism();
+
+/** Desiste da instalação do motor da PrismML em curso (a do download inclusive). */
+export const cancelPrism = () =>
+  isTauri ? invoke<void>("runtime_prism_cancel") : Promise.resolve();
+
+/** Esquece que a versão CUDA reprovou aqui; a instalação seguinte a tenta de novo. */
+export const retryPrismCuda = () =>
+  isTauri ? invoke<void>("runtime_prism_retry_cuda") : Promise.resolve();
 
 export const onPrismEvent = (h: (e: RuntimeEvent) => void) =>
   listen<RuntimeEvent>("runtime-prism", h);

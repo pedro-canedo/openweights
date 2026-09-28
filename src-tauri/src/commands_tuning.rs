@@ -1028,10 +1028,11 @@ static AUTO_RODANDO: AtomicBool = AtomicBool::new(false);
 
 /// Chave de "já ajustei este modelo NESTA situação".
 ///
-/// Entra tudo que muda a resposta: a máquina (placa, driver, RAM), a versão do
-/// motor e o conjunto de dispositivos — parear com outro PC muda o que cabe
-/// tanto quanto trocar de placa. Se a chave bate, não há o que remedir.
-fn auto_key(state: &AppState) -> String {
+/// Entra tudo que muda a resposta: a máquina (placa, driver, RAM), o motor
+/// que mede ESTE modelo e o conjunto de dispositivos — parear com outro PC
+/// muda o que cabe tanto quanto trocar de placa. Se a chave bate, não há o
+/// que remedir.
+fn auto_key(state: &AppState, motor: &lr_runtime::RuntimeState) -> String {
     let par = state
         .cluster
         .measure_args_now()
@@ -1040,9 +1041,23 @@ fn auto_key(state: &AppState) -> String {
     format!(
         "{}|{}|{}",
         state.profile.machine_key(),
-        crate::commands::active_runtime(state).tag,
+        motor_da_chave(motor),
         par
     )
+}
+
+/// O motor na chave: a tag e, no fork da PrismML, também a variante — o
+/// Vulkan e o CUDA 12.8 dele têm a mesma tag, e o `PQ2_0` que o Vulkan deixa
+/// na CPU (a VRAM parece livre) vai inteiro para a placa no CUDA: a janela
+/// medida num não cabe no outro. O oficial fica só com a tag: a variante
+/// dele sai da máquina, que já está na chave, e mudar a forma da chave
+/// faria a biblioteca inteira remedir à toa.
+fn motor_da_chave(motor: &lr_runtime::RuntimeState) -> String {
+    if lr_runtime::is_prism_tag(&motor.tag) {
+        format!("{}/{:?}", motor.tag, motor.variant).to_lowercase()
+    } else {
+        motor.tag.clone()
+    }
 }
 
 fn auto_setting(model: &str) -> String {
@@ -1173,7 +1188,6 @@ pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
         AUTO_RODANDO.store(false, Ordering::SeqCst);
         return;
     };
-    let chave = auto_key(state);
     let cluster = cluster_args(state);
 
     let mut mudou = 0usize;
@@ -1185,6 +1199,17 @@ pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
         {
             continue;
         }
+        // O motor é resolvido POR MODELO: um Bonsai se mede na PrismML, e um
+        // modelo cujo motor não está instalado é pulado, não derruba a volta
+        // inteira da varredura. É ele que entra na chave — não o motor que
+        // está de pé agora, que alterna com o modelo selecionado.
+        let Ok(motor) = crate::commands::runtime_de_medicao(state, &a.primary_path) else {
+            continue;
+        };
+        let Some(dir) = motor.dir.clone() else {
+            continue;
+        };
+        let chave = auto_key(state, &motor);
         let setting = auto_setting(&a.name);
         if state
             .store
@@ -1195,15 +1220,6 @@ pub(crate) async fn auto_tune_pending(app: AppHandle, state: &AppState) {
         {
             continue;
         }
-        // O motor é resolvido POR MODELO: um Bonsai se mede na PrismML, e um
-        // modelo cujo motor não está instalado é pulado, não derruba a volta
-        // inteira da varredura.
-        let Some(dir) = crate::commands::runtime_de_medicao(state, &a.primary_path)
-            .ok()
-            .and_then(|rt| rt.dir)
-        else {
-            continue;
-        };
         if let Some(mut perfil) = auto_profile_for(state, &dir, &a, cluster.as_ref()).await {
             if MEDINDO.load(Ordering::SeqCst) {
                 break;
@@ -1302,9 +1318,10 @@ pub struct SpecDecision {
 }
 
 fn spec_key(state: &AppState, perfil: &ModelProfile) -> String {
+    // A bateria roda no motor de pé, que é o do modelo em foco.
     format!(
         "{}|{}",
-        auto_key(state),
+        auto_key(state, &crate::commands::active_runtime(state)),
         perfil.key().unwrap_or_else(|| "vazio".into())
     )
 }
@@ -1518,6 +1535,35 @@ pub(crate) fn spawn_auto_spec(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// O Vulkan e o CUDA 12.8 do fork não dividem a chave do ajuste
+    /// automático; o oficial continua com a chave de sempre.
+    #[test]
+    fn the_auto_tune_key_tells_the_prism_variants_apart() {
+        let motor = |tag: &str, variant| lr_runtime::RuntimeState {
+            tag: tag.into(),
+            variant,
+            installed: true,
+            server_exe: None,
+            dir: None,
+            rpc_exe: None,
+            rpc_ready: false,
+        };
+        use lr_runtime::BackendVariant::*;
+        let prism = lr_runtime::prism::TAG;
+        assert_eq!(
+            motor_da_chave(&motor(prism, Cuda128)),
+            format!("{prism}/cuda128")
+        );
+        assert_ne!(
+            motor_da_chave(&motor(prism, Vulkan)),
+            motor_da_chave(&motor(prism, Cuda128))
+        );
+        assert_eq!(
+            motor_da_chave(&motor(lr_runtime::PINNED_TAG, Vulkan)),
+            lr_runtime::PINNED_TAG
+        );
+    }
 
     /// Cabeçalho lido (tem `block_count`) com ou sem a chave do MTP.
     fn meta_lida(nextn: Option<u32>) -> lr_models::LocalGgufMeta {

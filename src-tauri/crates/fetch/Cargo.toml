@@ -18,5 +18,9 @@ flate2 = "1"
 tar = "0.4"
 futures-util = "0.3"
 
+# Só o `statvfs`: o espaço livre antes de um download de 1,6 GB de pico.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tempfile = "3"

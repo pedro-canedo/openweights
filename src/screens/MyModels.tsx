@@ -78,7 +78,7 @@ function ModelCard({
 
       {model.requiresPrism && (
         <div className="mt-4">
-          <PrismEngineCard compact />
+          <PrismEngineCard compact model={model.name} />
         </div>
       )}
 

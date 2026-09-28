@@ -694,6 +694,12 @@ pub(crate) fn spawn_llama(
     if let Some(dir) = exe.parent() {
         cmd.current_dir(dir);
     }
+    // Pacote com o próprio CUDA runtime ao lado (o CUDA 12.8 da PrismML no
+    // Linux): o `spawn_supervised` → `host_env` põe a pasta dele na frente do
+    // `LD_LIBRARY_PATH` escolhido nos Ajustes — o da pessoa venceria o
+    // `RUNPATH=$ORIGIN` e poderia trazer outro cuBLAS. Calculado a cada spawn,
+    // pelo executável de verdade: uma configuração copiada de outro motor
+    // nunca carrega o valor velho.
     let child = lr_proc::spawn_supervised(&mut cmd)?;
     let job = lr_proc::attach_job(&child);
     Ok((child, job))
@@ -755,6 +761,51 @@ mod tests {
         assert_eq!(m["GGML_OP_OFFLOAD_MIN_BATCH"], "256");
         assert!(!m.contains_key("LLAMA_ARG_CTX_SIZE"));
         assert_eq!(m.len(), 2);
+    }
+
+    /// O spawn de verdade: um "llama-server" de mentira (shell) ao lado de
+    /// um `libcudart.so.12` enxerga a própria pasta NA FRENTE do
+    /// `LD_LIBRARY_PATH` que a pessoa escolheu; sem o cudart ao lado (o
+    /// Vulkan, o oficial), o valor chega como veio.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_package_with_its_own_cuda_sees_its_folder_first() {
+        use std::os::unix::fs::PermissionsExt;
+        use tokio::io::AsyncReadExt;
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let raiz = std::env::temp_dir().join(format!("lr-engine-{}-{nanos}", std::process::id()));
+        let envs = vec![("LD_LIBRARY_PATH".to_string(), "/opt/cuda/lib64".to_string())];
+        for (pasta, cudart) in [("cuda-12.8", true), ("vulkan", false)] {
+            let dir = raiz.join(pasta);
+            std::fs::create_dir_all(&dir).unwrap();
+            let exe = dir.join("llama-server");
+            std::fs::write(&exe, "#!/bin/sh\nprintf '%s' \"$LD_LIBRARY_PATH\"\n").unwrap();
+            std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+            if cudart {
+                std::fs::write(dir.join("libcudart.so.12"), b"x").unwrap();
+            }
+            let (mut child, _job) = spawn_llama(&exe, &[], &envs).unwrap();
+            let mut visto = String::new();
+            child
+                .stdout
+                .take()
+                .unwrap()
+                .read_to_string(&mut visto)
+                .await
+                .unwrap();
+            let _ = child.wait().await;
+            let esperado = if cudart {
+                format!("{}:/opt/cuda/lib64", dir.display())
+            } else {
+                "/opt/cuda/lib64".to_string()
+            };
+            assert_eq!(visto, esperado, "{pasta}");
+        }
+        let _ = std::fs::remove_dir_all(&raiz);
     }
 
     #[test]

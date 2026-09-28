@@ -37,19 +37,25 @@ pub fn identity() -> RuntimeIdentity {
 /// Identity stored with measurements produced by the official package too.
 /// The official runtime is pinned by release tag rather than a fork commit.
 pub fn official_identity(profile: &HardwareProfile) -> RuntimeIdentity {
-    let backend = match crate::select_variant(profile) {
+    RuntimeIdentity {
+        source: EngineSource::Official,
+        revision: crate::PINNED_TAG.into(),
+        backend: backend_name(crate::select_variant(profile)).into(),
+        platform: profile.os.clone(),
+    }
+}
+
+/// O backend de uma variante como a identidade das medições o grava. É o
+/// mesmo para o oficial e para o fork: quem distingue os dois é a revisão.
+pub(crate) fn backend_name(variant: BackendVariant) -> &'static str {
+    match variant {
         BackendVariant::Cuda13 => "cuda-13.3",
         BackendVariant::Cuda12 => "cuda-12.4",
+        BackendVariant::Cuda128 => "cuda-12.8",
         BackendVariant::Vulkan => "vulkan",
         BackendVariant::Cpu => "cpu",
         BackendVariant::MacosArm64 => "metal-arm64",
         BackendVariant::MacosX64 => "metal-x64",
-    };
-    RuntimeIdentity {
-        source: EngineSource::Official,
-        revision: crate::PINNED_TAG.into(),
-        backend: backend.into(),
-        platform: profile.os.clone(),
     }
 }
 

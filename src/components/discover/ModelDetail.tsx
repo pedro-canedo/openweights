@@ -11,12 +11,13 @@
 // Ele NÃO renderiza HTML embutido — muitos cartões trazem `<div>`s e imagens
 // de terceiros, e um app desktop não deve executar marcação de estranho.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "../../lib/openExternal";
 import type { ModelSummary, QuantsView, QuantView } from "../../lib/types";
 import { getModelQuants, hfLogin, modelReadme, startDownload } from "../../lib/api";
 import { formatAgo, formatBytes, formatCount, formatParams } from "../../lib/format";
+import { carregarPrism, prismParaDownload, prismStore } from "../../lib/prism";
 import Markdown from "../chat/Markdown";
 import AuthorAvatar from "./AuthorAvatar";
 import Icon from "../ui/Icon";
@@ -102,10 +103,36 @@ function QuantRow({
       {quant.verdict.kind === "partial" && (
         <p className="mt-1.5 text-[11px] text-warn/90">{t("badge.partialWarn")}</p>
       )}
-      {quant.requiresPrism && (
-        <p className="mt-1.5 text-[11px] text-dim">{t("badge.prismRequired")}</p>
-      )}
+      {quant.requiresPrism && <PrismQuantNote artifactName={quant.artifactName} />}
     </div>
+  );
+}
+
+/**
+ * O que um Bonsai 2 leva junto do download: o motor da PrismML, com o
+ * tamanho da variante que ESTA máquina vai instalar (no Linux com NVIDIA, a
+ * versão CUDA de ~727 MB; no Vulkan, ~33 MB). E, onde o PQ2_0 rodaria na
+ * CPU, a sugestão do PTQ1_0 — antes de baixar, que é quando ela serve.
+ */
+function PrismQuantNote({ artifactName }: { artifactName: string }) {
+  const { t } = useTranslation();
+  const snap = useSyncExternalStore(prismStore.subscribe, prismStore.get);
+  useEffect(() => {
+    if (!snap.state) void carregarPrism();
+  }, [snap.state]);
+  // Até o backend responder, nada: "já instalado" ou um tamanho inventado
+  // seriam piores que meio segundo sem a linha.
+  if (!snap.state) return null;
+  const { bytes, pq2NaCpu } = prismParaDownload(snap.state, artifactName);
+  return (
+    <>
+      <p className="mt-1.5 text-[11px] text-dim">
+        {bytes != null
+          ? t("badge.prismRequired", { size: formatBytes(bytes) })
+          : t("badge.prismReady")}
+      </p>
+      {pq2NaCpu && <p className="mt-1 text-[11px] text-warn/90">{t("badge.prismPq2Cpu")}</p>}
+    </>
   );
 }
 

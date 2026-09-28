@@ -15,7 +15,15 @@
 //! 4. Extrai, localiza o `llama-server(.exe)` recursivamente (os pacotes têm
 //!    estrutura variável) e "achata" o diretório que o contém.
 //! 5. Variantes CUDA: baixa o cudart e espalha as DLLs ao lado do executável.
-//! 6. Instalação atômica por `rename`; a sessão temporária se limpa sozinha.
+//!    O CUDA 12.8 do fork no Linux não tem cudart na release: as bibliotecas
+//!    vêm dos wheels oficiais da NVIDIA no PyPI, fixados por SHA256 e
+//!    tamanho em [`crate::prism`] — assim como o próprio tarball.
+//! 6. Instalação atômica por `rename`; a sessão temporária se limpa sozinha
+//!    (e a de um app fechado no meio sai na próxima sessão que abrir).
+//! 7. Pacotes com prova por execução (o fork da PrismML): fora do Windows a
+//!    prova roda numa pasta `<variante>.pending` que o estado não enxerga, e
+//!    só o que passou vira instalado; uma falha do momento guarda os bytes
+//!    conferidos para a próxima tentativa só refazer a prova.
 
 use crate::BackendVariant;
 use serde::Serialize;
@@ -41,6 +49,24 @@ pub enum RuntimeError {
     Io(#[from] std::io::Error),
     #[error("verificação falhou: {0}")]
     Verification(String),
+    /// A prova por execução reprovou o pacote NESTA máquina: o binário não
+    /// carregou, disse outra build, ou a placa não apareceu para o backend.
+    /// É o único erro que diz algo permanente sobre a máquina — rede, disco,
+    /// digest e placa ocupada não dizem — e por isso é o único que a cadeia
+    /// do motor da PrismML registra como "esta variante não serve aqui".
+    #[error("verificação falhou: {0}")]
+    Execution(String),
+    /// A placa não respondeu à prova do motor CUDA AGORA (sem memória para o
+    /// contexto, ocupada, num estado ruim): não diz nada da máquina, e o
+    /// pacote já conferido fica guardado para a próxima tentativa. Quem
+    /// chama pode liberar a placa e tentar de novo.
+    #[error("verificação falhou: {0}")]
+    GpuUnavailable(String),
+    #[error("espaço em disco insuficiente: {0}")]
+    NoSpace(String),
+    /// A pessoa cancelou. Não diz nada da máquina.
+    #[error("instalação cancelada")]
+    Cancelled,
 }
 
 /// Erros do `lr_fetch` viram erros de runtime preservando a categoria — a UI
@@ -104,6 +130,12 @@ pub struct RuntimeManager {
     /// Serializa instalações concorrentes (reentrada do comando, remount do
     /// webview): duas extrações no mesmo destino se atropelariam.
     pub(crate) install_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
+    /// Serializa a CADEIA do motor da PrismML inteira, não só cada variante:
+    /// quem espera relê o marcador e o disco depois que o outro terminou, em
+    /// vez de repetir um download de 727 MB que acabou de reprovar.
+    pub(crate) prism_lock: std::sync::Arc<tokio::sync::Mutex<()>>,
+    /// Acorda quem estiver instalando o motor da PrismML para desistir.
+    pub(crate) prism_cancel: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl RuntimeManager {
@@ -111,6 +143,8 @@ impl RuntimeManager {
         Self {
             data_dir,
             install_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            prism_lock: std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            prism_cancel: std::sync::Arc::new(tokio::sync::Notify::new()),
         }
     }
 
@@ -202,9 +236,18 @@ impl RuntimeManager {
         }
     }
 
-    /// Baixa, verifica, extrai e instala atomicamente o runtime no destino
-    /// final. Trabalha inteiramente dentro de `session`; o último passo é um
-    /// único `fs::rename`.
+    /// Baixa, verifica, extrai e instala o runtime no destino final.
+    /// Trabalha inteiramente dentro de `session`; publicar é um `rename`.
+    ///
+    /// Com `build_esperada`, o pacote só vale depois da prova por execução.
+    /// Fora do Windows ela roda numa pasta ao lado que o estado não enxerga
+    /// (`<variante>.pending`, ver [`crate::pending_dir`]) e só o que passou
+    /// vira a pasta da variante: a prova do CUDA 12.8 leva até 50 s, e um
+    /// "instalado" nesse meio-tempo já faria o motor reiniciar num pacote que
+    /// ainda pode reprovar — e ficar para sempre, sem prova, se o app fechasse
+    /// ali. Se a prova falhar pelo MOMENTO (placa cheia, sonda sem resposta),
+    /// os bytes conferidos ficam nessa pasta e a próxima tentativa só refaz a
+    /// prova, sem baixar 727 MB de novo.
     async fn install<F>(
         &self,
         repo: &str,
@@ -217,10 +260,91 @@ impl RuntimeManager {
     where
         F: Fn(RuntimeEvent) + Send + Sync,
     {
+        let fixado = crate::prism::pacote_fixado(std::env::consts::OS, tag, variant);
+        let final_dir = crate::runtime_dir(&self.data_dir, tag, variant);
+        let provar_antes = build_esperada.is_some() && !cfg!(windows);
+        let pendente = crate::pending_dir(&final_dir);
+        let destino = if provar_antes { &pendente } else { &final_dir };
+
+        if provar_antes && pendente.join(crate::server_exe_name()).is_file() {
+            log::info!(
+                "reaproveitando {}: baixado e conferido numa tentativa anterior, falta a prova",
+                pendente.display()
+            );
+        } else {
+            let staging = self
+                .montar(repo, tag, variant, fixado, session, on_event)
+                .await?;
+            lr_fetch::install_atomically(&staging, destino)?;
+        }
+
+        if let Some(esperada) = build_esperada {
+            // No Windows a prova roda na pasta FINAL: executar o binário no
+            // staging e mover a pasta em seguida falhava com "Acesso negado"
+            // (o executável recém-rodado, ou o Defender escaneando-o, ainda
+            // segura a pasta por instantes, e o `rename` bate nela). Lá, se a
+            // build não for a esperada, a pasta inteira sai — com repetição,
+            // pelo mesmo motivo.
+            if let Err(e) = provar(destino, tag, variant, esperada, fixado).await {
+                // Só a reprovação da MÁQUINA joga fora o que foi conferido.
+                let guardar = provar_antes && !matches!(e, RuntimeError::Execution(_));
+                if !guardar && let Err(rm) = lr_fetch::remove_dir_all_retrying(destino) {
+                    log::warn!("pacote reprovado ficou em {}: {rm}", destino.display());
+                }
+                return Err(e);
+            }
+            if provar_antes {
+                lr_fetch::install_atomically(&pendente, &final_dir)?;
+            }
+        }
+        log::info!(
+            "runtime {tag}/{variant:?} instalado em {}",
+            final_dir.display()
+        );
+        Ok(())
+    }
+
+    /// Baixa, confere e monta o pacote no staging da sessão: o asset
+    /// principal, o cudart (Windows CUDA) ou as bibliotecas da NVIDIA
+    /// fixadas (Linux CUDA 12.8), e a sanidade do conjunto. Devolve o
+    /// staging, pronto para ser publicado.
+    async fn montar<F>(
+        &self,
+        repo: &str,
+        tag: &str,
+        variant: BackendVariant,
+        fixado: Option<&crate::prism::PacoteFixado>,
+        session: &std::path::Path,
+        on_event: &F,
+    ) -> Result<PathBuf, RuntimeError>
+    where
+        F: Fn(RuntimeEvent) + Send + Sync,
+    {
         let client = lr_fetch::client(USER_AGENT)?;
 
-        // Digests de todos os assets de uma vez. `None` se a API falhar.
-        let digests = lr_fetch::github_release_digests(&client, repo, tag).await;
+        // O pico de disco do CUDA 12.8 (tarball + wheel do cuBLAS + tudo
+        // extraído) passa de 1,6 GB: descobrir que não cabe depois de baixar
+        // 600 MB é pior que dizer antes.
+        if let Some(f) = fixado
+            && let Some(livre) = lr_fetch::available_space(session)
+            && livre < f.pico_em_disco
+        {
+            return Err(RuntimeError::NoSpace(format!(
+                "o motor {tag} ({variant:?}) precisa de ~{:.1} GB livres em {} durante a \
+                 instalação; há {:.1} GB",
+                f.pico_em_disco as f64 / 1e9,
+                self.data_dir.join("runtimes").display(),
+                livre as f64 / 1e9
+            )));
+        }
+
+        // Digests de todos os assets de uma vez. `None` se a API falhar. O
+        // pacote fixado no código não depende da API: o pino é a verificação.
+        let digests = if fixado.is_some() {
+            None
+        } else {
+            lr_fetch::github_release_digests(&client, repo, tag).await
+        };
 
         // ---- Asset principal -------------------------------------------
         let asset = crate::asset_name(tag, variant).ok_or_else(|| {
@@ -229,17 +353,44 @@ impl RuntimeManager {
                 std::env::consts::OS
             ))
         })?;
-        let part = self
-            .baixar_asset(
-                &client,
-                session,
-                repo,
-                tag,
-                &asset,
-                digests.as_ref(),
-                on_event,
-            )
-            .await?;
+        // Um pacote fixado é UMA barra: o tarball e os wheels somam o total
+        // que a tela prometeu antes do clique (~727 MB), em vez de três
+        // barras que vão de 0 a 100% uma depois da outra.
+        let mut faixa = Faixa {
+            antes: 0,
+            total: fixado.map_or(0, crate::prism::PacoteFixado::total_download_bytes),
+            rotulo: &asset,
+        };
+        let part = match fixado {
+            Some(f) => {
+                let p = self
+                    .baixar_fixado(
+                        &client,
+                        session,
+                        &crate::asset_url(repo, tag, &asset),
+                        &asset,
+                        f.sha256,
+                        f.bytes,
+                        &faixa,
+                        on_event,
+                    )
+                    .await?;
+                faixa.antes += f.bytes;
+                p
+            }
+            None => {
+                self.baixar_asset(
+                    &client,
+                    session,
+                    repo,
+                    tag,
+                    &asset,
+                    digests.as_ref(),
+                    on_event,
+                )
+                .await?
+            }
+        };
 
         on_event(RuntimeEvent::Extracting {
             asset: asset.clone(),
@@ -286,6 +437,38 @@ impl RuntimeManager {
             lr_fetch::move_files_flat(&cudart_dir, &staging)?;
         }
 
+        // ---- Bibliotecas da NVIDIA fixadas (CUDA 12.8 do fork no Linux) --
+        // Um wheel por vez: baixa, confere, tira SÓ os membros fixados para
+        // o lado do binário e apaga o `.part` antes do próximo — o do cuBLAS
+        // pesa 594 MB e não precisa ficar no disco junto do que já extraiu.
+        for roda in fixado.map(|f| f.bibliotecas).unwrap_or_default() {
+            let wpart = self
+                .baixar_fixado(
+                    &client,
+                    session,
+                    roda.url,
+                    roda.arquivo,
+                    roda.sha256,
+                    roda.bytes,
+                    &faixa,
+                    on_event,
+                )
+                .await?;
+            faixa.antes += roda.bytes;
+            on_event(RuntimeEvent::Extracting {
+                asset: roda.arquivo.to_string(),
+            });
+            let membros = roda
+                .membros
+                .iter()
+                .map(|(m, d)| (m.to_string(), d.to_string()))
+                .collect();
+            let extraido =
+                lr_fetch::extract_zip_members_async(wpart.clone(), membros, staging.clone()).await;
+            let _ = std::fs::remove_file(&wpart);
+            extraido?;
+        }
+
         // ---- Sanidade final ---------------------------------------------
         let exe = staging.join(crate::server_exe_name());
         let exe_ok = std::fs::metadata(&exe)
@@ -303,42 +486,7 @@ impl RuntimeManager {
                 "runtime extraído suspeito de incompleto ({install_size} bytes no total)"
             )));
         }
-        // ---- Instalação atômica -----------------------------------------
-        let final_dir = crate::runtime_dir(&self.data_dir, tag, variant);
-        lr_fetch::install_atomically(&staging, &final_dir)?;
-
-        // ---- Prova por execução, DEPOIS de mover ------------------------
-        // Executar o binário no staging e mover a pasta em seguida falhava no
-        // Windows com "Acesso negado": o executável recém-rodado (ou o
-        // Defender, escaneando-o) ainda segura a pasta por instantes, e o
-        // `rename` bate nela. Na pasta final não há mais o que mover; se a
-        // build não for a esperada, a pasta inteira sai — com repetição,
-        // pelo mesmo motivo.
-        if let Some(esperada) = build_esperada {
-            let resultado = crate::check::probe_build(&final_dir)
-                .await
-                .map_err(RuntimeError::Verification)
-                .and_then(|(build, _)| {
-                    if build == esperada {
-                        Ok(())
-                    } else {
-                        Err(RuntimeError::Verification(format!(
-                            "o pacote {tag} se diz build {build}, esperava {esperada}"
-                        )))
-                    }
-                });
-            if let Err(e) = resultado {
-                if let Err(rm) = lr_fetch::remove_dir_all_retrying(&final_dir) {
-                    log::warn!("pacote reprovado ficou em {}: {rm}", final_dir.display());
-                }
-                return Err(e);
-            }
-        }
-        log::info!(
-            "runtime {tag}/{variant:?} instalado em {}",
-            final_dir.display()
-        );
-        Ok(())
+        Ok(staging)
     }
 
     /// Baixa um asset da release para o `.part` da sessão e confere o SHA256.
@@ -373,6 +521,50 @@ impl RuntimeManager {
         )
         .await?;
         lr_fetch::verify_sha256(&part, asset, digests).await?;
+        Ok(part)
+    }
+
+    /// Baixa um arquivo FIXADO no código (URL, SHA256 e tamanho) para o
+    /// `.part` da sessão. Sem pino não há instalação: divergência de tamanho
+    /// ou de digest é erro, nunca aviso. O progresso sai na `faixa` do
+    /// pacote inteiro.
+    #[allow(clippy::too_many_arguments)]
+    async fn baixar_fixado<F>(
+        &self,
+        client: &reqwest::Client,
+        session: &std::path::Path,
+        url: &str,
+        nome: &str,
+        sha256: &str,
+        bytes: u64,
+        faixa: &Faixa<'_>,
+        on_event: &F,
+    ) -> Result<PathBuf, RuntimeError>
+    where
+        F: Fn(RuntimeEvent) + Send + Sync,
+    {
+        let part = session.join(format!("{nome}.part"));
+        let rotulo = faixa.rotulo.to_string();
+        let (antes, total) = (faixa.antes, faixa.total);
+        lr_fetch::download_to(client, url, &part, &|received_bytes, _| {
+            on_event(RuntimeEvent::Progress {
+                asset: rotulo.clone(),
+                received_bytes: antes + received_bytes,
+                total_bytes: total,
+            });
+        })
+        .await?;
+        let recebido = std::fs::metadata(&part)?.len();
+        if recebido != bytes {
+            let _ = std::fs::remove_file(&part);
+            return Err(RuntimeError::Verification(format!(
+                "{nome}: tamanho {recebido} B, o pino diz {bytes} B"
+            )));
+        }
+        if let Err(e) = lr_fetch::verify_sha256_strict(&part, nome, sha256).await {
+            let _ = std::fs::remove_file(&part);
+            return Err(e.into());
+        }
         Ok(part)
     }
 
@@ -422,6 +614,61 @@ impl RuntimeManager {
             state.tag,
             crate::rpc_exe_name()
         )))
+    }
+}
+
+/// Onde um arquivo de um pacote fixado cai na barra de progresso: o que os
+/// anteriores já baixaram, o total do pacote e o nome que a tela mostra.
+struct Faixa<'a> {
+    antes: u64,
+    total: u64,
+    rotulo: &'a str,
+}
+
+/// A prova por execução de um pacote: o `--version` tem de reportar a build
+/// esperada e, onde o pino pede, a placa tem de aparecer no
+/// `--list-devices`.
+///
+/// O que reprova a MÁQUINA (o binário não carrega, diz outra build, a CUDA
+/// não sobe) vira [`RuntimeError::Execution`] — o único erro que a cadeia da
+/// PrismML grava como "esta variante não serve aqui". O que é do momento vira
+/// [`RuntimeError::Verification`] (a sonda não respondeu, o processo não
+/// abriu) ou [`RuntimeError::GpuUnavailable`] (a placa cheia ou ocupada).
+async fn provar(
+    dir: &std::path::Path,
+    tag: &str,
+    variant: BackendVariant,
+    esperada: u64,
+    fixado: Option<&crate::prism::PacoteFixado>,
+) -> Result<(), RuntimeError> {
+    use crate::check::{DispositivosCuda, FalhaDaSonda};
+    let (build, _) = crate::check::probe_build(dir).await.map_err(|e| match e {
+        FalhaDaSonda::Transitoria(m) => RuntimeError::Verification(m),
+        FalhaDaSonda::Recusou(m) => RuntimeError::Execution(m),
+    })?;
+    if build != esperada {
+        return Err(RuntimeError::Execution(format!(
+            "o pacote {tag} se diz build {build}, esperava {esperada}"
+        )));
+    }
+    // O `--version` não inicializa a CUDA: um pacote CUDA sem placa
+    // utilizável passa nele e roda tudo na CPU, calado. Onde o pino pede, a
+    // placa tem de aparecer na lista de dispositivos.
+    if !fixado.is_some_and(|f| f.exige_dispositivo_cuda) {
+        return Ok(());
+    }
+    match crate::check::probe_cuda_devices(dir).await {
+        DispositivosCuda::Presente(linha) => {
+            log::info!("motor {tag}/{variant:?} vê a placa: {linha}");
+            Ok(())
+        }
+        DispositivosCuda::Transitoria(causa) => Err(RuntimeError::GpuUnavailable(format!(
+            "a placa não respondeu à prova do motor CUDA agora ({causa}); feche o que \
+             estiver usando a GPU — um modelo carregado, um jogo — e tente de novo"
+        ))),
+        DispositivosCuda::Ausente(causa) => Err(RuntimeError::Execution(format!(
+            "o motor CUDA não achou a placa: {causa}"
+        ))),
     }
 }
 

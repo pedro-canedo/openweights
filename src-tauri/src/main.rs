@@ -152,6 +152,8 @@ fn main() {
             commands::runtime_ensure,
             commands::runtime_prism_status,
             commands::runtime_prism_ensure,
+            commands::runtime_prism_cancel,
+            commands::runtime_prism_retry_cuda,
             commands::models_search,
             commands::runtime_check,
             commands::runtime_prune,

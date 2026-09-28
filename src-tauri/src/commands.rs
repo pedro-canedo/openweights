@@ -74,11 +74,30 @@ pub async fn runtime_ensure(
         .map_err(err_str)
 }
 
-/// O motor da PrismML (modelos Bonsai 2): instalado ou não, para a variante
-/// desta máquina.
+/// O motor da PrismML (modelos Bonsai 2): instalado ou não, a variante, e
+/// quanto a instalação baixa. Com `model`, responde para O ARQUIVO dele — um
+/// `PQ2_0` pede o CUDA 12.8 no Linux mesmo com o Vulkan instalado.
 #[tauri::command]
-pub fn runtime_prism_status(state: State<'_, AppState>) -> lr_runtime::RuntimeState {
-    prism_state(&state)
+pub async fn runtime_prism_status(
+    state: State<'_, AppState>,
+    model: Option<String>,
+) -> CmdResult<lr_runtime::prism::PrismStatus> {
+    // Com modelo, lê o disco (a biblioteca e a tabela de tensores do GGUF):
+    // fora da thread principal, que num comando síncrono é a do webview — e
+    // a biblioteca pergunta uma vez por cartão Bonsai.
+    let mgr = state.runtime_mgr.clone();
+    let profile = state.profile.clone();
+    let models_dir = state.models_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        let pq2 = model
+            .as_deref()
+            .map(|m| m.trim_end_matches(VISION_SUFFIX))
+            .and_then(|nome| caminho_na_biblioteca(&models_dir, nome))
+            .is_some_and(|p| tem_pq2(&lr_models::read_local_meta(&p)));
+        mgr.prism_status(&profile, pq2)
+    })
+    .await
+    .map_err(err_str)
 }
 
 /// Baixa/instala o motor da PrismML, emitindo eventos `runtime-prism` com o
@@ -89,16 +108,92 @@ pub async fn runtime_prism_ensure(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> CmdResult<lr_runtime::RuntimeState> {
+    use lr_runtime::{RuntimeError, RuntimeEvent};
     if !lr_runtime::prism::supported(&state.profile) {
         return Err("prism-runtime-incompatible".into());
     }
-    state
+    // O `Failed` da primeira tentativa fica retido: se ela for refeita, a
+    // tela não pisca um erro que já está sendo resolvido.
+    let emitir = |reter_falha: bool| {
+        let app = app.clone();
+        move |ev: RuntimeEvent| {
+            if !(reter_falha && matches!(ev, RuntimeEvent::Failed { .. })) {
+                let _ = app.emit("runtime-prism", &ev);
+            }
+        }
+    };
+    // A melhor variante que a máquina aguenta, com reserva no Linux (CUDA
+    // 12.8 → Vulkan → CPU); no Windows e no macOS, a de sempre.
+    let r = match state
         .runtime_mgr
-        .ensure_prism(lr_runtime::select_variant(&state.profile), move |ev| {
-            let _ = app.emit("runtime-prism", &ev);
-        })
+        .ensure_prism_best(&state.profile, emitir(true))
         .await
-        .map_err(err_str)
+    {
+        // A placa não respondeu à prova do CUDA — e o suspeito mais provável
+        // é o próprio app: o chat pede o motor ANTES de trocar de modelo, com
+        // o anterior ainda na VRAM. Com o motor parado (só se nada estiver
+        // sendo atendido nem medido), a prova se refaz em segundos, sem
+        // baixar de novo — os bytes conferidos ficaram guardados. O servidor
+        // volta em seguida, já no executável novo se o CUDA chegou: clientes
+        // da API contam com ele.
+        Err(RuntimeError::GpuUnavailable(motivo))
+            if motor_de_pe(&state).await
+                && !crate::commands_tuning::medindo()
+                && crate::comparison::assert_idle(&state).await.is_ok() =>
+        {
+            log::info!("prova do CUDA sem a placa livre ({motivo}); parando o motor e refazendo");
+            stop_engine(&app, &state).await?;
+            let r = state
+                .runtime_mgr
+                .ensure_prism_best(&state.profile, emitir(false))
+                .await;
+            if let Err(e) = start_engine(&app, &state).await {
+                log::warn!("o motor não voltou depois da prova do CUDA: {e}");
+            }
+            r
+        }
+        Err(e) => {
+            emitir(false)(RuntimeEvent::Failed {
+                message: mensagem_da_instalacao(&e),
+            });
+            Err(e)
+        }
+        ok => ok,
+    };
+    r.map_err(|e| mensagem_da_instalacao(&e))
+}
+
+/// O que a tela recebe de uma instalação do motor da PrismML que não deu
+/// certo. O cancelamento vira um código, que ela trata como "parou".
+fn mensagem_da_instalacao(e: &lr_runtime::RuntimeError) -> String {
+    match e {
+        lr_runtime::RuntimeError::Cancelled => lr_runtime::prism::CANCELLED.to_string(),
+        e => e.to_string(),
+    }
+}
+
+/// Há um `llama-server` do app de pé.
+async fn motor_de_pe(state: &AppState) -> bool {
+    state
+        .server
+        .lock()
+        .await
+        .as_ref()
+        .is_some_and(|s| s.is_spawned())
+}
+
+/// Desiste da instalação do motor da PrismML em curso — a disparada pelo
+/// download de um Bonsai inclusive. O que já foi baixado sai com a sessão.
+#[tauri::command]
+pub fn runtime_prism_cancel(state: State<'_, AppState>) {
+    state.runtime_mgr.cancel_prism_install();
+}
+
+/// Esquece que a versão CUDA do motor da PrismML reprovou nesta máquina; a
+/// tela chama a instalação logo em seguida, que a tenta de novo.
+#[tauri::command]
+pub fn runtime_prism_retry_cuda(state: State<'_, AppState>) {
+    state.runtime_mgr.forget_cuda128_failure();
 }
 
 /// Verificação funcional do motor: o que está no disco, se ele executa e se
@@ -110,15 +205,44 @@ pub async fn runtime_prism_ensure(
 #[tauri::command]
 pub async fn runtime_check(state: State<'_, AppState>) -> CmdResult<lr_runtime::EngineCheck> {
     let variant = lr_runtime::select_variant(&state.profile);
-    Ok(lr_runtime::check(&state.data_dir, variant).await)
+    Ok(lr_runtime::check(&state.data_dir, variant, &pastas_do_prism(&state).await).await)
 }
 
 /// Apaga as builds do motor que o app não usa mais. A que está em uso nunca
-/// entra na conta.
+/// entra na conta — nem a pasta de onde o servidor de pé está rodando.
 #[tauri::command]
-pub fn runtime_prune(state: State<'_, AppState>) -> lr_runtime::PruneResult {
+pub async fn runtime_prune(state: State<'_, AppState>) -> CmdResult<lr_runtime::PruneResult> {
     let variant = lr_runtime::select_variant(&state.profile);
-    lr_runtime::prune(&state.data_dir, variant)
+    let manter = pastas_do_prism(&state).await;
+    Ok(lr_runtime::prune(&state.data_dir, variant, &manter))
+}
+
+/// As pastas do motor da PrismML que a verificação reporta e a limpeza
+/// preserva: a resolvida primeiro (a que sobe agora; com o CUDA 12.8
+/// instalado, o Vulkan do fork vira recuperável), o CUDA 12.8 instalado
+/// mesmo quando esta sessão não o resolve, e a pasta de onde o servidor de
+/// pé está rodando — logo depois de o CUDA chegar ela ainda é a do Vulkan,
+/// e apagá-la derrubaria as próximas cargas de modelo do Router.
+async fn pastas_do_prism(state: &AppState) -> Vec<std::path::PathBuf> {
+    let mut pastas = state.runtime_mgr.prism_dirs_to_keep(&state.profile);
+    let em_execucao = state
+        .server
+        .lock()
+        .await
+        .as_ref()
+        .filter(|s| s.is_spawned())
+        .and_then(|s| {
+            s.config()
+                .exe_path
+                .parent()
+                .map(std::path::Path::to_path_buf)
+        });
+    if let Some(dir) = em_execucao
+        && !pastas.contains(&dir)
+    {
+        pastas.push(dir);
+    }
+    pastas
 }
 
 // -------------------------------------------------------------- modelos ---
@@ -618,17 +742,20 @@ pub async fn download_start(
     // Um clique baixa o modelo E o motor que ele exige. Pelo nome, aqui: o
     // cabeçalho só existe depois do download. A instalação corre em
     // paralelo e em segundo plano (sobrevive a trocar de tela); se falhar,
-    // o download não sofre e a biblioteca oferece o botão depois.
+    // o download não sofre e a biblioteca oferece o botão depois. Um `PQ2_0`
+    // leva o CUDA 12.8 junto mesmo com o Vulkan instalado (no Linux, onde
+    // ele é possível): no Vulkan esse formato roda na CPU.
     if advisor::quant::requires_prism(&artifact_name)
-        && lr_runtime::prism::supported(&state.profile)
-        && !prism_state(&state).installed
+        && state
+            .runtime_mgr
+            .installs_with_download(&state.profile, &artifact_name)
     {
         let mgr = state.runtime_mgr.clone();
-        let variant = lr_runtime::select_variant(&state.profile);
+        let profile = state.profile.clone();
         let app2 = app.clone();
         tauri::async_runtime::spawn(async move {
             if let Err(e) = mgr
-                .ensure_prism(variant, move |ev| {
+                .ensure_prism_best(&profile, move |ev| {
                     let _ = app2.emit("runtime-prism", &ev);
                 })
                 .await
@@ -782,6 +909,16 @@ pub struct ServerStatusView {
     /// que o `/v1/models` diz build 10709?": o modelo selecionado pediu o
     /// motor da PrismML.
     pub engine: Option<lr_types::tuning::EngineSource>,
+    /// A variante do pacote de onde o processo de pé roda, pela pasta do
+    /// executável (`None` parado). A faixa do servidor diz "PrismML · CUDA
+    /// 12.8" pelo processo, não pela melhor variante instalada: logo depois
+    /// de o CUDA chegar, quem ainda está no ar é o Vulkan.
+    pub engine_variant: Option<lr_runtime::BackendVariant>,
+}
+
+/// A variante de um executável do motor, pela pasta dele.
+fn variante_do_exe(exe: &std::path::Path) -> Option<lr_runtime::BackendVariant> {
+    exe.parent().and_then(lr_runtime::variant_of_dir)
 }
 
 /// O motor do processo em execução, como o `AppState` o registrou.
@@ -928,11 +1065,16 @@ pub(crate) fn selected_engine(state: &AppState) -> lr_types::tuning::EngineSourc
     }
 }
 
-/// O estado do motor da PrismML para a variante desta máquina.
+/// O motor da PrismML desta máquina: a melhor variante instalada da cadeia
+/// (o CUDA 12.8 no Linux quando está lá, senão a reserva). É ele que sobe.
 pub(crate) fn prism_state(state: &AppState) -> lr_runtime::RuntimeState {
-    state
-        .runtime_mgr
-        .prism_state(lr_runtime::select_variant(&state.profile))
+    state.runtime_mgr.prism_state_resolved(&state.profile)
+}
+
+/// O arquivo tem tensores `PQ2_0` — o formato que o Vulkan do fork roda na
+/// CPU e que, no Linux com NVIDIA, pede o CUDA 12.8.
+pub(crate) fn tem_pq2(meta: &lr_models::LocalGgufMeta) -> bool {
+    meta.tensor_types.contains(&lr_models::GGML_TYPE_PQ2_0)
 }
 
 pub(crate) fn active_runtime(state: &AppState) -> lr_runtime::RuntimeState {
@@ -1010,8 +1152,13 @@ pub(crate) fn runtime_de_medicao(
     state: &AppState,
     gguf: &std::path::Path,
 ) -> CmdResult<lr_runtime::RuntimeState> {
-    let exige = lr_models::read_local_meta(gguf).exige_prism();
-    let prism = prism_state(state);
+    let meta = lr_models::read_local_meta(gguf);
+    let exige = meta.exige_prism();
+    // O motor da PrismML para ESTE arquivo: um `PQ2_0` medido no Vulkan
+    // mediria a CPU, então ele pede o CUDA 12.8 onde o CUDA é possível.
+    let prism = state
+        .runtime_mgr
+        .prism_state_for_file(&state.profile, tem_pq2(&meta));
     let runtime = match motor_de_medicao(exige, prism.installed)? {
         lr_types::tuning::EngineSource::Prism => prism,
         _ => state
@@ -1031,19 +1178,33 @@ pub(crate) fn runtime_de_medicao(
 /// `profile_for`, porque o chat às vezes chega sem ele.
 /// O GGUF principal de um modelo da biblioteca, pelo nome que a UI usa.
 pub(crate) fn caminho_do_modelo(state: &AppState, name: &str) -> Option<std::path::PathBuf> {
+    caminho_na_biblioteca(&state.models_dir, name)
+}
+
+/// [`caminho_do_modelo`] sem o `AppState` — para quem lê o disco fora da
+/// thread do comando.
+fn caminho_na_biblioteca(models_dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
     let stem = model_stem(name);
-    lr_models::scan_local(&state.models_dir)
+    lr_models::scan_local(models_dir)
         .into_iter()
         .find(|a| a.name == name || model_stem(&a.name) == stem)
         .map(|a| a.primary_path)
 }
 
-pub(crate) fn modelo_exige_prism(state: &AppState, name: &str) -> bool {
-    let stem = model_stem(name);
-    lr_models::scan_local(&state.models_dir)
-        .into_iter()
-        .find(|a| a.name == name || model_stem(&a.name) == stem)
-        .is_some_and(|a| lr_models::read_local_meta(&a.primary_path).exige_prism())
+/// O que o arquivo de um modelo pede ao motor da PrismML: se ele exige o
+/// fork e, exigindo, o estado do fork para ELE — um `PQ2_0` pede o CUDA
+/// 12.8 no Linux mesmo com o Vulkan instalado. Uma leitura do cabeçalho só.
+pub(crate) fn prism_do_modelo(state: &AppState, name: &str) -> (bool, lr_runtime::RuntimeState) {
+    match caminho_do_modelo(state, name) {
+        Some(caminho) => {
+            let meta = lr_models::read_local_meta(&caminho);
+            let prism = state
+                .runtime_mgr
+                .prism_state_for_file(&state.profile, tem_pq2(&meta));
+            (meta.exige_prism(), prism)
+        }
+        None => (false, prism_state(state)),
+    }
 }
 
 /// Sufixo do id da entrada que carrega o projetor de visão.
@@ -1237,6 +1398,7 @@ pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
             lan: srv.config().host != "127.0.0.1",
             key_stale: srv.config().api_key != prefs.api_key,
             engine: motor_em_execucao(state),
+            engine_variant: variante_do_exe(&srv.config().exe_path),
         },
         _ => ServerStatusView {
             running: false,
@@ -1245,6 +1407,7 @@ pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
             lan,
             key_stale: false,
             engine: None,
+            engine_variant: None,
         },
     }
 }
@@ -1324,6 +1487,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                 lan: srv.config().host != "127.0.0.1",
                 key_stale: srv.config().api_key != api_key,
                 engine: motor_em_execucao(state),
+                engine_variant: variante_do_exe(&srv.config().exe_path),
             });
         }
 
@@ -1391,6 +1555,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             // Acabou de subir com as prefs de agora: nada pendente.
             key_stale: false,
             engine: Some(motor),
+            engine_variant: variante_do_exe(&srv.config().exe_path),
         };
         crate::gpu_lease::acquire("server")?;
         drop(gpu_start);
@@ -1431,6 +1596,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                     lan,
                     key_stale: false,
                     engine: None,
+                    engine_variant: None,
                 },
             );
             crate::gpu_lease::release("server");
@@ -1496,6 +1662,7 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
             lan,
             key_stale: false,
             engine: None,
+            engine_variant: None,
         },
     );
     Ok(())

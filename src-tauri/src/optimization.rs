@@ -146,7 +146,7 @@ pub async fn optimize_run(
         // A identidade carimba a medição: trocar de motor invalida o número,
         // e um resultado da PrismML não pode passar por resultado do oficial.
         let identidade_base = if meta.exige_prism() {
-            lr_runtime::prism::identity(&state.profile)
+            lr_runtime::prism::identity(&state.profile, motor.variant)
         } else {
             lr_runtime::experimental::official_identity(&state.profile)
         };
@@ -408,6 +408,27 @@ pub(crate) fn alvo_do_motor(
     })
 }
 
+/// O motor precisa reiniciar para servir o modelo?
+///
+/// Quando o motor escolhido muda, sim — como sempre. E também quando o
+/// escolhido é o mesmo mas o processo de pé roda OUTRO executável: o
+/// setting já dizia "prism", só que quem subiu foi o oficial (o fork não
+/// estava instalado no boot), ou o Vulkan do fork (o CUDA 12.8 acabou de
+/// chegar). Comparar só com o setting deixava o oficial no ar e o Bonsai
+/// batendo nele com "unknown type". Parado, não: o próximo start já sobe o
+/// executável certo.
+pub(crate) fn precisa_reiniciar(
+    alvo: EngineSource,
+    anterior: EngineSource,
+    em_execucao: Option<&std::path::Path>,
+    exe_do_alvo: Option<&std::path::Path>,
+) -> bool {
+    if alvo != anterior {
+        return true;
+    }
+    em_execucao.is_some_and(|exe| exe_do_alvo != Some(exe))
+}
+
 /// App-originated model switches also switch the executable automatically.
 #[tauri::command]
 pub async fn optimize_prepare_model(
@@ -419,14 +440,32 @@ pub async fn optimize_prepare_model(
         return Err("engine-busy:benchmark".into());
     }
     let nome = model.trim_end_matches(commands::VISION_SUFFIX);
+    // O estado do fork é o deste ARQUIVO: um `PQ2_0` pede o CUDA 12.8 no
+    // Linux mesmo com o Vulkan instalado (`prism-required` instala).
+    let (exige_prism, prism) = commands::prism_do_modelo(&state, nome);
     let target = alvo_do_motor(
         commands::profile_for(&state, nome).and_then(|p| p.engine),
         state.runtime_mgr.experimental_state().installed,
-        commands::modelo_exige_prism(&state, nome),
-        commands::prism_state(&state).installed,
+        exige_prism,
+        prism.installed,
     )?;
     let previous = commands::selected_engine(&state);
-    if target == previous {
+    let em_execucao = state
+        .server
+        .lock()
+        .await
+        .as_ref()
+        .filter(|s| s.is_spawned())
+        .map(|s| s.config().exe_path.clone());
+    let exe_do_alvo = (target == previous)
+        .then(|| commands::active_runtime(&state).server_exe)
+        .flatten();
+    if !precisa_reiniciar(
+        target,
+        previous,
+        em_execucao.as_deref(),
+        exe_do_alvo.as_deref(),
+    ) {
         return Ok(());
     }
     let _measurement = commands_tuning::begin_measurement()?;
@@ -468,6 +507,31 @@ mod tests {
             alvo_do_motor(None, true, true, false),
             Err("prism-required")
         );
+    }
+
+    /// O setting já dizia "prism" e o processo de pé é o oficial (ou o
+    /// Vulkan do fork, e o CUDA acabou de chegar): reinicia. Mesmo
+    /// executável, ou nada rodando, não.
+    #[test]
+    fn the_engine_restarts_when_the_running_executable_is_not_the_targets() {
+        use EngineSource::*;
+        use std::path::Path;
+        let oficial = Path::new("/d/runtimes/b10441/vulkan/llama-server");
+        let vulkan = Path::new("/d/runtimes/prism-b10709-9a9394a/vulkan/llama-server");
+        let cuda = Path::new("/d/runtimes/prism-b10709-9a9394a/cuda-12.8/llama-server");
+
+        // A troca de motor de sempre.
+        assert!(precisa_reiniciar(Prism, Official, Some(oficial), None));
+        assert!(precisa_reiniciar(Prism, Official, None, None));
+        // Setting = prism desde a sessão passada; no ar, o oficial.
+        assert!(precisa_reiniciar(Prism, Prism, Some(oficial), Some(cuda)));
+        // O CUDA 12.8 chegou com o Vulkan do fork ainda de pé.
+        assert!(precisa_reiniciar(Prism, Prism, Some(vulkan), Some(cuda)));
+        // Já é o executável certo.
+        assert!(!precisa_reiniciar(Prism, Prism, Some(cuda), Some(cuda)));
+        // Nada de pé: o próximo start sobe o certo.
+        assert!(!precisa_reiniciar(Prism, Prism, None, Some(cuda)));
+        assert!(!precisa_reiniciar(Official, Official, None, None));
     }
 
     #[test]

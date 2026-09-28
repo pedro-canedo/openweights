@@ -248,7 +248,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(crate::server_exe_name()), b"x").unwrap();
         assert!(crate::scan_installed(temp.path()).is_empty());
-        let r = crate::prune(temp.path(), BackendVariant::Cuda13);
+        let prism = crate::runtime_dir(temp.path(), crate::prism::TAG, BackendVariant::Cuda13);
+        let r = crate::prune(temp.path(), BackendVariant::Cuda13, &[prism]);
         assert_eq!(r.freed_bytes, 0);
         assert!(dir.join(crate::server_exe_name()).is_file());
     }

@@ -148,5 +148,16 @@ instead of an error.
 Tuning and optimization work the same way: a measurement runs a llama.cpp
 binary against the file, so for a Bonsai model they run the PrismML one.
 
+On Linux with an NVIDIA card, a `PQ2_0` file gets the fork's **CUDA 12.8**
+build (about 727 MB to download, about 1 GB on disk): the fork's Vulkan build
+runs that format on the CPU. The fork's release does not bundle NVIDIA's CUDA
+runtime and cuBLAS, so the app downloads them from NVIDIA's own packages on
+PyPI, pinned by size and checksum, and keeps only the three libraries and
+their license next to the engine. Before calling it installed, the app checks
+that the engine sees your card. The Vulkan build keeps serving `PTQ1_0` files
+without downloading anything; where CUDA is not possible (AMD or Intel, a
+driver older than 570, an RTX 50), prefer the `PTQ1_0` file, which runs on the
+GPU through Vulkan.
+
 Not every Bonsai file needs the fork: the first-generation `Q1_0` and the
 `Q2_g64` file of Ternary Bonsai 27B run on the official build.

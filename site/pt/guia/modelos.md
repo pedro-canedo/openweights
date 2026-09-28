@@ -152,5 +152,16 @@ PrismML** em vez de um erro.
 O ajuste e a otimização seguem a mesma regra: medir é rodar um binário do
 llama.cpp contra o arquivo, então num Bonsai eles rodam o da PrismML.
 
+No Linux com placa NVIDIA, um arquivo `PQ2_0` ganha a versão **CUDA 12.8** do
+fork (cerca de 727 MB de download, cerca de 1 GB no disco): a versão Vulkan do
+fork roda esse formato na CPU. A release do fork não traz o CUDA runtime nem o
+cuBLAS da NVIDIA, então o app os baixa dos pacotes da própria NVIDIA no PyPI,
+fixados por tamanho e checksum, e guarda ao lado do motor só as três
+bibliotecas e a licença delas. Antes de dar a instalação por concluída, o app
+confere que o motor enxerga a sua placa. A versão Vulkan continua servindo os
+arquivos `PTQ1_0` sem baixar nada; onde o CUDA não é possível (AMD ou Intel,
+driver anterior ao 570, RTX 50), prefira o arquivo `PTQ1_0`, que roda na GPU
+pelo Vulkan.
+
 Nem todo arquivo Bonsai precisa do fork: o `Q1_0` da primeira geração e o
 `Q2_g64` do Ternary Bonsai 27B rodam na build oficial.

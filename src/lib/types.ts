@@ -64,6 +64,8 @@ export interface Telemetry {
 export type BackendVariant =
   | "cuda13"
   | "cuda12"
+  /** CUDA 12.8 — só o motor da PrismML, no Linux x64 com NVIDIA. */
+  | "cuda128"
   | "vulkan"
   | "cpu"
   | "macos-arm64"
@@ -77,6 +79,29 @@ export interface RuntimeState {
   dir?: string | null;
   rpcExe?: string | null;
   rpcReady?: boolean;
+}
+
+/**
+ * O motor da PrismML para um arquivo (ou para a máquina, sem arquivo): o
+ * estado resolvido mais o que a tela precisa para oferecer a instalação.
+ */
+export interface PrismStatus extends RuntimeState {
+  /** A variante que esta máquina pede ao fork. */
+  preferred: BackendVariant;
+  /** A melhor variante do fork instalada, qualquer que seja o arquivo. */
+  installedVariant: BackendVariant | null;
+  /** Quanto instalar `variant` baixa (0 quando já está instalada). */
+  downloadBytes: number;
+  /** Quanto `variant` ocupa no disco, quando bem maior que o download. */
+  diskBytes: number | null;
+  /** O CUDA 12.8 é possível aqui e ainda não está instalado. */
+  cudaDownloadBytes: number | null;
+  /** O CUDA 12.8 reprovou nesta máquina com o driver de agora. */
+  cudaFailed: boolean;
+  /** O arquivo tem tensores PQ2_0. */
+  pq2: boolean;
+  /** PQ2_0 no Vulkan: roda, mas na CPU. */
+  pq2OnCpu: boolean;
 }
 
 /** Um pacote do motor achado no disco (espelho de `InstalledRuntime`). */
@@ -287,6 +312,12 @@ export interface ServerStatus {
   keyStale: boolean;
   /** O motor com que o processo subiu; `null`/ausente quando parado. */
   engine?: EngineSource | null;
+  /**
+   * A variante do pacote de onde o processo de pé roda (pela pasta do
+   * executável) — não a melhor instalada: logo depois de o CUDA 12.8 chegar,
+   * quem ainda está no ar é o Vulkan.
+   */
+  engineVariant?: BackendVariant | null;
 }
 
 /** Quem executa o llama-server: o oficial fixado, o fork MoE-cache ou o
