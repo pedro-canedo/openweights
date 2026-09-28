@@ -27,6 +27,64 @@ function folhas(valor, prefixo, saida) {
   return saida;
 }
 
+/**
+ * Chaves repetidas dentro de um mesmo objeto. O JSON.parse fica com a última
+ * e não avisa: uma chave nova com o nome de uma que já existia mais abaixo
+ * some sem erro (foi assim que o "Energia da GPU" do monitor virou "ENERGIA").
+ * Uma varredura de tokens basta: strings (com escapes), chaves e dois-pontos.
+ */
+function duplicadas(texto) {
+  const achadas = [];
+  const pilha = []; // por objeto aberto: { caminho, chaves: Set }
+  let i = 0;
+  let ultimaString = null;
+  let caminhoDaChave = null;
+  while (i < texto.length) {
+    const c = texto[i];
+    if (c === '"') {
+      let j = i + 1;
+      let valor = "";
+      while (texto[j] !== '"') {
+        if (texto[j] === "\\") {
+          valor += texto[j + 1];
+          j += 2;
+        } else {
+          valor += texto[j];
+          j += 1;
+        }
+      }
+      ultimaString = valor;
+      i = j + 1;
+      continue;
+    }
+    if (c === ":" && pilha.length > 0 && ultimaString != null) {
+      const topo = pilha[pilha.length - 1];
+      const caminho = topo.caminho ? `${topo.caminho}.${ultimaString}` : ultimaString;
+      if (topo.chaves.has(ultimaString)) achadas.push(caminho);
+      topo.chaves.add(ultimaString);
+      caminhoDaChave = caminho;
+    } else if (c === "{") {
+      pilha.push({ caminho: pilha.length === 0 ? "" : caminhoDaChave, chaves: new Set() });
+    } else if (c === "}") {
+      pilha.pop();
+    }
+    if (c !== " " && c !== "\n" && c !== "\r" && c !== "\t") ultimaString = c === ":" ? null : ultimaString;
+    if (c === "," || c === "{" || c === "}") ultimaString = null;
+    i += 1;
+  }
+  return achadas;
+}
+
+let repetidas = false;
+for (const lng of idiomas) {
+  const lista = duplicadas(readFileSync(join(raiz, "src", "i18n", `${lng}.json`), "utf8"));
+  if (lista.length === 0) continue;
+  repetidas = true;
+  console.error(`\n${lng}.json tem chave(s) repetida(s) no mesmo objeto (vale só a última):`);
+  for (const k of lista) console.error(`  ${k}`);
+}
+if (repetidas) process.exit(1);
+
 const mapa = new Map(
   idiomas.map((lng) => [
     lng,

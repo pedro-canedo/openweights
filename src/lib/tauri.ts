@@ -159,8 +159,11 @@ function mockListen(event: string, handler: (payload: unknown) => void) {
           utilPercent: wave(10, 60, 0.31),
           vramUsedBytes: wave(4, 6, 0.17) * 2 ** 30,
           vramTotalBytes: 16 * 2 ** 30,
+          powerW: Math.round(wave(90, 220, 0.2)),
+          powerLimitW: 370,
         },
       ],
+      gpuTempC: wave(45, 25, 0.1),
       tsMs: Date.now(),
     };
     handler(telemetry);

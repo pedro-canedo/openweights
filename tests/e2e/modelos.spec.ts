@@ -52,3 +52,26 @@ test("os painéis da barra de status abrem acima dela, à vista", async ({ page 
   );
   expect(naFrente).toBe(true);
 });
+
+test("o monitor mostra energia, temperatura e tok/s, e pode ficar fixado", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Monitor de hardware" }).click();
+  const monitor = page.getByRole("dialog", { name: "Monitor de hardware" });
+  await expect(monitor.getByText("Energia da GPU")).toBeVisible();
+  await expect(monitor.getByText("Temperatura da GPU")).toBeVisible();
+  await expect(monitor.getByText("Tokens por segundo")).toBeVisible();
+
+  // Fixado, nem o clique fora nem o Esc fecham — e a troca de tela também não.
+  await monitor.getByRole("button", { name: "Fixar o monitor" }).click();
+  await page.getByRole("button", { name: "Descobrir", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(monitor).toBeVisible();
+  await monitor.getByRole("button", { name: "Fechar o monitor" }).click();
+  await expect(monitor).toBeHidden();
+
+  // Solto, o clique fora fecha como antes.
+  await page.getByRole("button", { name: "Monitor de hardware" }).click();
+  await expect(monitor).toBeVisible();
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await expect(monitor).toBeHidden();
+});

@@ -34,6 +34,8 @@ const PATHS = {
   copy: "M8 8h12v12H8zM8 8V6a2 2 0 012-2h10a2 2 0 012 2v10a2 2 0 01-2 2h-2",
   // Renomear.
   pencil: "M4 20h4L19 9l-4-4L4 16v4M13.5 6.5l4 4",
+  // Fixar um painel aberto.
+  pin: "M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6z",
   // Abrir fora do app (Hugging Face, pasta no SO, harness).
   external:
     "M14 5h5v5M10 14L19 5M19 13v5a1 1 0 01-1 1H6a1 1 0 01-1-1V6a1 1 0 011-1h5",

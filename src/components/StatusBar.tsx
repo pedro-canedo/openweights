@@ -67,7 +67,14 @@ export default function StatusBar() {
   const gen = useSyncExternalStore(genStats.subscribe, genStats.get);
   const [monitorOpen, setMonitorOpen] = useState(false);
   // Esc e clique fora fecham; o foco volta ao botão do monitor.
-  const monitorRef = useDismiss(monitorOpen, () => setMonitorOpen(false));
+  // Fixado, o monitor fica aberto enquanto a pessoa trabalha: nem o clique
+  // fora nem o Esc o fecham, e ele atravessa a troca de tela.
+  const [monitorFixo, setMonitorFixo] = useState(false);
+  const fecharMonitor = () => {
+    setMonitorOpen(false);
+    setMonitorFixo(false);
+  };
+  const monitorRef = useDismiss(monitorOpen && !monitorFixo, fecharMonitor);
   // O que o servidor está fazendo agora. Uma consulta só responde as três
   // perguntas que antes moravam três telas adiante — e capta o tráfego de
   // QUALQUER cliente, inclusive o harness batendo direto na API.
@@ -77,8 +84,14 @@ export default function StatusBar() {
     let vivo = true;
     const olhar = () =>
       getServerLive()
-        .then((l) => vivo && setLive(l))
-        .catch(() => vivo && setLive(null));
+        .then((l) => {
+          telemetryStore.registrarTokens(l.running ? l.tokensPerSec : null);
+          if (vivo) setLive(l);
+        })
+        .catch(() => {
+          telemetryStore.registrarTokens(null);
+          if (vivo) setLive(null);
+        });
     void olhar();
     // 2 s: rápido o bastante para a velocidade parecer viva, devagar o
     // bastante para não virar carga no próprio servidor que se mede.
@@ -92,6 +105,10 @@ export default function StatusBar() {
 
   return (
     <footer className="flex h-9 shrink-0 items-center gap-4 overflow-x-clip border-t border-edge bg-panel px-4">
+      {/* Os medidores encolhem e cortam; o grupo da direita (modelo, contexto,
+          monitor) nunca. Numa janela estreita com energia na telemetria, a
+          barra passava da largura e empurrava o monitor para fora da tela. */}
+      <div className="flex min-w-0 flex-1 items-center gap-4 overflow-hidden">
       {tel ? (
         <>
           <Stat
@@ -183,7 +200,9 @@ export default function StatusBar() {
         <span className="text-[11px] text-dim">…</span>
       )}
 
-      <div className="ml-auto flex items-center gap-3">
+      </div>
+
+      <div className="ml-auto flex shrink-0 items-center gap-3">
         {/* O modelo carregado; clicar abre os do Router, com carregar e
             descarregar ali mesmo. */}
         <ModelosDoServidor live={live} />
@@ -217,7 +236,7 @@ export default function StatusBar() {
 
         <div ref={monitorRef} className="relative">
           <button
-            onClick={() => setMonitorOpen((v) => !v)}
+            onClick={() => (monitorOpen ? fecharMonitor() : setMonitorOpen(true))}
             title={t("status.monitor")}
             aria-expanded={monitorOpen}
             aria-haspopup="dialog"
@@ -246,7 +265,11 @@ export default function StatusBar() {
               data-overlay=""
               className="absolute right-0 bottom-full z-50 mb-2"
             >
-              <MonitorPopover />
+              <MonitorPopover
+                fixado={monitorFixo}
+                aoFixar={() => setMonitorFixo((v) => !v)}
+                aoFechar={fecharMonitor}
+              />
             </div>
           )}
         </div>

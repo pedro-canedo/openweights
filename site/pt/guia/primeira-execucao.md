@@ -102,7 +102,9 @@ aqui.
 Clicar no nome do modelo lista todos os que o Servidor Local sabe servir, com
 os que estão na memória; **Carregar** e **Descarregar** ficam ali mesmo, sem
 sair da tela em que você está. O ícone de gráfico, no canto direito, abre o
-monitor de hardware.
+monitor de hardware: os últimos 15 minutos de CPU, GPU, VRAM, energia e
+temperatura da GPU (quando o driver informa) e tokens por segundo. Fixado, ele
+fica aberto enquanto você trabalha, mesmo trocando de tela.
 
 ## Simples e Avançado
 

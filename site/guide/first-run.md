@@ -104,7 +104,9 @@ here.
 Clicking the model name lists every model the Local Server can serve, with
 which ones are in memory; **Load** and **Unload** are right there, without
 leaving the screen you are on. The chart icon at the far right opens the
-hardware monitor.
+hardware monitor: the last 15 minutes of CPU, GPU, VRAM, GPU power and
+temperature (when the driver reports them) and tokens per second. Pin it and it
+stays open while you work, across screens.
 
 ## Simple and Advanced
 

@@ -32,6 +32,13 @@
   },
   "status": {
     "monitor": "Hardware monitor",
+    "monitorWindow": "last 15 min",
+    "monitorPin": "Pin the monitor",
+    "monitorUnpin": "Unpin the monitor",
+    "monitorClose": "Close the monitor",
+    "gpuPower": "GPU power",
+    "gpuTemperature": "GPU temperature",
+    "tokensPerSecLabel": "Tokens per second",
     "cpu": "CPU",
     "ram": "RAM",
     "gpu": "GPU",

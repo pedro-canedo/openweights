@@ -6,7 +6,7 @@ import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import { series, telemetryStore } from "./telemetryStore";
 
-export type ChartKind = "cpu" | "gpu" | "vram";
+export type ChartKind = "cpu" | "gpu" | "vram" | "power" | "temp" | "tps";
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement)
@@ -14,14 +14,30 @@ function cssVar(name: string): string {
     .trim();
 }
 
+const SERIE: Record<ChartKind, keyof typeof series> = {
+  cpu: "cpuPercent",
+  gpu: "gpuPercent",
+  vram: "vramUsedGb",
+  power: "powerW",
+  temp: "gpuTempC",
+  tps: "tokensPerSec",
+};
+
 function buildData(kind: ChartKind): uPlot.AlignedData {
-  const y =
-    kind === "cpu"
-      ? series.cpuPercent
-      : kind === "gpu"
-        ? series.gpuPercent
-        : series.vramUsedGb;
-  return [series.ts, y] as uPlot.AlignedData;
+  return [series.ts, series[SERIE[kind]]] as uPlot.AlignedData;
+}
+
+/** O teto do eixo: 100 nas porcentagens e na temperatura; nos outros, o maior
+ * entre o visto e a régua (VRAM total, limite de energia). */
+function teto(kind: ChartKind, max: number | null): number {
+  if (kind === "cpu" || kind === "gpu" || kind === "temp") return 100;
+  const regua =
+    kind === "vram"
+      ? telemetryStore.getVramTotalGb()
+      : kind === "power"
+        ? telemetryStore.getPowerLimitW()
+        : 0;
+  return Math.max(max ?? 0, regua, 1);
 }
 
 export default function TelemetryChart({
@@ -43,13 +59,8 @@ export default function TelemetryChart({
     const dim = cssVar("--lr-dim") || "#8b93a5";
     const edge = cssVar("--lr-edge") || "#232a38";
 
-    const isPercent = kind !== "vram";
-    const range: uPlot.Scale.Range = isPercent
-      ? ([0, 100] as [number, number])
-      : (_u, _min, max): [number, number] => [
-          0,
-          Math.max(max ?? 0, telemetryStore.getVramTotalGb(), 1),
-        ];
+    const isPercent = kind === "cpu" || kind === "gpu" || kind === "temp";
+    const range: uPlot.Scale.Range = (_u, _min, max): [number, number] => [0, teto(kind, max)];
 
     const u = new uPlot(
       {
