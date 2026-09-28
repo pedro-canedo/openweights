@@ -218,6 +218,7 @@ fn main() {
             commands_agenticow::agenticow_hide,
             commands_agenticow::agenticow_set_bounds,
             commands_terminal::terminal_abrir_shell,
+            commands_terminal::terminal_abrir_owcli,
             commands_terminal::terminal_anexar,
             commands_terminal::terminal_desanexar,
             commands_terminal::terminal_escrever,

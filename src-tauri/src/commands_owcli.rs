@@ -170,6 +170,20 @@ async fn sincronizar_ja(app: &AppHandle, state: &AppState) -> Result<(), String>
     escrever_privado(&arquivo, &json).map_err(|e| format!("{}: {e}", arquivo.display()))
 }
 
+/// O executável do OwCLI.
+///
+/// Em desenvolvimento, `OW_OWCLI_BIN` aponta para um build do fork (o cargo o
+/// gera como `codex`; o lançador vira OwCLI porque a sessão define
+/// `OWCLI_HOME`). No app instalado, o runtime pinado (`lr_owcli`).
+pub fn binario() -> Result<PathBuf, String> {
+    if let Some(p) = std::env::var_os("OW_OWCLI_BIN").map(PathBuf::from)
+        && p.is_file()
+    {
+        return Ok(p);
+    }
+    Err("O OwCLI ainda não está instalado neste app.".to_string())
+}
+
 /// Liga o OwCLI (primeira sessão): daqui em diante o gateway sobe com o app.
 pub async fn ativar(app: &AppHandle) {
     let state = app.state::<AppState>();

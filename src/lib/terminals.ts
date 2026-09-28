@@ -54,9 +54,17 @@ type Aviso =
   | { kind: "atencao"; texto: string }
   | { kind: "saiu"; codigo: number | null };
 
+/** Como abrir o agente: pasta, quando pedir aprovação e o que ele pode fazer. */
+export interface OpcoesOwcli {
+  pasta: string | null;
+  aprovacao: "on-request" | "untrusted" | "never";
+  sandbox: "workspace-write" | "read-only" | "danger-full-access";
+}
+
 interface Backend {
   listar(): Promise<SessaoTerminal[]>;
   abrirShell(pasta: string | null, colunas: number, linhas: number): Promise<number>;
+  abrirOwcli(opcoes: OpcoesOwcli, colunas: number, linhas: number): Promise<number>;
   anexar(id: number, desde: number | null, onBloco: (b: ArrayBuffer) => void): Promise<boolean>;
   escrever(id: number, dados: string): Promise<void>;
   redimensionar(id: number, colunas: number, linhas: number): Promise<void>;
@@ -446,10 +454,19 @@ export function limpar(id: number) {
   vivos.get(id)?.term.clear();
 }
 
-export async function novoShell(pasta: string | null = null): Promise<number | null> {
+export function novoShell(pasta: string | null = null): Promise<number | null> {
+  return abrirSessao(() => backend.abrirShell(pasta, 80, 24));
+}
+
+/** O agente OwCLI, com os modelos do OpenWeights, na pasta escolhida. */
+export function novoOwcli(opcoes: OpcoesOwcli): Promise<number | null> {
+  return abrirSessao(() => backend.abrirOwcli(opcoes, 100, 30));
+}
+
+async function abrirSessao(abrir: () => Promise<number>): Promise<number | null> {
   await iniciar();
   try {
-    const id = await backend.abrirShell(pasta, 80, 24);
+    const id = await abrir();
     const v = criarXterm(id);
     const novas = await backend.listar();
     const paineis = [...estado.paineis];
@@ -583,6 +600,8 @@ const backendTauri: Backend = {
   listar: () => invoke<SessaoTerminal[]>("terminal_listar"),
   abrirShell: (pasta, colunas, linhas) =>
     invoke<number>("terminal_abrir_shell", { pedido: { pasta, colunas, linhas } }),
+  abrirOwcli: (opcoes, colunas, linhas) =>
+    invoke<number>("terminal_abrir_owcli", { pedido: { ...opcoes, colunas, linhas } }),
   async anexar(id, desde, onBloco) {
     const { Channel } = await import("@tauri-apps/api/core");
     const canal = new Channel<ArrayBuffer>();
@@ -624,31 +643,42 @@ function backendSimulado(): Backend {
   }
   const prompt = (s: Simulada) => emitir(s, "\x1b[32mvoce@navegador\x1b[0m:~$ ");
 
+  function nova(titulo: string, tipo: TipoSessao, pasta: string): Simulada {
+    const id = proximo++;
+    const s: Simulada = {
+      resumo: {
+        id,
+        tipo,
+        titulo,
+        pasta,
+        atencao: false,
+        viva: true,
+        codigoSaida: null,
+        pid: null,
+        criadaEmMs: Date.now(),
+        fim: 0,
+      },
+      saida: [],
+      fim: 0,
+      linha: "",
+      destino: null,
+    };
+    sessoes.set(id, s);
+    return s;
+  }
+
   return {
     listar: async () => [...sessoes.values()].map((s) => ({ ...s.resumo })),
+    async abrirOwcli(opcoes) {
+      const s = nova("OwCLI", { kind: "owCli" }, opcoes.pasta ?? "~");
+      emitir(s, "\x1b[2m>_\x1b[0m \x1b[1mOwCLI\x1b[0m \x1b[2m(v0.157.1)\x1b[0m\r\n\r\n");
+      emitir(s, `aprovação: ${opcoes.aprovacao} · sandbox: ${opcoes.sandbox}\r\n\r\n› `);
+      return s.resumo.id;
+    },
     async abrirShell() {
-      const id = proximo++;
-      const s: Simulada = {
-        resumo: {
-          id,
-          tipo: { kind: "shell" },
-          titulo: "bash",
-          pasta: "~",
-          atencao: false,
-          viva: true,
-          codigoSaida: null,
-          pid: null,
-          criadaEmMs: Date.now(),
-          fim: 0,
-        },
-        saida: [],
-        fim: 0,
-        linha: "",
-        destino: null,
-      };
-      sessoes.set(id, s);
+      const s = nova("bash", { kind: "shell" }, "~");
       prompt(s);
-      return id;
+      return s.resumo.id;
     },
     async anexar(id, desde, onBloco) {
       const s = sessoes.get(id);

@@ -1559,6 +1559,23 @@
     "emptyPane": "Pick a session from the list or open a terminal in this pane.",
     "paneLabel": "Pane {{n}}",
     "splitWidth": "Pane width",
-    "splitHeight": "Pane height"
+    "splitHeight": "Pane height",
+    "newSession": "New session",
+    "newAgent": "OwCLI agent…",
+    "openAgent": "Open the OwCLI agent",
+    "agentDialogTitle": "Open the OwCLI agent",
+    "agentDialogHint": "OwCLI works in the folder you pick with OpenWeights models — the Local Server ones never leave your machine.",
+    "folder": "Working folder",
+    "folderHome": "Home folder",
+    "chooseFolder": "Choose…",
+    "approval": "When to ask for your approval",
+    "approvalOnRequest": "When it needs to (recommended)",
+    "approvalUntrusted": "Before any command",
+    "approvalNever": "Never — runs on its own",
+    "sandbox": "What it can do",
+    "sandboxWrite": "Read and edit the folder (recommended)",
+    "sandboxRead": "Read only",
+    "sandboxFull": "Everything, no limits",
+    "open": "Open"
   }
 }

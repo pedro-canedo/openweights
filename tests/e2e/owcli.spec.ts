@@ -1,10 +1,21 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
 // A tela do OwCLI no navegador, com o shell simulado de lib/terminals.ts.
 // O que se prova aqui é o contrato da interface: abrir, digitar, o terminal
 // sobreviver à troca de tela, fechar. O pseudoterminal de verdade tem os
 // testes dele no crate lr_pty.
+
+/** Terminal novo pelo menu "Nova sessão" (ou pelo botão do estado vazio). */
+async function novoTerminal(page: Page) {
+  const vazio = page.getByRole("button", { name: "Novo terminal" }).first();
+  if (await page.getByRole("heading", { name: "Nenhum terminal aberto" }).isVisible()) {
+    await vazio.click();
+    return;
+  }
+  await page.getByRole("button", { name: "Nova sessão" }).click();
+  await page.getByRole("menuitem", { name: "Novo terminal" }).click();
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
@@ -31,13 +42,12 @@ test("abre um terminal, digita e o terminal sobrevive à troca de tela", async (
 });
 
 test("duas sessões, setas trocam e fechar volta ao estado vazio", async ({ page }) => {
-  const novo = page.getByRole("button", { name: "Novo terminal" }).first();
   const itens = page.getByRole("list", { name: "Terminais abertos" }).getByRole("listitem");
-  await novo.click();
+  await novoTerminal(page);
   await expect(itens).toHaveCount(1);
   await page.keyboard.type("echo primeira");
   await page.keyboard.press("Enter");
-  await novo.click();
+  await novoTerminal(page);
   await expect(itens).toHaveCount(2);
   const botoes = page.locator("[data-sessao]");
   await expect(botoes.nth(1)).toHaveAttribute("aria-current", "true");
@@ -76,12 +86,11 @@ test("menu de contexto limpa a tela e fecha a sessão", async ({ page }) => {
 });
 
 test("a sessão fora de vista que pede atenção aparece na lista", async ({ page }) => {
-  const novo = page.getByRole("button", { name: "Novo terminal" }).first();
-  await novo.click();
+  await novoTerminal(page);
   await page.keyboard.type("avisar Aprovar o comando?");
   await page.keyboard.press("Enter");
   // Troca de sessão antes do aviso chegar: ele vem para a que não está à vista.
-  await novo.click();
+  await novoTerminal(page);
   const primeira = page.locator("[data-sessao]").first();
   await expect(primeira).toContainText("pede sua atenção");
   await primeira.click();
@@ -126,6 +135,21 @@ test("quatro painéis e de volta a um mantém as sessões vivas", async ({ page 
   await page.getByRole("button", { name: "Um painel" }).click();
   await expect(page.locator("[data-painel]")).toHaveCount(1);
   await expect(page.locator(".xterm-rows")).toContainText("sobrevive");
+});
+
+test("o agente abre pelo diálogo com aprovação e sandbox escolhidos", async ({ page }) => {
+  await page.getByRole("button", { name: "Abrir o agente OwCLI" }).click();
+  const dialogo = page.getByRole("dialog", { name: "Abrir o agente OwCLI" });
+  await expect(dialogo).toBeVisible();
+  await expect(dialogo).toContainText("Pasta pessoal");
+  await dialogo.getByLabel("Quando pedir sua aprovação").selectOption("untrusted");
+  await dialogo.getByLabel("O que ele pode fazer").selectOption("read-only");
+  await dialogo.getByRole("button", { name: "Abrir", exact: true }).click();
+  await expect(dialogo).toBeHidden();
+  const tela = page.locator(".xterm-rows");
+  await expect(tela).toContainText("OwCLI");
+  await expect(tela).toContainText("aprovação: untrusted · sandbox: read-only");
+  await expect(page.locator("[data-sessao]").first()).toContainText("OwCLI");
 });
 
 test("a tela do OwCLI não tem violação séria de acessibilidade", async ({ page }) => {

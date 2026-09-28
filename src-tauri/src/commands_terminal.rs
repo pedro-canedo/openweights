@@ -122,6 +122,72 @@ pub async fn terminal_abrir_shell(
     .map_err(|e| format!("não foi possível abrir o terminal: {e}"))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PedidoDeOwcli {
+    pub pasta: Option<String>,
+    pub colunas: u16,
+    pub linhas: u16,
+    /// `on-request` (padrão), `untrusted` ou `never`.
+    pub aprovacao: Option<String>,
+    /// `workspace-write` (padrão), `read-only` ou `danger-full-access`.
+    pub sandbox: Option<String>,
+}
+
+/// Abre o agente OwCLI numa sessão: liga o gateway e o `openweights.json`
+/// (primeira vez) e sobe a TUI na pasta escolhida.
+#[tauri::command]
+pub async fn terminal_abrir_owcli(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    pedido: PedidoDeOwcli,
+) -> CmdResult<lr_pty::SessaoId> {
+    let exe = crate::commands_owcli::binario()?;
+    crate::commands_owcli::ativar(&app).await;
+    let casa = crate::commands_owcli::casa(&app).ok_or("sem pasta pessoal")?;
+    let pasta = pasta_ou_pessoal(&app, pedido.pasta)?;
+    let aprovacao = match pedido.aprovacao.as_deref() {
+        Some(a @ ("untrusted" | "never" | "on-request")) => a.to_string(),
+        _ => "on-request".to_string(),
+    };
+    let sandbox = match pedido.sandbox.as_deref() {
+        Some(s @ ("read-only" | "danger-full-access" | "workspace-write")) => s.to_string(),
+        _ => "workspace-write".to_string(),
+    };
+    let args: Vec<OsString> = vec![
+        "--cd".into(),
+        pasta.clone().into_os_string(),
+        "--ask-for-approval".into(),
+        aprovacao.into(),
+        "--sandbox".into(),
+        sandbox.into(),
+    ];
+    let gerente = state.terminais.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        gerente.abrir(lr_pty::Pedido {
+            programa: exe.into_os_string(),
+            args,
+            pasta,
+            env: vec![
+                // A casa explícita também faz um build de desenvolvimento
+                // (binário `codex`) entrar no modo OwCLI.
+                ("OWCLI_HOME".into(), casa.into_os_string()),
+                ("TERM_PROGRAM".into(), "OpenWeights".into()),
+                // O xterm.js não fala o protocolo de teclado do kitty; sem
+                // isto a TUI espera a resposta da sondagem na abertura.
+                ("CODEX_TUI_DISABLE_KEYBOARD_ENHANCEMENT".into(), "1".into()),
+            ],
+            colunas: pedido.colunas,
+            linhas: pedido.linhas,
+            titulo: "OwCLI".to_string(),
+            tipo: lr_pty::Tipo::OwCli,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("não foi possível abrir o OwCLI: {e}"))
+}
+
 /// Liga a tela à sessão a partir do byte `desde` (`None`: tudo o que o anel
 /// guarda). `false` se a sessão não existe mais.
 #[tauri::command]

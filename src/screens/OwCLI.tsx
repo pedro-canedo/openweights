@@ -30,15 +30,19 @@ import {
   limpar,
   marcarTelaVisivel,
   montar,
+  novoOwcli,
   novoShell,
   temSelecao,
   terminaisStore,
   type Layout,
+  type OpcoesOwcli,
   type SessaoTerminal,
 } from "../lib/terminals";
-import { Button, IconButton } from "../components/ui/Button";
+import { pickWorkspace } from "../lib/api";
+import { Button, IconButton, inputClass } from "../components/ui/Button";
+import { Dialog } from "../components/ui/Dialog";
 import Icon, { type IconName } from "../components/ui/Icon";
-import { Menu } from "../components/ui/Popover";
+import { Menu, usePopover } from "../components/ui/Popover";
 import { StatusDot } from "../components/ui/Shell";
 import { Split } from "../components/ui/Split";
 
@@ -48,6 +52,8 @@ export default function OwCLI() {
   const { t } = useTranslation();
   const e = useSyncExternalStore(terminaisStore.subscribe, terminaisStore.get);
   const [menu, setMenu] = useState<MenuAberto | null>(null);
+  const [dialogo, setDialogo] = useState(false);
+  const nova = usePopover("menu");
 
   useEffect(() => {
     void iniciar();
@@ -125,7 +131,28 @@ export default function OwCLI() {
           <h2 className="text-[11px] font-semibold tracking-wide text-dim uppercase">
             {t("owcli.sessions")}
           </h2>
-          <IconButton icon="plus" label={t("owcli.newShell")} onClick={() => void novoShell()} />
+          <span className="relative">
+            <IconButton icon="plus" label={t("owcli.newSession")} {...nova.triggerProps} />
+            <Menu
+              {...nova.popoverProps}
+              label={t("owcli.newSession")}
+              className="absolute right-0 top-full mt-1"
+              items={[
+                {
+                  id: "agente",
+                  label: t("owcli.newAgent"),
+                  icon: "sparkles",
+                  onSelect: () => setDialogo(true),
+                },
+                {
+                  id: "terminal",
+                  label: t("owcli.newShell"),
+                  icon: "terminal",
+                  onSelect: () => void novoShell(),
+                },
+              ]}
+            />
+          </span>
         </div>
         {/* Lista, não tablist: cada sessão tem o próprio botão de fechar, e
             um tablist só pode conter abas. A ativa leva aria-current. */}
@@ -183,15 +210,29 @@ export default function OwCLI() {
               </div>
               <h1 className="text-lg font-semibold text-ink">{t("owcli.emptyTitle")}</h1>
               <p className="max-w-md text-sm leading-relaxed text-dim">{t("owcli.emptyHint")}</p>
-              <Button variant="primary" icon="plus" onClick={() => void novoShell()}>
-                {t("owcli.newShell")}
-              </Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button variant="primary" icon="sparkles" onClick={() => setDialogo(true)}>
+                  {t("owcli.openAgent")}
+                </Button>
+                <Button icon="terminal" onClick={() => void novoShell()}>
+                  {t("owcli.newShell")}
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="absolute inset-0">{grade}</div>
           )}
         </div>
       </section>
+
+      <NovaSessaoOwcli
+        aberto={dialogo}
+        aoFechar={() => setDialogo(false)}
+        aoAbrir={(opcoes) => {
+          setDialogo(false);
+          void novoOwcli(opcoes);
+        }}
+      />
 
       {menu && (
         <div className="fixed z-50" style={{ left: menu.x, top: menu.y }}>
@@ -221,6 +262,90 @@ export default function OwCLI() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Pasta, aprovação e sandbox do agente, antes de abrir. */
+function NovaSessaoOwcli({
+  aberto,
+  aoFechar,
+  aoAbrir,
+}: {
+  aberto: boolean;
+  aoFechar: () => void;
+  aoAbrir: (opcoes: OpcoesOwcli) => void;
+}) {
+  const { t } = useTranslation();
+  const [pasta, setPasta] = useState<string | null>(null);
+  const [aprovacao, setAprovacao] = useState<OpcoesOwcli["aprovacao"]>("on-request");
+  const [sandbox, setSandbox] = useState<OpcoesOwcli["sandbox"]>("workspace-write");
+  return (
+    <Dialog
+      open={aberto}
+      onClose={aoFechar}
+      title={t("owcli.agentDialogTitle")}
+      description={t("owcli.agentDialogHint")}
+      footer={
+        <>
+          <Button onClick={aoFechar}>{t("common.cancel")}</Button>
+          <Button
+            variant="primary"
+            icon="sparkles"
+            data-autofocus=""
+            onClick={() => aoAbrir({ pasta, aprovacao, sandbox })}
+          >
+            {t("owcli.open")}
+          </Button>
+        </>
+      }
+    >
+      <div className="mt-5 grid gap-4">
+        <div>
+          <span className="mb-1 block text-[12px] text-dim">{t("owcli.folder")}</span>
+          <div className="flex items-center gap-2">
+            <span
+              className="min-w-0 flex-1 truncate rounded-lg border border-edge-strong bg-panel2 px-3 py-1.5 font-mono text-[12px] text-ink select-text"
+              title={pasta ?? undefined}
+            >
+              {pasta ?? t("owcli.folderHome")}
+            </span>
+            <Button
+              size="sm"
+              onClick={async () => {
+                const escolhida = await pickWorkspace().catch(() => null);
+                if (escolhida) setPasta(escolhida);
+              }}
+            >
+              {t("owcli.chooseFolder")}
+            </Button>
+          </div>
+        </div>
+        <label className="grid gap-1">
+          <span className="text-[12px] text-dim">{t("owcli.approval")}</span>
+          <select
+            value={aprovacao}
+            onChange={(e) => setAprovacao(e.target.value as OpcoesOwcli["aprovacao"])}
+            className={inputClass}
+          >
+            <option value="on-request">{t("owcli.approvalOnRequest")}</option>
+            <option value="untrusted">{t("owcli.approvalUntrusted")}</option>
+            <option value="never">{t("owcli.approvalNever")}</option>
+          </select>
+        </label>
+        <label className="grid gap-1">
+          <span className="text-[12px] text-dim">{t("owcli.sandbox")}</span>
+          <select
+            value={sandbox}
+            onChange={(e) => setSandbox(e.target.value as OpcoesOwcli["sandbox"])}
+            className={inputClass}
+          >
+            <option value="workspace-write">{t("owcli.sandboxWrite")}</option>
+            <option value="read-only">{t("owcli.sandboxRead")}</option>
+            <option value="danger-full-access">{t("owcli.sandboxFull")}</option>
+          </select>
+        </label>
+      </div>
+    </Dialog>
   );
 }
 

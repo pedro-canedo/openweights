@@ -1559,6 +1559,23 @@
     "emptyPane": "Escolha uma sessão na lista ou abra um terminal neste painel.",
     "paneLabel": "Painel {{n}}",
     "splitWidth": "Largura dos painéis",
-    "splitHeight": "Altura dos painéis"
+    "splitHeight": "Altura dos painéis",
+    "newSession": "Nova sessão",
+    "newAgent": "Agente OwCLI…",
+    "openAgent": "Abrir o agente OwCLI",
+    "agentDialogTitle": "Abrir o agente OwCLI",
+    "agentDialogHint": "O OwCLI trabalha na pasta escolhida com os modelos do OpenWeights — os do Servidor Local não saem da sua máquina.",
+    "folder": "Pasta de trabalho",
+    "folderHome": "Pasta pessoal",
+    "chooseFolder": "Escolher…",
+    "approval": "Quando pedir sua aprovação",
+    "approvalOnRequest": "Quando precisar (recomendado)",
+    "approvalUntrusted": "Antes de qualquer comando",
+    "approvalNever": "Nunca — roda sozinho",
+    "sandbox": "O que ele pode fazer",
+    "sandboxWrite": "Ler e editar a pasta (recomendado)",
+    "sandboxRead": "Só ler",
+    "sandboxFull": "Tudo, sem limites",
+    "open": "Abrir"
   }
 }
