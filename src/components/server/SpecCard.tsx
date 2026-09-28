@@ -174,7 +174,7 @@ export default function SpecCard({ model }: { model: string }) {
               type="checkbox"
               checked={auto}
               onChange={(e) => alternarAuto(e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent,#7b5cff)]"
+              className="mt-0.5 h-4 w-4 shrink-0 accent-accent"
             />
             <span className="min-w-0">
               <span className="block text-[12px] text-ink">

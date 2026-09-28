@@ -5,9 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>OpenWeights</title>
+    <script>
+      // O tema entra antes do primeiro quadro: sem isto, quem usa o claro vê
+      // um relance do fundo escuro até o main.tsx rodar.
+      try {
+        if (localStorage.getItem("theme") === "light") {
+          document.documentElement.dataset.theme = "light";
+        }
+      } catch {}
+    </script>
     <style>
       html {
         background: #0a0d14;
+      }
+      html[data-theme="light"] {
+        background: #f5f6f9;
       }
     </style>
   </head>

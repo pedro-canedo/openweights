@@ -18,7 +18,7 @@
 .workspace-page section h2:not(.harness-lead) { font-size: 15px; font-weight: 600; }
 .workspace-page section > div:first-child { flex-wrap: wrap; }
 .workspace-page button, .workspace-page summary, .workspace-page select { transition: background-color .15s, border-color .15s, color .15s; }
-.workspace-page :is(button, summary, select, input):focus-visible { outline: 2px solid var(--lr-accent); outline-offset: 4px; }
+.workspace-page :is(button, summary, select, input):focus-visible { outline: 2px solid var(--lr-focus); outline-offset: 4px; }
 .workspace-page label:focus-within { border-color: var(--lr-accent); }
 .settings-layout, .harness-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .settings-layout > section, .settings-layout > div > section, .harness-layout > section { margin-top: 0; }
@@ -48,9 +48,13 @@
   --color-accent: var(--lr-accent);
   --color-accent2: var(--lr-accent2);
   --color-accent3: var(--lr-accent3);
-  --color-ok: #22c55e;
-  --color-warn: #eab308;
-  --color-bad: #ef4444;
+  --color-accent-ink: var(--lr-accent-ink);
+  --color-accent-fill: var(--lr-accent-fill);
+  --color-edge-strong: var(--lr-edge-strong);
+  --color-focus: var(--lr-focus);
+  --color-ok: var(--lr-ok);
+  --color-warn: var(--lr-warn);
+  --color-bad: var(--lr-bad);
 }
 
 :root {
@@ -68,6 +72,18 @@
   --lr-accent: #7b5cff;
   --lr-accent2: #3d8bff;
   --lr-accent3: #00d8fc;
+  /* O roxo da marca não passa no AA nem como texto sobre o painel (4,2:1) nem
+     como fundo de rótulo branco (4,4:1) — e nenhum roxo único passa nos dois.
+     Daí dois derivados: um mais claro para texto, um mais escuro para botão
+     cheio. scripts/contrast-check.mjs cobra os pares no build. */
+  --lr-accent-ink: #9d87ff;
+  --lr-accent-fill: #6d4ff2;
+  /* A borda de sempre (edge) é decoração; campo e controle precisam de 3:1. */
+  --lr-edge-strong: #626b80;
+  --lr-focus: #9d87ff;
+  --lr-ok: #22c55e;
+  --lr-warn: #eab308;
+  --lr-bad: #f25c5c;
 }
 
 :root[data-theme="light"] {
@@ -81,6 +97,14 @@
   --lr-accent: #6a44ee;
   --lr-accent2: #2472e6;
   --lr-accent3: #00a2c2;
+  --lr-accent-ink: #6a44ee;
+  --lr-accent-fill: #6a44ee;
+  --lr-edge-strong: #7c8499;
+  --lr-focus: #6a44ee;
+  /* Os tons do escuro somem no branco (verde 2,3:1, amarelo 1,9:1). */
+  --lr-ok: #15733a;
+  --lr-warn: #8a5a06;
+  --lr-bad: #b91c1c;
 }
 
 html,
@@ -95,6 +119,26 @@ body {
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   overflow: hidden;
   user-select: none;
+}
+
+/* Anel de foco para quem navega pelo teclado, em qualquer tela. Fica fora das
+   camadas do Tailwind de propósito: estilo sem camada vence `outline-none`,
+   então nenhum botão fica sem foco visível. Campo de texto fica de fora —
+   :focus-visible também casa no clique, e ele já tem a borda de foco. */
+:where(button, a[href], summary, select, [role="tab"], [role="button"], [role="menuitem"], [tabindex]:not([tabindex="-1"]), input:is([type="checkbox"], [type="radio"], [type="range"])):focus-visible {
+  outline: 2px solid var(--lr-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 *::-webkit-scrollbar {

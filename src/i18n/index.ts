@@ -13,4 +13,10 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
+// O leitor de tela e a hifenização leem o idioma do <html>, que nasce pt-BR.
+document.documentElement.lang = i18n.language;
+i18n.on("languageChanged", (lng) => {
+  document.documentElement.lang = lng;
+});
+
 export default i18n;

@@ -30,6 +30,8 @@ pub fn criar(app: &tauri::App) -> tauri::Result<()> {
         WebviewBuilder::new(WEBVIEW_DO_APP, WebviewUrl::default())
             // O app trata arrastar arquivo na própria UI (dragDropEnabled: false).
             .disable_drag_drop_handler()
+            // Ctrl + / Ctrl - (e Ctrl + roda) para ampliar a interface.
+            .zoom_hotkeys_enabled(true)
             .auto_resize(),
         LogicalPosition::new(0.0, 0.0),
         tamanho,
