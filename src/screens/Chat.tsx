@@ -251,6 +251,25 @@ function toApiMessages(history: UiMessage[]): ChatMessage[] {
   });
 }
 
+/** O último modelo escolhido no seletor, para a próxima conversa nova. */
+const CHAVE_MODELO = "ow.chat.model";
+
+function modeloLembrado(): string | null {
+  try {
+    return localStorage.getItem(CHAVE_MODELO);
+  } catch {
+    return null;
+  }
+}
+
+function lembrarModelo(model: string) {
+  try {
+    localStorage.setItem(CHAVE_MODELO, model);
+  } catch {
+    // sem armazenamento: a escolha vale só nesta sessão
+  }
+}
+
 export default function Chat() {
   const { t } = useTranslation();
   const { chats, openId, openNew } = useSyncExternalStore(
@@ -318,8 +337,15 @@ export default function Chat() {
       const options =
         pending && !list.includes(pending) ? [pending, ...list] : list;
       setModels(options);
+      // Conversa nova: o último modelo escolhido, se ainda está na lista.
+      const lembrado = modeloLembrado();
       setSelectedModel(
-        (cur) => pendingModelRef.current || cur || options[0] || "",
+        (cur) =>
+          pendingModelRef.current ||
+          cur ||
+          (lembrado && options.includes(lembrado) ? lembrado : "") ||
+          options[0] ||
+          "",
       );
     });
 
@@ -899,6 +925,7 @@ export default function Chat() {
                         value={selectedModel}
                         onChange={(model) => {
                           setSelectedModel(model);
+                          lembrarModelo(model);
                           // Trocar de modelo no meio da conversa precisa ficar
                           // gravado (os params são salvos por conversa).
                           setParams((p) =>

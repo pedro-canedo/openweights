@@ -99,6 +99,11 @@ Esse último número vem do servidor, não do chat — então ele conta o agente
 código e qualquer app externo apontado para a sua API, não só o que você digita
 aqui.
 
+Clicar no nome do modelo lista todos os que o Servidor Local sabe servir, com
+os que estão na memória; **Carregar** e **Descarregar** ficam ali mesmo, sem
+sair da tela em que você está. O ícone de gráfico, no canto direito, abre o
+monitor de hardware.
+
 ## Simples e Avançado
 
 Uma instalação nova abre no modo **Simples**. A barra lateral mostra o que você

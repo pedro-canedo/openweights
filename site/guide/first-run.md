@@ -101,6 +101,11 @@ That last number comes from the server, not from the chat — so it counts the
 coding agent and any external app pointed at your API, not only what you type
 here.
 
+Clicking the model name lists every model the Local Server can serve, with
+which ones are in memory; **Load** and **Unload** are right there, without
+leaving the screen you are on. The chart icon at the far right opens the
+hardware monitor.
+
 ## Simple and Advanced
 
 A new install opens in **Simple** mode. The sidebar shows what you need to chat

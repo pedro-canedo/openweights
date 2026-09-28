@@ -1,10 +1,12 @@
 // Seletor combinado de modelo + esforço, no estilo do picker do composer:
 // gatilho "Nome + esforço", lista de modelos e esforço / mais modelos no rodapé.
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useDismiss } from "../ui/camada";
+import { routerModels } from "../../lib/flags";
 import { useModo } from "../../lib/mode";
+import { normalizar } from "../../lib/comandos";
 import { splitModelRef } from "../../lib/providers";
 import {
   EFFORT_MAX_TOKENS,
@@ -120,10 +122,30 @@ export default function ModelSelect({
     setPanel(null);
   });
 
+  const [busca, setBusca] = useState("");
+  // Os modelos que o Router tem na memória agora: trocar para um deles é
+  // instantâneo; para os outros, a primeira resposta espera carregar.
+  const [carregados, setCarregados] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!open) return;
+    setBusca("");
+    routerModels().then(
+      (ms) => setCarregados(new Set(ms.filter((m) => m.state === "loaded").map((m) => m.id))),
+      () => setCarregados(new Set()),
+    );
+  }, [open]);
+
   const options =
     value && !models.includes(value) ? [value, ...models] : models;
   const empty = options.length === 0;
-  const { primary, extra } = splitModels(options, value);
+  const termos = normalizar(busca).split(/\s+/).filter(Boolean);
+  const { primary, extra } =
+    termos.length > 0
+      ? {
+          primary: options.filter((m) => termos.every((t) => normalizar(m).includes(t))),
+          extra: [] as string[],
+        }
+      : splitModels(options, value);
 
   const pickModel = (model: string) => {
     onChange(model);
@@ -180,6 +202,25 @@ export default function ModelSelect({
           data-overlay=""
           className="absolute right-0 bottom-full z-30 mb-2 w-80 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
         >
+          {options.length > PRIMARY_LIMIT && (
+            <div className="px-2 pb-1.5">
+              <input
+                type="search"
+                aria-label={t("chat.searchModel")}
+                placeholder={t("chat.searchModel")}
+                value={busca}
+                autoFocus
+                onChange={(e) => {
+                  setBusca(e.target.value);
+                  setPanel(null);
+                }}
+                className="w-full rounded-lg border border-edge-strong bg-panel2 px-2.5 py-1.5 text-[12px] text-ink placeholder:text-dim outline-none focus:border-accent-ink"
+              />
+            </div>
+          )}
+          {termos.length > 0 && primary.length === 0 && (
+            <p className="px-3 py-2 text-[12px] text-dim">{t("chat.noModelMatch")}</p>
+          )}
           {primary.map((m) => (
             <button
               key={m}
@@ -189,6 +230,14 @@ export default function ModelSelect({
             >
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
+                  {carregados.has(m) && (
+                    <span
+                      role="img"
+                      aria-label={t("chat.modelLoaded")}
+                      title={t("chat.modelLoaded")}
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-ok"
+                    />
+                  )}
                   <span className="min-w-0 truncate text-[13px] text-ink">
                     {shortModel(m)}
                   </span>

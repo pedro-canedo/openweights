@@ -174,6 +174,8 @@ export function enginePreview(model?: string | null): Promise<EnginePreview> {
 export function routerModels(): Promise<RouterModelView[]> {
   if (!isTauri) {
     return Promise.resolve([
+      // O mesmo da biblioteca simulada: o seletor do Chat o marca como carregado.
+      { id: "Qwen3-8B-UD-Q4_K_XL.gguf", state: "loaded" },
       { id: "Qwen3.6-27B-MTP-Q4_K_M.gguf", state: "loaded" },
       { id: "gemma-3-4b-it-Q4_K_M.gguf", state: "unloaded" },
     ]);

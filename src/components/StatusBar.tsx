@@ -8,6 +8,7 @@ import Icon, { type IconName } from "./ui/Icon";
 import { telemetryStore } from "./monitor/telemetryStore";
 import { ClusterChip } from "./server/ClusterPanel";
 import { getServerLive, type ServerLive } from "../lib/api";
+import ModelosDoServidor from "./ModelosDoServidor";
 
 function Meter({ percent }: { percent: number }) {
   const p = Math.max(0, Math.min(100, percent));
@@ -90,7 +91,7 @@ export default function StatusBar() {
 
 
   return (
-    <footer className="flex h-9 shrink-0 items-center gap-4 overflow-hidden border-t border-edge bg-panel px-4">
+    <footer className="flex h-9 shrink-0 items-center gap-4 overflow-x-clip border-t border-edge bg-panel px-4">
       {tel ? (
         <>
           <Stat
@@ -183,19 +184,9 @@ export default function StatusBar() {
       )}
 
       <div className="ml-auto flex items-center gap-3">
-        {live?.model && (
-          <span
-            title={live.model}
-            className="flex max-w-56 items-center gap-1.5 text-[11px] text-dim"
-          >
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                live.generating ? "animate-pulse bg-accent" : "bg-ok"
-              }`}
-            />
-            <span className="truncate">{live.model}</span>
-          </span>
-        )}
+        {/* O modelo carregado; clicar abre os do Router, com carregar e
+            descarregar ali mesmo. */}
+        <ModelosDoServidor live={live} />
         {/* Janela ocupada: a conta que decide quando a conversa vai começar a
             esquecer o começo. */}
         {live?.ctxTotal != null &&
