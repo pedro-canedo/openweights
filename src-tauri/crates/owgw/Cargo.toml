@@ -1,0 +1,25 @@
+[package]
+name = "lr_owgw"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Gateway do OwCLI: um endereço só, token, rota pelo prefixo do modelo e a chave de cada fonte injetada no app"
+
+[dependencies]
+serde_json.workspace = true
+log.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+# Servidor em hyper cru (como o lr_decisor): a resposta em streaming
+# atravessa sem buffer. O cliente é o reqwest do workspace, porque o
+# OpenRouter é HTTPS.
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "http1"] }
+http-body-util = "0.1"
+bytes = "1"
+http = "1"
+futures-util = { version = "0.3", default-features = false }
+getrandom = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

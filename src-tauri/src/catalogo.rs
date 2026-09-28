@@ -229,5 +229,7 @@ pub fn agendar(app: &AppHandle) {
         if agenticow_de_pe {
             crate::commands_agenticow::empurrar_catalogo(&state).await;
         }
+        // O OwCLI: rotas do gateway e o openweights.json (só se já foi usado).
+        crate::commands_owcli::sincronizar(&app).await;
     });
 }

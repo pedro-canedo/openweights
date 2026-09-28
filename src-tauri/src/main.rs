@@ -8,6 +8,7 @@ mod commands_cluster;
 mod commands_flags;
 mod commands_harness;
 mod commands_jev;
+mod commands_owcli;
 mod commands_power;
 mod commands_providers;
 mod commands_terminal;
@@ -105,6 +106,15 @@ fn main() {
             // O coletor das estatísticas de serviço: cada tick pega o
             // estado pelo handle, então só pode nascer DEPOIS do manage.
             serve_stats::spawn_loop(app.handle().clone());
+
+            // Quem já usa o OwCLI tem o gateway de pé desde o boot — o `owcli`
+            // do terminal do sistema pode estar esperando.
+            {
+                let h = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    commands_owcli::sincronizar(&h).await;
+                });
+            }
 
             let cluster = app.state::<state::AppState>().cluster.clone();
             let handle = app.handle().clone();
@@ -218,6 +228,7 @@ fn main() {
             commands_terminal::terminal_listar,
             commands_terminal::area_de_transferencia_ler,
             commands_terminal::area_de_transferencia_escrever,
+            commands_owcli::owcli_ligar,
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,
