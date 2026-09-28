@@ -252,7 +252,7 @@ pub async fn models_search(
     state: State<'_, AppState>,
     query: String,
     sort: Option<String>,
-) -> CmdResult<Vec<ModelSummary>> {
+) -> CmdResult<Vec<ModelSummaryView>> {
     let sort = match sort.as_deref() {
         Some("downloads") => SortBy::Downloads,
         Some("likes") => SortBy::Likes,
@@ -263,11 +263,50 @@ pub async fn models_search(
     // cliente guardado carrega o token de quando a janela abriu. Sem renovar,
     // o Hub responde 401 e a tela inteira vira "algo deu errado" — um
     // catálogo público escondido atrás de uma sessão vencida.
-    hf_pronto(&state)
+    let modelos = hf_pronto(&state)
         .await
         .search(&query, sort, 30)
         .await
-        .map_err(err_str)
+        .map_err(err_str)?;
+    let budget = advisor::MemoryBudget::from_profile(&state.profile)
+        .with_extra_vram(state.cluster.remote_vram_now());
+    Ok(modelos
+        .into_iter()
+        .map(|summary| ModelSummaryView {
+            fit: selo_da_lista(&budget, summary.params_total),
+            summary,
+        })
+        .collect())
+}
+
+/// Um modelo da busca, com o que dá para dizer sobre esta máquina sem abrir
+/// o repositório.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelSummaryView {
+    #[serde(flatten)]
+    pub summary: ModelSummary,
+    /// Só os extremos que a estimativa acerta: ver [`selo_da_lista`].
+    pub fit: Option<advisor::FitVerdict>,
+}
+
+/// O selo da lista: a versão de ~4,5 bits por peso (a faixa do Q4_K_M),
+/// estimada pelos parâmetros. Sem a geometria do modelo a conta é a de um
+/// denso: num MoE ela erra o meio — diria "parcial" onde o detalhe, com a
+/// geometria, diz "especialistas na RAM" —, mas não os extremos. Se o
+/// arquivo inteiro cabe na GPU, cabe; se não cabe nem na RAM com a VRAM,
+/// não roda. Só esses dois viram selo; o meio fica para o detalhe.
+fn selo_da_lista(
+    budget: &advisor::MemoryBudget,
+    params: Option<u64>,
+) -> Option<advisor::FitVerdict> {
+    let params = params.filter(|p| *p > 0)?;
+    let meta = advisor::ModelMeta::estimate_from_params(params, 8192);
+    let arquivo = params.saturating_mul(9) / 16;
+    match advisor::evaluate(budget, &meta, arquivo).verdict {
+        v @ (advisor::FitVerdict::FullGpu { .. } | advisor::FitVerdict::WontFit) => Some(v),
+        _ => None,
+    }
 }
 
 /// As fotos de perfil dos autores da lista, por nome — só as que existem.
@@ -2204,6 +2243,35 @@ mod testes_motor {
             motor_de_medicao(true, false),
             Err("optimization-prism-required")
         );
+    }
+}
+
+#[cfg(test)]
+mod testes_selo {
+    use super::selo_da_lista;
+    use lr_advisor::{FitVerdict, MemoryBudget};
+
+    #[test]
+    fn a_lista_so_mostra_os_extremos() {
+        let gb = 1u64 << 30;
+        // Uma RTX 3090 com 64 GB de RAM.
+        let maquina = MemoryBudget {
+            vram_bytes: 24 * gb,
+            ram_bytes: 64 * gb,
+            unified: false,
+        };
+        assert!(matches!(
+            selo_da_lista(&maquina, Some(8_000_000_000)),
+            Some(FitVerdict::FullGpu { .. })
+        ));
+        assert!(matches!(
+            selo_da_lista(&maquina, Some(400_000_000_000)),
+            Some(FitVerdict::WontFit)
+        ));
+        // Um 70B cabe dividido (ou seria MoE): sem selo, o detalhe responde.
+        assert_eq!(selo_da_lista(&maquina, Some(70_000_000_000)), None);
+        assert_eq!(selo_da_lista(&maquina, None), None);
+        assert_eq!(selo_da_lista(&maquina, Some(0)), None);
     }
 }
 

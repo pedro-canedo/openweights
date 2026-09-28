@@ -117,6 +117,7 @@ const MODELS: ModelSummary[] = [
     caps: { vision: false, tools: true, reasoning: true },
   },
   {
+    fit: { kind: "fullGpu", ngl: 36 },
     id: "unsloth/Qwen3-8B-GGUF",
     author: "unsloth",
     name: "Qwen3-8B-GGUF",
@@ -131,6 +132,7 @@ const MODELS: ModelSummary[] = [
     caps: { vision: false, tools: true, reasoning: true },
   },
   {
+    fit: { kind: "wontFit" },
     id: "bartowski/gemma-3-27b-it-GGUF",
     author: "bartowski",
     name: "gemma-3-27b-it-GGUF",

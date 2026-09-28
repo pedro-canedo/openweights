@@ -100,3 +100,14 @@ test("o botão não fica preso em Baixando quando o download segue", async ({ pa
     page.getByRole("group", { name: "UD-Q2_K_XL" }).getByRole("button", { name: /^Baixando… \d+%$/ }),
   ).toBeVisible();
 });
+
+test("a lista mostra só os extremos que dá para estimar sem abrir o modelo", async ({ page }) => {
+  await abrirDescobrir(page);
+  const lista = page.getByRole("button", { name: /Qwen3-8B-GGUF/ });
+  await expect(lista).toContainText("Cabe na GPU");
+  await expect(page.getByRole("button", { name: /gemma-3-27b-it-GGUF/ })).toContainText("Grande demais");
+  // O MoE, sem veredito seguro pela contagem de parâmetros, fica sem selo.
+  const moe = page.getByRole("button", { name: /Qwen3-Coder-30B-A3B-Instruct-GGUF/ }).first();
+  await expect(moe).not.toContainText("Cabe na GPU");
+  await expect(moe).not.toContainText("Grande demais");
+});

@@ -61,6 +61,13 @@ mandavam você para o navegador:
 - **O que o autor escreveu** — o cartão do modelo do repositório, renderizado
   aqui dentro.
 
+Na lista de resultados, um selo antecipa os casos claros: **Cabe na GPU** quando
+a versão de 4 bits do modelo cabe inteira na placa, e **Grande demais** quando
+ela não cabe nem somando a memória da placa e a do sistema. É uma estimativa
+pela contagem de parâmetros, e por isso só os extremos viram selo; o meio (um
+modelo que divide entre placa e CPU, ou um MoE com os especialistas na RAM) fica
+para o detalhe, que faz a conta de cada versão.
+
 A versão recomendada para esta máquina vem no topo, com o tamanho no próprio
 botão (**Baixar recomendado**); as outras ficam em **Outras versões**, na ordem
 de sempre. Antes de começar, o app confere o espaço em disco — o que este

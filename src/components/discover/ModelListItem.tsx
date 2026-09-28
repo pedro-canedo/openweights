@@ -73,6 +73,17 @@ export default function ModelListItem({
       <span className="flex shrink-0 flex-col items-end gap-1">
         {quando && <span className="text-[10px] text-dim">{quando}</span>}
         <span className="flex items-center gap-1">
+          {model.fit && (model.fit.kind === "fullGpu" || model.fit.kind === "wontFit") && (
+            <span
+              title={t("discover.fitHint")}
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                model.fit.kind === "fullGpu" ? "bg-ok/15 text-ok" : "bg-bad/15 text-bad"
+              }`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+              {t(model.fit.kind === "fullGpu" ? "discover.fitGpu" : "discover.fitTooBig")}
+            </span>
+          )}
           <CapBadges caps={model.caps} />
         </span>
       </span>

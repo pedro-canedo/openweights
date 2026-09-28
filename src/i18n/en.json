@@ -153,7 +153,10 @@
     "noSpace": "Not enough disk space: this download needs {{need}} free (counting the other downloads and some headroom) and there is {{free}}.",
     "downloadRecommended": "Download recommended ({{size}})",
     "otherVersions": "Other versions ({{n}})",
-    "noneFits": "No version fits this machine well. They are all below, with what each one needs."
+    "noneFits": "No version fits this machine well. They are all below, with what each one needs.",
+    "fitGpu": "Fits the GPU",
+    "fitTooBig": "Too big",
+    "fitHint": "Estimate for the 4-bit version on this machine. The detail has the numbers for each version."
   },
   "downloadsPanel": {
     "title": "Downloads",

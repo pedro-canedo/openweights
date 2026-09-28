@@ -164,6 +164,11 @@ export type RuntimeEvent =
 // -------------------------------------------------------------- modelos ---
 
 export interface ModelSummary {
+  /**
+   * A versão de 4 bits nesta máquina, estimada pelos parâmetros — só os
+   * extremos (cabe na GPU, grande demais); o meio fica para o detalhe.
+   */
+  fit?: FitVerdict | null;
   id: string;
   author: string;
   name: string;

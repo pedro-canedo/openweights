@@ -59,6 +59,13 @@ you to the browser:
   branch is there, the capability is real.
 - **What its author wrote** — the repository's model card, rendered in the app.
 
+In the results list, a badge flags the clear cases: **Fits the GPU** when the
+model's 4-bit version fits entirely on the card, and **Too big** when it does
+not fit even adding the card's memory to the system's. It is an estimate from
+the parameter count, so only the extremes become a badge; the middle (a model
+split between card and CPU, or an MoE with its experts in RAM) is left to the
+detail, which does the math for each version.
+
 The version recommended for this machine comes first, with its size on the
 button itself (**Download recommended**); the others sit under **Other
 versions**, in the usual order. Before starting, the app checks the disk space

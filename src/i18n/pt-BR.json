@@ -153,7 +153,10 @@
     "noSpace": "Falta espaço em disco: este download precisa de {{need}} livres (contando os outros downloads e uma folga) e há {{free}}.",
     "downloadRecommended": "Baixar recomendado ({{size}})",
     "otherVersions": "Outras versões ({{n}})",
-    "noneFits": "Nenhuma versão cabe bem nesta máquina. Todas estão abaixo, com o que cada uma pede."
+    "noneFits": "Nenhuma versão cabe bem nesta máquina. Todas estão abaixo, com o que cada uma pede.",
+    "fitGpu": "Cabe na GPU",
+    "fitTooBig": "Grande demais",
+    "fitHint": "Estimativa para a versão de 4 bits nesta máquina. O detalhe tem a conta de cada versão."
   },
   "downloadsPanel": {
     "title": "Downloads",
