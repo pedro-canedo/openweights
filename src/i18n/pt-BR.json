@@ -1605,5 +1605,43 @@
     "loadingModels": "Procurando os modelos do OpenWeights…",
     "brainTitle": "Escolha o cérebro do OwCLI",
     "brainBody": "O OwCLI pensa com os modelos que o OpenWeights já sabe servir, e agora não há nenhum. Ligue uma das fontes abaixo e volte aqui."
+  },
+  "palette": {
+    "title": "Comandos",
+    "placeholder": "Digite um comando ou o nome de uma tela…",
+    "results": "Comandos",
+    "empty": "Nada encontrado para “{{query}}”.",
+    "goTo": "Ir para {{screen}}",
+    "goToTab": "Ir para {{screen}} › {{tab}}",
+    "newTerminal": "Novo terminal",
+    "shortcuts": "Atalhos de teclado",
+    "serverStart": "Iniciar o Servidor Local",
+    "serverStop": "Parar o Servidor Local",
+    "serverRestart": "Reiniciar o Servidor Local",
+    "modeAdvanced": "Trocar para o modo Avançado",
+    "modeSimple": "Trocar para o modo Simples",
+    "themeLight": "Usar o tema claro",
+    "themeDark": "Usar o tema escuro",
+    "group": {
+      "screens": "Telas",
+      "actions": "Ações",
+      "server": "Servidor",
+      "preferences": "Preferências"
+    }
+  },
+  "shortcuts": {
+    "title": "Atalhos de teclado",
+    "hint": "Com o foco num terminal do OwCLI, o teclado é do programa que roda nele: só o Ctrl+Shift+K chega ao app.",
+    "palette": "Abrir a paleta de comandos",
+    "paletteInTerminal": "Abrir a paleta com o foco num terminal",
+    "newChat": "Nova conversa",
+    "settings": "Configurações",
+    "screens": "Ir às telas, na ordem da barra lateral",
+    "sheet": "Mostrar esta folha",
+    "send": "Enviar a mensagem (no compositor do Chat)",
+    "newLine": "Quebrar a linha (no compositor)",
+    "attach": "Anexar arquivo (no compositor)",
+    "terminalCopy": "Copiar a seleção (no terminal)",
+    "terminalPaste": "Colar (no terminal)"
   }
 }

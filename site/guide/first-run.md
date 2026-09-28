@@ -115,6 +115,19 @@ everything, switch to **Advanced** under **Settings → Preferences → Mode**. 
 you already used OpenWeights before this mode existed (the engine installed or
 a model in the library), the app opens in Advanced and nothing moves.
 
+## Command palette and shortcuts
+
+**Ctrl+K** opens the command palette: type a few letters of what you want (a
+screen, a tab such as *Local Server › Performance*, *New conversation*, *Start
+the Local Server*, switching mode or theme) and press **Enter**. It is also how
+anything hidden in Simple mode stays one keystroke away.
+
+A few shortcuts work anywhere: **Ctrl+N** starts a conversation, **Ctrl+,**
+opens Settings and **Ctrl+1…9** go to the screens in sidebar order. **?** shows
+the full list. With focus in an OwCLI terminal, the keyboard belongs to the
+program running there (Ctrl+K deletes to the end of the line in the shell), and
+the palette opens with **Ctrl+Shift+K**.
+
 ## Where to go next
 
 - [Models and quantization](/guide/models) — how to read the colours.

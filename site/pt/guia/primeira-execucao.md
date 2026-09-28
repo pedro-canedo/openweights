@@ -113,6 +113,19 @@ tudo, troque para **Avançado** em **Configurações → Preferências → Modo*
 você já usava o OpenWeights antes deste modo existir (o motor instalado ou um
 modelo na biblioteca), o app abre no Avançado e nada muda de lugar.
 
+## Paleta de comandos e atalhos
+
+**Ctrl+K** abre a paleta de comandos: digite algumas letras do que você quer
+(uma tela, uma aba como *Servidor Local › Desempenho*, *Nova conversa*,
+*Iniciar o Servidor Local*, trocar de modo ou de tema) e aperte **Enter**. É
+também o que mantém a um atalho de distância tudo o que o modo Simples esconde.
+
+Alguns atalhos valem em qualquer lugar: **Ctrl+N** começa uma conversa,
+**Ctrl+,** abre Configurações e **Ctrl+1…9** vão às telas na ordem da barra
+lateral. **?** mostra a lista completa. Com o foco num terminal do OwCLI, o
+teclado é do programa que roda nele (no shell, Ctrl+K apaga até o fim da linha),
+e a paleta abre com **Ctrl+Shift+K**.
+
 ## Para onde ir agora
 
 - [Modelos e quantização](/pt/guia/modelos) — como ler as cores.

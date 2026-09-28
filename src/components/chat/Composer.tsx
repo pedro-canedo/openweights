@@ -60,6 +60,7 @@ export default function Composer({
   const { t } = useTranslation();
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const caixaRef = useRef<HTMLDivElement>(null);
   const [mentionIdx, setMentionIdx] = useState(0);
 
   const mention = useMemo(() => {
@@ -99,6 +100,8 @@ export default function Composer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Só com o foco no compositor: no resto da tela o Ctrl+U não é dele.
+      if (!caixaRef.current?.contains(e.target as Node)) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "u") {
         e.preventDefault();
         if (!generating) fileRef.current?.click();
@@ -165,7 +168,10 @@ export default function Composer({
             ))}
           </div>
         )}
-      <div className="flex flex-col rounded-[28px] border border-edge bg-panel2 px-3.5 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.28)]">
+      <div
+        ref={caixaRef}
+        className="flex flex-col rounded-[28px] border border-edge bg-panel2 px-3.5 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.28)]"
+      >
         <input
           ref={fileRef}
           type="file"

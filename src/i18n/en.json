@@ -1605,5 +1605,43 @@
     "loadingModels": "Looking for OpenWeights models…",
     "brainTitle": "Choose OwCLI's brain",
     "brainBody": "OwCLI thinks with the models OpenWeights can already serve, and there are none right now. Turn on one of the sources below and come back."
+  },
+  "palette": {
+    "title": "Commands",
+    "placeholder": "Type a command or a screen name…",
+    "results": "Commands",
+    "empty": "Nothing found for “{{query}}”.",
+    "goTo": "Go to {{screen}}",
+    "goToTab": "Go to {{screen}} › {{tab}}",
+    "newTerminal": "New terminal",
+    "shortcuts": "Keyboard shortcuts",
+    "serverStart": "Start the Local Server",
+    "serverStop": "Stop the Local Server",
+    "serverRestart": "Restart the Local Server",
+    "modeAdvanced": "Switch to Advanced mode",
+    "modeSimple": "Switch to Simple mode",
+    "themeLight": "Use the light theme",
+    "themeDark": "Use the dark theme",
+    "group": {
+      "screens": "Screens",
+      "actions": "Actions",
+      "server": "Server",
+      "preferences": "Preferences"
+    }
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "hint": "With focus in an OwCLI terminal, the keyboard belongs to the program running in it: only Ctrl+Shift+K reaches the app.",
+    "palette": "Open the command palette",
+    "paletteInTerminal": "Open the palette with focus in a terminal",
+    "newChat": "New conversation",
+    "settings": "Settings",
+    "screens": "Go to screens, in sidebar order",
+    "sheet": "Show this sheet",
+    "send": "Send the message (in the Chat composer)",
+    "newLine": "New line (in the composer)",
+    "attach": "Attach a file (in the composer)",
+    "terminalCopy": "Copy the selection (in a terminal)",
+    "terminalPaste": "Paste (in a terminal)"
   }
 }

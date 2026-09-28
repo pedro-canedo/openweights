@@ -1,8 +1,11 @@
-import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { listLocalModels } from "./lib/api";
+import { montarComandos, novaConversa, TELAS_POR_NUMERO } from "./lib/comandos";
 import { decidirModoInicial, useModo } from "./lib/mode";
 import { onNavigate, type Screen } from "./lib/nav";
+import { errorMessage } from "./lib/serverSession";
+import { useTema } from "./lib/tema";
 import { engineStore, motorPedeAtencao, verificarMotor } from "./lib/engine";
 import { iniciar as iniciarTerminais } from "./lib/terminals";
 import StatusBar from "./components/StatusBar";
@@ -12,8 +15,9 @@ import Onboarding from "./components/Onboarding";
 import NavConversations from "./components/NavConversations";
 import UpdateBadge from "./components/UpdateBadge";
 import { OwMark, OwWordmark } from "./components/OpenWeightsLogo";
+import CommandPalette, { FolhaDeAtalhos } from "./components/CommandPalette";
 import { ConfirmHost } from "./components/ui/Dialog";
-import { ToastHost } from "./components/ui/Toast";
+import { toast, ToastHost } from "./components/ui/Toast";
 import Discover from "./screens/Discover";
 import MyModels from "./screens/MyModels";
 import Chat from "./screens/Chat";
@@ -81,6 +85,62 @@ export default function App() {
   });
 
   useEffect(() => onNavigate(ir), []);
+
+  // A paleta de comandos e os atalhos de teclado.
+  const tema = useTema();
+  const [paleta, setPaleta] = useState(false);
+  const [folha, setFolha] = useState(false);
+  const comandos = useMemo(
+    () =>
+      montarComandos(t, {
+        modo,
+        tema,
+        mostrarAtalhos: () => setFolha(true),
+        aoFalhar: (e) => toast({ message: errorMessage(e), tone: "bad" }),
+      }),
+    [t, modo, tema],
+  );
+  useEffect(() => {
+    // Na captura: chega antes do xterm, que consumiria a tecla.
+    const tecla = (e: KeyboardEvent) => {
+      const alvo = e.target instanceof Element ? e.target : null;
+      const noTerminal = !!alvo?.closest(".xterm");
+      const mod = (e.ctrlKey || e.metaKey) && !e.altKey;
+      const k = e.key.toLowerCase();
+      // Dentro do terminal, Ctrl+K é do shell (apaga até o fim da linha):
+      // a paleta abre com Ctrl+Shift+K. Fora, com qualquer um dos dois.
+      if (mod && k === "k" && (e.shiftKey || !noTerminal)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setFolha(false);
+        setPaleta(true);
+        return;
+      }
+      // O resto do teclado é do programa no terminal — e, com um diálogo
+      // aberto, de quem está nele.
+      if (noTerminal || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (mod && !e.shiftKey) {
+        if (k === "n") {
+          e.preventDefault();
+          novaConversa();
+        } else if (e.key === ",") {
+          e.preventDefault();
+          ir("settings");
+        } else if (/^[1-9]$/.test(e.key)) {
+          e.preventDefault();
+          ir(TELAS_POR_NUMERO[Number(e.key) - 1]);
+        }
+        return;
+      }
+      const digitando = !!alvo?.closest('input, textarea, select, [contenteditable="true"]');
+      if (e.key === "?" && !mod && !digitando) {
+        e.preventDefault();
+        setFolha(true);
+      }
+    };
+    window.addEventListener("keydown", tecla, true);
+    return () => window.removeEventListener("keydown", tecla, true);
+  }, []);
 
   useEffect(() => {
     void decidirModoInicial();
@@ -320,6 +380,8 @@ export default function App() {
       <GenerationPanel />
       <DownloadsPanel />
       <Onboarding />
+      <CommandPalette aberta={paleta} aoFechar={() => setPaleta(false)} comandos={comandos} />
+      <FolhaDeAtalhos aberta={folha} aoFechar={() => setFolha(false)} />
       <ToastHost />
       <ConfirmHost />
     </div>

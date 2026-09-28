@@ -24,6 +24,7 @@ import { invoke, isTauri } from "../lib/tauri";
 import { formatBytes } from "../lib/format";
 import { navigate } from "../lib/nav";
 import { definirModo, useModo, type Modo } from "../lib/mode";
+import { aplicarTema, useTema, type Tema } from "../lib/tema";
 import type { HardwareProfile, HfWhoami } from "../lib/types";
 import { Card, Page, Row, StatusDot } from "../components/ui/Shell";
 import Icon from "../components/ui/Icon";
@@ -35,9 +36,7 @@ export default function Settings() {
   const modo = useModo();
   const [profile, setProfile] = useState<HardwareProfile | null>(null);
   const [paths, setPaths] = useState<{ modelsDir: string } | null>(null);
-  const [theme, setTheme] = useState(
-    () => localStorage.getItem("theme") ?? "dark",
-  );
+  const theme = useTema();
 
   useEffect(() => {
     getHardwareProfile().then(setProfile).catch(() => setProfile(null));
@@ -47,13 +46,6 @@ export default function Settings() {
         .catch(() => {});
     }
   }, []);
-
-  function applyTheme(next: string) {
-    setTheme(next);
-    localStorage.setItem("theme", next);
-    if (next === "light") document.documentElement.dataset.theme = "light";
-    else delete document.documentElement.dataset.theme;
-  }
 
   function applyLanguage(lng: string) {
     localStorage.setItem("language", lng);
@@ -96,7 +88,7 @@ export default function Settings() {
             <select
               aria-label={t("settings.theme")}
               value={theme}
-              onChange={(e) => applyTheme(e.target.value)}
+              onChange={(e) => aplicarTema(e.target.value as Tema)}
               className={select}
             >
               <option value="dark">{t("settings.dark")}</option>
