@@ -46,7 +46,6 @@ import {
   type Attachment,
 } from "../components/chat/AttachmentChips";
 import ChatHero from "../components/chat/ChatHero";
-import { ApprovalSelect } from "../components/chat/ChatProperties";
 import Composer from "../components/chat/Composer";
 import {
   WorkspaceExplorer,
@@ -882,15 +881,8 @@ export default function Chat() {
                   workspaceFiles={workspaceFiles}
                   startActions={<WorkspaceTrigger />}
                   leftActions={
-                    <>
-                      {/* Onde vivia o toggle de agente: o CTA do harness. */}
-                      <AgenticowComposerButton />
-                      <ApprovalSelect
-                        params={params}
-                        onChange={setParams}
-                        disabled={generating}
-                      />
-                    </>
+                    // Onde vivia o toggle de agente: o CTA do harness.
+                    <AgenticowComposerButton />
                   }
                   rightActions={
                     <>

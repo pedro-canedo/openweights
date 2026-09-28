@@ -18,6 +18,11 @@
     "chat": "Chat",
     "agenticow": "AgenticOw",
     "owcli": "OwCLI",
+    "group": {
+      "start": "Get started",
+      "agents": "Agents",
+      "advanced": "Advanced"
+    },
     "server": "Local Server",
     "providers": "Sources",
     "settings": "Settings",
@@ -187,16 +192,6 @@
       "body": "OpenWeights' coding agent, with its own screen right here in the app and all your models already set up.",
       "open": "Open AgenticOw",
       "openPanel": "Go to AgenticOw"
-    },
-    "approval": {
-      "manual": "Approve manually",
-      "auto": "Approve automatically",
-      "ignore": "Skip all approvals",
-      "short": {
-        "manual": "Manual",
-        "auto": "Auto",
-        "ignore": "Skip"
-      }
     },
     "effort": {
       "label": "Effort",
@@ -665,6 +660,11 @@
   },
   "settings": {
     "title": "Settings",
+    "mode": "Mode",
+    "modeSimple": "Simple",
+    "modeAdvanced": "Advanced",
+    "modeSimpleHint": "Shows the essentials for chatting with your models. Local Server, Sources and Train leave the sidebar, and the chat drops the fine-tuning controls. Nothing stops working.",
+    "modeAdvancedHint": "Shows everything: the Local Server, the model sources, Train and the chat's fine-tuning controls, such as reasoning effort.",
     "theme": "Theme",
     "dark": "Dark",
     "light": "Light",

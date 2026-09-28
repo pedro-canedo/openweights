@@ -91,6 +91,20 @@ Esse último número vem do servidor, não do chat — então ele conta o agente
 código e qualquer app externo apontado para a sua API, não só o que você digita
 aqui.
 
+## Simples e Avançado
+
+Uma instalação nova abre no modo **Simples**. A barra lateral mostra o que você
+precisa para conversar com os seus modelos, em dois grupos: **Começar** (Chat,
+Descobrir, Meus Modelos) e **Agentes** (AgenticOw, OwCLI). O Servidor Local, as
+fontes de modelo e o Treinar saem da frente, e o chat fica sem os ajustes finos,
+como o esforço de raciocínio.
+
+Nada deixa de funcionar no Simples. Um botão que leva a uma dessas telas
+continua abrindo, e a barra mostra a tela enquanto você está nela. Para ver
+tudo, troque para **Avançado** em **Configurações → Preferências → Modo**. Se
+você já usava o OpenWeights antes deste modo existir (o motor instalado ou um
+modelo na biblioteca), o app abre no Avançado e nada muda de lugar.
+
 ## Para onde ir agora
 
 - [Modelos e quantização](/pt/guia/modelos) — como ler as cores.

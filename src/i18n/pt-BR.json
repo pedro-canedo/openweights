@@ -18,6 +18,11 @@
     "chat": "Chat",
     "agenticow": "AgenticOw",
     "owcli": "OwCLI",
+    "group": {
+      "start": "Começar",
+      "agents": "Agentes",
+      "advanced": "Avançado"
+    },
     "server": "Servidor Local",
     "providers": "Fontes",
     "settings": "Configurações",
@@ -187,16 +192,6 @@
       "body": "O agente de código do OpenWeights, com tela própria aqui no app e todos os seus modelos já configurados.",
       "open": "Abrir o AgenticOw",
       "openPanel": "Ir para o AgenticOw"
-    },
-    "approval": {
-      "manual": "Aprovar manualmente",
-      "auto": "Aprovar automaticamente",
-      "ignore": "Ignorar todas as aprovações",
-      "short": {
-        "manual": "Manual",
-        "auto": "Auto",
-        "ignore": "Ignorar"
-      }
     },
     "effort": {
       "label": "Esforço",
@@ -665,6 +660,11 @@
   },
   "settings": {
     "title": "Configurações",
+    "mode": "Modo",
+    "modeSimple": "Simples",
+    "modeAdvanced": "Avançado",
+    "modeSimpleHint": "Mostra o essencial para conversar com os seus modelos. Servidor Local, Fontes e Treinar saem da barra lateral, e o chat fica sem os ajustes finos. Nada deixa de funcionar.",
+    "modeAdvancedHint": "Mostra tudo: o Servidor Local, as fontes de modelo, o Treinar e os ajustes finos do chat, como o esforço de raciocínio.",
     "theme": "Tema",
     "dark": "Escuro",
     "light": "Claro",

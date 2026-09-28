@@ -23,6 +23,7 @@ import {
 import { invoke, isTauri } from "../lib/tauri";
 import { formatBytes } from "../lib/format";
 import { navigate } from "../lib/nav";
+import { definirModo, useModo, type Modo } from "../lib/mode";
 import type { HardwareProfile, HfWhoami } from "../lib/types";
 import { Card, Page, Row, StatusDot } from "../components/ui/Shell";
 import Icon from "../components/ui/Icon";
@@ -31,6 +32,7 @@ import EngineCard from "../components/settings/EngineCard";
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
+  const modo = useModo();
   const [profile, setProfile] = useState<HardwareProfile | null>(null);
   const [paths, setPaths] = useState<{ modelsDir: string } | null>(null);
   const [theme, setTheme] = useState(
@@ -72,6 +74,24 @@ export default function Settings() {
 
       <Card title={t("settings.prefs")} hint={t("settings.prefsHint")}>
         <div className="mt-3 divide-y divide-edge">
+          <Row label={t("settings.mode")}>
+            <select
+              aria-label={t("settings.mode")}
+              aria-describedby="settings-mode-hint"
+              value={modo}
+              onChange={(e) => definirModo(e.target.value as Modo)}
+              className={select}
+            >
+              <option value="simples">{t("settings.modeSimple")}</option>
+              <option value="avancado">{t("settings.modeAdvanced")}</option>
+            </select>
+            <span
+              id="settings-mode-hint"
+              className="mt-1 block text-[12px] leading-relaxed text-dim"
+            >
+              {t(modo === "simples" ? "settings.modeSimpleHint" : "settings.modeAdvancedHint")}
+            </span>
+          </Row>
           <Row label={t("settings.theme")}>
             <select
               aria-label={t("settings.theme")}

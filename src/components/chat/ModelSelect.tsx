@@ -4,6 +4,7 @@
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useDismiss } from "../ui/camada";
+import { useModo } from "../../lib/mode";
 import { splitModelRef } from "../../lib/providers";
 import {
   EFFORT_MAX_TOKENS,
@@ -109,6 +110,9 @@ export default function ModelSelect({
   disabled?: boolean;
 }) {
   const { t } = useTranslation();
+  // O esforço de raciocínio é ajuste fino: no Simples o seletor some e vale o
+  // da conversa (Alto, se ninguém mexeu).
+  const avancado = useModo() === "avancado";
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<"effort" | "more" | null>(null);
   const ref = useDismiss(open, () => {
@@ -150,7 +154,9 @@ export default function ModelSelect({
         title={
           empty
             ? t("chat.modelSelect")
-            : `${value} · ${t("chat.effort.label")}: ${t(`chat.effort.${params.effort}`)}`
+            : avancado
+              ? `${value} · ${t("chat.effort.label")}: ${t(`chat.effort.${params.effort}`)}`
+              : value
         }
         className={`flex max-w-56 items-center gap-1.5 rounded-full px-2 py-1 text-xs transition-colors disabled:opacity-40 hover:bg-panel ${
           open ? "bg-panel text-ink" : "text-ink"
@@ -161,7 +167,7 @@ export default function ModelSelect({
         <span className="truncate">
           {empty ? t("chat.modelSelect") : shortModel(value)}
         </span>
-        {!empty && (
+        {!empty && avancado && (
           <span className="shrink-0 text-dim">
             {t(`chat.effort.${params.effort}`)}
           </span>
@@ -196,56 +202,60 @@ export default function ModelSelect({
             </button>
           ))}
 
-          <div className="my-1.5 border-t border-edge" />
+          {avancado && (
+            <>
+              <div className="my-1.5 border-t border-edge" />
 
-          <div className="relative" onMouseEnter={() => setPanel("effort")}>
-            <button
-              type="button"
-              onClick={() =>
-                setPanel((cur) => (cur === "effort" ? null : "effort"))
-              }
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] hover:bg-panel2"
-            >
-              <span className="flex-1 text-ink">{t("chat.effort.label")}</span>
-              <span className="text-dim">
-                {t(`chat.effort.${params.effort}`)}
-              </span>
-              <Chevron dir="right" />
-            </button>
-            {panel === "effort" && (
-              <Submenu>
-                <p className="px-3 pt-1.5 pb-2 text-[11px] leading-relaxed text-dim">
-                  {t("chat.effort.hint")}
-                </p>
-                {EFFORTS.map((level) => (
-                  <button
-                    key={level}
-                    type="button"
-                    onClick={() => pickEffort(level)}
-                    className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-panel2"
-                  >
-                    <span>{t(`chat.effort.${level}`)}</span>
-                    {level === "high" && (
-                      <span className="rounded-md bg-panel2 px-1.5 py-0.5 text-[10px] text-dim">
-                        {t("chat.effort.default")}
-                      </span>
-                    )}
-                    {level === "max" && (
-                      <span
-                        title={t("chat.effort.maxHint")}
-                        className="flex h-4 w-4 items-center justify-center rounded-full border border-dim/50 text-[9px] text-dim"
+              <div className="relative" onMouseEnter={() => setPanel("effort")}>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPanel((cur) => (cur === "effort" ? null : "effort"))
+                  }
+                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] hover:bg-panel2"
+                >
+                  <span className="flex-1 text-ink">{t("chat.effort.label")}</span>
+                  <span className="text-dim">
+                    {t(`chat.effort.${params.effort}`)}
+                  </span>
+                  <Chevron dir="right" />
+                </button>
+                {panel === "effort" && (
+                  <Submenu>
+                    <p className="px-3 pt-1.5 pb-2 text-[11px] leading-relaxed text-dim">
+                      {t("chat.effort.hint")}
+                    </p>
+                    {EFFORTS.map((level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        onClick={() => pickEffort(level)}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-[13px] text-ink hover:bg-panel2"
                       >
-                        i
-                      </span>
-                    )}
-                    <span className="ml-auto">
-                      {params.effort === level ? <Check /> : null}
-                    </span>
-                  </button>
-                ))}
-              </Submenu>
-            )}
-          </div>
+                        <span>{t(`chat.effort.${level}`)}</span>
+                        {level === "high" && (
+                          <span className="rounded-md bg-panel2 px-1.5 py-0.5 text-[10px] text-dim">
+                            {t("chat.effort.default")}
+                          </span>
+                        )}
+                        {level === "max" && (
+                          <span
+                            title={t("chat.effort.maxHint")}
+                            className="flex h-4 w-4 items-center justify-center rounded-full border border-dim/50 text-[9px] text-dim"
+                          >
+                            i
+                          </span>
+                        )}
+                        <span className="ml-auto">
+                          {params.effort === level ? <Check /> : null}
+                        </span>
+                      </button>
+                    ))}
+                  </Submenu>
+                )}
+              </div>
+            </>
+          )}
 
           {extra.length > 0 && (
             <div className="relative" onMouseEnter={() => setPanel("more")}>

@@ -3,6 +3,7 @@
 
 import { useTranslation } from "react-i18next";
 import { AgenticowHeroCard } from "./AgenticowCta";
+import { useModo } from "../../lib/mode";
 
 const CARDS = [
   {
@@ -63,6 +64,7 @@ export default function ChatHero({
   onPick: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
+  const modo = useModo();
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-6">
@@ -105,8 +107,10 @@ export default function ChatHero({
           ))}
         </div>
 
-        {/* O modo agente agora é o AgenticOw — o convite mora aqui. */}
-        <AgenticowHeroCard />
+        {/* O modo agente agora é o AgenticOw — o convite mora aqui. Ele fala
+            com quem usava o app antes da troca, que é quem está no Avançado;
+            no Simples, os agentes estão à vista no grupo deles da barra. */}
+        {modo === "avancado" && <AgenticowHeroCard />}
       </div>
     </div>
   );

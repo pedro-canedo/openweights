@@ -94,6 +94,20 @@ That last number comes from the server, not from the chat — so it counts the
 coding agent and any external app pointed at your API, not only what you type
 here.
 
+## Simple and Advanced
+
+A new install opens in **Simple** mode. The sidebar shows what you need to chat
+with your models, in two groups: **Get started** (Chat, Discover, My Models)
+and **Agents** (AgenticOw, OwCLI). The Local Server, the model sources and
+Train stay out of the way, and the chat drops fine-tuning controls such as
+reasoning effort.
+
+Nothing stops working in Simple mode. A button that leads to one of those
+screens still opens it, and the sidebar shows it while you are there. To see
+everything, switch to **Advanced** under **Settings → Preferences → Mode**. If
+you already used OpenWeights before this mode existed (the engine installed or
+a model in the library), the app opens in Advanced and nothing moves.
+
 ## Where to go next
 
 - [Models and quantization](/guide/models) — how to read the colours.

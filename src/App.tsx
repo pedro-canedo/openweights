@@ -1,5 +1,7 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
+import { listLocalModels } from "./lib/api";
+import { decidirModoInicial, useModo } from "./lib/mode";
 import { onNavigate, type Screen } from "./lib/nav";
 import { engineStore, motorPedeAtencao, verificarMotor } from "./lib/engine";
 import { iniciar as iniciarTerminais } from "./lib/terminals";
@@ -45,9 +47,27 @@ const ICONE_PAINEL =
 /** Onde a escolha de recolher a barra mora entre sessões. */
 const CHAVE_BARRA = "ow.sidebar.collapsed";
 
+/**
+ * A barra lateral em grupos, pela função de cada tela. O grupo "Avançado"
+ * some no modo Simples; Configurações fica sempre, sozinha no fim.
+ */
+const GRUPOS: { id: "start" | "agents" | "advanced"; telas: Screen[] }[] = [
+  { id: "start", telas: ["chat", "discover", "models"] },
+  { id: "agents", telas: ["agenticow", "owcli"] },
+  { id: "advanced", telas: ["server", "providers", "studio"] },
+];
+
 export default function App() {
   const { t } = useTranslation();
   const [screen, setScreen] = useState<Screen>("discover");
+  const modo = useModo();
+  // A primeira tela: Descobrir para quem ainda não tem modelo, o Chat para
+  // quem já tem — a menos que a pessoa já tenha ido a algum lugar.
+  const navegou = useRef(false);
+  const ir = (s: Screen) => {
+    navegou.current = true;
+    setScreen(s);
+  };
   // A barra recolhida devolve ~180 px ao palco — o que importa de verdade
   // com o harness embutido, que é uma aplicação inteira dentro do nosso
   // quadro. A escolha sobrevive ao fechar o app; um `localStorage` que falhe
@@ -60,7 +80,16 @@ export default function App() {
     }
   });
 
-  useEffect(() => onNavigate(setScreen), []);
+  useEffect(() => onNavigate(ir), []);
+
+  useEffect(() => {
+    void decidirModoInicial();
+    listLocalModels()
+      .then((modelos) => {
+        if (modelos.length > 0 && !navegou.current) setScreen("chat");
+      })
+      .catch(() => {});
+  }, []);
 
   // Os terminais do OwCLI avisam mesmo com a tela fechada ("precisa de
   // você" vira aviso do sistema) — o store liga os avisos logo no começo.
@@ -91,17 +120,59 @@ export default function App() {
     }
   }, [recolhida]);
 
-  const items: Screen[] = [
-    "discover",
-    "models",
-    "studio",
-    "chat",
-    "agenticow",
-    "owcli",
-    "server",
-    "providers",
-    "settings",
-  ];
+  // No Simples o grupo Avançado some — menos a tela aberta agora, se alguém
+  // chegou a ela por um botão: a barra continua dizendo onde a pessoa está.
+  const grupos = GRUPOS.map((g) => ({
+    ...g,
+    telas:
+      g.id === "advanced" && modo === "simples"
+        ? g.telas.filter((s) => s === screen)
+        : g.telas,
+  })).filter((g) => g.telas.length > 0);
+
+  const item = (s: Screen) => (
+    <button
+      key={s}
+      onClick={() => ir(s)}
+      aria-current={screen === s ? "page" : undefined}
+      // Recolhida, o rótulo vira `title`: o ícone sozinho não diz
+      // "Fontes" para quem chegou agora.
+      title={recolhida ? t(`nav.${s}`) : undefined}
+      aria-label={recolhida ? t(`nav.${s}`) : undefined}
+      className={`flex items-center rounded-lg py-2 text-left text-sm transition-colors ${
+        recolhida ? "justify-center px-0" : "gap-3 px-3"
+      } ${
+        screen === s
+          ? "bg-panel2 text-ink"
+          : "text-dim hover:bg-panel2/60 hover:text-ink"
+      }`}
+    >
+      <span className="relative shrink-0">
+        <svg
+          className="h-4.5 w-4.5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          viewBox="0 0 24 24"
+        >
+          <path d={icons[s]} />
+        </svg>
+        {/* Recolhida, o ponto no ícone é o único aviso possível. */}
+        {avisos[s] && recolhida && (
+          <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-warn" />
+        )}
+      </span>
+      {!recolhida && t(`nav.${s}`)}
+      {avisos[s] && !recolhida && (
+        <span
+          className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warn"
+          title={t("settings.engine.navAlert")}
+        />
+      )}
+    </button>
+  );
 
   return (
     <div className="flex h-full flex-col">
@@ -169,49 +240,33 @@ export default function App() {
           )}
 
           <div className="flex shrink-0 flex-col gap-0.5 px-2">
-            {items.map((s) => (
-              <button
-                key={s}
-                onClick={() => setScreen(s)}
-                aria-current={screen === s ? "page" : undefined}
-                // Recolhida, o rótulo vira `title`: o ícone sozinho não diz
-                // "Fontes" para quem chegou agora.
-                title={recolhida ? t(`nav.${s}`) : undefined}
-                aria-label={recolhida ? t(`nav.${s}`) : undefined}
-                className={`flex items-center rounded-lg py-2 text-left text-sm transition-colors ${
-                  recolhida ? "justify-center px-0" : "gap-3 px-3"
-                } ${
-                  screen === s
-                    ? "bg-panel2 text-ink"
-                    : "text-dim hover:bg-panel2/60 hover:text-ink"
-                }`}
-              >
-                <span className="relative shrink-0">
-                  <svg
-                    className="h-4.5 w-4.5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    viewBox="0 0 24 24"
+            {grupos.map((g, i) => (
+              <Fragment key={g.id}>
+                {recolhida ? (
+                  // Sem largura para o título, um traço separa os grupos.
+                  i > 0 && <div className="mx-2 my-1.5 h-px bg-edge" />
+                ) : (
+                  <div
+                    id={`nav-grupo-${g.id}`}
+                    className={`px-3 pb-1 text-[10.5px] font-semibold tracking-wide text-dim uppercase ${
+                      i > 0 ? "pt-3" : "pt-0.5"
+                    }`}
                   >
-                    <path d={icons[s]} />
-                  </svg>
-                  {/* Recolhida, o ponto no ícone é o único aviso possível. */}
-                  {avisos[s] && recolhida && (
-                    <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-warn" />
-                  )}
-                </span>
-                {!recolhida && t(`nav.${s}`)}
-                {avisos[s] && !recolhida && (
-                  <span
-                    className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-warn"
-                    title={t("settings.engine.navAlert")}
-                  />
+                    {t(`nav.group.${g.id}`)}
+                  </div>
                 )}
-              </button>
+                <div
+                  role="group"
+                  aria-labelledby={recolhida ? undefined : `nav-grupo-${g.id}`}
+                  aria-label={recolhida ? t(`nav.group.${g.id}`) : undefined}
+                  className="flex flex-col gap-0.5"
+                >
+                  {g.telas.map(item)}
+                </div>
+              </Fragment>
             ))}
+            <div className={recolhida ? "mx-2 my-1.5 h-px bg-edge" : "h-2"} />
+            {item("settings")}
           </div>
 
           {/* Conversas e versão só existem com largura para o texto: em 56 px
