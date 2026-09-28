@@ -1,5 +1,18 @@
 # Novidades
 
+## 0.25.1
+
+**No Linux, a janela do app deixa de apagar quando aparece um emoji.** O
+navegador que vai dentro do AppImage foi compilado contra uma versão do
+FreeType, a biblioteca que desenha as fontes, e usa a do sistema. Em sistemas
+com FreeType mais novo e o emoji colorido no formato COLRv1, como o Fedora 44,
+ele lia no lugar errado as cores dos emojis com gradiente e caía — bastava o
+modelo terminar a resposta com um rosto sorrindo. Agora o app esconde essas
+fontes da própria interface quando as versões não batem, e os emojis aparecem
+em preto e branco. O primeiro modelo sugerido também ficou mais leve de
+baixar: numa máquina com placa de vídeo, vem numa versão de 4 a 5 bits por peso
+em vez da de qualidade máxima. Veja [solução de problemas](/pt/guia/solucao-de-problemas).
+
 ## 0.25.0
 
 **Terminais de verdade dentro do app, e um caminho mais curto para quem está

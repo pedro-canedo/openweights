@@ -1,5 +1,18 @@
 # What's new
 
+## 0.25.1
+
+**On Linux, the app window no longer goes blank when an emoji shows up.** The
+browser engine inside the AppImage was built against one version of FreeType,
+the library that draws fonts, and uses the system's. On systems with a newer
+FreeType and colour emoji in the COLRv1 format, such as Fedora 44, it read the
+colours of gradient emoji from the wrong place and crashed — a model ending its
+answer with a smiling face was enough. The app now hides those fonts from its
+own interface when the versions differ, and emoji show in black and white. The
+first suggested model is also lighter to download: on a machine with a
+graphics card, it comes in a 4 to 5 bits per weight version instead of the
+top-quality one. See [troubleshooting](/guide/troubleshooting).
+
 ## 0.25.0
 
 **Real terminals inside the app, and a shorter path for newcomers.** The

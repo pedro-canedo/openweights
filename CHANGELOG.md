@@ -10,6 +10,11 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.25.1] — 2026-09-28
+
+- On Linux (AppImage), the app window went blank — and blank again on every reload — when an emoji with a gradient, such as the smiling face or the rocket, showed up on screen. It happened at the end of a chat answer, in the terminal or in a text field. The browser engine bundled in the package was built against one version of FreeType (the library that draws fonts) and uses the system's; on systems with a newer FreeType and the colour emoji in the COLRv1 format, such as Fedora 44, it read the gradient colours from the wrong place and crashed. The app now hides those fonts from its own interface when the versions differ, and emoji show in black and white. Programs the app opens (an editor started from the terminal, for instance) keep the system fonts.
+- The first model suggested on first run comes in a light version, 4 to 5 bits per weight, on machines with a graphics card too: on an RTX 3090, Ornith 9B goes from a 17 GB download to about 5.5 GB. The best-quality version is still in Discover.
+
 ## [0.25.0] — 2026-09-28
 
 - **Terminals inside the app.** The OwCLI screen opens real shells (bash, zsh, PowerShell), several at once, in a grid of 1, 2 or 4 panes. A session keeps running when you switch screens, an amber dot (and a system notification, with the window unfocused) tells you when a program needs your attention, and Ctrl+Shift+C and Ctrl+Shift+V copy and paste.
