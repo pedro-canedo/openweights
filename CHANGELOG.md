@@ -10,6 +10,23 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.25.0] — 2026-09-28
+
+- **Terminals inside the app.** The OwCLI screen opens real shells (bash, zsh, PowerShell), several at once, in a grid of 1, 2 or 4 panes. A session keeps running when you switch screens, an amber dot (and a system notification, with the window unfocused) tells you when a program needs your attention, and Ctrl+Shift+C and Ctrl+Shift+V copy and paste.
+- Claude Code, Aider and OpenCode, opened from **Local Server → Use it in another app**, start in a session on that screen, with a real terminal. On Linux and macOS they used to run with no terminal at all. On Windows, **External terminal** is still there.
+- **Simple and Advanced mode.** A new install starts in Simple: the sidebar shows Get started (Chat, Discover, My Models) and Agents, and leaves out the Local Server, Sources, Train and the chat's fine-tuning controls. Anyone updating stays in Advanced. The switch lives in **Settings → Preferences**.
+- **First run goes all the way to the first conversation**, in three steps: the computer, the engine and the first model. The app suggests three models that fit the machine, with Ornith 9B first, and **Download and chat** opens Chat with the chosen model once the download finishes.
+- **Command palette (Ctrl+K)** with every screen, tab and action, plus shortcuts: Ctrl+N new conversation, Ctrl+, Settings, Ctrl+1…9 the screens, ? the full list.
+- **Quick model switch:** clicking the model in the status bar lists the Local Server's models, with Load and Unload right there. The chat's model picker marks the ones already in memory, gets a search box and remembers your last choice.
+- The **hardware monitor** opens again (the footer was hiding it), keeps 15 minutes of CPU, GPU, VRAM, power, temperature and tokens per second, and can be pinned.
+- On Linux with an NVIDIA card, **Bonsai 2 (PQ2_0) runs on the GPU**: the PrismML engine installs its CUDA 12.8 build (~727 MB, one click on the model card). The Vulkan engine ran this format on the CPU, under 1 token per second; on an RTX 3090 it is about 66.
+- **Models that fit entirely on the card are faster**: the app left one layer (the output one) on the CPU. On an RTX 3090, Qwen3-Coder-30B went from 139 to 161 tok/s and Bonsai 2 from 23 to 69.
+- **Chat answers from local models are saved to the conversation again.** And when the token limit runs out while the model is thinking, the message says so instead of stopping at "Thought for…".
+- A profile with MTP speculation on a model without an MTP head (Qwen3-Coder-30B-A3B, for example) no longer stops it from loading: the app loads it without MTP and the screen says so. And Discover no longer offers the separate MTP head or the imatrix as if they were the model.
+- Accessibility: readable status colours in the light theme, visible keyboard focus, dialogs and menus that keyboard and screen reader can reach, and **Interface size** in Settings.
+- The Train screen in English too, numbers in the interface language's format, searching the engine's flags by what they do and by category, a resizable Discover list and a **Help** item that opens this guide.
+- Automatic speculation tuning waits for a long request in progress to finish before restarting the engine.
+
 ## [0.24.2] — 2026-09-28
 
 - On Linux (AppImage), AgenticOw's "Choose workspace" opens the folder picker again. System programs launched by the app and by AgenticOw — `zenity`, `python3`, `curl`, `git`, the file manager, the browser — inherited the libraries bundled in the package and died with "symbol lookup error"; they now get the system environment, and the agent's tools can run Python and curl in the workspace again.

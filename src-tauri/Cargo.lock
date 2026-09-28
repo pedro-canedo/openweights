@@ -2509,7 +2509,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "lr_advisor"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "lr_models",
  "lr_proc",
@@ -2524,7 +2524,7 @@ dependencies = [
 
 [[package]]
 name = "lr_agenticow"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "log",
  "lr_fetch",
@@ -2539,7 +2539,7 @@ dependencies = [
 
 [[package]]
 name = "lr_cluster"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "getrandom 0.3.4",
  "hostname",
@@ -2555,7 +2555,7 @@ dependencies = [
 
 [[package]]
 name = "lr_decisor"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "bytes",
  "futures-util",
@@ -2573,7 +2573,7 @@ dependencies = [
 
 [[package]]
 name = "lr_engine"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "async-trait",
  "log",
@@ -2588,7 +2588,7 @@ dependencies = [
 
 [[package]]
 name = "lr_fetch"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "flate2",
  "futures-util",
@@ -2607,7 +2607,7 @@ dependencies = [
 
 [[package]]
 name = "lr_gateway"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "log",
  "lr_fetch",
@@ -2621,7 +2621,7 @@ dependencies = [
 
 [[package]]
 name = "lr_hw"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "log",
  "lr_types",
@@ -2635,7 +2635,7 @@ dependencies = [
 
 [[package]]
 name = "lr_models"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "futures-util",
  "getrandom 0.3.4",
@@ -2653,7 +2653,7 @@ dependencies = [
 
 [[package]]
 name = "lr_ninerouter"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "getrandom 0.3.4",
  "log",
@@ -2672,7 +2672,7 @@ dependencies = [
 
 [[package]]
 name = "lr_nodejs"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "log",
  "lr_fetch",
@@ -2686,7 +2686,7 @@ dependencies = [
 
 [[package]]
 name = "lr_owgw"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "bytes",
  "futures-util",
@@ -2703,7 +2703,7 @@ dependencies = [
 
 [[package]]
 name = "lr_proc"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "libc",
  "log",
@@ -2714,7 +2714,7 @@ dependencies = [
 
 [[package]]
 name = "lr_providers"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "log",
  "reqwest 0.12.28",
@@ -2726,7 +2726,7 @@ dependencies = [
 
 [[package]]
 name = "lr_pty"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "libc",
  "log",
@@ -2737,7 +2737,7 @@ dependencies = [
 
 [[package]]
 name = "lr_runtime"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "flate2",
  "log",
@@ -2756,7 +2756,7 @@ dependencies = [
 
 [[package]]
 name = "lr_store"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "lr_types",
  "rusqlite",
@@ -2767,7 +2767,7 @@ dependencies = [
 
 [[package]]
 name = "lr_types"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3284,7 +3284,7 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "openweights"
-version = "0.24.2"
+version = "0.25.0"
 dependencies = [
  "arboard",
  "ashpd",

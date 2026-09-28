@@ -30,7 +30,8 @@ Windows, macOS and Linux.
 - 🤗 **Hugging Face models, already filtered** — searches GGUF and recommends the
   quantization for *your* PC: green runs fully on the GPU, yellow splits with the
   CPU, grey is CPU-only.
-- 💬 **Local chat** — streaming, markdown and history on disk.
+- 💬 **Local chat** — streaming, markdown and history on disk; switch the loaded
+  model from the status bar.
 - 🤖 **A coding agent with a screen of its own** — **AgenticOw**, our fork of
   the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
   ([pedro-canedo/agenticow](https://github.com/pedro-canedo/agenticow)), is a
@@ -42,7 +43,16 @@ Windows, macOS and Linux.
   and always sees your current providers and models: the list updates live as
   you start the engine, download a model or change a key, and API keys stay in
   the process memory, never in a file. Other agents — Claude Code, Aider,
-  OpenCode — get a ready-made command pointed at the local API.
+  OpenCode — open in a terminal session inside the app, pointed at the local
+  API.
+- 🖥️ **Real terminals inside the app** — the OwCLI screen runs shells (bash,
+  zsh, PowerShell) and coding agents side by side in a grid of 1, 2 or 4 panes.
+  Sessions keep running when you switch screens, and one that needs you gets a
+  mark in the list and, with the window unfocused, a system notification.
+- 🧭 **Simple to start, everything when you want it** — a new install opens in
+  Simple mode, and first run goes from detecting the hardware to a first model
+  that fits and a first conversation. Advanced shows every screen and knob; the
+  command palette (Ctrl+K) reaches any screen or action in either mode.
 - 🎛️ **Tunes itself for your machine** — no one has to learn what `-ts`, `-ub`
   or `-ctk` mean. The app asks the engine which devices exist and how much is
   free on each, reads the real layer count from the file, and asks llama.cpp
@@ -91,7 +101,8 @@ Windows, macOS and Linux.
   files use tensor types the standard llama.cpp refuses. The app reads the
   file header, installs PrismML's fork of llama.cpp together with the download
   in one click, and switches the local server to it when you pick the model
-  (and back to the official build when you pick another).
+  (and back to the official build when you pick another). On Linux with NVIDIA,
+  that engine's CUDA 12.8 build puts PQ2_0 on the card.
 - 🚪 **Single entry point (optional)** — a local Traefik that forwards one
   address to the local engine and to 9router by prefix, so another tool can
   point at OpenWeights without memorising ports. Not a tunnel: nothing becomes

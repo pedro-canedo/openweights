@@ -1,5 +1,21 @@
 # Novidades
 
+## 0.25.0
+
+**Terminais de verdade dentro do app, e um caminho mais curto para quem está
+começando.** A tela OwCLI abre shells de verdade, lado a lado numa grade, que
+continuam rodando quando você troca de tela e avisam quando precisam de você.
+É também ali que o Claude Code, o Aider e o OpenCode passam a abrir: no Linux
+e no macOS eles rodavam sem terminal nenhum, e uma interface de terminal sem
+terminal não tem como funcionar. Para quem chega agora, o app começa no modo
+Simples, com a barra lateral só com o que leva à primeira conversa, e o
+primeiro uso vai até ela: sugere um modelo que cabe na máquina, baixa e abre o
+Chat com ele. Quem já usava continua no Avançado, e nada fica fora de alcance:
+a paleta de comandos (Ctrl+K) chega a qualquer tela ou ação. No Linux com
+NVIDIA, o Bonsai 2 sai da CPU para a GPU, e todo modelo que cabe inteiro na
+placa fica mais rápido, porque o app deixava a última camada de fora. Veja
+[a primeira execução](/pt/guia/primeira-execucao) e [os terminais](/pt/guia/owcli).
+
 ## 0.24.2
 
 **No Linux, o AgenticOw volta a abrir pastas — e o chat do Bonsai 2 no
