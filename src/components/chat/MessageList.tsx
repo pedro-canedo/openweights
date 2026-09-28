@@ -316,6 +316,16 @@ export default function MessageList({
                       {t("chat.emptyAnswer")}
                     </p>
                   )}
+                  {/* O teto de tokens acabou. No raciocínio, sem isto a
+                      mensagem terminava no "Pensou por…" e parecia que o
+                      modelo tinha escolhido não responder. */}
+                  {m.metrics?.cutOff && !(generating && i === messages.length - 1) && (
+                    <p className="mt-1 text-[11px] leading-relaxed text-warn">
+                      {m.metrics.maxTokens != null
+                        ? t(m.metrics.cutOff === "reasoning" ? "chat.cutOffThinking" : "chat.cutOffAnswer", { n: m.metrics.maxTokens })
+                        : t(m.metrics.cutOff === "reasoning" ? "chat.cutOffThinkingContext" : "chat.cutOffAnswerContext")}
+                    </p>
+                  )}
                   {m.unsaved && (
                     <p className="mt-1 text-[11px] leading-relaxed text-warn">
                       {t("chat.notSaved")}

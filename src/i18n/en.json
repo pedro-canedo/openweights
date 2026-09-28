@@ -374,6 +374,10 @@
     "speak": "Read aloud",
     "speakStop": "Stop reading",
     "emptyAnswer": "(the model answered nothing)",
+    "cutOffThinking": "The {{n}}-token limit ran out while the model was thinking, so nothing was answered. Max effort has no limit; or raise the limit in Parameters.",
+    "cutOffAnswer": "The answer was cut off at the {{n}}-token limit.",
+    "cutOffThinkingContext": "The context ran out while the model was thinking, so nothing was answered.",
+    "cutOffAnswerContext": "The answer was cut off: the context ran out.",
     "notSaved": "Couldn't save this answer — it won't come back when you reopen the chat."
   },
   "agenticow": {

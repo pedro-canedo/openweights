@@ -374,6 +374,10 @@
     "speak": "Ouvir a resposta",
     "speakStop": "Parar de ler",
     "emptyAnswer": "(o modelo não respondeu nada)",
+    "cutOffThinking": "O limite de {{n}} tokens acabou enquanto o modelo pensava, e nada foi respondido. Em Esforço, Máx não tem limite; ou aumente o limite em Parâmetros.",
+    "cutOffAnswer": "A resposta foi cortada no limite de {{n}} tokens.",
+    "cutOffThinkingContext": "O contexto acabou enquanto o modelo pensava, e nada foi respondido.",
+    "cutOffAnswerContext": "A resposta foi cortada: o contexto acabou.",
     "notSaved": "Não consegui guardar esta resposta — ela não volta ao reabrir a conversa."
   },
   "agenticow": {

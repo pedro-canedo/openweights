@@ -8,7 +8,7 @@ vi.mock("./api", () => ({ addMessage: mocks.add, listChats: vi.fn(async () => []
 vi.mock("./llama", () => ({ streamChat: mocks.stream, completeOnce: mocks.title }));
 vi.mock("./serverSession", () => ({ ensureEndpoint: mocks.endpoint, listLoadedModels: vi.fn(async () => ["m"]), modelsMax: vi.fn(async () => 1), matchServerModel: (m: string) => m, visionModelFor: mocks.vision, errorMessage: String }));
 vi.mock("./chatStore", () => ({ chatStore: { setChats: vi.fn() } }));
-const result = { content: "ok", reasoning: "", tokensPerSec: 10, genTokens: 1, genMs: 100, thinkingMs: null, promptTokens: 8, cachedTokens: 4, promptTps: 100 };
+const result = { content: "ok", reasoning: "", tokensPerSec: 10, genTokens: 1, genMs: 100, thinkingMs: null, promptTokens: 8, cachedTokens: 4, promptTps: 100, finishReason: "stop" };
 const opts = (chatId: number, model = "m") => ({ chatId, model, messages: [{ role: "user", content: "hi" }], params: {} as any });
 let store: typeof import("./generationStore").generationStore;
 beforeEach(async () => {
@@ -141,6 +141,22 @@ describe("generation coordination", () => {
     expect(sent.templateEffort).toBe("xhigh");
     expect(sent.params.effort).toBe("max");
     expect(store.jobFor(1)?.metrics.jev).toEqual({ effort: "max", confidence: 0.9, source: "local" });
+  });
+  it("records when the token limit ran out while the model was still thinking", async () => {
+    mocks.stream.mockResolvedValue({ ...result, content: "", reasoning: "pensando…", finishReason: "length" });
+    store.start({ ...opts(1), params: { effort: "high", maxTokens: 4096 } as any }); await vi.advanceTimersByTimeAsync(10);
+    expect(store.jobFor(1)?.metrics).toMatchObject({ cutOff: "reasoning", maxTokens: 4096 });
+    // Vai para o banco com as métricas: sobrevive a reabrir a conversa.
+    expect(mocks.add.mock.calls[0][7]).toMatchObject({ cutOff: "reasoning", maxTokens: 4096 });
+  });
+  it("tells a cut answer from a cut thought, and a normal stop from both", async () => {
+    mocks.stream.mockResolvedValue({ ...result, content: "metade da", finishReason: "length" });
+    store.start({ ...opts(1), params: { maxTokens: null } as any }); await vi.advanceTimersByTimeAsync(10);
+    expect(store.jobFor(1)?.metrics).toMatchObject({ cutOff: "answer", maxTokens: null });
+
+    mocks.stream.mockResolvedValue(result);
+    store.start(opts(2)); await vi.advanceTimersByTimeAsync(10);
+    expect(store.jobFor(2)?.metrics.cutOff).toBeUndefined();
   });
   it("never translates the effort of a remote model", async () => {
     mocks.templateEffort.mockResolvedValue("xhigh");

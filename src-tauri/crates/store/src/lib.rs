@@ -50,6 +50,14 @@ pub struct GenerationMetrics {
     pub cached_tokens: Option<u64>,
     pub prompt_tps: Option<f64>,
     pub thinking_ms: Option<f64>,
+    /// O teto de tokens acabou: `"reasoning"` (nada foi respondido) ou
+    /// `"answer"` (resposta cortada). Guardado para o aviso voltar junto
+    /// com a conversa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cut_off: Option<String>,
+    /// O `max_tokens` daquela resposta, quando havia um.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,6 +482,8 @@ mod tests {
             cached_tokens: Some(50),
             prompt_tps: Some(300.0),
             thinking_ms: Some(59.0),
+            cut_off: Some("reasoning".into()),
+            max_tokens: Some(4096),
         };
         s.add_message_with_metrics(
             chat,
@@ -493,7 +503,35 @@ mod tests {
         let saved = messages[1].metrics.as_ref().unwrap();
         assert_eq!(saved.queue_ms, Some(2.5));
         assert_eq!(saved.cached_tokens, Some(50));
+        assert_eq!(saved.cut_off.as_deref(), Some("reasoning"));
+        assert_eq!(saved.max_tokens, Some(4096));
         assert_eq!(messages[1].run_id.as_deref(), Some("run-1"));
+    }
+
+    /// O que a interface manda no `message_add`: métricas sem os campos
+    /// novos (respostas de versões antigas e as que não foram cortadas) e
+    /// com campos que o backend não guarda (`jev`). As duas formas têm de
+    /// passar — um campo a mais ou a menos não pode custar a resposta.
+    #[test]
+    fn metrics_from_the_ui_deserialize_with_or_without_the_new_fields() {
+        let sem: GenerationMetrics = serde_json::from_value(serde_json::json!({
+            "runId": "r", "phase": "done", "queueMs": 1.5, "firstTokenMs": null,
+            "firstAnswerMs": null, "totalMs": 10.2, "promptTokens": 12, "cachedTokens": 0,
+            "promptTps": 900.5, "thinkingMs": null,
+            "jev": { "effort": "high", "confidence": 0.9, "source": "local" }
+        }))
+        .unwrap();
+        assert_eq!(sem.cut_off, None);
+        assert!(!serde_json::to_string(&sem).unwrap().contains("cutOff"));
+
+        let com: GenerationMetrics = serde_json::from_value(serde_json::json!({
+            "runId": "r", "phase": "done", "queueMs": null, "firstTokenMs": null,
+            "firstAnswerMs": null, "totalMs": null, "promptTokens": null, "cachedTokens": null,
+            "promptTps": null, "thinkingMs": null, "cutOff": "answer", "maxTokens": null
+        }))
+        .unwrap();
+        assert_eq!(com.cut_off.as_deref(), Some("answer"));
+        assert_eq!(com.max_tokens, None);
     }
 
     /// Um pânico segurando a conexão não pode condenar o banco: o processo

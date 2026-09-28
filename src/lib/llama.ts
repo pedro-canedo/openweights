@@ -66,6 +66,12 @@ export interface StreamChatResult {
   cachedTokens: number | null;
   /** Velocidade de processamento do prompt em tok/s (timings do servidor). */
   promptTps: number | null;
+  /**
+   * Por que o servidor parou (`finish_reason`): `"length"` é o teto de
+   * tokens — num modelo que pensa, pode ter acabado antes de qualquer
+   * resposta. `null` quando o servidor não disse.
+   */
+  finishReason: string | null;
 }
 
 // ------------------------------------------------- mini-store de geração ---
@@ -317,6 +323,7 @@ async function streamReal({
   let serverPromptTps: number | null = null;
   let done = false;
   let finished = false;
+  let finishReason: string | null = null;
 
   const emitText = (t: string) => {
     content += t;
@@ -346,7 +353,11 @@ async function streamReal({
       return; // linha parcial/ruído — ignora
     }
     if (chunk.error) throw new Error(chunk.error.message ?? "stream error");
-    if (chunk.choices?.some(c => c.finish_reason != null)) finished = true;
+    const motivo = chunk.choices?.find(c => c.finish_reason != null)?.finish_reason;
+    if (motivo != null) {
+      finished = true;
+      finishReason ??= motivo;
+    }
     if (chunk.usage) {
       const u = chunk.usage;
       if (typeof u.completion_tokens === "number") serverTokens = u.completion_tokens;
@@ -426,6 +437,7 @@ async function streamReal({
     promptTokens: serverPromptTokens,
     cachedTokens: serverCachedTokens,
     promptTps: serverPromptTps,
+    finishReason,
   };
 }
 
@@ -592,5 +604,6 @@ async function streamMock({
     promptTokens: 24,
     cachedTokens: 8,
     promptTps: 640,
+    finishReason: "stop",
   };
 }

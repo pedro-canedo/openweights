@@ -29,6 +29,17 @@ describe("stream protocol", () => {
     await expect(streamChat({ baseUrl: "http://test", model: "m", messages: [], signal: new AbortController().signal, onDelta: delta })).rejects.toThrow("before completion");
     expect(delta).toHaveBeenCalledWith("partial");
   });
+  it("reports why the server stopped", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => response(
+      event({ choices: [{ delta: { reasoning_content: "pensando" } }] }) +
+      event({ choices: [{ delta: {}, finish_reason: "length" }] }) + "data: [DONE]\n\n")));
+    const result = await streamChat({ baseUrl: "http://test", model: "m", messages: [], signal: new AbortController().signal, onDelta: () => {} });
+    expect(result).toMatchObject({ content: "", reasoning: "pensando", finishReason: "length" });
+
+    vi.stubGlobal("fetch", vi.fn(async () => response(event({ choices: [{ delta: { content: "ok" } }] }) + "data: [DONE]\n\n")));
+    const semMotivo = await streamChat({ baseUrl: "http://test", model: "m", messages: [], signal: new AbortController().signal, onDelta: () => {} });
+    expect(semMotivo.finishReason).toBeNull();
+  });
   it("accepts provider usage without inventing speed", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response(event({ usage: { prompt_tokens: 12, completion_tokens: 3, prompt_tokens_details: { cached_tokens: 2 } } }) + "data: [DONE]\n\n")));
     const result = await streamChat({ baseUrl: "http://test", model: "m", messages: [], signal: new AbortController().signal, onDelta: () => {} });

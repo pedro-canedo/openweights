@@ -30,6 +30,14 @@ export interface GenerationMetrics {
   thinkingMs: number | null;
   /** Presente quando um decisor (local ou o Jev remoto) decidiu o esforço desta resposta. */
   jev?: { effort: EffortLevel; confidence: number | null; source?: "local" | "jev" };
+  /**
+   * O teto de tokens acabou (`finish_reason: "length"`): no raciocínio, sem
+   * resposta nenhuma, ou no meio da resposta. Sem isto a tela mostrava só o
+   * "Pensou por…" e parecia que o modelo tinha escolhido não responder.
+   */
+  cutOff?: "reasoning" | "answer";
+  /** O `max_tokens` daquela resposta (`null` = sem teto: acabou o contexto). */
+  maxTokens?: number | null;
 }
 export interface GenerationJob {
   createdAt: number;
@@ -345,9 +353,13 @@ async function runJob(row: InternalJob): Promise<void> {
     const result = await streamChat({ baseUrl, headers, model: resolved, messages: row.opts.messages, params, templateEffort,
       retryWithoutEffort: provider === "local", signal: row.abort.signal, onDelta: d => delta(d, false), onReasoningDelta: d => delta(d, true) });
     if (cancelled()) return;
+    const cutOff = result.finishReason === "length"
+      ? (result.content.trim() ? "answer" as const : "reasoning" as const)
+      : undefined;
     patch(chatId, { content: result.content, reasoning: result.reasoning, thinkingMs: result.thinkingMs,
       tokensPerSec: result.tokensPerSec, genTokens: result.genTokens, genMs: result.genMs,
-      metrics: { ...row.public.metrics, promptTokens: result.promptTokens, cachedTokens: result.cachedTokens, promptTps: result.promptTps, thinkingMs: result.thinkingMs } });
+      metrics: { ...row.public.metrics, promptTokens: result.promptTokens, cachedTokens: result.cachedTokens, promptTps: result.promptTps, thinkingMs: result.thinkingMs,
+        ...(cutOff ? { cutOff, maxTokens: params?.maxTokens ?? null } : {}) } });
     if (row.opts.autoTitle) titles.push(async () => {
       if (deletedChats.has(chatId)) return;
       await autoTitle(chatId, baseUrl, resolved, row.opts.messages, result.content, headers, titleAbort?.signal);

@@ -368,6 +368,18 @@ export const listMessages = (chatId: number) =>
     ? invoke<MessageRow[]>("messages_list", { chatId })
     : mocks.listMessages(chatId);
 
+/**
+ * Contagens e durações que o backend guarda como inteiro (`i64`/`u64`).
+ *
+ * O llama-server manda `predicted_ms` com casas decimais, e o serde recusa
+ * `1069.23` num inteiro: o `message_add` inteiro falhava e NENHUMA resposta
+ * do modelo local era gravada — só aparecia o "Não consegui guardar esta
+ * resposta".
+ */
+export function inteiro(n: number | null | undefined): number | null {
+  return n == null || !Number.isFinite(n) ? null : Math.max(0, Math.round(n));
+}
+
 export const addMessage = (
   chatId: number,
   role: string,
@@ -386,10 +398,15 @@ export const addMessage = (
         role,
         content,
         tokensPerSec,
-        genTokens,
-        genMs,
+        genTokens: inteiro(genTokens),
+        genMs: inteiro(genMs),
         model,
-        metrics,
+        metrics: metrics && {
+          ...metrics,
+          promptTokens: inteiro(metrics.promptTokens),
+          cachedTokens: inteiro(metrics.cachedTokens),
+          maxTokens: metrics.maxTokens === undefined ? undefined : inteiro(metrics.maxTokens),
+        },
       })
     : Promise.resolve(mocks.nextMessageId());
 
