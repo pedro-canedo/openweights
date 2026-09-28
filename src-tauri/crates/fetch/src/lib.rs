@@ -12,6 +12,8 @@
 //! todo trabalho acontece num diretório de sessão temporário e o último passo
 //! é um único `fs::rename`.
 
+pub mod pins;
+
 use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};

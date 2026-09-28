@@ -91,13 +91,50 @@ export interface SessaoPassada {
   atualizadaEm: number;
 }
 
+/** Espelho do `commands_owcli::OwcliStatus`: o runtime do agente. */
+export interface EstadoDoAgente {
+  /** Há pacote do agente para esta máquina (ou um build de desenvolvimento). */
+  supported: boolean;
+  /** O agente abre agora. */
+  installed: boolean;
+  dev: boolean;
+  installing: boolean;
+  /** Tamanho do download, para pedir consentimento. */
+  downloadBytes: number | null;
+  tag: string;
+  lastError: string | null;
+}
+
+/** Espelho do `commands_owcli::EventoDoRuntime`. */
+type EventoDoRuntime =
+  | { kind: "phase"; phase: FaseDaInstalacao }
+  | { kind: "progress"; receivedBytes: number; totalBytes: number }
+  | { kind: "failed"; message: string };
+
+export type FaseDaInstalacao =
+  | "download"
+  | "verifying"
+  | "extracting"
+  | "checking"
+  | "installed";
+
+/** A instalação do agente em andamento (ou a última, se falhou). */
+export interface InstalacaoDoAgente {
+  fase: FaseDaInstalacao | "failed";
+  recebidos: number;
+  total: number;
+  erro: string | null;
+}
+
 interface Backend {
   listar(): Promise<SessaoTerminal[]>;
   abrirShell(pasta: string | null, colunas: number, linhas: number): Promise<number>;
   abrirOwcli(opcoes: OpcoesOwcli, colunas: number, linhas: number): Promise<number>;
   historico(): Promise<SessaoPassada[]>;
-  /** O agente OwCLI está instalado (ou há um build de desenvolvimento)? */
-  agenteDisponivel(): Promise<boolean>;
+  statusDoAgente(): Promise<EstadoDoAgente>;
+  /** Baixa, confere e instala o runtime do agente. Rejeita com o motivo. */
+  instalarAgente(): Promise<EstadoDoAgente>;
+  aoInstalar(f: (ev: EventoDoRuntime) => void): Promise<() => void>;
   modelos(): Promise<ModelosDoOwcli>;
   renomear(id: string, nome: string): Promise<void>;
   anexar(id: number, desde: number | null, onBloco: (b: ArrayBuffer) => void): Promise<boolean>;
@@ -133,8 +170,11 @@ export interface EstadoTerminais {
   pronto: boolean;
   /** As conversas gravadas do OwCLI, a mais recente primeiro. */
   historico: SessaoPassada[];
-  /** O agente OwCLI pode abrir aqui; sem ele, a tela é só de terminais. */
-  agente: boolean;
+  /** O runtime do agente OwCLI; `null` até a primeira consulta. */
+  agente: EstadoDoAgente | null;
+  instalacao: InstalacaoDoAgente | null;
+  /** Sobe a cada pedido de abrir o agente de fora da tela (a paleta). */
+  pedidoDeAgente: number;
 }
 
 const CHAVE_LAYOUT = "ow.owcli.layout";
@@ -158,7 +198,9 @@ let estado: EstadoTerminais = {
   erro: null,
   pronto: false,
   historico: [],
-  agente: false,
+  agente: null,
+  instalacao: null,
+  pedidoDeAgente: 0,
 };
 const ouvintes = new Set<() => void>();
 
@@ -395,7 +437,8 @@ let iniciado: Promise<void> | null = null;
 export function iniciar(): Promise<void> {
   iniciado ??= (async () => {
     await backend.aoAvisar(aplicarAviso);
-    mudar({ agente: await backend.agenteDisponivel().catch(() => false) });
+    await backend.aoInstalar(aplicarInstalacao);
+    await atualizarAgente();
     try {
       const existentes = await backend.listar();
       for (const s of existentes) {
@@ -414,6 +457,54 @@ export function iniciar(): Promise<void> {
     }
   })();
   return iniciado;
+}
+
+/** Relê o runtime do agente (depois de instalar, ou ao abrir a tela). */
+export async function atualizarAgente(): Promise<EstadoDoAgente | null> {
+  const agente = await backend.statusDoAgente().catch(() => null);
+  if (agente) mudar({ agente });
+  return agente;
+}
+
+function aplicarInstalacao(ev: EventoDoRuntime) {
+  const atual = estado.instalacao ?? { fase: "download", recebidos: 0, total: 0, erro: null };
+  switch (ev.kind) {
+    case "phase":
+      mudar({ instalacao: { ...atual, fase: ev.phase, erro: null } });
+      break;
+    case "progress":
+      mudar({
+        instalacao: { ...atual, fase: "download", recebidos: ev.receivedBytes, total: ev.totalBytes },
+      });
+      break;
+    case "failed":
+      mudar({ instalacao: { ...atual, fase: "failed", erro: ev.message } });
+      break;
+  }
+}
+
+/**
+ * Instala o agente (a tela já mostrou o tamanho e a pessoa aceitou). O
+ * progresso chega pelo evento; aqui fica o resultado. `true` quando o agente
+ * abre em seguida.
+ */
+export async function instalarAgente(): Promise<boolean> {
+  mudar({ instalacao: { fase: "download", recebidos: 0, total: 0, erro: null } });
+  try {
+    const agente = await backend.instalarAgente();
+    mudar({ agente, instalacao: { ...estado.instalacao!, fase: "installed", erro: null } });
+    void carregarHistorico();
+    return agente.installed;
+  } catch (e) {
+    mudar({ instalacao: { ...estado.instalacao!, fase: "failed", erro: String(e) } });
+    void atualizarAgente();
+    return false;
+  }
+}
+
+/** Pede à tela do OwCLI o caminho do agente (abrir, ou instalar antes). */
+export function pedirAgente() {
+  mudar({ pedidoDeAgente: estado.pedidoDeAgente + 1 });
 }
 
 function aplicarAviso(id: number, aviso: Aviso) {
@@ -710,7 +801,9 @@ const backendTauri: Backend = {
   abrirOwcli: (opcoes, colunas, linhas) =>
     invoke<number>("terminal_abrir_owcli", { pedido: { ...opcoes, colunas, linhas } }),
   historico: () => invoke<SessaoPassada[]>("owcli_historico"),
-  agenteDisponivel: () => invoke<boolean>("owcli_disponivel"),
+  statusDoAgente: () => invoke<EstadoDoAgente>("owcli_status"),
+  instalarAgente: () => invoke<EstadoDoAgente>("owcli_instalar"),
+  aoInstalar: (f) => listen<EventoDoRuntime>("owcli-runtime", f),
   modelos: () => invoke<ModelosDoOwcli>("owcli_modelos"),
   renomear: (id, nome) => invoke<void>("owcli_renomear", { id, nome }),
   async anexar(id, desde, onBloco) {
@@ -739,6 +832,20 @@ function backendSimulado(): Backend {
   }
   const sessoes = new Map<number, Simulada>();
   let proximo = 1;
+  let instalando: ((ev: EventoDoRuntime) => void) | null = null;
+  function agenteSimulado(): EstadoDoAgente {
+    const g = globalThis as { __owcliSemSuporte?: boolean; __owcliNaoInstalado?: boolean };
+    const supported = !g.__owcliSemSuporte;
+    return {
+      supported,
+      installed: supported && !g.__owcliNaoInstalado,
+      dev: false,
+      installing: false,
+      downloadBytes: supported ? 98_000_000 : null,
+      tag: "owcli-runtime-34d992ac-v1",
+      lastError: null,
+    };
+  }
   let aviso: ((id: number, a: Aviso) => void) | null = null;
   const cod = new TextEncoder();
   const agora = Math.floor(Date.now() / 1000);
@@ -808,9 +915,36 @@ function backendSimulado(): Backend {
       return s.resumo.id;
     },
     historico: async () => conversas.map((c) => ({ ...c })),
-    // O teste da tela sem o agente liga isto antes de a página carregar.
-    agenteDisponivel: async () =>
-      !(globalThis as { __owcliSemAgente?: boolean }).__owcliSemAgente,
+    // Os testes do agente ligam estes antes de a página carregar:
+    // `__owcliSemSuporte` (sem pacote para a máquina), `__owcliNaoInstalado`
+    // (pede a instalação) e `__owcliFalhaAoInstalar` (a instalação falha).
+    statusDoAgente: async () => agenteSimulado(),
+    async instalarAgente() {
+      const g = globalThis as { __owcliNaoInstalado?: boolean; __owcliFalhaAoInstalar?: boolean };
+      const total = 98_000_000;
+      const passo = (ev: EventoDoRuntime) => instalando?.(ev);
+      passo({ kind: "phase", phase: "download" });
+      for (const parte of [0.25, 0.6, 1]) {
+        await new Promise((r) => setTimeout(r, 150));
+        passo({ kind: "progress", receivedBytes: Math.round(total * parte), totalBytes: total });
+      }
+      if (g.__owcliFalhaAoInstalar) {
+        const message = "verificação do OwCLI falhou: sha256 não confere";
+        passo({ kind: "failed", message });
+        throw message;
+      }
+      for (const phase of ["verifying", "extracting", "checking"] as const) {
+        await new Promise((r) => setTimeout(r, 100));
+        passo({ kind: "phase", phase });
+      }
+      g.__owcliNaoInstalado = false;
+      passo({ kind: "phase", phase: "installed" });
+      return agenteSimulado();
+    },
+    async aoInstalar(f) {
+      instalando = f;
+      return () => (instalando = null);
+    },
     async modelos() {
       // O teste do "escolha o cérebro" liga isto antes de a página carregar.
       const semModelos = (window as { __owcliSemModelos?: boolean }).__owcliSemModelos;

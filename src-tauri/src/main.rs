@@ -117,6 +117,9 @@ fn main() {
                 let h = app.handle().clone();
                 tauri::async_runtime::spawn(async move {
                     commands_owcli::sincronizar(&h).await;
+                    // Versões antigas do runtime do OwCLI: no boot nenhuma
+                    // sessão as usa.
+                    commands_owcli::podar_em_segundo_plano(&h.state::<state::AppState>().data_dir);
                 });
             }
 
@@ -237,6 +240,8 @@ fn main() {
             commands_terminal::area_de_transferencia_escrever,
             commands_owcli::owcli_ligar,
             commands_owcli::owcli_disponivel,
+            commands_owcli::owcli_status,
+            commands_owcli::owcli_instalar,
             commands_owcli::owcli_historico,
             commands_owcli::owcli_modelos,
             commands_owcli::owcli_renomear,

@@ -104,6 +104,17 @@ export function montarComandos(t: TFunction, ctx: ContextoDosComandos): Comando[
       },
     },
     {
+      id: "owcli.agent",
+      grupo: "actions",
+      rotulo: t("palette.openAgent"),
+      palavras: "agente agent owcli codex código code ia ai",
+      executar: () => {
+        navigate("owcli");
+        // A tela decide: abrir, instalar antes, ou dizer que não há pacote.
+        void import("./terminals").then((m) => m.pedirAgente());
+      },
+    },
+    {
       id: "help",
       grupo: "actions",
       rotulo: t("palette.help"),

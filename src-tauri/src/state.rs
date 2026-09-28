@@ -75,6 +75,12 @@ pub struct AppState {
     /// Gateway do OwCLI (`lr_owgw`): sobe na primeira sincronização depois
     /// de o OwCLI ser usado (`commands_owcli`).
     pub owcli_gateway: tokio::sync::Mutex<Option<lr_owgw::Gateway>>,
+    /// Serializa a instalação do runtime do OwCLI (`lr_owcli`).
+    pub owcli_operacao: tokio::sync::Mutex<()>,
+    /// A instalação do runtime do OwCLI está em andamento, para o status.
+    pub owcli_instalando: std::sync::atomic::AtomicBool,
+    /// Último erro da instalação do runtime do OwCLI, para a tela.
+    pub owcli_erro: std::sync::Mutex<Option<String>>,
     /// Ponto de entrada único (Traefik), quando ligado. Opcional: nada no
     /// chat depende dele.
     pub gateway: tokio::sync::Mutex<Option<lr_gateway::Gateway>>,
@@ -284,6 +290,9 @@ impl AppState {
             agenticow_idioma: std::sync::Mutex::new(None),
             agenticow_modelos: std::sync::Mutex::new(None),
             owcli_gateway: tokio::sync::Mutex::new(None),
+            owcli_operacao: tokio::sync::Mutex::new(()),
+            owcli_instalando: std::sync::atomic::AtomicBool::new(false),
+            owcli_erro: std::sync::Mutex::new(None),
             terminais: Arc::new(lr_pty::Gerente::new({
                 let app = app.clone();
                 Arc::new(move |id, aviso| {

@@ -9,7 +9,7 @@ import AxeBuilder from "@axe-core/playwright";
 /** Terminal novo pelo menu "Nova sessão" (ou pelo botão do estado vazio). */
 async function novoTerminal(page: Page) {
   const vazio = page.getByRole("button", { name: "Novo terminal" }).first();
-  if (await page.getByRole("heading", { name: "Nenhum terminal aberto" }).isVisible()) {
+  if (await page.getByRole("heading", { name: "Nenhuma sessão aberta" }).isVisible()) {
     await vazio.click();
     return;
   }
@@ -23,7 +23,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("abre um terminal, digita e o terminal sobrevive à troca de tela", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: "Nenhum terminal aberto" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nenhuma sessão aberta" })).toBeVisible();
   await page.getByRole("button", { name: "Novo terminal" }).first().click();
 
   const sessoes = page.getByRole("list", { name: "Terminais abertos" });
@@ -62,7 +62,7 @@ test("duas sessões, setas trocam e fechar volta ao estado vazio", async ({ page
   while ((await fechar.count()) > 0) {
     await fechar.first().click();
   }
-  await expect(page.getByRole("heading", { name: "Nenhum terminal aberto" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nenhuma sessão aberta" })).toBeVisible();
 });
 
 test("menu de contexto limpa a tela e fecha a sessão", async ({ page }) => {
@@ -82,7 +82,7 @@ test("menu de contexto limpa a tela e fecha a sessão", async ({ page }) => {
 
   await page.getByRole("region", { name: "bash" }).click({ button: "right", position: { x: 200, y: 120 } });
   await page.getByRole("menuitem", { name: "Fechar a sessão" }).click();
-  await expect(page.getByRole("heading", { name: "Nenhum terminal aberto" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nenhuma sessão aberta" })).toBeVisible();
 });
 
 test("a sessão fora de vista que pede atenção aparece na lista", async ({ page }) => {
@@ -226,17 +226,67 @@ test("a tela do OwCLI não tem violação séria de acessibilidade", async ({ pa
   expect(graves.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
 });
 
-test("sem o agente instalado, a tela é só de terminais", async ({ page }) => {
+test("sem o agente instalado, o + oferece instalar com o tamanho e segue para abrir", async ({ page }) => {
   await page.addInitScript(() => {
-    (globalThis as { __owcliSemAgente?: boolean }).__owcliSemAgente = true;
+    (globalThis as { __owcliNaoInstalado?: boolean }).__owcliNaoInstalado = true;
   });
   await page.reload();
   await page.getByRole("button", { name: "OwCLI", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Nenhum terminal aberto" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Abrir o agente OwCLI" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Nova sessão" })).toHaveCount(0);
-  // O "+" abre o terminal direto, sem menu de uma opção só.
-  await page.locator("aside").getByRole("button", { name: "Novo terminal" }).click();
+  await page.getByRole("button", { name: "Nova sessão" }).click();
+  await page.getByRole("menuitem", { name: "Agente OwCLI…" }).click();
+
+  const instalar = page.getByRole("dialog", { name: "Instalar o agente OwCLI" });
+  await expect(instalar).toBeVisible();
+  // O tamanho vem antes de qualquer download: só baixa se a pessoa aceitar.
+  await expect(instalar).toContainText("baixados uma vez só");
+  const baixar = instalar.getByRole("button", { name: /^Baixar e instalar \(.+ MB\)$/ });
+  await expect(baixar).toBeFocused();
+  await baixar.click();
+
+  // Instalado, segue direto para escolher modelo e pasta.
+  const abrir = page.getByRole("dialog", { name: "Abrir o agente OwCLI" });
+  await expect(abrir).toBeVisible();
+  await abrir.getByRole("button", { name: "Abrir", exact: true }).click();
+  await expect(page.locator(".xterm-rows")).toContainText("OwCLI");
+});
+
+test("uma instalação que falha diz por quê e deixa tentar de novo", async ({ page }) => {
+  await page.addInitScript(() => {
+    const g = globalThis as { __owcliNaoInstalado?: boolean; __owcliFalhaAoInstalar?: boolean };
+    g.__owcliNaoInstalado = true;
+    g.__owcliFalhaAoInstalar = true;
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "OwCLI", exact: true }).click();
+  await page.getByRole("button", { name: "Abrir o agente OwCLI" }).click();
+  const instalar = page.getByRole("dialog", { name: "Instalar o agente OwCLI" });
+  await instalar.getByRole("button", { name: /^Baixar e instalar/ }).click();
+  await expect(instalar.getByRole("alert")).toContainText("sha256 não confere");
+  await expect(instalar.getByRole("button", { name: "Tentar de novo" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Abrir o agente OwCLI" })).toHaveCount(0);
+});
+
+test("sem pacote do agente para a máquina, a tela explica e os terminais seguem", async ({ page }) => {
+  await page.addInitScript(() => {
+    (globalThis as { __owcliSemSuporte?: boolean }).__owcliSemSuporte = true;
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "OwCLI", exact: true }).click();
+  await page.getByRole("button", { name: "Abrir o agente OwCLI" }).click();
+  const aviso = page.getByRole("dialog", { name: "O agente OwCLI não está disponível aqui" });
+  await expect(aviso).toBeVisible();
+  await aviso.getByRole("button", { name: "Fechar" }).click();
+  await page.getByRole("button", { name: "Nova sessão" }).click();
+  await page.getByRole("menuitem", { name: "Novo terminal" }).click();
   await expect(page.locator(".xterm-rows")).toContainText("voce@navegador");
-  await expect(page.getByRole("menu")).toHaveCount(0);
+});
+
+test("o painel vazio da grade também abre o agente", async ({ page }) => {
+  await page.getByRole("button", { name: "Novo terminal" }).first().click();
+  await page.getByRole("button", { name: "Dois lado a lado" }).click();
+  const p2 = page.locator('[data-painel="1"]');
+  await p2.getByRole("button", { name: "Agente OwCLI" }).click();
+  const abrir = page.getByRole("dialog", { name: "Abrir o agente OwCLI" });
+  await abrir.getByRole("button", { name: "Abrir", exact: true }).click();
+  await expect(p2.locator(".xterm-rows")).toContainText("OwCLI");
 });

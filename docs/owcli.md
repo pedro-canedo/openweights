@@ -36,6 +36,9 @@ lançador define `OWCLI=1`, então os testes e snapshots do upstream não mudam.
 | Comandos dos terminais | `src-tauri/src/commands_terminal.rs` (evento `terminal`) |
 | Gateway | `src-tauri/crates/owgw` (`lr_owgw`) |
 | Gateway, `openweights.json`, modelos | `src-tauri/src/commands_owcli.rs` |
+| Runtime pinado: pins, instalação, poda | `src-tauri/crates/owcli` (`lr_owcli`), sobre `lr_fetch::pins` |
+| Estado e instalação do runtime | `owcli_status`, `owcli_instalar` (evento `owcli-runtime`) |
+| Pacote do runtime por sistema | `.github/workflows/owcli-runtime.yml`, pré-release `owcli-runtime-<rev8>-v<n>` |
 | Histórico | `src-tauri/src/owcli_historico.rs` |
 | Catálogo compartilhado com o AgenticOw | `src-tauri/src/catalogo.rs` |
 | Tela | `src/screens/OwCLI.tsx`, estado em `src/lib/terminals.ts` |
@@ -135,10 +138,42 @@ protocolo de teclado do kitty.
 O diálogo pede os modelos a `owcli_modelos`, que devolve o catálogo e o estado das
 fontes. Sem modelo nenhum, mostra os cartões de fonte (os mesmos do AgenticOw).
 
-Sem o executável (nem o runtime pinado nem `OW_OWCLI_BIN`), `owcli_disponivel` responde
-`false` e a tela esconde o agente: o "+" abre um terminal direto e o estado vazio oferece só
-o terminal. A 0.25.0 saiu assim, com os terminais e os harnesses; o agente aparece quando o
-runtime do fork estiver pinado.
+O "+" da lista, o estado vazio, cada painel vazio da grade e a paleta (Ctrl+K) oferecem
+sempre as duas saídas, agente e terminal. O caminho do agente relê `owcli_status` e decide:
+instalado, abre o diálogo acima; com pacote para a máquina mas sem instalar, oferece a
+instalação com o tamanho (só baixa se a pessoa aceitar); sem pacote, diz que o agente não
+está disponível ali. A 0.25.0 saiu sem o agente, porque não havia runtime publicado.
+
+## O runtime e os pins
+
+`binario()` procura, nesta ordem, `OW_OWCLI_BIN` (build de desenvolvimento do fork) e o
+runtime pinado instalado em `<data>/runtimes/owcli/<tag>/`, conferido pelo `runtime.json`
+(`name`, `format`, `revision`, `target` e `entry` têm de bater com o pin e o alvo). O
+executável se chama `bin/owcli` (`bin/owcli.exe` no Windows): com outro nome o lançador do
+fork não entra no modo OwCLI.
+
+`owcli_instalar` baixa o pacote do alvo, confere tamanho e sha256 contra o `pins.json`
+embutido (o pin herda a assinatura do updater), extrai, confere a identidade e instala de
+forma atômica. Depois roda `owcli --version` numa casa descartável dentro da pasta do
+runtime (no `/tmp` o Codex não cria os atalhos do arg0); um pacote que não roda na máquina é
+removido e a tela oferece tentar de novo. O progresso sai pelo evento `owcli-runtime`
+(`phase` = `download`, `verifying`, `extracting`, `checking`, `installed`; `progress`;
+`failed`). As versões que não são a pinada saem no boot e depois de instalar: este processo
+só abre sessões com o executável do pin atual.
+
+Enquanto o `pins.json` não tem pacote (`assets: {}`), o agente aparece como "não disponível
+aqui" em todo lugar, exceto com `OW_OWCLI_BIN`. Para testar a instalação de ponta a ponta
+antes de publicar, só em build de desenvolvimento: `OW_OWCLI_PINS=<outro pins.json>` e
+`OW_OWCLI_URL_BASE=<http://…>` (um `python3 -m http.server` na pasta do pacote serve).
+
+### Subir um pin novo
+
+1. Trocar `OWCLI_REVISION` e `OWCLI_TAG` no `owcli-runtime.yml` (a tag leva os 8
+   primeiros caracteres da revisão).
+2. Rodar o workflow com `publish` desligado até os alvos passarem, depois ligado: ele
+   publica a pré-release (nunca a latest, que é de onde o updater lê) com o `pins.json`.
+3. Copiar esse `pins.json` para `src-tauri/crates/owcli/pins.json`. O teste
+   `os_pins_embutidos_sao_validos` confere tag, revisão, nomes, hashes e tamanhos.
 
 ## Histórico
 
@@ -156,20 +191,22 @@ então não há servidor vivo para supervisionar. Continuar uma conversa é
   ambiente do AppImage.
 - `lr_owgw`: contra uma fonte falsa em hyper (401 sem token, rota e chave por fonte, SSE
   byte a byte e em pedaços, 404 que diz a fonte que falta, troca de token a quente).
+- `lr_owcli` e `lr_fetch::pins`: pin embutido válido, identidade do `runtime.json` campo a
+  campo (inclusive o nome `owcli` da entrada), instalado só com entrada e identidade, poda
+  só do que não é a versão pinada, e instalação sem pacote que diz por quê.
 - `commands_owcli` e `owcli_historico`: o arquivo nunca leva chave de fonte, nasce `0600`,
   ids com prefixo, validação do que vai para a linha de comando, e a conversa JSON-RPC
   contra um `app-server` de mentira em `sh`.
 - Playwright (`tests/e2e/owcli.spec.ts`), com o backend simulado de `lib/terminals.ts`:
   abrir, digitar, grade, avisos, o diálogo do agente, o histórico e o painel sem modelos,
-  além do portão de acessibilidade.
+  a instalação do agente (tamanho antes, progresso, falha com nova tentativa), o aviso sem
+  pacote para a máquina, o agente pelo painel vazio e pela paleta, além do portão de
+  acessibilidade.
 - App real: `OW_OWCLI_BIN` aponta para um build do fork (sem o runtime pinado, a tela diz
   que o OwCLI não está instalado), e `OWCLI_HOME` para uma pasta descartável, para não
   tocar em `~/.owcli`. No Linux, o Xvfb do box com `XDG_DATA_HOME` isolado.
 
 ## O que ficou para depois
 
-- **Runtime pinado e CI do fork.** O binário chega hoje por `OW_OWCLI_BIN`. O pacote por
-  sistema, os pins com sha256 e o workflow de release vêm com o repositório público do
-  fork.
 - **`owcli` no PATH**, para usar os modelos do app a partir do terminal do sistema.
 - TUI em português, visualizador de transcrição, arquivar e apagar conversas.

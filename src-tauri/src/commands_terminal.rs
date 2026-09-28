@@ -148,7 +148,7 @@ pub async fn terminal_abrir_owcli(
     state: State<'_, AppState>,
     pedido: PedidoDeOwcli,
 ) -> CmdResult<lr_pty::SessaoId> {
-    let exe = crate::commands_owcli::binario()?;
+    let exe = crate::commands_owcli::binario(&state.data_dir)?;
     crate::commands_owcli::ativar(&app).await;
     let casa = crate::commands_owcli::casa(&app).ok_or("sem pasta pessoal")?;
     let retomar = match pedido.retomar {

@@ -78,6 +78,17 @@ test("num terminal, Ctrl+K fica com o shell e Ctrl+Shift+K abre a paleta", async
   await expect(paleta(page)).toBeVisible();
 });
 
+test("a paleta abre o agente OwCLI de qualquer tela", async ({ page }) => {
+  await page.keyboard.press("Control+k");
+  await paleta(page).getByRole("combobox").fill("agente");
+  await paleta(page).getByRole("option", { name: /Abrir o agente OwCLI/ }).click();
+  await expect(nav(page).getByRole("button", { name: "OwCLI", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.getByRole("dialog", { name: "Abrir o agente OwCLI" })).toBeVisible();
+});
+
 test("a paleta não tem violação séria de acessibilidade", async ({ page }) => {
   await page.keyboard.press("Control+k");
   await expect(paleta(page).getByRole("option").first()).toBeVisible();

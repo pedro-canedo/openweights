@@ -149,3 +149,6 @@ ready-made command pointed at your local API, with the key masked in the
 preview, and they open in a terminal session on the
 [OwCLI screen](/guide/owcli). They live under **Local Server → Open in a
 harness**. See [the local API server](/integrations/local-api#open-in-a-harness).
+
+OwCLI also has an agent of its own, a fork of OpenAI's Codex CLI, that runs
+side by side with your shells: see [OwCLI: agent and terminals](/guide/owcli).

@@ -1,6 +1,10 @@
 {
   "interface": {
-    "sourceHint": { "local": "Run models on your own hardware", "9router": "Connect your accounts in one place", "openrouter": "Access models through a single API key" },
+    "sourceHint": {
+      "local": "Run models on your own hardware",
+      "9router": "Connect your accounts in one place",
+      "openrouter": "Access models through a single API key"
+    },
     "settingsSubtitle": "Make OpenWeights your own. Manage your preferences, account and local engine.",
     "engineDetails": "Engine version and installation details",
     "modelsSubtitle": "Your local library, ready for your next conversation.",
@@ -1621,8 +1625,8 @@
     "tabs": "Open terminals",
     "newShell": "New terminal",
     "close": "Close {{title}}",
-    "emptyTitle": "No terminal open",
-    "emptyHint": "Open a terminal in your home folder. It keeps running when you switch screens, and what it printed is still there when you come back.",
+    "emptyTitle": "No session open",
+    "emptyHint": "The OwCLI agent reads, writes and runs code in the folder you choose, thinking with the app's models. The terminal is a plain shell. Both keep running when you switch screens.",
     "exited": "process exited with code {{code}}",
     "truncated": "the beginning of the output was discarded",
     "needsYou": "needs your attention",
@@ -1637,7 +1641,7 @@
     "layout1": "One pane",
     "layout2": "Two side by side",
     "layout4": "Four in a grid",
-    "emptyPane": "Pick a session from the list or open a terminal in this pane.",
+    "emptyPane": "Pick a session from the list or open one in this pane.",
     "paneLabel": "Pane {{n}}",
     "splitWidth": "Pane width",
     "splitHeight": "Pane height",
@@ -1669,7 +1673,25 @@
     "model": "Model",
     "loadingModels": "Looking for OpenWeights models…",
     "brainTitle": "Choose OwCLI's brain",
-    "brainBody": "OwCLI thinks with the models OpenWeights can already serve, and there are none right now. Turn on one of the sources below and come back."
+    "brainBody": "OwCLI thinks with the models OpenWeights can already serve, and there are none right now. Turn on one of the sources below and come back.",
+    "paneAgent": "OwCLI agent",
+    "agentUnavailableTitle": "The OwCLI agent is not available here",
+    "agentUnavailableBody": "This version of the app does not ship the agent for this computer. The terminals work as usual.",
+    "installTitle": "Install the OwCLI agent",
+    "installBody": "The agent is a separate program: OwCLI, based on Codex CLI. It is {{size}}, downloaded once, checked before it runs and kept in the app's folder. It thinks only with OpenWeights' models.",
+    "installAction": "Download and install ({{size}})",
+    "installActionNoSize": "Download and install",
+    "installLater": "Not now",
+    "installRetry": "Try again",
+    "installInBackground": "Keep going in the background",
+    "installFailed": "The installation did not finish: {{error}}",
+    "installPhase": {
+      "download": "Downloading…",
+      "verifying": "Checking the package…",
+      "extracting": "Extracting…",
+      "checking": "Testing the agent on this machine…",
+      "installed": "Done."
+    }
   },
   "palette": {
     "help": "Open help (the guide on the site)",
@@ -1680,6 +1702,7 @@
     "goTo": "Go to {{screen}}",
     "goToTab": "Go to {{screen}} › {{tab}}",
     "newTerminal": "New terminal",
+    "openAgent": "Open the OwCLI agent",
     "shortcuts": "Keyboard shortcuts",
     "serverStart": "Start the Local Server",
     "serverStop": "Stop the Local Server",

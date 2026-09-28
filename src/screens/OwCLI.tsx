@@ -20,6 +20,7 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   ajustar,
+  atualizarAgente,
   ativar,
   carregarHistorico,
   colarNo,
@@ -29,6 +30,7 @@ import {
   fechar,
   focarPainel,
   iniciar,
+  instalarAgente,
   lembrarModelo,
   limpar,
   marcarTelaVisivel,
@@ -48,7 +50,7 @@ import {
   type SessaoTerminal,
 } from "../lib/terminals";
 import { pickWorkspace } from "../lib/api";
-import { formatAgo } from "../lib/format";
+import { formatAgo, formatBytes } from "../lib/format";
 import { Button, IconButton, Input, inputClass } from "../components/ui/Button";
 import { Dialog } from "../components/ui/Dialog";
 import Icon, { type IconName } from "../components/ui/Icon";
@@ -60,13 +62,33 @@ import CartoesDasFontes from "../components/agents/CartoesDasFontes";
 
 type MenuAberto = { x: number; y: number; id: number };
 
+/** O último pedido de agente vindo de fora da tela (a paleta) já atendido. */
+let pedidoAtendido = 0;
+
 export default function OwCLI() {
   const { t } = useTranslation();
   const e = useSyncExternalStore(terminaisStore.subscribe, terminaisStore.get);
   const [menu, setMenu] = useState<MenuAberto | null>(null);
   const [dialogo, setDialogo] = useState(false);
   const [renomeando, setRenomeando] = useState<SessaoPassada | null>(null);
+  const [preparar, setPreparar] = useState(false);
   const nova = usePopover("menu");
+
+  // O agente abre direto quando está instalado. Senão, a tela mostra o que
+  // falta: instalar (com o tamanho, só se a pessoa aceitar) ou que não há
+  // pacote do agente para esta máquina.
+  async function abrirAgente() {
+    const agente = (await atualizarAgente()) ?? e.agente;
+    if (agente?.installed) setDialogo(true);
+    else setPreparar(true);
+  }
+
+  useEffect(() => {
+    if (e.pedidoDeAgente > pedidoAtendido) {
+      pedidoAtendido = e.pedidoDeAgente;
+      void abrirAgente();
+    }
+  }, [e.pedidoDeAgente]);
 
   useEffect(() => {
     void iniciar();
@@ -97,14 +119,16 @@ export default function OwCLI() {
     const m = await modelosDoOwcli().catch(() => null);
     const modelo = m && modeloPreferido(m.modelos, conversa.modelo);
     if (!modelo) {
-      setDialogo(true);
+      void abrirAgente();
       return;
     }
     void retomarOwcli(conversa, modelo);
   }
 
   const abrirMenu = (x: number, y: number, id: number) => setMenu({ x, y, id });
-  const painel = (i: number) => <Painel indice={i} aoMenu={abrirMenu} />;
+  const painel = (i: number) => (
+    <Painel indice={i} aoMenu={abrirMenu} aoAgente={() => void abrirAgente()} />
+  );
 
   let grade: ReactNode;
   if (e.layout === 1) {
@@ -157,34 +181,30 @@ export default function OwCLI() {
           <h2 className="text-[11px] font-semibold tracking-wide text-dim uppercase">
             {t("owcli.sessions")}
           </h2>
-          {/* Sem o agente instalado, um menu de uma opção só seria um clique
-              a mais: o "+" abre o terminal direto. */}
-          {e.agente ? (
-            <span className="relative">
-              <IconButton icon="plus" label={t("owcli.newSession")} {...nova.triggerProps} />
-              <Menu
-                {...nova.popoverProps}
-                label={t("owcli.newSession")}
-                className="absolute right-0 top-full mt-1"
-                items={[
-                  {
-                    id: "agente",
-                    label: t("owcli.newAgent"),
-                    icon: "sparkles",
-                    onSelect: () => setDialogo(true),
-                  },
-                  {
-                    id: "terminal",
-                    label: t("owcli.newShell"),
-                    icon: "terminal",
-                    onSelect: () => void novoShell(),
-                  },
-                ]}
-              />
-            </span>
-          ) : (
-            <IconButton icon="plus" label={t("owcli.newShell")} onClick={() => void novoShell()} />
-          )}
+          {/* Sempre as duas saídas: o agente (que se instala na primeira vez)
+              ou um terminal comum. */}
+          <span className="relative">
+            <IconButton icon="plus" label={t("owcli.newSession")} {...nova.triggerProps} />
+            <Menu
+              {...nova.popoverProps}
+              label={t("owcli.newSession")}
+              className="absolute right-0 top-full mt-1"
+              items={[
+                {
+                  id: "agente",
+                  label: t("owcli.newAgent"),
+                  icon: "sparkles",
+                  onSelect: () => void abrirAgente(),
+                },
+                {
+                  id: "terminal",
+                  label: t("owcli.newShell"),
+                  icon: "terminal",
+                  onSelect: () => void novoShell(),
+                },
+              ]}
+            />
+          </span>
         </div>
         {/* Lista, não tablist: cada sessão tem o próprio botão de fechar, e
             um tablist só pode conter abas. A ativa leva aria-current. */}
@@ -268,16 +288,10 @@ export default function OwCLI() {
               <h1 className="text-lg font-semibold text-ink">{t("owcli.emptyTitle")}</h1>
               <p className="max-w-md text-sm leading-relaxed text-dim">{t("owcli.emptyHint")}</p>
               <div className="flex flex-wrap justify-center gap-2">
-                {e.agente && (
-                  <Button variant="primary" icon="sparkles" onClick={() => setDialogo(true)}>
-                    {t("owcli.openAgent")}
-                  </Button>
-                )}
-                <Button
-                  variant={e.agente ? "secondary" : "primary"}
-                  icon="terminal"
-                  onClick={() => void novoShell()}
-                >
+                <Button variant="primary" icon="sparkles" onClick={() => void abrirAgente()}>
+                  {t("owcli.openAgent")}
+                </Button>
+                <Button icon="terminal" onClick={() => void novoShell()}>
                   {t("owcli.newShell")}
                 </Button>
               </div>
@@ -289,6 +303,15 @@ export default function OwCLI() {
       </section>
 
       <RenomearConversa conversa={renomeando} aoFechar={() => setRenomeando(null)} />
+
+      <PrepararAgente
+        aberto={preparar}
+        aoFechar={() => setPreparar(false)}
+        aoPronto={() => {
+          setPreparar(false);
+          setDialogo(true);
+        }}
+      />
 
       <NovaSessaoOwcli
         aberto={dialogo}
@@ -327,6 +350,104 @@ export default function OwCLI() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * O agente ainda não abre aqui: oferece a instalação, com o tamanho, e só
+ * baixa se a pessoa aceitar; mostra o progresso e o erro; ou diz que não há
+ * pacote do agente para esta máquina. Instalado, segue para o diálogo de
+ * abrir. Fechar durante a instalação não a interrompe.
+ */
+function PrepararAgente({
+  aberto,
+  aoFechar,
+  aoPronto,
+}: {
+  aberto: boolean;
+  aoFechar: () => void;
+  aoPronto: () => void;
+}) {
+  const { t } = useTranslation();
+  const e = useSyncExternalStore(terminaisStore.subscribe, terminaisStore.get);
+  const agente = e.agente;
+  const inst = e.instalacao;
+  const emCurso =
+    agente?.installing || (inst != null && inst.fase !== "failed" && inst.fase !== "installed");
+  const falhou = !emCurso && inst?.fase === "failed";
+  const tamanho = agente?.downloadBytes != null ? formatBytes(agente.downloadBytes) : null;
+
+  async function instalar() {
+    if (await instalarAgente()) aoPronto();
+  }
+
+  if (agente && !agente.supported) {
+    return (
+      <Dialog
+        open={aberto}
+        onClose={aoFechar}
+        title={t("owcli.agentUnavailableTitle")}
+        description={t("owcli.agentUnavailableBody")}
+        footer={<Button onClick={aoFechar}>{t("common.close")}</Button>}
+      />
+    );
+  }
+
+  const pct = inst && inst.total > 0 ? Math.round((inst.recebidos / inst.total) * 100) : null;
+  return (
+    <Dialog
+      open={aberto}
+      onClose={aoFechar}
+      title={t("owcli.installTitle")}
+      description={t("owcli.installBody", { size: tamanho ?? "?" })}
+      footer={
+        emCurso ? (
+          <Button onClick={aoFechar}>{t("owcli.installInBackground")}</Button>
+        ) : (
+          <>
+            <Button onClick={aoFechar}>{t("owcli.installLater")}</Button>
+            <Button variant="primary" icon="download" data-autofocus="" onClick={() => void instalar()}>
+              {falhou
+                ? t("owcli.installRetry")
+                : tamanho
+                  ? t("owcli.installAction", { size: tamanho })
+                  : t("owcli.installActionNoSize")}
+            </Button>
+          </>
+        )
+      }
+    >
+      {emCurso && inst && (
+        <div className="mt-5">
+          <div role="status" className="text-[13px] text-dim">
+            {t(`owcli.installPhase.${inst.fase}`)}
+          </div>
+          <div
+            role="progressbar"
+            aria-label={t("owcli.installTitle")}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={pct ?? undefined}
+            className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-panel2"
+          >
+            <div
+              className="h-full rounded-full bg-accent transition-[width]"
+              style={{ width: inst.fase === "download" && pct != null ? `${pct}%` : "100%" }}
+            />
+          </div>
+          {inst.fase === "download" && inst.total > 0 && (
+            <div className="mt-1 text-[11px] text-dim tabular-nums">
+              {formatBytes(inst.recebidos)} / {formatBytes(inst.total)}
+            </div>
+          )}
+        </div>
+      )}
+      {falhou && inst?.erro && (
+        <p role="alert" className="mt-5 text-[13px] leading-relaxed text-bad select-text">
+          {t("owcli.installFailed", { error: inst.erro })}
+        </p>
+      )}
+    </Dialog>
   );
 }
 
@@ -590,9 +711,11 @@ function ItemConversa({
 function Painel({
   indice,
   aoMenu,
+  aoAgente,
 }: {
   indice: number;
   aoMenu: (x: number, y: number, id: number) => void;
+  aoAgente: () => void;
 }) {
   const { t } = useTranslation();
   const e = useSyncExternalStore(terminaisStore.subscribe, terminaisStore.get);
@@ -659,16 +782,28 @@ function Painel({
         {id == null && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
             <p className="max-w-xs text-[12px] leading-relaxed text-dim">{t("owcli.emptyPane")}</p>
-            <Button
-              size="sm"
-              icon="plus"
-              onClick={() => {
-                focarPainel(indice);
-                void novoShell();
-              }}
-            >
-              {t("owcli.newShell")}
-            </Button>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button
+                size="sm"
+                icon="sparkles"
+                onClick={() => {
+                  focarPainel(indice);
+                  aoAgente();
+                }}
+              >
+                {t("owcli.paneAgent")}
+              </Button>
+              <Button
+                size="sm"
+                icon="terminal"
+                onClick={() => {
+                  focarPainel(indice);
+                  void novoShell();
+                }}
+              >
+                {t("owcli.newShell")}
+              </Button>
+            </div>
           </div>
         )}
       </div>

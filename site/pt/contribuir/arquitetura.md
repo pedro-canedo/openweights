@@ -26,6 +26,7 @@ site/                 Este site de documentação (VitePress)
 | `ninerouter` | Instala, supervisiona e remove o 9router de forma isolada |
 | `agenticow` | O AgenticOw, nosso fork do DeepSeek Harness: instala o runtime pré-compilado contra os pins sha256 gravados no app, supervisiona o Host por um protocolo de controle em JSON por linha e empurra para ele o catálogo de modelos (detalhes em `docs/agenticow.md`) |
 | `pty` | Os terminais embutidos: sessões de pseudoterminal com o ambiente do sistema, um anel reenviado a partir de um deslocamento em bytes, controle de fluxo e encerramento por sessão (detalhes em `docs/owcli.md`) |
+| `owcli` | O runtime do agente OwCLI, nosso fork do Codex CLI: os pins sha256 gravados no app, a instalação verificada (tamanho, sha256, `runtime.json` e um `owcli --version` nesta máquina) e a poda das versões antigas (detalhes em `docs/owcli.md`) |
 | `owgw` | O gateway do OwCLI: um endereço de loopback com token, que roteia pelo prefixo da fonte no id do modelo e põe a chave de cada fonte, então as chaves não saem do app |
 | `gateway` | Ponto de entrada único (um Traefik local) para os provedores de LLM |
 | `nodejs` | Runtime Node.js portátil, isolado do Node do sistema |
@@ -47,5 +48,5 @@ interface no navegador com dados simulados, sem Rust envolvido — é onde a mai
 parte do trabalho de interface acontece.
 
 As telas espelham os crates acima: Descobrir (`models` + `advisor`), Meus
-Modelos, Chat (`engine`), OwCLI (`pty` + `owgw`), Servidor Local (`engine`),
+Modelos, Chat (`engine`), OwCLI (`pty` + `owgw` + `owcli`), Servidor Local (`engine`),
 Fontes de modelo (`providers`), Configurações.

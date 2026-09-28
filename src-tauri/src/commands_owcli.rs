@@ -11,9 +11,12 @@
 
 use std::path::{Path, PathBuf};
 
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+
 use serde::Serialize;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::catalogo::{self, Fonte};
 use crate::owcli_historico::SessaoPassada;
@@ -210,18 +213,23 @@ async fn sincronizar_ja(app: &AppHandle, state: &AppState) -> Result<(), String>
     escrever_privado(&arquivo, &json).map_err(|e| format!("{}: {e}", arquivo.display()))
 }
 
-/// O executável do OwCLI.
-///
-/// Em desenvolvimento, `OW_OWCLI_BIN` aponta para um build do fork (o cargo o
-/// gera como `codex`; o lançador vira OwCLI porque a sessão define
-/// `OWCLI_HOME`). No app instalado, o runtime pinado (`lr_owcli`).
-pub fn binario() -> Result<PathBuf, String> {
-    if let Some(p) = std::env::var_os("OW_OWCLI_BIN").map(PathBuf::from)
-        && p.is_file()
-    {
+/// Um build do fork em `OW_OWCLI_BIN` (desenvolvimento): o cargo o gera como
+/// `codex`, e o lançador vira OwCLI porque a sessão define `OWCLI_HOME`.
+fn binario_de_desenvolvimento() -> Option<PathBuf> {
+    std::env::var_os("OW_OWCLI_BIN")
+        .map(PathBuf::from)
+        .filter(|p| p.is_file())
+}
+
+/// O executável do OwCLI: o build de desenvolvimento, se houver; senão o
+/// runtime pinado (`lr_owcli`), se estiver instalado e verificado.
+pub fn binario(data_dir: &Path) -> Result<PathBuf, String> {
+    if let Some(p) = binario_de_desenvolvimento() {
         return Ok(p);
     }
-    Err("O OwCLI ainda não está instalado neste app.".to_string())
+    lr_owcli::Layout::new(data_dir).executavel().ok_or_else(|| {
+        "owcli-not-installed: o agente OwCLI ainda não está instalado neste app.".to_string()
+    })
 }
 
 /// Liga o OwCLI (primeira sessão): daqui em diante o gateway sobe com o app.
@@ -233,11 +241,195 @@ pub async fn ativar(app: &AppHandle) {
     sincronizar(app).await;
 }
 
-/// O agente pode abrir aqui? Sem o runtime do OwCLI (nem um build de
-/// desenvolvimento em `OW_OWCLI_BIN`), a tela mostra só os terminais.
+/// O agente abre agora, sem instalar nada?
 #[tauri::command]
-pub fn owcli_disponivel() -> bool {
-    binario().is_ok()
+pub fn owcli_disponivel(state: State<'_, AppState>) -> bool {
+    binario(&state.data_dir).is_ok()
+}
+
+/// O runtime do agente, para a tela decidir entre abrir, oferecer a
+/// instalação (com o tamanho) ou dizer que não há pacote para esta máquina.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwcliStatus {
+    /// Há pacote do OwCLI para esta máquina (ou um build de desenvolvimento).
+    pub supported: bool,
+    /// O agente abre agora.
+    pub installed: bool,
+    /// `OW_OWCLI_BIN` em uso: o runtime pinado nem é consultado.
+    pub dev: bool,
+    pub installing: bool,
+    /// Tamanho do pacote desta máquina, para a tela pedir consentimento.
+    pub download_bytes: Option<u64>,
+    /// Tag da release do runtime que este app fixa.
+    pub tag: String,
+    pub last_error: Option<String>,
+}
+
+fn status(state: &AppState) -> OwcliStatus {
+    let dev = binario_de_desenvolvimento().is_some();
+    let asset = lr_owcli::pins::asset_atual();
+    OwcliStatus {
+        supported: dev || asset.is_some(),
+        installed: binario(&state.data_dir).is_ok(),
+        dev,
+        installing: state.owcli_instalando.load(Ordering::SeqCst),
+        download_bytes: asset.map(|(_, a)| a.size),
+        tag: lr_owcli::pins::pins().tag.clone(),
+        last_error: state
+            .owcli_erro
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone(),
+    }
+}
+
+#[tauri::command]
+pub fn owcli_status(state: State<'_, AppState>) -> OwcliStatus {
+    status(&state)
+}
+
+/// O evento da instalação do runtime.
+pub const EVENTO_RUNTIME: &str = "owcli-runtime";
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum EventoDoRuntime {
+    /// `download`, `verifying`, `extracting`, `checking` ou `installed`.
+    Phase {
+        phase: &'static str,
+    },
+    Progress {
+        received_bytes: u64,
+        total_bytes: u64,
+    },
+    Failed {
+        message: String,
+    },
+}
+
+fn emitir(app: &AppHandle, ev: EventoDoRuntime) {
+    let _ = app.emit(EVENTO_RUNTIME, &ev);
+}
+
+/// Baixa, verifica e instala o runtime pinado — só quando a pessoa pede (a
+/// tela mostra o tamanho antes). Um pacote que não roda nesta máquina não
+/// fica instalado.
+#[tauri::command]
+pub async fn owcli_instalar(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<OwcliStatus, String> {
+    let _op = state.owcli_operacao.lock().await;
+    if binario(&state.data_dir).is_ok() {
+        return Ok(status(&state));
+    }
+    state.owcli_instalando.store(true, Ordering::SeqCst);
+    *state.owcli_erro.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    let resultado = instalar_e_conferir(&app, &state.data_dir).await;
+    state.owcli_instalando.store(false, Ordering::SeqCst);
+    match resultado {
+        Ok(()) => {
+            emitir(&app, EventoDoRuntime::Phase { phase: "installed" });
+            podar_em_segundo_plano(&state.data_dir);
+            Ok(status(&state))
+        }
+        Err(e) => {
+            log::warn!("OwCLI: a instalação do runtime falhou: {e}");
+            *state.owcli_erro.lock().unwrap_or_else(|e| e.into_inner()) = Some(e.clone());
+            emitir(&app, EventoDoRuntime::Failed { message: e.clone() });
+            Err(e)
+        }
+    }
+}
+
+async fn instalar_e_conferir(app: &AppHandle, data_dir: &Path) -> Result<(), String> {
+    let layout = lr_owcli::Layout::new(data_dir);
+    let app_ev = app.clone();
+    let on_event = move |ev: lr_owcli::EventoDeInstalacao| {
+        use lr_owcli::EventoDeInstalacao as E;
+        emitir(
+            &app_ev,
+            match ev {
+                E::Progress {
+                    received_bytes,
+                    total_bytes,
+                } => EventoDoRuntime::Progress {
+                    received_bytes,
+                    total_bytes,
+                },
+                E::Verifying => EventoDoRuntime::Phase { phase: "verifying" },
+                E::Extracting => EventoDoRuntime::Phase {
+                    phase: "extracting",
+                },
+                // O "instalado" da tela só sai depois da conferência abaixo.
+                E::Installed => EventoDoRuntime::Phase { phase: "checking" },
+            },
+        );
+    };
+    emitir(app, EventoDoRuntime::Phase { phase: "download" });
+    let exe = lr_owcli::install::instalar(&layout, &on_event)
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Err(e) = conferir_executavel(&exe, &layout).await {
+        let atual = layout.atual();
+        let _ =
+            tokio::task::spawn_blocking(move || lr_fetch::remove_dir_all_retrying(&atual)).await;
+        return Err(format!("o OwCLI instalado não rodou nesta máquina: {e}"));
+    }
+    Ok(())
+}
+
+/// Executar o binário é o que separa "os arquivos estão lá" de "funciona":
+/// `owcli --version` numa casa descartável (dentro da pasta do runtime, e não
+/// no /tmp, onde o Codex não cria os atalhos do arg0).
+async fn conferir_executavel(exe: &Path, layout: &lr_owcli::Layout) -> Result<(), String> {
+    let casa = layout.raiz().join(".verificacao");
+    std::fs::create_dir_all(&casa).map_err(|e| e.to_string())?;
+    let mut cmd = tokio::process::Command::new(exe);
+    cmd.arg("--version")
+        .env("OWCLI_HOME", &casa)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    lr_proc::host_env(&mut cmd);
+    lr_proc::no_window(&mut cmd);
+    let saida = tokio::time::timeout(Duration::from_secs(30), cmd.output())
+        .await
+        .map_err(|_| "--version não respondeu em 30 s".to_string())?
+        .map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_dir_all(&casa);
+    if saida.status.success() {
+        log::info!(
+            "OwCLI instalado: {}",
+            String::from_utf8_lossy(&saida.stdout).trim()
+        );
+        Ok(())
+    } else {
+        Err(format!(
+            "--version saiu com {}: {}",
+            saida.status,
+            String::from_utf8_lossy(&saida.stderr).trim()
+        ))
+    }
+}
+
+/// Tira as versões do runtime que não são a pinada. Seguro no boot e depois
+/// de instalar: este processo só abre sessões com o executável do pin atual
+/// (ou com o de desenvolvimento), nunca com o de uma pasta antiga.
+pub fn podar_em_segundo_plano(data_dir: &Path) {
+    let layout = lr_owcli::Layout::new(data_dir);
+    tokio::task::spawn_blocking(move || {
+        let n = lr_owcli::install::podar(&layout);
+        if n > 0 {
+            log::info!("OwCLI: {n} versão(ões) antiga(s) do runtime removida(s)");
+        }
+    });
 }
 
 /// A tela liga o OwCLI ao abrir a primeira sessão dele.
@@ -261,7 +453,7 @@ pub async fn owcli_modelos(app: AppHandle) -> Result<ModelosDoOwcli, String> {
 /// nunca foi usado — não é erro para a tela.
 #[tauri::command]
 pub async fn owcli_historico(app: AppHandle) -> Result<Vec<SessaoPassada>, String> {
-    let Ok(exe) = binario() else {
+    let Ok(exe) = binario(&app.state::<AppState>().data_dir) else {
         return Ok(Vec::new());
     };
     let Some(casa) = casa(&app).filter(|c| c.join("sessions").is_dir()) else {
@@ -275,7 +467,7 @@ pub async fn owcli_renomear(app: AppHandle, id: String, nome: String) -> Result<
     if !crate::owcli_historico::id_valido(&id) || nome.trim().is_empty() {
         return Err("conversa ou nome inválido".to_string());
     }
-    let exe = binario()?;
+    let exe = binario(&app.state::<AppState>().data_dir)?;
     let casa = casa(&app).ok_or("sem pasta pessoal para a casa do OwCLI")?;
     crate::owcli_historico::renomear(&exe, &casa, &id, &nome).await
 }

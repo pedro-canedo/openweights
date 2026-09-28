@@ -2685,6 +2685,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lr_owcli"
+version = "0.25.1"
+dependencies = [
+ "log",
+ "lr_fetch",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+]
+
+[[package]]
 name = "lr_owgw"
 version = "0.25.1"
 dependencies = [
@@ -3304,6 +3317,7 @@ dependencies = [
  "lr_models",
  "lr_ninerouter",
  "lr_nodejs",
+ "lr_owcli",
  "lr_owgw",
  "lr_proc",
  "lr_providers",
