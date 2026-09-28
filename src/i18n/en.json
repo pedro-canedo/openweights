@@ -78,6 +78,7 @@
     "estimateCalibrated": "Estimate adjusted by what we've already measured on this machine."
   },
   "discover": {
+    "splitWidth": "Model list width",
     "title": "Discover models",
     "subtitle": "Search GGUF models on Hugging Face — we recommend the best quantization for your hardware.",
     "searchPlaceholder": "Search models (e.g. qwen, llama, gemma...)",
@@ -684,6 +685,8 @@
     "modeAdvanced": "Advanced",
     "modeSimpleHint": "Shows the essentials for chatting with your models. Local Server, Sources and Train leave the sidebar, and the chat drops the fine-tuning controls. Nothing stops working.",
     "modeAdvancedHint": "Shows everything: the Local Server, the model sources, Train and the chat's fine-tuning controls, such as reasoning effort.",
+    "scale": "Interface size",
+    "scaleDefault": "default",
     "theme": "Theme",
     "dark": "Dark",
     "light": "Light",

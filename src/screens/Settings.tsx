@@ -25,6 +25,7 @@ import { formatBytes } from "../lib/format";
 import { navigate } from "../lib/nav";
 import { definirModo, useModo, type Modo } from "../lib/mode";
 import { aplicarTema, useTema, type Tema } from "../lib/tema";
+import { aplicarEscala, ESCALAS, escalaGuardada } from "../lib/escala";
 import type { HardwareProfile, HfWhoami } from "../lib/types";
 import { Card, Page, Row, StatusDot } from "../components/ui/Shell";
 import Icon from "../components/ui/Icon";
@@ -37,6 +38,7 @@ export default function Settings() {
   const [profile, setProfile] = useState<HardwareProfile | null>(null);
   const [paths, setPaths] = useState<{ modelsDir: string } | null>(null);
   const theme = useTema();
+  const [escala, setEscala] = useState(escalaGuardada);
 
   useEffect(() => {
     getHardwareProfile().then(setProfile).catch(() => setProfile(null));
@@ -93,6 +95,25 @@ export default function Settings() {
             >
               <option value="dark">{t("settings.dark")}</option>
               <option value="light">{t("settings.light")}</option>
+            </select>
+          </Row>
+          <Row label={t("settings.scale")}>
+            <select
+              aria-label={t("settings.scale")}
+              value={escala}
+              onChange={(e) => {
+                const f = Number(e.target.value);
+                setEscala(f);
+                void aplicarEscala(f);
+              }}
+              className={select}
+            >
+              {ESCALAS.map((f) => (
+                <option key={f} value={f}>
+                  {`${Math.round(f * 100)}%`}
+                  {f === 1 ? ` (${t("settings.scaleDefault")})` : ""}
+                </option>
+              ))}
             </select>
           </Row>
           <Row label={t("settings.language")}>

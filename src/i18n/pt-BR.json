@@ -78,6 +78,7 @@
     "estimateCalibrated": "Estimativa ajustada pelo que já medimos nesta máquina."
   },
   "discover": {
+    "splitWidth": "Largura da lista de modelos",
     "title": "Descobrir modelos",
     "subtitle": "Busque modelos GGUF no Hugging Face — indicamos a quantização ideal para o seu hardware.",
     "searchPlaceholder": "Buscar modelos (ex.: qwen, llama, gemma...)",
@@ -684,6 +685,8 @@
     "modeAdvanced": "Avançado",
     "modeSimpleHint": "Mostra o essencial para conversar com os seus modelos. Servidor Local, Fontes e Treinar saem da barra lateral, e o chat fica sem os ajustes finos. Nada deixa de funcionar.",
     "modeAdvancedHint": "Mostra tudo: o Servidor Local, as fontes de modelo, o Treinar e os ajustes finos do chat, como o esforço de raciocínio.",
+    "scale": "Tamanho da interface",
+    "scaleDefault": "padrão",
     "theme": "Tema",
     "dark": "Escuro",
     "light": "Claro",

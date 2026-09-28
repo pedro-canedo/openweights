@@ -17,6 +17,7 @@ import { searchModels, type SearchSort } from "../lib/api";
 import { errorMessage } from "../lib/serverSession";
 import ModelListItem from "../components/discover/ModelListItem";
 import ModelDetail from "../components/discover/ModelDetail";
+import { Split } from "../components/ui/Split";
 
 const SORTS: SearchSort[] = ["trending", "downloads", "likes", "updated"];
 
@@ -84,120 +85,135 @@ export default function Discover() {
 
   const selected = results?.find((m) => m.id === selectedId) ?? null;
 
-  return (
-    <div className="flex h-full min-h-0">
-      {/* --------------------------------------------------- a lista */}
-      <div className="flex w-[380px] shrink-0 flex-col border-r border-edge">
-        <div className="shrink-0 px-4 pt-5 pb-3">
-          <h1 className="text-base font-semibold">{t("discover.title")}</h1>
-          <p className="mt-0.5 text-[12px] leading-relaxed text-dim">
-            {t("discover.subtitle")}
-          </p>
+  const lista = (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 px-4 pt-5 pb-3">
+        <h1 className="text-base font-semibold">{t("discover.title")}</h1>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-dim">
+          {t("discover.subtitle")}
+        </p>
 
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("discover.searchPlaceholder")}
-            aria-label={t("discover.searchPlaceholder")}
-            className="mt-3 w-full rounded-xl border border-edge bg-panel px-3 py-2 text-[13px] outline-none placeholder:text-dim focus:border-accent"
-          />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("discover.searchPlaceholder")}
+          aria-label={t("discover.searchPlaceholder")}
+          className="mt-3 w-full rounded-xl border border-edge bg-panel px-3 py-2 text-[13px] outline-none placeholder:text-dim focus:border-accent"
+        />
 
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-[11px] text-dim">{t("discover.sortBy")}</span>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SearchSort)}
-              aria-label={t("discover.sortBy")}
-              className="min-w-0 flex-1 rounded-lg border border-edge bg-panel px-2 py-1.5 text-[12px] text-ink outline-none focus:border-accent"
-            >
-              {SORTS.map((s) => (
-                <option key={s} value={s}>
-                  {t(SORT_KEYS[s])}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
-          {failed ? (
-            <div className="mx-2 rounded-xl border border-dashed border-edge p-6 text-center">
-              <p className="text-[13px] text-dim">{t("common.error")}</p>
-              <details className="mt-2 text-left text-[11px] text-dim">
-                <summary className="cursor-pointer text-center">
-                  {t("comparison.details")}
-                </summary>
-                <p className="mt-1 break-words">{failed}</p>
-              </details>
-              <button
-                onClick={() => setReload((n) => n + 1)}
-                className="mt-3 rounded-lg border border-edge bg-panel px-3 py-1.5 text-[12px] font-medium text-ink transition-colors hover:border-accent"
-              >
-                {t("common.retry")}
-              </button>
-            </div>
-          ) : results == null ? (
-            <div className="flex flex-col gap-1">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="flex animate-pulse items-center gap-3 rounded-xl px-3 py-2.5"
-                >
-                  <div className="h-[34px] w-[34px] shrink-0 rounded-lg bg-panel2" />
-                  <div className="min-w-0 flex-1">
-                    <div className="h-3 w-3/5 rounded bg-panel2" />
-                    <div className="mt-2 h-2.5 w-2/5 rounded bg-panel2" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : results.length === 0 ? (
-            <div className="mx-2 rounded-xl border border-dashed border-edge p-6 text-center text-[13px] text-dim">
-              {/* Procurar por "mlx" ou "ollama" não é erro de digitação: é
-                  alguém trazendo o vocabulário de outra ferramenta. Um beco
-                  sem saída aqui vira uma explicação e um caminho. */}
-              {outroFormato ? (
-                <div className="flex flex-col items-center gap-2">
-                  <p className="leading-relaxed">{t("discover.otherFormat")}</p>
-                  <button
-                    type="button"
-                    onClick={() => setQuery(semFormato(query))}
-                    className="rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
-                  >
-                    {t("discover.findGguf")}
-                  </button>
-                </div>
-              ) : (
-                t("discover.empty")
-              )}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              {results.map((m) => (
-                <ModelListItem
-                  key={m.id}
-                  model={m}
-                  selected={m.id === selectedId}
-                  onSelect={() => setSelectedId(m.id)}
-                />
-              ))}
-            </div>
-          )}
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-[11px] text-dim">{t("discover.sortBy")}</span>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SearchSort)}
+            aria-label={t("discover.sortBy")}
+            className="min-w-0 flex-1 rounded-lg border border-edge bg-panel px-2 py-1.5 text-[12px] text-ink outline-none focus:border-accent"
+          >
+            {SORTS.map((s) => (
+              <option key={s} value={s}>
+                {t(SORT_KEYS[s])}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
-      {/* -------------------------------------------------- o detalhe */}
-      <div className="min-w-0 flex-1">
-        {selected ? (
-          <ModelDetail key={selected.id} model={selected} />
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+        {failed ? (
+          <div className="mx-2 rounded-xl border border-dashed border-edge p-6 text-center">
+            <p className="text-[13px] text-dim">{t("common.error")}</p>
+            <details className="mt-2 text-left text-[11px] text-dim">
+              <summary className="cursor-pointer text-center">
+                {t("comparison.details")}
+              </summary>
+              <p className="mt-1 break-words">{failed}</p>
+            </details>
+            <button
+              onClick={() => setReload((n) => n + 1)}
+              className="mt-3 rounded-lg border border-edge bg-panel px-3 py-1.5 text-[12px] font-medium text-ink transition-colors hover:border-accent"
+            >
+              {t("common.retry")}
+            </button>
+          </div>
+        ) : results == null ? (
+          <div className="flex flex-col gap-1">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div
+                key={i}
+                className="flex animate-pulse items-center gap-3 rounded-xl px-3 py-2.5"
+              >
+                <div className="h-[34px] w-[34px] shrink-0 rounded-lg bg-panel2" />
+                <div className="min-w-0 flex-1">
+                  <div className="h-3 w-3/5 rounded bg-panel2" />
+                  <div className="mt-2 h-2.5 w-2/5 rounded bg-panel2" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : results.length === 0 ? (
+          <div className="mx-2 rounded-xl border border-dashed border-edge p-6 text-center text-[13px] text-dim">
+            {/* Procurar por "mlx" ou "ollama" não é erro de digitação: é
+                alguém trazendo o vocabulário de outra ferramenta. Um beco
+                sem saída aqui vira uma explicação e um caminho. */}
+            {outroFormato ? (
+              <div className="flex flex-col items-center gap-2">
+                <p className="leading-relaxed">{t("discover.otherFormat")}</p>
+                <button
+                  type="button"
+                  onClick={() => setQuery(semFormato(query))}
+                  className="rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                >
+                  {t("discover.findGguf")}
+                </button>
+              </div>
+            ) : (
+              t("discover.empty")
+            )}
+          </div>
         ) : (
-          <div className="flex h-full items-center justify-center px-6">
-            <p className="max-w-xs text-center text-[13px] leading-relaxed text-dim">
-              {t("discover.pickOne")}
-            </p>
+          <div className="flex flex-col gap-1">
+            {results.map((m) => (
+              <ModelListItem
+                key={m.id}
+                model={m}
+                selected={m.id === selectedId}
+                onSelect={() => setSelectedId(m.id)}
+              />
+            ))}
           </div>
         )}
       </div>
     </div>
+
+  );
+
+  const detalhe = (
+    <div className="h-full min-w-0">
+      {selected ? (
+        <ModelDetail key={selected.id} model={selected} />
+      ) : (
+        <div className="flex h-full items-center justify-center px-6">
+          <p className="max-w-xs text-center text-[13px] leading-relaxed text-dim">
+            {t("discover.pickOne")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
+  // A lista tem largura ajustável (arrastando ou pelas setas, com o foco no
+  // divisor), lembrada entre visitas: nomes longos de repositório pedem mais
+  // espaço, e uma tela grande dá espaço para o detalhe.
+  return (
+    <Split
+      label={t("discover.splitWidth")}
+      defaultSize={380}
+      min={300}
+      minSecond={420}
+      storageKey="ow.discover.split"
+      first={lista}
+      second={detalhe}
+      className="h-full"
+    />
   );
 }

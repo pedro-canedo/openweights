@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { listLocalModels } from "./lib/api";
 import { enderecoDaAjuda, montarComandos, novaConversa, TELAS_POR_NUMERO } from "./lib/comandos";
 import { openUrl } from "./lib/openExternal";
+import { aplicarEscala, escalaGuardada } from "./lib/escala";
 import { decidirModoInicial, useModo } from "./lib/mode";
 import { onNavigate, type Screen } from "./lib/nav";
 import { errorMessage } from "./lib/serverSession";
@@ -146,6 +147,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const escala = escalaGuardada();
+    if (escala !== 1) void aplicarEscala(escala, false).catch(() => {});
     void decidirModoInicial();
     listLocalModels()
       .then((modelos) => {
