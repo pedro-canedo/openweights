@@ -1082,6 +1082,26 @@ pub(crate) fn router_preset_entries(state: &AppState) -> Vec<lr_engine::PresetEn
             p.engine = None;
             p.moe_cache_slots = None;
         }
+        // O cabeçalho só é aberto quando o perfil depende dele: o `ngl` de
+        // "todas as camadas" (o llama.cpp conta a de saída) e o MTP, que num
+        // arquivo sem a cabeça derruba a carga inteira.
+        if let Some(ref mut p) = perfil
+            && (p.ngl.is_some()
+                || p.spec
+                    .as_ref()
+                    .is_some_and(|s| s.contains(lr_types::tuning::SpecType::DraftMtp)))
+        {
+            let meta = lr_models::read_local_meta(&a.primary_path);
+            p.ngl = p
+                .ngl
+                .map(|n| lr_types::tuning::ngl_para_o_motor(n, meta.n_layers));
+            if crate::commands_tuning::sem_mtp_impossivel(p, &meta) {
+                log::warn!(
+                    "{}: o arquivo não tem cabeça MTP; carregando sem draft-mtp",
+                    a.name
+                );
+            }
+        }
         let mut entry = lr_engine::PresetEntry::new(a.name.clone(), a.primary_path.clone());
         if let Some(p) = &perfil {
             for (chave, valor) in p.to_ini_extras() {

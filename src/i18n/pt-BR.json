@@ -586,7 +586,7 @@
       "unload": "Descarregar",
       "visionBadge": "visão",
       "trainCtx": "treinado até {{n}}",
-      "mtpMissing": "O cabeçalho deste arquivo não declara cabeça MTP — se o modelo não tiver, o servidor avisa nos logs.",
+      "mtpMissing": "Este arquivo não tem cabeça MTP — o llama.cpp recusaria carregar o modelo com ela, então o app carrega sem o MTP.",
       "specNMax": "Tokens por rascunho",
       "specNMaxHint": "3 é o padrão; 2–4 é o equilíbrio. Acima disso pode instabilizar e gastar VRAM.",
       "specPMin": "Confiança mínima",

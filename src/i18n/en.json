@@ -586,7 +586,7 @@
       "unload": "Unload",
       "visionBadge": "vision",
       "trainCtx": "trained up to {{n}}",
-      "mtpMissing": "This file's header doesn't declare an MTP head — if the model lacks one, the server will say so in the logs.",
+      "mtpMissing": "This file has no MTP head — llama.cpp would refuse to load the model with it, so the app loads it without MTP.",
       "specNMax": "Tokens per draft",
       "specNMaxHint": "3 is the default; 2–4 is the sweet spot. Beyond that it may destabilize and burn VRAM.",
       "specPMin": "Minimum confidence",

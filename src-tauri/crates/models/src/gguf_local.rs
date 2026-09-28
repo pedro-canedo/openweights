@@ -67,9 +67,9 @@ pub struct LocalGgufMeta {
     /// Dimensão interna do FFN denso (`{arch}.feed_forward_length`).
     pub ffn_length: Option<u32>,
     /// Camadas de previsão multi-token (`{arch}.nextn_predict_layers`) — a
-    /// cabeça MTP dos GGUF que suportam `--spec-type draft-mtp`. Ausente é
-    /// "não sei", não "não tem": arquiteturas novas podem usar outra chave, e
-    /// a interface nunca deve bloquear por isso.
+    /// cabeça MTP dos GGUF que suportam `--spec-type draft-mtp`. Para decidir,
+    /// use [`LocalGgufMeta::declara_mtp`]: ausente aqui com o cabeçalho lido é
+    /// "não tem" para o llama.cpp.
     pub nextn_layers: Option<u32>,
     /// Níveis de esforço de raciocínio que o template ACEITA, na ordem em
     /// que ele os lista.
@@ -98,6 +98,21 @@ pub struct LocalGgufMeta {
 }
 
 impl LocalGgufMeta {
+    /// O arquivo tem cabeça MTP, do jeito que o llama.cpp decide.
+    ///
+    /// Ele só lê `{arch}.nextn_predict_layers`: sem a chave, conta zero e
+    /// recusa `--spec-type draft-mtp` com "model doesn't contain MTP layers" —
+    /// a carga inteira falha e o chat recebe um HTTP 500 seco. Por isso a
+    /// ausência, com o cabeçalho lido (o `block_count` está sempre lá), é
+    /// `Some(false)`. `None` só quando o cabeçalho não pôde ser lido.
+    pub fn declara_mtp(&self) -> Option<bool> {
+        match self.nextn_layers {
+            Some(n) => Some(n > 0),
+            None if self.n_layers.is_some() => Some(false),
+            None => None,
+        }
+    }
+
     /// O arquivo usa um tipo de tensor que o llama.cpp oficial não conhece
     /// e que só o fork da PrismML carrega (Bonsai 2: `PQ2_0`, `PTQ1_0`).
     pub fn exige_prism(&self) -> bool {
@@ -556,6 +571,11 @@ mod tests {
         assert_eq!(meta.context_length, Some(262_144));
         assert_eq!(meta.n_experts, None, "denso: sem especialistas");
         assert_eq!(meta.nextn_layers, None, "sem cabeça MTP declarada");
+        assert_eq!(
+            meta.declara_mtp(),
+            Some(false),
+            "cabeçalho lido sem a chave: o llama.cpp recusa draft-mtp"
+        );
     }
 
     /// MoE e cabeça MTP saem do mesmo cabeçalho — são os fatos que ligam os
@@ -571,6 +591,12 @@ mod tests {
         let meta = read_local_meta(f.path());
         assert_eq!(meta.n_experts, Some(128));
         assert_eq!(meta.nextn_layers, Some(1));
+        assert_eq!(meta.declara_mtp(), Some(true));
+        assert_eq!(
+            LocalGgufMeta::default().declara_mtp(),
+            None,
+            "sem cabeçalho: não sei"
+        );
     }
 
     /// A geometria que faz a conta de memória parar de ser chute: quantos

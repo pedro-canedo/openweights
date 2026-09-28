@@ -239,8 +239,9 @@ pub async fn router_unload_model(state: State<'_, AppState>, model: String) -> C
 pub struct ModelCaps {
     /// `Some(true)` = MoE declarado no cabeçalho; `None` = o arquivo não diz.
     pub moe: Option<bool>,
-    /// `Some(true)` = cabeça MTP declarada (`nextn_predict_layers` > 0).
-    /// `None` = não sei — a interface mostra a opção mesmo assim.
+    /// `Some(true)` = cabeça MTP declarada (`nextn_predict_layers` > 0);
+    /// `Some(false)` = cabeçalho lido sem ela (o app não liga MTP nesse
+    /// arquivo); `None` = cabeçalho ilegível.
     pub mtp_head: Option<bool>,
     pub has_mmproj: bool,
     pub n_layers: Option<u32>,
@@ -474,7 +475,7 @@ pub fn model_capabilities(state: State<'_, AppState>, model: String) -> CmdResul
     let meta = lr_models::read_local_meta(&artefato.primary_path);
     Ok(ModelCaps {
         moe: meta.n_experts.map(|n| n > 0),
-        mtp_head: meta.nextn_layers.map(|n| n > 0),
+        mtp_head: meta.declara_mtp(),
         has_mmproj: artefato.vision_projector.is_some(),
         n_layers: meta.n_layers,
         train_ctx: meta.context_length,

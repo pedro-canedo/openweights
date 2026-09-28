@@ -1057,15 +1057,43 @@ fn auto_setting(model: &str) -> String {
 /// O arquivo traz as camadas de previsão de múltiplos tokens?
 ///
 /// `nextn_predict_layers` é o que o llama.cpp de fato lê para aceitar
-/// `--spec-type draft-mtp`. O NOME do arquivo só opina quando o cabeçalho não
-/// diz nada, porque ausência ali é "não sei", não "não tem" — arquitetura
-/// nova pode usar outra chave. Confiar no nome era o bug que deixava o
-/// Qwen3.8-27B (sem "mtp" no nome, com a cabeça no arquivo) fora da medição.
+/// `--spec-type draft-mtp` (ver `LocalGgufMeta::declara_mtp`). O NOME do
+/// arquivo só opina quando o cabeçalho não pôde ser lido. Confiar no nome era
+/// o bug que deixava o Qwen3.8-27B (sem "mtp" no nome, com a cabeça no
+/// arquivo) fora da medição.
 pub(crate) fn tem_cabeca_mtp(meta: &lr_models::LocalGgufMeta, nome: &str) -> bool {
-    match meta.nextn_layers {
-        Some(n) => n > 0,
+    match meta.declara_mtp() {
+        Some(tem) => tem,
         None => nome.to_lowercase().contains("mtp"),
     }
+}
+
+/// Tira do perfil o `draft-mtp` que o arquivo não suporta. Devolve `true`
+/// quando tirou.
+///
+/// Um perfil manual (o preset "MTP turbo", ou o chip de especulação) pode
+/// pedir MTP num GGUF sem a cabeça — o Qwen3-Coder-30B-A3B, por exemplo. O
+/// llama.cpp recusa a carga inteira ("model doesn't contain MTP layers") e o
+/// modelo some do chat com "failed to load". Deixar de fora só o MTP carrega o
+/// modelo com o resto do perfil intacto (o n-grama, se estava junto, fica).
+pub(crate) fn sem_mtp_impossivel(
+    perfil: &mut lr_types::tuning::ModelProfile,
+    meta: &lr_models::LocalGgufMeta,
+) -> bool {
+    use lr_types::tuning::{SpecSet, SpecType};
+    let Some(spec) = perfil.spec.as_ref() else {
+        return false;
+    };
+    if !spec.contains(SpecType::DraftMtp) || meta.declara_mtp() != Some(false) {
+        return false;
+    }
+    let resto: Vec<SpecType> = spec.iter().filter(|t| *t != SpecType::DraftMtp).collect();
+    perfil.spec = Some(if resto.is_empty() {
+        SpecSet::new([SpecType::None])
+    } else {
+        SpecSet::new(resto)
+    });
+    true
 }
 
 /// Leva a especulação de um perfil para outro.
@@ -1490,6 +1518,54 @@ pub(crate) fn spawn_auto_spec(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Cabeçalho lido (tem `block_count`) com ou sem a chave do MTP.
+    fn meta_lida(nextn: Option<u32>) -> lr_models::LocalGgufMeta {
+        lr_models::LocalGgufMeta {
+            n_layers: Some(48),
+            nextn_layers: nextn,
+            ..Default::default()
+        }
+    }
+
+    /// O Qwen3-Coder-30B-A3B não tem cabeça MTP: pedir `draft-mtp` nele fazia
+    /// o llama.cpp recusar a carga. O MTP sai; o n-grama que vinha junto fica.
+    #[test]
+    fn mtp_is_dropped_from_a_profile_whose_file_has_no_mtp_head() {
+        use lr_types::tuning::{ModelProfile, SpecSet, SpecType};
+        let so_mtp = || ModelProfile {
+            spec: Some(SpecType::DraftMtp.into()),
+            spec_draft_n_max: Some(4),
+            ..Default::default()
+        };
+
+        let mut p = so_mtp();
+        assert!(sem_mtp_impossivel(&mut p, &meta_lida(None)));
+        assert!(p.spec.as_ref().unwrap().is_off());
+        assert!(!p.to_ini_extras().iter().any(|(k, _)| k.starts_with("spec")));
+
+        let mut p = ModelProfile {
+            spec: Some(SpecSet::new([SpecType::DraftMtp, SpecType::NgramMod])),
+            ..Default::default()
+        };
+        assert!(sem_mtp_impossivel(&mut p, &meta_lida(Some(0))));
+        assert_eq!(p.spec, Some(SpecSet::new([SpecType::NgramMod])));
+
+        // Arquivo com a cabeça, ou cabeçalho ilegível: nada muda.
+        let mut p = so_mtp();
+        assert!(!sem_mtp_impossivel(&mut p, &meta_lida(Some(1))));
+        assert_eq!(p, so_mtp());
+        assert!(!sem_mtp_impossivel(
+            &mut p,
+            &lr_models::LocalGgufMeta::default()
+        ));
+        assert_eq!(p, so_mtp());
+    }
+
+    #[test]
+    fn a_read_header_without_the_mtp_key_beats_a_name_that_says_mtp() {
+        assert!(!tem_cabeca_mtp(&meta_lida(None), "Qwen3-MTP-Q4.gguf"));
+    }
 
     fn meta(nextn: Option<u32>) -> lr_models::LocalGgufMeta {
         lr_models::LocalGgufMeta {

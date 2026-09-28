@@ -7,6 +7,8 @@ description = "Recomendação de quantização e estimativa de memória por hard
 
 [dependencies]
 lr_types.workspace = true
+# O `block_count` do arquivo: "todas as camadas" para o llama.cpp é ele + 1.
+lr_models = { path = "../models" }
 serde.workspace = true
 serde_json.workspace = true
 # A sonda e o banco de ensaio precisam falar com os binários do runtime; o

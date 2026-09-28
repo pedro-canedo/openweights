@@ -198,7 +198,11 @@ pub fn bench_args_com_prompt(
         args.push(v);
     };
     if let Some(ngl) = profile.ngl {
-        push("-ngl", ngl.to_string());
+        let camadas = lr_models::read_local_meta(model_path).n_layers;
+        push(
+            "-ngl",
+            lr_types::tuning::ngl_para_o_motor(ngl, camadas).to_string(),
+        );
     }
     if let Some(n) = profile.ncmoe {
         push("-ncmoe", n.to_string());

@@ -344,6 +344,22 @@ pub struct ModelProfile {
     pub source: ProfileSource,
 }
 
+/// O `-ngl` que o llama.cpp precisa para "todas as camadas na placa".
+///
+/// O perfil guarda camadas do jeito que a tela mostra ("64 de 64"), mas o
+/// llama.cpp conta a camada de SAÍDA como mais uma: com `-ngl` igual ao
+/// `block_count`, ela fica na CPU e cada token paga a multiplicação pelo
+/// vocabulário inteiro fora da placa. Medido numa RTX 3090: o Qwen3-Coder-30B
+/// gerava 139 tok/s com 48 e 161 com 49; o Bonsai 2 no motor da PrismML, 23
+/// com 64 e 69 com 65. Valores menores (offload parcial) e maiores (o "99" de
+/// quem digita) passam como estão.
+pub fn ngl_para_o_motor(ngl: u32, camadas: Option<u32>) -> u32 {
+    match camadas {
+        Some(n) if ngl == n => n + 1,
+        _ => ngl,
+    }
+}
+
 impl ModelProfile {
     /// Nada escolhido: o llama.cpp decide tudo.
     pub fn is_empty(&self) -> bool {
@@ -544,6 +560,19 @@ impl ModelProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn all_layers_include_the_output_layer_for_llama_cpp() {
+        assert_eq!(ngl_para_o_motor(64, Some(64)), 65);
+        assert_eq!(ngl_para_o_motor(48, Some(48)), 49);
+        assert_eq!(ngl_para_o_motor(30, Some(48)), 30, "parcial fica");
+        assert_eq!(
+            ngl_para_o_motor(99, Some(48)),
+            99,
+            "o 99 de quem digita fica"
+        );
+        assert_eq!(ngl_para_o_motor(48, None), 48, "sem cabeçalho, sem palpite");
+    }
 
     #[test]
     fn cache_requires_fork_and_cannot_be_overridden_by_fit_or_cpu_placement() {

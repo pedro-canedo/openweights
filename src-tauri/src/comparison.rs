@@ -355,6 +355,12 @@ pub(crate) async fn arm(
     ));
     config.models_preset = Some(preset.clone());
     let mut model_entry = entry.clone();
+    let mut profile = profile.clone();
+    let meta = lr_models::read_local_meta(&entry.path);
+    commands_tuning::sem_mtp_impossivel(&mut profile, &meta);
+    profile.ngl = profile
+        .ngl
+        .map(|n| lr_types::tuning::ngl_para_o_motor(n, meta.n_layers));
     model_entry.extras = profile.to_ini_extras();
     lr_engine::write_models_preset(&preset, &cfg.global_ini_extras, &[model_entry])
         .map_err(|e| e.to_string())?;
