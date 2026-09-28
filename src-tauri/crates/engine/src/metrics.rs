@@ -96,6 +96,28 @@ pub fn parse_metrics(body: &str) -> MetricCounters {
     out
 }
 
+/// Pedidos em curso agora: os gauges `llamacpp:requests_processing` e
+/// `llamacpp:requests_deferred`, somados.
+///
+/// Os counters acima só andam quando um pedido TERMINA — um pedido longo em
+/// andamento (um prompt de 5 mil tokens na CPU) não aparece neles. Quem
+/// precisa saber se o motor está ocupado AGORA pergunta aqui. Mesma regra de
+/// linha do [`parse_metrics`]: série rotulada é ignorada.
+pub fn requests_in_flight(body: &str) -> f64 {
+    body.lines()
+        .filter_map(|linha| {
+            let mut partes = linha.split_whitespace();
+            let (nome, valor) = (partes.next()?, partes.next()?);
+            matches!(
+                nome,
+                "llamacpp:requests_processing" | "llamacpp:requests_deferred"
+            )
+            .then(|| valor.parse::<f64>().ok())
+            .flatten()
+        })
+        .sum()
+}
+
 /// Última leitura por (modelo, campo), para converter counters cumulativos em
 /// deltas — com detecção de reset por campo: valor que CAIU significa
 /// processo novo (counters recomeçaram do zero), e o delta é a leitura
@@ -150,6 +172,26 @@ mod tests {
     /// Corpo no formato do b10441: comentários, os 5 counters (um deles em
     /// notação científica, como o upstream emite acima de 1e6), gauges de
     /// janela que NÃO podem entrar e uma linha rotulada a ignorar.
+    /// Um pedido longo em curso: os counters ainda não andaram, mas o gauge
+    /// já diz que o motor está ocupado.
+    #[test]
+    fn requests_in_flight_read_the_gauges_the_counters_miss() {
+        let em_curso = "\
+# TYPE llamacpp:requests_processing gauge
+llamacpp:prompt_tokens_total 0
+llamacpp:requests_processing 1
+llamacpp:requests_deferred 2
+llamacpp:requests_processing{model=\"outro\"} 9
+";
+        assert!((requests_in_flight(em_curso) - 3.0).abs() < f64::EPSILON);
+        assert_eq!(parse_metrics(em_curso), MetricCounters::default());
+        assert_eq!(
+            requests_in_flight("llamacpp:requests_processing 0\nlixo\n"),
+            0.0
+        );
+        assert_eq!(requests_in_flight(""), 0.0);
+    }
+
     #[test]
     fn the_five_counters_are_read_and_everything_else_is_ignored() {
         let corpo = "\

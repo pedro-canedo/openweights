@@ -1436,10 +1436,20 @@ async fn esperar_ocioso(state: &AppState) -> bool {
         if SPEC_CANCELAR.load(Ordering::SeqCst) {
             return false;
         }
-        let ultimo = state.last_engine_use.load(Ordering::SeqCst);
-        let parado = crate::commands::now_ms().saturating_sub(ultimo);
-        if ultimo == 0 || parado >= SPEC_OCIOSO_MIN.as_millis() as i64 {
-            return true;
+        if state.serve_stats.em_andamento(state).await {
+            // Pedido no meio: o `last_engine_use` só anda quando um pedido
+            // TERMINA, então um pedido longo parecia ociosidade (ou "nunca
+            // usado", com o relógio em zero) e a bateria reiniciava o motor
+            // com ele no meio. O ocioso passa a contar do fim dele.
+            state
+                .last_engine_use
+                .store(crate::commands::now_ms(), Ordering::SeqCst);
+        } else {
+            let ultimo = state.last_engine_use.load(Ordering::SeqCst);
+            let parado = crate::commands::now_ms().saturating_sub(ultimo);
+            if ultimo == 0 || parado >= SPEC_OCIOSO_MIN.as_millis() as i64 {
+                return true;
+            }
         }
         if std::time::Instant::now() >= limite {
             return false;

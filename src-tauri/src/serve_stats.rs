@@ -182,6 +182,10 @@ impl ServeStatsCollector {
     /// URL-encoding de ids com `/` e `:`. HTTP 400 ("model is not loaded") ou
     /// qualquer outro erro = pular o modelo nesta rodada.
     async fn scrape_model(&self, snap: &ServerSnapshot, modelo: &str) -> Option<MetricCounters> {
+        Some(parse_metrics(&self.metrics_text(snap, modelo).await?))
+    }
+
+    async fn metrics_text(&self, snap: &ServerSnapshot, modelo: &str) -> Option<String> {
         let mut req = self
             .http
             .get(format!("{}/metrics", snap.base))
@@ -193,7 +197,32 @@ impl ServeStatsCollector {
         if !resp.status().is_success() {
             return None;
         }
-        Some(parse_metrics(&resp.text().await.ok()?))
+        resp.text().await.ok()
+    }
+
+    /// Algum modelo carregado está atendendo um pedido AGORA?
+    ///
+    /// O `last_engine_use` só anda quando os counters mudam, e eles só mudam
+    /// quando um pedido termina: um pedido longo em curso (um agente com 5
+    /// mil tokens de prompt na CPU) parecia ociosidade, e a bateria de
+    /// especulação reiniciava o motor com ele no meio. Aqui vale o gauge
+    /// `requests_processing`/`requests_deferred`. Sem servidor no ar, `false`;
+    /// modelo que não respondeu ao scrape conta como livre, como no coletor.
+    pub async fn em_andamento(&self, state: &AppState) -> bool {
+        let Some(snap) = server_snapshot(state).await else {
+            return false;
+        };
+        let Some(modelos) = self.loaded_models(&snap).await else {
+            return false;
+        };
+        for modelo in modelos {
+            if let Some(corpo) = self.metrics_text(&snap, &modelo).await
+                && lr_engine::metrics::requests_in_flight(&corpo) > 0.0
+            {
+                return true;
+            }
+        }
+        false
     }
 }
 
