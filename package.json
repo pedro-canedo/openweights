@@ -15,7 +15,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/i18n-parity.mjs && node scripts/docs-parity.mjs && node scripts/contrast-check.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/tauri-versions.mjs && node scripts/i18n-parity.mjs && node scripts/docs-parity.mjs && node scripts/contrast-check.mjs && tsc --noEmit && vite build",
     "contrast": "node scripts/contrast-check.mjs",
     "i18n": "node scripts/i18n-parity.mjs",
     "docs": "node scripts/docs-parity.mjs",
@@ -26,8 +26,8 @@
     "bench:render": "node scripts/render-bench.mjs"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-notification": "^2.5.0",
+    "@tauri-apps/api": "~2.11",
+    "@tauri-apps/plugin-notification": "~2.3",
     "@tauri-apps/plugin-opener": "^2",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-unicode11": "^0.9.0",
