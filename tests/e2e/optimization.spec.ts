@@ -1,3 +1,4 @@
+// Os números aparecem no formato do idioma da interface (pt-BR: vírgula decimal).
 import { test, expect } from "@playwright/test";
 
 test("one-click optimization presents ready rates and supports restoring", async ({
@@ -10,7 +11,7 @@ test("one-click optimization presents ready rates and supports restoring", async
   await expect(
     page.getByText("Configuração pronta", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("28.0", { exact: true })).toBeVisible();
+  await expect(page.getByText("28,0", { exact: true })).toBeVisible();
   await expect(page.getByRole("table")).not.toBeVisible();
   await page.getByRole("button", { name: "Usar configuração" }).click();
   await expect(page.getByRole("button", { name: /Restaurar/ })).toBeVisible();
@@ -101,7 +102,7 @@ test("a faster generation option can be applied without a total-time recommendat
   await page
     .getByRole("button", { name: "Otimizar para meu computador" })
     .click();
-  await expect(page.getByText("143.0", { exact: true })).toBeVisible();
+  await expect(page.getByText("143,0", { exact: true })).toBeVisible();
   await page.getByRole("radio", { name: "Opção 1", exact: true }).check();
   await page
     .getByRole("button", { name: "Usar configuração", exact: true })
@@ -124,7 +125,7 @@ test("history applies an exact saved profile with the server running and refresh
   page,
 }) => {
   await page.goto("/tests/optimization.html?scenario=history");
-  const row = page.getByRole("article").filter({ hasText: "33.1" });
+  const row = page.getByRole("article").filter({ hasText: "33,1" });
   await row.getByRole("button", { name: "Usar configuração" }).click();
   await expect(page.getByRole("status")).toHaveText(
     "Configuração aplicada e modelo carregado.",
@@ -145,7 +146,7 @@ for (const scenario of ["history-busy", "history-failure"])
     await page.goto(`/tests/optimization.html?scenario=${scenario}`);
     await page
       .getByRole("article")
-      .filter({ hasText: "33.1" })
+      .filter({ hasText: "33,1" })
       .getByRole("button")
       .click();
     await expect(page.getByRole("alert")).toBeVisible();
@@ -153,7 +154,7 @@ for (const scenario of ["history-busy", "history-failure"])
     await expect(
       page
         .getByRole("article")
-        .filter({ hasText: "27.6" })
+        .filter({ hasText: "27,6" })
         .getByText("atual", { exact: true }),
     ).toBeVisible();
   });
@@ -166,10 +167,10 @@ test("optimization and history fit narrow screens", async ({ page }) => {
       await page
         .getByRole("button", { name: "Otimizar para meu computador" })
         .click();
-      await expect(page.getByText("143.0", { exact: true })).toBeVisible();
+      await expect(page.getByText("143,0", { exact: true })).toBeVisible();
     } else
       await expect(
-        page.getByText("33.1", { exact: false }).first(),
+        page.getByText("33,1", { exact: false }).first(),
       ).toBeVisible();
     expect(
       await page.evaluate(

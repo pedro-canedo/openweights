@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { useDismiss } from "./ui/camada";
 import { genStats } from "../lib/llama";
-import { formatBytes, formatCount } from "../lib/format";
+import { formatBytes, formatCount, formatNumber } from "../lib/format";
 import MonitorPopover from "./monitor/MonitorPopover";
 import Icon, { type IconName } from "./ui/Icon";
 import { telemetryStore } from "./monitor/telemetryStore";
@@ -210,7 +210,7 @@ export default function StatusBar() {
           <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-accent-ink">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             {(live?.tokensPerSec ?? gen.tokensPerSec) != null
-              ? `${(live?.tokensPerSec ?? gen.tokensPerSec)!.toFixed(1)} ${t("status.tokensPerSec")}`
+              ? `${formatNumber((live?.tokensPerSec ?? gen.tokensPerSec)!, 1)} ${t("status.tokensPerSec")}`
               : t("chat.generating")}
           </span>
         )}
@@ -218,7 +218,7 @@ export default function StatusBar() {
         <div ref={monitorRef} className="relative">
           <button
             onClick={() => setMonitorOpen((v) => !v)}
-            title="Monitor de hardware"
+            title={t("status.monitor")}
             aria-expanded={monitorOpen}
             aria-haspopup="dialog"
             className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
@@ -242,7 +242,7 @@ export default function StatusBar() {
           {monitorOpen && (
             <div
               role="dialog"
-              aria-label="Monitor de hardware"
+              aria-label={t("status.monitor")}
               data-overlay=""
               className="absolute right-0 bottom-full z-50 mb-2"
             >

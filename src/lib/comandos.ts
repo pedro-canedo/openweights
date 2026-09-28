@@ -8,7 +8,15 @@ import { restartServer, startServer, stopServer } from "./api";
 import { chatStore } from "./chatStore";
 import { definirModo, type Modo } from "./mode";
 import { navigate, type NavPayload, type Screen } from "./nav";
+import { openUrl } from "./openExternal";
 import { aplicarTema, type Tema } from "./tema";
+
+/** O guia do site, no idioma da interface. */
+export function enderecoDaAjuda(idioma: string): string {
+  return idioma.startsWith("pt")
+    ? "https://pedro-canedo.github.io/openweights/pt/guia/"
+    : "https://pedro-canedo.github.io/openweights/guide/";
+}
 
 export type GrupoDeComando = "screens" | "actions" | "server" | "preferences";
 
@@ -38,6 +46,7 @@ export const TELAS_POR_NUMERO: Screen[] = [
 
 export interface ContextoDosComandos {
   modo: Modo;
+  idioma: string;
   tema: Tema;
   mostrarAtalhos: () => void;
   /** Recebe o erro de uma ação que falhou (subir o servidor, por exemplo). */
@@ -93,6 +102,13 @@ export function montarComandos(t: TFunction, ctx: ContextoDosComandos): Comando[
         // Sob demanda: o módulo dos terminais carrega o xterm inteiro.
         void import("./terminals").then((m) => m.novoShell());
       },
+    },
+    {
+      id: "help",
+      grupo: "actions",
+      rotulo: t("palette.help"),
+      palavras: "ajuda help documentação docs guia guide site",
+      executar: () => void openUrl(enderecoDaAjuda(ctx.idioma)),
     },
     {
       id: "shortcuts",

@@ -22,6 +22,7 @@ import {
   type SpecOutcome,
   type SpecQuality,
 } from "../../lib/tuning";
+import { formatNumber } from "../../lib/format";
 
 /** Onde mora a escolha de deixar o app medir sozinho. */
 const AUTO_KEY = "tune.spec.auto";
@@ -62,7 +63,7 @@ function Linha({
             código e perde em prosa — a média esconderia exatamente isso. */}
         {arm.byPrompt.map(([tipo, tps]) => (
           <span key={tipo} className="shrink-0 text-[11px] tabular-nums text-dim">
-            {t(`tune.spec.prompt.${tipo}`)} {tps.toFixed(1)}
+            {t(`tune.spec.prompt.${tipo}`)} {formatNumber(tps, 1)}
           </span>
         ))}
         <span className={`shrink-0 text-[11px] ${SELO[arm.quality]}`}>

@@ -10,6 +10,7 @@ import type { ChatParams, PresetRow } from "../../lib/types";
 import { sanitizeChatParams } from "../../lib/types";
 import { navigate } from "../../lib/nav";
 import Icon from "../ui/Icon";
+import { formatNumber } from "../../lib/format";
 
 function Slider({
   label,
@@ -226,7 +227,7 @@ export default function ParamsPanel({
       <Slider
         label={t("chat.temperature")}
         value={params.temperature}
-        display={params.temperature.toFixed(2)}
+        display={formatNumber(params.temperature, 2)}
         min={0}
         max={2}
         step={0.05}
@@ -235,7 +236,7 @@ export default function ParamsPanel({
       <Slider
         label={t("chat.topP")}
         value={params.topP}
-        display={params.topP.toFixed(2)}
+        display={formatNumber(params.topP, 2)}
         min={0}
         max={1}
         step={0.01}

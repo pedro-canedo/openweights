@@ -2,7 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import "./i18n";
+import i18n from "./i18n";
 import { installExternalLinks } from "./lib/openExternal";
 import "./styles.css";
 
@@ -31,7 +31,7 @@ class ErrorBoundary extends Component<
     if (!this.state.error) return this.props.children;
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-ink">
-        <p className="text-sm font-medium">A interface falhou ao renderizar.</p>
+        <p className="text-sm font-medium">{i18n.t("common.renderFailed")}</p>
         <pre className="max-w-xl overflow-auto rounded-xl border border-edge bg-panel p-4 text-xs text-bad whitespace-pre-wrap">
           {this.state.error.stack ?? this.state.error.message}
         </pre>

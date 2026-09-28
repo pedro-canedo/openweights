@@ -1,23 +1,37 @@
+import i18next from "i18next";
+
+/**
+ * Um número com `casas` decimais, no formato do idioma da interface: "1,5"
+ * em português, "1.5" em inglês. O idioma é lido na hora (o singleton do
+ * i18next), então trocar de idioma vale na próxima pintura.
+ */
+export function formatNumber(n: number, casas = 0): string {
+  return n.toLocaleString(i18next.language || "pt-BR", {
+    minimumFractionDigits: casas,
+    maximumFractionDigits: casas,
+  });
+}
+
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "—";
   const gib = bytes / 2 ** 30;
-  if (gib >= 1) return `${gib.toFixed(gib >= 10 ? 0 : 1)} GB`;
+  if (gib >= 1) return `${formatNumber(gib, gib >= 10 ? 0 : 1)} GB`;
   const mib = bytes / 2 ** 20;
-  if (mib >= 1) return `${mib.toFixed(0)} MB`;
-  return `${(bytes / 1024).toFixed(0)} KB`;
+  if (mib >= 1) return `${formatNumber(mib)} MB`;
+  return `${formatNumber(bytes / 1024)} KB`;
 }
 
 export function formatCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  if (n >= 1_000_000) return `${formatNumber(n / 1_000_000, 1)}M`;
+  if (n >= 1_000) return `${formatNumber(n / 1_000, 1)}k`;
   return `${n}`;
 }
 
 export function formatParams(n: number | null): string {
   if (n == null) return "—";
-  if (n >= 1e12) return `${(n / 1e12).toFixed(1)}T`;
-  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-  return `${(n / 1e6).toFixed(0)}M`;
+  if (n >= 1e12) return `${formatNumber(n / 1e12, 1)}T`;
+  if (n >= 1e9) return `${formatNumber(n / 1e9, 1)}B`;
+  return `${formatNumber(n / 1e6)}M`;
 }
 
 export function downloadPercent(received: number, total: number): number {

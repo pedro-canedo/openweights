@@ -18,6 +18,7 @@ import { remoteModelInfo, splitModelRef } from "../../lib/providers";
 import { collectContextBuckets } from "../../lib/contextUsage";
 import type { Attachment } from "./AttachmentChips";
 import type { UiMessage } from "./MessageList";
+import { formatNumber } from "../../lib/format";
 
 const CTX_CHIPS = [8192, 16384, 32768, 65536];
 const CTX_MIN = 512;
@@ -26,8 +27,8 @@ const RING_R = 7;
 const RING_C = 2 * Math.PI * RING_R;
 
 function formatTok(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  if (n >= 1_000_000) return `${formatNumber(n / 1_000_000, 1)}M`;
+  if (n >= 1000) return `${formatNumber(n / 1000, 1)}K`;
   return String(Math.round(n));
 }
 

@@ -88,3 +88,10 @@ test("a paleta não tem violação séria de acessibilidade", async ({ page }) =
   const graves = r.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   expect(graves.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
 });
+
+test("a ajuda está na barra lateral e na paleta", async ({ page }) => {
+  await expect(nav(page).getByRole("button", { name: "Ajuda" })).toBeVisible();
+  await page.keyboard.press("Control+k");
+  await paleta(page).getByRole("combobox").fill("ajuda");
+  await expect(paleta(page).getByRole("option").first()).toHaveText(/Abrir a ajuda/);
+});

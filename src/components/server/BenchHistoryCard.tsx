@@ -29,6 +29,7 @@ import {
   type PerfRowDto,
 } from "../../lib/tuning";
 import type { HardwareProfile } from "../../lib/types";
+import { formatNumber } from "../../lib/format";
 
 /// Abreviações dos pares do INI que cabem numa célula de tabela.
 const SHORT_NAMES: Record<string, string> = {
@@ -229,7 +230,7 @@ export default function BenchHistoryCard({
       return (
         <span className={`tabular-nums ${cls}`}>
           {r.deltaPct > 0 ? "+" : ""}
-          {r.deltaPct.toFixed(1)}%
+          {formatNumber(r.deltaPct, 1)}%
           {/* Watts diferentes: o número vale, mas a causa é outra. Sem este
               aviso, a tela creditaria à configuração um ganho que veio do
               limite de energia. */}
@@ -381,8 +382,8 @@ export default function BenchHistoryCard({
                         <div className="mt-2 flex items-center gap-3 text-[10px] text-dim"><span>{t("tune.history.build", { n: r.buildNumber })}</span>{r.powerLimitW != null && <span className="inline-flex items-center gap-1" title={t("tune.history.powerLimit")}><Icon name="power" className="h-3 w-3" />{r.powerLimitW} W</span>}</div>
                       </div>
                       <dl className="flex flex-wrap gap-5 text-xs tabular-nums">
-                        <div><dt className="text-[10px] text-dim">{t("comparison.generationLabel")}</dt><dd className="mt-1 text-lg font-semibold">{r.genTps.toFixed(1)} <span className="text-[10px] font-normal text-dim">tok/s</span></dd></div>
-                        <div><dt className="text-[10px] text-dim">{t("comparison.readingLabel")}</dt><dd className="mt-1 text-lg">{r.promptTps != null && r.promptTps > 0 ? r.promptTps.toFixed(1) : "—"}</dd></div>
+                        <div><dt className="text-[10px] text-dim">{t("comparison.generationLabel")}</dt><dd className="mt-1 text-lg font-semibold">{formatNumber(r.genTps, 1)} <span className="text-[10px] font-normal text-dim">tok/s</span></dd></div>
+                        <div><dt className="text-[10px] text-dim">{t("comparison.readingLabel")}</dt><dd className="mt-1 text-lg">{r.promptTps != null && r.promptTps > 0 ? formatNumber(r.promptTps, 1) : "—"}</dd></div>
                         <div><dt className="text-[10px] text-dim">{t("tune.history.delta")}</dt><dd className="mt-2">{deltaCell(r)}</dd></div>
                       </dl>
                       {r.profile ? <button type="button" disabled={disabled} onClick={() => void aplicar(r.profile!, i)} title={cfg.title} className="inline-flex items-center gap-2 rounded-xl border border-edge px-3 py-2 text-xs transition-colors hover:border-accent hover:bg-accent/10 focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-40"><Icon name="arrow-right" />{aplicando === i ? t("comparison.applying") : t("tune.history.useThis")}</button> : <span className="max-w-32 text-[10px] text-dim" title={t("tune.history.legacyHelp")}>{t("tune.history.legacy")}</span>}
@@ -435,7 +436,7 @@ export default function BenchHistoryCard({
                         {cfg.text}
                       </span>
                       <span className="tabular-nums">
-                        {u.avgTps.toFixed(1)} tok/s
+                        {formatNumber(u.avgTps, 1)} tok/s
                       </span>
                       <span className="text-[11px] text-dim">
                         {t("tune.history.usageSamples", { count: u.samples })}

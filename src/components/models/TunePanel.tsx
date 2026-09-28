@@ -15,7 +15,7 @@ import Icon from "../ui/Icon";
 import ComparisonCard from "../server/ComparisonCard";
 import type { TFunction } from "i18next";
 import { engineBusyReason } from "../../lib/api";
-import { formatBytes } from "../../lib/format";
+import { formatBytes, formatNumber } from "../../lib/format";
 import { errorMessage } from "../../lib/serverSession";
 import { listen } from "../../lib/tauri";
 import {
@@ -101,7 +101,7 @@ function OptionCard({
       {/* Medido vale mais que estimado, e a tela precisa dizer qual é qual. */}
       {measured && (
         <span className="mt-0.5 rounded-md bg-ok/10 px-1.5 py-0.5 text-[11px] tabular-nums text-ok">
-          {t("tune.tested", { tps: measured.genTps.toFixed(1) })}
+          {t("tune.tested", { tps: formatNumber(measured.genTps, 1) })}
         </span>
       )}
     </button>
@@ -445,7 +445,7 @@ export default function TunePanel({
                       {a.byPrompt
                         .map(
                           ([tipo, tps]) =>
-                            `${t(`tune.spec.prompt.${tipo}`)} ${tps.toFixed(1)}`,
+                            `${t(`tune.spec.prompt.${tipo}`)} ${formatNumber(tps, 1)}`,
                         )
                         .join(" · ")}
                       {" tok/s"}
@@ -572,7 +572,7 @@ function SweepChart({ data }: { data: SweepOutcome }) {
           <div className="flex flex-1 items-center gap-1.5">
             {barra(p.genTps, maxGen, p.value === melhorGen.value)}
             <span className="w-12 shrink-0 tabular-nums text-dim">
-              {p.genTps.toFixed(1)}
+              {formatNumber(p.genTps, 1)}
             </span>
           </div>
           <div className="flex flex-1 items-center gap-1.5">

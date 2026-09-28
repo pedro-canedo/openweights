@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import Icon from "../ui/Icon";
 import {
   finished,
@@ -11,27 +13,19 @@ import { navigate } from "../../lib/nav";
 
 const control =
   "inline-flex items-center justify-center gap-2 rounded-xl border border-edge px-4 py-2.5 text-sm font-medium hover:bg-panel2 disabled:opacity-40 disabled:cursor-not-allowed";
-const kinds: Record<string, string> = {
-  guided_prepare: "Preparação dos dados",
-  workflow: "Treinamento",
-  comparison: "Comparação de respostas",
-};
-const statuses: Record<string, string> = {
-  completed: "Concluído",
-  failed: "Precisa de atenção",
-  cancelled: "Cancelado",
-  interrupted: "Interrompido",
-  queued: "Na fila",
-  cancelling: "Salvando checkpoint",
-};
+/** O tipo da execução, por extenso; `null` quando o serviço manda um novo. */
+const kind = (t: TFunction, k: string): string | null =>
+  ["guided_prepare", "workflow", "comparison"].includes(k) ? t(`studio.kind.${k}`) : null;
+/** Os estados que a lista distingue; o resto está em andamento. */
+const STATUSES = ["completed", "failed", "cancelled", "interrupted", "queued", "cancelling"];
 const normalize = (text: string) =>
   text
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("pt-BR");
-function date(value?: string) {
+    .toLocaleLowerCase();
+function date(lang: string, value?: string) {
   if (!value || Number.isNaN(Date.parse(value))) return "";
-  return new Date(value).toLocaleString("pt-BR", {
+  return new Date(value).toLocaleString(lang, {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -49,12 +43,13 @@ export function StudioHistory({
   disabled: boolean;
   onOpen: (run: StudioJob) => void;
 }) {
+  const { t, i18n } = useTranslation();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const visible = runs.filter(
     (run) =>
       normalize(
-        `${run.name} ${kinds[run.kind] ?? ""} ${run.training_info?.base?.name ?? ""} ${run.id}`,
+        `${run.name} ${kind(t, run.kind) ?? ""} ${run.training_info?.base?.name ?? ""} ${run.id}`,
       ).includes(normalize(query.trim())) &&
       (filter === "all" ||
         (filter === "models"
@@ -64,17 +59,13 @@ export function StudioHistory({
             : !finished(run))),
   );
   return (
-    <section className="mt-8" aria-label="Execuções e versões">
+    <section className="mt-8" aria-label={t("studio.history.title")}>
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h2>Execuções e versões</h2>
-          <p className="mt-1 text-sm text-dim">
-            Acompanhe cada etapa e volte aos seus resultados.
-          </p>
+          <h2>{t("studio.history.title")}</h2>
+          <p className="mt-1 text-sm text-dim">{t("studio.history.hint")}</p>
         </div>
-        <span className="text-xs text-dim">
-          {runs.length} {runs.length === 1 ? "execução" : "execuções"}
-        </span>
+        <span className="text-xs text-dim">{t("studio.history.count", { count: runs.length })}</span>
       </div>
       {runs.length > 0 ? (
         <>
@@ -83,23 +74,23 @@ export function StudioHistory({
               <Icon name="search" />
               <input
                 type="search"
-                aria-label="Buscar execuções"
-                placeholder="Buscar por nome, modelo ou etapa…"
+                aria-label={t("studio.history.search")}
+                placeholder={t("studio.history.searchPlaceholder")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="min-w-0 w-full bg-transparent py-3 text-sm outline-none"
               />
             </label>
             <select
-              aria-label="Filtrar execuções"
+              aria-label={t("studio.history.filter")}
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               className="rounded-xl border border-edge bg-panel px-3 py-3 text-sm"
             >
-              <option value="all">Todas as execuções</option>
-              <option value="models">Modelos prontos</option>
-              <option value="active">Em andamento</option>
-              <option value="attention">Precisam de atenção</option>
+              <option value="all">{t("studio.history.filterAll")}</option>
+              <option value="models">{t("studio.history.filterModels")}</option>
+              <option value="active">{t("studio.history.filterActive")}</option>
+              <option value="attention">{t("studio.history.filterAttention")}</option>
             </select>
           </div>
           <div className="overflow-hidden rounded-2xl border border-edge bg-panel">
@@ -122,7 +113,7 @@ export function StudioHistory({
                 </div>
                 <div className="min-w-0 flex-1 basis-48">
                   <div className="mb-1 text-xs text-dim">
-                    {kinds[run.kind] ?? "Execução"}
+                    {kind(t, run.kind) ?? t("studio.kind.run")}
                   </div>
                   <h3 className="break-words text-sm font-semibold">
                     {run.name}
@@ -134,7 +125,7 @@ export function StudioHistory({
                   )}
                   <p className="mt-1 text-xs text-dim">
                     <time dateTime={run.created_at}>
-                      {date(run.created_at)}
+                      {date(i18n.language, run.created_at)}
                     </time>
                     {run.created_at ? " · " : ""}
                     <span title={run.id}>#{run.id.slice(0, 8)}</span>
@@ -153,17 +144,23 @@ export function StudioHistory({
                     }
                   />
                   {run.chat_model && run.status === "completed"
-                    ? "Modelo pronto"
-                    : (statuses[run.status] ?? "Em andamento")}
+                    ? t("studio.history.modelReady")
+                    : STATUSES.includes(run.status)
+                      ? t(`studio.status.${run.status}`)
+                      : t("studio.status.running")}
                 </span>
                 <div className="flex flex-wrap gap-2">
                   <button
                     className={control}
                     disabled={disabled}
                     onClick={() => onOpen(run)}
-                    aria-label={`Ver detalhes de ${run.name}, ${kinds[run.kind] ?? "execução"}, ${run.id.slice(0, 8)}`}
+                    aria-label={t("studio.history.detailsOf", {
+                      name: run.name,
+                      kind: kind(t, run.kind) ?? t("studio.kind.run"),
+                      id: run.id.slice(0, 8),
+                    })}
                   >
-                    Ver detalhes
+                    {t("studio.history.details")}
                     <Icon name="arrow-right" />
                   </button>
                   {run.chat_model &&
@@ -173,7 +170,7 @@ export function StudioHistory({
                         className={control}
                         href={`/api/v1/runs/${run.id}/download`}
                       >
-                        Baixar GGUF
+                        {t("studio.job.downloadGguf")}
                         <Icon name="download" />
                       </a>
                     ) : (
@@ -184,7 +181,7 @@ export function StudioHistory({
                           navigate("chat", { chatModel: run.chat_model })
                         }
                       >
-                        Abrir no chat
+                        {t("studio.job.openInChat")}
                       </button>
                     ))}
                 </div>
@@ -192,9 +189,7 @@ export function StudioHistory({
             ))}
             {!visible.length && (
               <div className="p-8 text-center">
-                <p className="text-sm text-dim">
-                  Nenhuma execução corresponde a esta busca.
-                </p>
+                <p className="text-sm text-dim">{t("studio.history.noMatch")}</p>
                 <button
                   className={`${control} mt-4`}
                   onClick={() => {
@@ -202,7 +197,7 @@ export function StudioHistory({
                     setFilter("all");
                   }}
                 >
-                  Limpar filtros
+                  {t("studio.history.clear")}
                 </button>
               </div>
             )}
@@ -210,7 +205,7 @@ export function StudioHistory({
         </>
       ) : (
         <div className="rounded-2xl border border-dashed border-edge p-8 text-center text-sm text-dim">
-          Seu histórico aparecerá aqui quando você preparar os primeiros dados.
+          {t("studio.history.empty")}
         </div>
       )}
     </section>
@@ -234,6 +229,7 @@ export default function StudioOverview({
   onProject: (project: StudioProject) => void;
   onRun: (run: StudioJob) => void;
 }) {
+  const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const modelNames = new Map(models.map((model) => [model.id, model.name]));
   const visible = projects.filter((project) =>
@@ -246,25 +242,22 @@ export default function StudioOverview({
       <div className="studio-intro rounded-2xl border border-edge bg-panel p-6 sm:p-8">
         <div className="max-w-xl">
           <span className="text-xs font-semibold uppercase tracking-widest text-accent-ink">
-            Sua oficina de modelos
+            {t("studio.overview.eyebrow")}
           </span>
           <h2 className="mt-3 text-xl font-semibold tracking-tight sm:text-2xl">
-            Do seu conteúdo ao seu modelo.
+            {t("studio.overview.title")}
           </h2>
-          <p className="mt-3 text-sm leading-relaxed text-dim">
-            Adicione um livro, conversas ou código. Escolha uma base e acompanhe
-            o treinamento na sua máquina.
-          </p>
+          <p className="mt-3 text-sm leading-relaxed text-dim">{t("studio.overview.body")}</p>
         </div>
         <ol
           className="mt-6 grid gap-3 sm:grid-cols-3"
-          aria-label="Como funciona"
+          aria-label={t("studio.overview.howItWorks")}
         >
-          {[
-            ["01", "Prepare os dados", "Arquivos organizados automaticamente."],
-            ["02", "Adapte uma base", "Configuração conferida na sua GPU."],
-            ["03", "Experimente no chat", "Modelo salvo na sua biblioteca."],
-          ].map(([number, title, description]) => (
+          {(["1", "2", "3"] as const).map((n) => [
+            `0${n}`,
+            t(`studio.overview.step${n}Title`),
+            t(`studio.overview.step${n}Body`),
+          ]).map(([number, title, description]) => (
             <li
               key={number}
               className="flex gap-3 rounded-xl border border-edge bg-bg/50 p-4"
@@ -282,24 +275,22 @@ export default function StudioOverview({
           ))}
         </ol>
       </div>
-      <section className="mt-8" aria-label="Seus projetos">
+      <section className="mt-8" aria-label={t("studio.overview.projects")}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2>
-              Seus projetos{" "}
+              {t("studio.overview.projects")}{" "}
               <span className="ml-2 text-xs font-normal text-dim">
                 {projects.length}
               </span>
             </h2>
-            <p className="mt-1 text-sm text-dim">
-              Continue de onde parou. Dados e configurações ficam salvos.
-            </p>
+            <p className="mt-1 text-sm text-dim">{t("studio.overview.projectsHint")}</p>
           </div>
           {projects.length > 0 && (
             <input
               type="search"
-              aria-label="Buscar projetos"
-              placeholder="Buscar projeto ou modelo…"
+              aria-label={t("studio.overview.search")}
+              placeholder={t("studio.overview.searchPlaceholder")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="w-full rounded-xl border border-edge bg-panel px-3 py-2.5 text-sm sm:w-64"
@@ -321,10 +312,10 @@ export default function StudioOverview({
                   </span>
                   <span className="rounded-full bg-panel2 px-2.5 py-1 text-xs text-dim">
                     {project.dataset_id
-                      ? "Dados preparados"
+                      ? t("studio.overview.dataPrepared")
                       : project.source_ids.length
-                        ? "Dados adicionados"
-                        : "Rascunho"}
+                        ? t("studio.overview.dataAdded")
+                        : t("studio.overview.draft")}
                   </span>
                 </div>
                 <h3 className="w-full break-words font-semibold">
@@ -334,26 +325,23 @@ export default function StudioOverview({
                   {modelNames.get(project.model_id) ?? project.model_id}
                 </p>
                 <p className="mt-3 text-xs text-dim">
-                  {project.source_ids.length}{" "}
-                  {project.source_ids.length === 1 ? "arquivo" : "arquivos"} ·{" "}
+                  {t("studio.overview.files", { count: project.source_ids.length })} ·{" "}
                   {project.recipe_id === "quick"
-                    ? "Experimento rápido"
-                    : "Treino recomendado"}
+                    ? t("studio.overview.quick")
+                    : t("studio.overview.recommended")}
                 </p>
                 <span className="mt-5 flex w-full items-center justify-between border-t border-edge pt-4 text-sm font-medium">
                   {project.dataset_id
-                    ? "Continuar projeto"
+                    ? t("studio.overview.continue")
                     : project.source_ids.length
-                      ? "Preparar dados"
-                      : "Adicionar arquivos"}
+                      ? t("studio.overview.prepareData")
+                      : t("studio.overview.addFiles")}
                   <Icon name="arrow-right" />
                 </span>
               </button>
             ))}
             {!visible.length && (
-              <p className="col-span-full py-6 text-sm text-dim">
-                Nenhum projeto encontrado. Tente outro nome ou modelo.
-              </p>
+              <p className="col-span-full py-6 text-sm text-dim">{t("studio.overview.noProject")}</p>
             )}
           </div>
         ) : (
@@ -362,15 +350,11 @@ export default function StudioOverview({
               <Icon name="layers" className="h-5 w-5" />
             </span>
             <div className="min-w-0 flex-1 basis-52">
-              <h3 className="text-sm font-medium">
-                Comece seu primeiro projeto
-              </h3>
-              <p className="mt-1 text-sm text-dim">
-                Um único arquivo já é um ponto de partida.
-              </p>
+              <h3 className="text-sm font-medium">{t("studio.overview.firstTitle")}</h3>
+              <p className="mt-1 text-sm text-dim">{t("studio.overview.firstHint")}</p>
             </div>
             <button disabled={disabled} className={control} onClick={onCreate}>
-              Criar projeto
+              {t("studio.overview.create")}
               <Icon name="arrow-right" />
             </button>
           </div>

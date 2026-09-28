@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import StudioOverview, {
   StudioHistory,
 } from "../components/studio/StudioOverview";
@@ -6,6 +7,7 @@ import Icon from "../components/ui/Icon";
 import { Page } from "../components/ui/Shell";
 import { isTauri, listen } from "../lib/tauri";
 import { navigate } from "../lib/nav";
+import { formatNumber } from "../lib/format";
 import {
   finished,
   studioRequest as api,
@@ -18,30 +20,18 @@ import {
   type StudioProject,
 } from "../lib/studio";
 
-const labels: Record<string, string> = {
-  queued: "Na fila",
-  preparing: "Preparando",
-  running: "Em andamento",
-  cancelling: "Salvando checkpoint",
-  cancelled: "Cancelado",
-  interrupted: "Interrompido",
-  failed: "Precisa de atenção",
-  completed: "Concluído",
-  downloading: "Baixando a base",
-  benchmark: "Conferindo a GPU",
-  training: "Treinando",
-  evaluating: "Avaliando",
-  exporting: "Gerando GGUF",
-  ready: "Pronto para conversar",
-  comparing_original: "Respondendo com a base",
-  comparing_trained: "Respondendo com o modelo treinado",
-};
+/** Estados e etapas que o serviço manda; os que chegarem novos aparecem crus. */
+const ROTULADOS = new Set([
+  "queued", "preparing", "running", "cancelling", "cancelled", "interrupted",
+  "failed", "completed", "downloading", "benchmark", "training", "evaluating",
+  "exporting", "ready", "comparing_original", "comparing_trained",
+]);
 const button =
   "rounded-xl border border-edge px-4 py-2 text-sm disabled:opacity-40";
 const primary = `${button} bg-ink text-panel`;
 const field = "mt-1 w-full rounded-lg border border-edge bg-panel p-3 text-sm";
 const panel = "rounded-2xl border border-edge bg-panel p-6";
-const gb = (v: number) => `${(v / 1024 ** 3).toFixed(1)} GB`;
+const gb = (v: number) => `${formatNumber(v / 1024 ** 3, 1)} GB`;
 type Preview = {
   examples: { text?: string; messages?: { role: string; content: string }[] }[];
   manifest: { files?: unknown[] };
@@ -54,6 +44,8 @@ type Resources = {
 type Answers = { original?: { text: string }; trained?: { text: string } };
 
 export default function Studio() {
+  const { t } = useTranslation();
+  const rotulo = (k: string) => (ROTULADOS.has(k) ? t(`studio.status.${k}`) : k);
   const [installed, setInstalled] = useState<boolean>();
   const [compatible, setCompatible] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -143,16 +135,11 @@ export default function Studio() {
         void listen<{ received: number; total: number; stage?: string }>(
           "studio-install",
           (e) => {
-            const stages: Record<string, string> = {
-              catalog: "Conferindo catálogo",
-              verifying: "Verificando pacote",
-              extracting: "Extraindo dependências",
-              activating: "Ativando módulo",
-            };
+            const etapas = ["catalog", "verifying", "extracting", "activating"];
             setDownload(
-              e.stage && stages[e.stage]
-                ? stages[e.stage]
-                : `${gb(e.received)} de ${gb(e.total)}`,
+              e.stage && etapas.includes(e.stage)
+                ? t(`studio.install.stage.${e.stage}`)
+                : t("studio.install.progress", { received: gb(e.received), total: gb(e.total) }),
             );
           },
         ).then((un) => {
@@ -166,7 +153,7 @@ export default function Studio() {
     };
   }, []);
   function save(p: StudioProject) {
-    setSaved("Salvando…");
+    setSaved(t("studio.saving"));
     const request = saves.current
       .catch(() => {})
       .then(() => api<StudioProject>("/projects", p));
@@ -174,7 +161,7 @@ export default function Studio() {
     return request.then((result) => {
       if (mounted.current) {
         setProjects((ps) => [result, ...ps.filter((v) => v.id !== result.id)]);
-        setSaved("Projeto salvo");
+        setSaved(t("studio.saved"));
       }
       return result;
     });
@@ -183,7 +170,7 @@ export default function Studio() {
     if (!project || !compatible) return;
     const timer = setTimeout(() => {
       void save(project).catch((e) => {
-        setSaved("Falha ao salvar");
+        setSaved(t("studio.saveFailed"));
         setError(String(e));
       });
     }, 600);
@@ -247,7 +234,7 @@ export default function Studio() {
     if (project) await save(project);
     const p: StudioProject = {
       id: crypto.randomUUID().replaceAll("-", ""),
-      name: "Meu treinamento",
+      name: t("studio.defaultName"),
       source_ids: [],
       dataset_id: null,
       preparation_id: null,
@@ -300,7 +287,7 @@ export default function Studio() {
     }
   }
   function runBody() {
-    if (!project) throw new Error("Abra um projeto.");
+    if (!project) throw new Error(t("studio.openProjectFirst"));
     const value = {
       dataset_id: project.dataset_id,
       project_id: project.id,
@@ -337,12 +324,12 @@ export default function Studio() {
             disabled={active || busy}
             onClick={() => void action(createProject)}
           >
-            <Icon name="sparkles" /> Novo treinamento
+            <Icon name="sparkles" /> {t("studio.newTraining")}
           </button>
         ) : undefined
       }
-      title="Studio de treinamento"
-      subtitle="Seus dados, sua base, um modelo adaptado na sua máquina."
+      title={t("studio.title")}
+      subtitle={t("studio.subtitle")}
     >
       {error && (
         <div
@@ -353,17 +340,11 @@ export default function Studio() {
         </div>
       )}
       {installed === undefined ? (
-        <p role="status">Verificando o módulo…</p>
+        <p role="status">{t("studio.checking")}</p>
       ) : !installed ? (
         <section className={`${panel} mt-8`}>
-          <h2 className="text-xl font-semibold">
-            Prepare sua oficina de modelos
-          </h2>
-          <p className="my-4 text-dim">
-            Dependências privadas, sem configuração manual. Windows x64 com
-            NVIDIA. Download de aproximadamente 3 GB; OCR instalado quando
-            necessário.
-          </p>
+          <h2 className="text-xl font-semibold">{t("studio.install.title")}</h2>
+          <p className="my-4 text-dim">{t("studio.install.body")}</p>
           <button
             className={primary}
             disabled={busy || !isTauri}
@@ -376,21 +357,18 @@ export default function Studio() {
             }
           >
             {busy
-              ? download || "Conectando…"
-              : "Instalar módulo de treinamento"}
+              ? download || t("studio.install.connecting")
+              : t("studio.install.button")}
           </button>
         </section>
       ) : !compatible ? (
         <section className={panel}>
-          <p>
-            O serviço precisa do contrato Studio 2. Atualize o desktop e reabra
-            o módulo. Para uso independente, inicie o backend desta versão.
-          </p>
+          <p>{t("studio.incompatible")}</p>
           <button
             className={`${button} mt-4`}
             onClick={() => void action(refresh)}
           >
-            Verificar novamente
+            {t("studio.checkAgain")}
           </button>
         </section>
       ) : (
@@ -419,14 +397,14 @@ export default function Studio() {
                 })
               }
             >
-              <Icon name="arrow-right" className="h-4 w-4 rotate-180" /> Voltar
-              ao Studio
+              <Icon name="arrow-right" className="h-4 w-4 rotate-180" />{" "}
+              {t("studio.back")}
             </button>
           )}
           {project && (
             <>
               <label className="mb-4 block text-sm">
-                Nome do projeto
+                {t("studio.projectName")}
                 <input
                   className={field}
                   maxLength={100}
@@ -440,9 +418,9 @@ export default function Studio() {
               </p>
               <ol
                 className="studio-steps mb-6 grid grid-cols-3 gap-2 text-sm"
-                aria-label="Etapas"
+                aria-label={t("studio.steps.label")}
               >
-                {["Dados", "Treinamento", "Resultado"].map((title, i) => (
+                {[t("studio.steps.data"), t("studio.steps.training"), t("studio.steps.result")].map((title, i) => (
                   <li
                     key={title}
                     aria-current={
@@ -458,7 +436,7 @@ export default function Studio() {
               </ol>
               <div className="grid gap-5 lg:grid-cols-2">
                 <section className={panel}>
-                  <h2 className="font-semibold">1. Seus dados</h2>
+                  <h2 className="font-semibold">{t("studio.data.title")}</h2>
                   <div
                     className="my-4 rounded-xl border-2 border-dashed border-edge p-6 text-center"
                     onDragOver={(e) => e.preventDefault()}
@@ -470,23 +448,21 @@ export default function Studio() {
                         );
                     }}
                   >
-                    <p>Solte um PDF, textos ou conversas</p>
-                    <p className="my-2 text-xs text-dim">
-                      Até 32 MB por arquivo. Um livro pode ser suficiente.
-                    </p>
+                    <p>{t("studio.data.drop")}</p>
+                    <p className="my-2 text-xs text-dim">{t("studio.data.limit")}</p>
                     <button
                       className={button}
                       disabled={active || busy}
                       onClick={() => files.current?.click()}
                     >
-                      Escolher arquivos
+                      {t("studio.data.chooseFiles")}
                     </button>{" "}
                     <button
                       className={button}
                       disabled={active || busy}
                       onClick={() => folder.current?.click()}
                     >
-                      Escolher pasta
+                      {t("studio.data.chooseFolder")}
                     </button>
                     <input
                       ref={files}
@@ -519,7 +495,7 @@ export default function Studio() {
                         className="flex justify-between gap-3 text-sm"
                       >
                         <span className="truncate">
-                          {names.current[id] || `Arquivo ${i + 1}`}
+                          {names.current[id] || t("studio.data.file", { n: i + 1 })}
                         </span>
                         <button
                           className="underline"
@@ -534,13 +510,13 @@ export default function Studio() {
                             })
                           }
                         >
-                          Remover
+                          {t("studio.data.remove")}
                         </button>
                       </li>
                     ))}
                   </ul>
                   <label className="block text-sm">
-                    Conteúdo
+                    {t("studio.data.content")}
                     <select
                       className={field}
                       disabled={active || busy}
@@ -549,10 +525,10 @@ export default function Studio() {
                         change({ preset: e.target.value, dataset_id: null })
                       }
                     >
-                      <option value="auto">Detectar automaticamente</option>
-                      <option value="documents">Livro</option>
-                      <option value="conversations">Conversas</option>
-                      <option value="code">Código</option>
+                      <option value="auto">{t("studio.data.contentAuto")}</option>
+                      <option value="documents">{t("studio.data.contentBook")}</option>
+                      <option value="conversations">{t("studio.data.contentChats")}</option>
+                      <option value="code">{t("studio.data.contentCode")}</option>
                     </select>
                   </label>
                   <button
@@ -584,15 +560,17 @@ export default function Studio() {
                       })
                     }
                   >
-                    Preparar
+                    {t("studio.data.prepare")}
                   </button>
                   {dataset && (
                     <div className="mt-5 text-sm">
                       <p>
-                        {dataset.count} trechos ·{" "}
-                        {dataset.split_counts.train ?? 0} treino ·{" "}
-                        {dataset.split_counts.validation ?? 0} validação ·{" "}
-                        {dataset.split_counts.test ?? 0} teste reservado
+                        {t("studio.data.counts", {
+                          count: dataset.count,
+                          train: dataset.split_counts.train ?? 0,
+                          validation: dataset.split_counts.validation ?? 0,
+                          test: dataset.split_counts.test ?? 0,
+                        })}
                       </p>
                       {dataset.warnings?.map((w) => (
                         <p key={w} className="mt-2 text-dim">
@@ -615,14 +593,11 @@ export default function Studio() {
                           )
                         }
                       >
-                        Conferir texto extraído
+                        {t("studio.data.checkText")}
                       </button>
                       {preview && (
                         <div className="mt-3 max-h-64 overflow-auto rounded-lg border border-edge p-3">
-                          <p className="mb-3 text-xs text-dim">
-                            Somente amostras do treino. Teste reservado
-                            separado.
-                          </p>
+                          <p className="mb-3 text-xs text-dim">{t("studio.data.previewNote")}</p>
                           {preview.examples.map((ex, i) => (
                             <p key={i} className="mb-4 whitespace-pre-wrap">
                               {ex.text ??
@@ -632,7 +607,7 @@ export default function Studio() {
                             </p>
                           ))}
                           <details>
-                            <summary>Relatório por arquivo e OCR</summary>
+                            <summary>{t("studio.data.report")}</summary>
                             <pre className="whitespace-pre-wrap text-xs">
                               {JSON.stringify(preview.manifest.files, null, 2)}
                             </pre>
@@ -643,39 +618,37 @@ export default function Studio() {
                   )}
                 </section>
                 <section className={panel}>
-                  <h2 className="font-semibold">2. Base e treinamento</h2>
+                  <h2 className="font-semibold">{t("studio.base.title")}</h2>
                   <div className="my-4 rounded-xl border border-edge p-4">
                     <p className="text-lg font-semibold">
-                      {model?.name ?? "Escolha uma base"}
+                      {model?.name ?? t("studio.base.choose")}
                     </p>
                     <p className="my-2 text-sm text-dim">
                       {model?.downloaded
-                        ? "Disponível localmente"
+                        ? t("studio.base.local")
                         : model
-                          ? `${gb(model.download_bytes)} para baixar`
+                          ? t("studio.base.toDownload", { size: gb(model.download_bytes) })
                           : ""}{" "}
                       · {model?.license}
                     </p>
                     <p className="mb-3 text-xs text-dim">
-                      {model?.tested
-                        ? "Fluxo testado anteriormente; nova receita exige benchmark."
-                        : "Candidato: compatibilidade técnica, ainda sem homologação completa."}
+                      {model?.tested ? t("studio.base.tested") : t("studio.base.candidate")}
                     </p>
                     <button
                       className={button}
                       disabled={active || busy}
                       onClick={() => setPicker(!picker)}
                     >
-                      Trocar modelo
+                      {t("studio.base.change")}
                     </button>
                   </div>
                   {picker && (
                     <div className="mb-4 rounded-xl border border-edge p-4">
                       <div className="mb-3 flex flex-wrap gap-2">
                         {[
-                          ["catalog", "Catálogo"],
-                          ["downloaded", "Já baixados"],
-                          ["import", "Importar"],
+                          ["catalog", t("studio.base.tabCatalog")],
+                          ["downloaded", t("studio.base.tabDownloaded")],
+                          ["import", t("studio.base.tabImport")],
                         ].map(([id, title]) => (
                           <button
                             key={id}
@@ -704,7 +677,7 @@ export default function Studio() {
                             })
                           }
                         >
-                          Escolher pasta com modelo
+                          {t("studio.base.importFolder")}
                         </button>
                       )}
                       {tab !== "import" ? (
@@ -724,7 +697,7 @@ export default function Studio() {
                                   {m.name}
                                   <span className="block text-xs text-dim">
                                     {gb(m.download_bytes)} ·{" "}
-                                    {m.tested ? "Testado" : "Exige validação"} ·{" "}
+                                    {m.tested ? t("studio.base.testedShort") : t("studio.base.needsValidation")} ·{" "}
                                     {m.license}
                                   </span>
                                 </button>
@@ -733,25 +706,22 @@ export default function Studio() {
                         </ul>
                       ) : (
                         <div>
-                          <p className="mb-3 text-xs text-dim">
-                            Bases Qwen3 densas em safetensors. GGUF é usado no
-                            chat. Importar não homologa um modelo.
-                          </p>
+                          <p className="mb-3 text-xs text-dim">{t("studio.base.importNote")}</p>
                           <label className="text-sm">
-                            Origem
+                            {t("studio.base.source")}
                             <select
                               className={field}
                               value={source}
                               onChange={(e) => setSource(e.target.value)}
                             >
                               <option value="hub">Hugging Face</option>
-                              <option value="local">Pasta local</option>
+                              <option value="local">{t("studio.base.sourceLocal")}</option>
                             </select>
                           </label>
                           <label className="mt-3 block text-sm">
                             {source === "hub"
-                              ? "Identificador do repositório"
-                              : "Pasta com pesos e tokenizer"}
+                              ? t("studio.base.repoId")
+                              : t("studio.base.weightsFolder")}
                             <input
                               className={field}
                               value={location}
@@ -759,7 +729,7 @@ export default function Studio() {
                               placeholder={
                                 source === "hub"
                                   ? "Qwen/Qwen3-1.7B"
-                                  : "C:\\Modelos\\minha-base"
+                                  : t("studio.base.localPlaceholder")
                               }
                             />
                           </label>
@@ -778,19 +748,17 @@ export default function Studio() {
                               })
                             }
                           >
-                            Conferir e importar
+                            {t("studio.base.importCheck")}
                           </button>
                         </div>
                       )}
                     </div>
                   )}
                   <p className="mb-4 text-sm text-dim">
-                    {dataset?.kind === "chat"
-                      ? "Objetivo: ajustar respostas com conversas reais."
-                      : "Objetivo: adaptar a linguagem dos seus textos. Isso não garante respostas factuais."}
+                    {dataset?.kind === "chat" ? t("studio.goal.chat") : t("studio.goal.text")}
                   </p>
                   <label className="block text-sm">
-                    Receita
+                    {t("studio.recipe.label")}
                     <select
                       className={field}
                       disabled={active || busy}
@@ -802,23 +770,16 @@ export default function Studio() {
                         })
                       }
                     >
-                      <option value="quick">
-                        Teste rápido — até 50 passos
-                      </option>
-                      <option value="recommended">
-                        Treino recomendado — até 500 passos
-                      </option>
+                      <option value="quick">{t("studio.recipe.quick")}</option>
+                      <option value="recommended">{t("studio.recipe.recommended")}</option>
                     </select>
                   </label>
-                  <p className="mt-2 text-xs text-dim">
-                    Até uma passagem pelos dados. Tempo limitado ao final de um
-                    passo seguro.
-                  </p>
+                  <p className="mt-2 text-xs text-dim">{t("studio.recipe.note")}</p>
                   <details className="my-4 text-sm">
-                    <summary>Avançado</summary>
+                    <summary>{t("studio.advanced.title")}</summary>
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <label>
-                        Contexto
+                        {t("studio.advanced.context")}
                         <select
                           className={field}
                           disabled={active || busy}
@@ -829,13 +790,13 @@ export default function Studio() {
                         >
                           {[512, 1024, 2048, 4096].map((n) => (
                             <option key={n} value={n}>
-                              {n} tokens
+                              {t("studio.advanced.tokens", { n })}
                             </option>
                           ))}
                         </select>
                       </label>
                       <label>
-                        Rank LoRA
+                        {t("studio.advanced.rank")}
                         <select
                           className={field}
                           disabled={active || busy}
@@ -850,7 +811,7 @@ export default function Studio() {
                         </select>
                       </label>
                       <label>
-                        Taxa de aprendizado
+                        {t("studio.advanced.learningRate")}
                         <input
                           className={field}
                           type="number"
@@ -865,7 +826,7 @@ export default function Studio() {
                         />
                       </label>
                       <label>
-                        Limite de minutos
+                        {t("studio.advanced.maxMinutes")}
                         <input
                           className={field}
                           type="number"
@@ -890,7 +851,7 @@ export default function Studio() {
                         )
                       }
                     >
-                      Conferir recursos
+                      {t("studio.checkResources")}
                     </button>
                     <button
                       className={primary}
@@ -906,16 +867,16 @@ export default function Studio() {
                         })
                       }
                     >
-                      Treinar e gerar modelo
+                      {t("studio.train")}
                     </button>
                   </div>
                   {resources && (
                     <p className="mt-4 text-sm text-dim">
-                      Estimativa:{" "}
-                      {(resources.vram_estimated_mb / 1024).toFixed(1)} GB VRAM
-                      · {gb(resources.ram_required_bytes)} RAM ·{" "}
-                      {gb(resources.disk_required_bytes)} disco. Benchmark ainda
-                      obrigatório.
+                      {t("studio.estimate", {
+                        vram: formatNumber(resources.vram_estimated_mb / 1024, 1),
+                        ram: gb(resources.ram_required_bytes),
+                        disk: gb(resources.disk_required_bytes),
+                      })}
                     </p>
                   )}
                 </section>
@@ -924,10 +885,7 @@ export default function Studio() {
           )}
           {pending && (
             <div role="alert" className={`${panel} mt-5`}>
-              <p>
-                O motor precisa parar. Isso encerra respostas e requisições em
-                andamento.
-              </p>
+              <p>{t("studio.engineStop.body")}</p>
               <button
                 className={`${primary} mt-3`}
                 disabled={busy}
@@ -935,7 +893,7 @@ export default function Studio() {
                   void action(() => gpu({ ...pending, stopEngine: true }))
                 }
               >
-                Parar motor e continuar
+                {t("studio.engineStop.button")}
               </button>
             </div>
           )}
@@ -948,32 +906,35 @@ export default function Studio() {
                   : ""}
               </p>
               <h2 className="font-semibold">
-                {labels[job.status] ?? job.status}
-                {active && job.stage
-                  ? ` · ${labels[job.stage] ?? job.stage}`
-                  : ""}
+                {rotulo(job.status)}
+                {active && job.stage ? ` · ${rotulo(job.stage)}` : ""}
               </h2>
               {active && (
                 <progress
                   className="my-4 w-full"
                   max={100}
                   value={job.stage === "training" ? percent : undefined}
-                  aria-label="Progresso da etapa"
+                  aria-label={t("studio.job.progress")}
                 />
               )}
               {job.stage === "downloading" && job.download_progress && (
                 <p className="my-2 text-sm text-dim">
-                  {job.download_progress.received_files} de{" "}
-                  {job.download_progress.total_files} arquivos da base
-                  disponíveis.
+                  {t("studio.job.files", {
+                    received: job.download_progress.received_files,
+                    total: job.download_progress.total_files,
+                  })}
                 </p>
               )}
               {latest && (
                 <p className="my-3 text-sm text-dim">
-                  Passo {latest.step}
-                  {Number.isFinite(steps) ? ` de ${steps}` : ""} · pico{" "}
-                  {latest.vram_gb?.toFixed(1) ?? "—"} GB ·{" "}
-                  {Math.round((latest.elapsed ?? 0) / 60)} min decorridos
+                  {Number.isFinite(steps)
+                    ? t("studio.job.stepOf", { step: latest.step, total: steps })
+                    : t("studio.job.step", { step: latest.step })}{" "}
+                  ·{" "}
+                  {t("studio.job.peak", {
+                    vram: latest.vram_gb != null ? formatNumber(latest.vram_gb, 1) : "—",
+                    minutes: Math.round((latest.elapsed ?? 0) / 60),
+                  })}
                 </p>
               )}
               {active &&
@@ -982,28 +943,25 @@ export default function Studio() {
                 latest.step > 0 &&
                 Number.isFinite(steps) && (
                   <p className="text-xs text-dim">
-                    Estimativa desta etapa: cerca de{" "}
-                    {Math.max(
-                      1,
-                      Math.ceil(
-                        (((latest.elapsed ?? 0) / latest.step) *
-                          Math.max(0, steps - latest.step)) /
-                          60,
+                    {t("studio.job.remaining", {
+                      minutes: Math.max(
+                        1,
+                        Math.ceil(
+                          (((latest.elapsed ?? 0) / latest.step) *
+                            Math.max(0, steps - latest.step)) /
+                            60,
+                        ),
                       ),
-                    )}{" "}
-                    min restantes. Avaliação e exportação vêm depois.
+                    })}
                   </p>
                 )}
               {job.chat_model &&
                 job.training_info?.evaluation?.held_out_test?.test_loss !==
                   undefined && (
                   <p className="my-3 text-sm">
-                    Erro de previsão no teste reservado:{" "}
-                    {job.training_info.evaluation.held_out_test.test_loss.toFixed(
-                      3,
-                    )}
-                    . Compare esta métrica somente com avaliações feitas com o
-                    mesmo tokenizer e dados.
+                    {t("studio.job.testLoss", {
+                      loss: formatNumber(job.training_info.evaluation.held_out_test.test_loss, 3),
+                    })}
                   </p>
                 )}
               {job.error && (
@@ -1022,7 +980,7 @@ export default function Studio() {
                       )
                     }
                   >
-                    Cancelar e preservar checkpoints
+                    {t("studio.job.cancel")}
                   </button>
                 )}
                 {job.kind === "guided_prepare" &&
@@ -1041,7 +999,7 @@ export default function Studio() {
                             })
                           }
                         >
-                          Instalar leitura de páginas digitalizadas {download}
+                          {t("studio.job.installOcr")} {download}
                         </button>
                       )}
                       <button
@@ -1055,7 +1013,7 @@ export default function Studio() {
                           )
                         }
                       >
-                        Retomar preparação
+                        {t("studio.job.resumePrep")}
                       </button>
                     </>
                   )}
@@ -1076,9 +1034,7 @@ export default function Studio() {
                         )
                       }
                     >
-                      {job.can_retry_export
-                        ? "Tentar exportação novamente"
-                        : "Retomar checkpoint"}
+                      {job.can_retry_export ? t("studio.job.retryExport") : t("studio.job.resumeCheckpoint")}
                     </button>
                   )}
                 {job.chat_model &&
@@ -1087,7 +1043,7 @@ export default function Studio() {
                       className={primary}
                       href={`/api/v1/runs/${job.id}/download`}
                     >
-                      Baixar GGUF
+                      {t("studio.job.downloadGguf")}
                     </a>
                   ) : (
                     <button
@@ -1096,24 +1052,21 @@ export default function Studio() {
                         navigate("chat", { chatModel: job.chat_model })
                       }
                     >
-                      Abrir no chat
+                      {t("studio.job.openInChat")}
                     </button>
                   ))}
               </div>
               {job.chat_model && (
                 <div className="mt-4">
-                  <p className="text-sm text-dim">
-                    GGUF na biblioteca. O teste reservado mede previsão de
-                    texto, não comprova respostas factuais.
-                  </p>
+                  <p className="text-sm text-dim">{t("studio.job.ggufNote")}</p>
                   <label className="mt-4 block text-sm">
-                    Comparar uma pergunta
+                    {t("studio.job.compareLabel")}
                     <textarea
                       className={field}
                       maxLength={8000}
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
-                      placeholder="Use um exemplo próprio, separado do teste reservado."
+                      placeholder={t("studio.job.comparePlaceholder")}
                     />
                   </label>
                   <button
@@ -1133,18 +1086,16 @@ export default function Studio() {
                       )
                     }
                   >
-                    Comparar original e treinado
+                    {t("studio.job.compareButton")}
                   </button>
-                  <p className="mt-2 text-xs text-dim">
-                    Mesma pergunta, temperatura zero, um modelo por vez.
-                  </p>
+                  <p className="mt-2 text-xs text-dim">{t("studio.job.compareNote")}</p>
                 </div>
               )}
               {answers && (
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                   {[
-                    ["original", "Modelo original"],
-                    ["trained", "Modelo treinado"],
+                    ["original", t("studio.job.original")],
+                    ["trained", t("studio.job.trained")],
                   ].map(([id, title]) => (
                     <div key={id} className="rounded-xl border border-edge p-4">
                       <h3 className="mb-3 font-semibold">{title}</h3>
@@ -1156,9 +1107,9 @@ export default function Studio() {
                 </div>
               )}
               <details className="mt-4 text-sm">
-                <summary>Detalhes técnicos</summary>
+                <summary>{t("studio.job.technical")}</summary>
                 <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap text-xs">
-                  {job.log || "Os registros aparecerão durante a execução."}
+                  {job.log || t("studio.job.logEmpty")}
                 </pre>
               </details>
             </section>

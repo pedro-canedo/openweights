@@ -9,7 +9,7 @@ import {
 } from "../../lib/comparison";
 import { tuneBenchCancel } from "../../lib/tuning";
 import { useProfileRevision } from "../../lib/profileChanges";
-import { formatBytes } from "../../lib/format";
+import { formatBytes, formatNumber } from "../../lib/format";
 import Icon from "../ui/Icon";
 
 const button =
@@ -259,7 +259,7 @@ export default function ComparisonCard({ model }: { model: string }) {
                 </div>
                 <div className="mt-4">
                   <span className="text-3xl font-semibold tracking-tight tabular-nums">
-                    {arm.genTps.median.toFixed(1)}
+                    {formatNumber(arm.genTps.median, 1)}
                   </span>
                   <span className="ml-2 text-xs text-dim">tok/s</span>
                   <p className="mt-1 text-[11px] text-dim">
@@ -272,7 +272,7 @@ export default function ComparisonCard({ model }: { model: string }) {
                       {t("comparison.readingLabel")}
                     </dt>
                     <dd className="mt-1 tabular-nums">
-                      {arm.promptTps.median.toFixed(1)} tok/s
+                      {formatNumber(arm.promptTps.median, 1)} tok/s
                     </dd>
                   </div>
                   <div>
@@ -280,7 +280,7 @@ export default function ComparisonCard({ model }: { model: string }) {
                       {t("comparison.durationLabel")}
                     </dt>
                     <dd className="mt-1 tabular-nums">
-                      {(arm.totalMs.median / 1000).toFixed(2)} s
+                      {formatNumber(arm.totalMs.median / 1000, 2)} s
                     </dd>
                   </div>
                 </dl>
@@ -296,8 +296,8 @@ export default function ComparisonCard({ model }: { model: string }) {
           {chosen && selected !== current && (
             <p className="mt-3 text-xs text-dim">
               {t("comparison.selectedRates", {
-                gen: chosen.genTps.median.toFixed(1),
-                prompt: chosen.promptTps.median.toFixed(1),
+                gen: formatNumber(chosen.genTps.median, 1),
+                prompt: formatNumber(chosen.promptTps.median, 1),
               })}
             </p>
           )}
@@ -371,8 +371,8 @@ export default function ComparisonCard({ model }: { model: string }) {
                           className="whitespace-nowrap p-2 tabular-nums"
                           key={i}
                         >
-                          {arm[key].median.toFixed(1)} (
-                          {arm[key].min.toFixed(1)}–{arm[key].max.toFixed(1)})
+                          {formatNumber(arm[key].median, 1)} (
+                          {formatNumber(arm[key].min, 1)}–{formatNumber(arm[key].max, 1)})
                         </td>
                       ))}
                     </tr>

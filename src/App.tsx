@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { listLocalModels } from "./lib/api";
-import { montarComandos, novaConversa, TELAS_POR_NUMERO } from "./lib/comandos";
+import { enderecoDaAjuda, montarComandos, novaConversa, TELAS_POR_NUMERO } from "./lib/comandos";
+import { openUrl } from "./lib/openExternal";
 import { decidirModoInicial, useModo } from "./lib/mode";
 import { onNavigate, type Screen } from "./lib/nav";
 import { errorMessage } from "./lib/serverSession";
@@ -16,6 +17,7 @@ import NavConversations from "./components/NavConversations";
 import UpdateBadge from "./components/UpdateBadge";
 import { OwMark, OwWordmark } from "./components/OpenWeightsLogo";
 import CommandPalette, { FolhaDeAtalhos } from "./components/CommandPalette";
+import Icon from "./components/ui/Icon";
 import { ConfirmHost } from "./components/ui/Dialog";
 import { toast, ToastHost } from "./components/ui/Toast";
 import Discover from "./screens/Discover";
@@ -62,7 +64,7 @@ const GRUPOS: { id: "start" | "agents" | "advanced"; telas: Screen[] }[] = [
 ];
 
 export default function App() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [screen, setScreen] = useState<Screen>("discover");
   const modo = useModo();
   // A primeira tela: Descobrir para quem ainda não tem modelo, o Chat para
@@ -94,11 +96,12 @@ export default function App() {
     () =>
       montarComandos(t, {
         modo,
+        idioma: i18n.language,
         tema,
         mostrarAtalhos: () => setFolha(true),
         aoFalhar: (e) => toast({ message: errorMessage(e), tone: "bad" }),
       }),
-    [t, modo, tema],
+    [t, i18n.language, modo, tema],
   );
   useEffect(() => {
     // Na captura: chega antes do xterm, que consumiria a tecla.
@@ -327,6 +330,24 @@ export default function App() {
             ))}
             <div className={recolhida ? "mx-2 my-1.5 h-px bg-edge" : "h-2"} />
             {item("settings")}
+            {/* O guia do site, fora do app: o ícone de saída avisa. */}
+            <button
+              type="button"
+              onClick={() => void openUrl(enderecoDaAjuda(i18n.language))}
+              title={recolhida ? t("nav.help") : undefined}
+              aria-label={recolhida ? t("nav.help") : undefined}
+              className={`flex items-center rounded-lg py-2 text-left text-sm text-dim transition-colors hover:bg-panel2/60 hover:text-ink ${
+                recolhida ? "justify-center px-0" : "gap-3 px-3"
+              }`}
+            >
+              <Icon name="help" className="h-4.5 w-4.5 shrink-0" />
+              {!recolhida && (
+                <>
+                  {t("nav.help")}
+                  <Icon name="external" className="ml-auto h-3.5 w-3.5 shrink-0 opacity-70" />
+                </>
+              )}
+            </button>
           </div>
 
           {/* Conversas e versão só existem com largura para o texto: em 56 px
