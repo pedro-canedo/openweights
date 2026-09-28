@@ -96,7 +96,7 @@ fn e_mount(nome: &OsStr) -> bool {
 /// Não basta o `APPDIR` existir: o executável atual tem de morar dentro
 /// dele. Assim um `APPDIR` que a pessoa exporte por outro motivo não faz o
 /// app sair podando o ambiente de ninguém.
-fn pacote() -> Option<&'static Pacote> {
+pub(crate) fn pacote() -> Option<&'static Pacote> {
     static PACOTE: OnceLock<Option<Pacote>> = OnceLock::new();
     PACOTE
         .get_or_init(|| {
@@ -243,6 +243,20 @@ fn correcoes(
     }
     if ler("GTK_THEME").is_some_and(|v| tema_do_hook(&v, ler("APPIMAGE_GTK_THEME"))) {
         saida.push(("GTK_THEME", None));
+    }
+
+    // O app troca o `FONTCONFIG_FILE` por um que esconde do WebKit as fontes
+    // COLRv1 (`fontes.rs`); um programa do sistema recebe o da pessoa. Se o
+    // comando define o `FONTCONFIG_FILE` ele mesmo, fica o dele. Fica mesmo
+    // que a proteção saia: o `restart` de uma atualização passa a troca
+    // adiante (ver `fontes::FONTCONFIG_ORIGINAL`).
+    if let Some(original) =
+        crate::fontes::fontconfig_da_pessoa(ler(crate::fontes::FONTCONFIG_ORIGINAL))
+    {
+        if ler("FONTCONFIG_FILE").is_some() {
+            saida.push(("FONTCONFIG_FILE", original));
+        }
+        saida.push((crate::fontes::FONTCONFIG_ORIGINAL, None));
     }
 
     saida
@@ -427,6 +441,59 @@ mod tests {
             };
         }
         saida
+    }
+
+    #[test]
+    fn a_program_from_the_system_gets_the_persons_fontconfig_back() {
+        let mut amb = ambiente_do_appimage();
+        amb.insert(
+            "FONTCONFIG_FILE",
+            "/run/user/1000/openweights/fonts-sem-colrv1.conf".to_string(),
+        );
+        amb.insert(crate::fontes::FONTCONFIG_ORIGINAL, String::new());
+        let filho = corrigir(&amb);
+        assert!(!filho.contains_key("FONTCONFIG_FILE"), "a pessoa não tinha");
+        assert!(!filho.contains_key(crate::fontes::FONTCONFIG_ORIGINAL));
+
+        amb.insert(
+            crate::fontes::FONTCONFIG_ORIGINAL,
+            "/home/p/meu-fonts.conf".to_string(),
+        );
+        let filho = corrigir(&amb);
+        assert_eq!(filho["FONTCONFIG_FILE"], "/home/p/meu-fonts.conf");
+        assert!(!filho.contains_key(crate::fontes::FONTCONFIG_ORIGINAL));
+
+        // Sem a troca do app, o FONTCONFIG_FILE da pessoa fica como está.
+        let mut sem_troca = ambiente_do_appimage();
+        sem_troca.insert("FONTCONFIG_FILE", "/home/p/meu-fonts.conf".to_string());
+        assert_eq!(
+            corrigir(&sem_troca)["FONTCONFIG_FILE"],
+            "/home/p/meu-fonts.conf"
+        );
+    }
+
+    #[test]
+    fn a_command_that_sets_its_own_fontconfig_keeps_it() {
+        let mut amb = ambiente_do_appimage();
+        amb.insert(
+            "FONTCONFIG_FILE",
+            "/run/user/1000/openweights/fonts-sem-colrv1.conf".to_string(),
+        );
+        amb.insert(crate::fontes::FONTCONFIG_ORIGINAL, String::new());
+        let mut cmd = std::process::Command::new("fc-list");
+        cmd.env("FONTCONFIG_FILE", "/opt/o-dele.conf");
+        aplicar_com(
+            &mut cmd,
+            &pacote_de_teste(),
+            |n| amb.get(n).map(OsString::from),
+            None,
+        );
+        let envs: HashMap<_, _> = cmd.get_envs().collect();
+        assert_eq!(
+            envs[OsStr::new("FONTCONFIG_FILE")],
+            Some(OsStr::new("/opt/o-dele.conf"))
+        );
+        assert_eq!(envs[OsStr::new(crate::fontes::FONTCONFIG_ORIGINAL)], None);
     }
 
     #[test]

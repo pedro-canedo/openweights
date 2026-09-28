@@ -51,6 +51,25 @@ pub fn no_window(cmd: &mut Command) -> &mut Command {
 
 #[cfg(target_os = "linux")]
 mod appimage;
+#[cfg(target_os = "linux")]
+mod fontes;
+
+/// Esconde do WebKit do AppImage as fontes COLRv1 quando o FreeType do
+/// sistema não é aquele com que o WebKit do pacote foi compilado — senão um
+/// emoji com gradiente derruba a webview. Detalhes em `fontes.rs`. Fora de um
+/// AppImage (e fora do Linux) é no-op.
+///
+/// # Safety
+///
+/// Troca variáveis do ambiente do processo: chamar no começo do `main`,
+/// antes de existir outra thread e antes de o GTK subir.
+pub unsafe fn esconder_fontes_colrv1_do_webkit() {
+    #[cfg(target_os = "linux")]
+    // SAFETY: a mesma condição, repassada de quem chamou.
+    unsafe {
+        fontes::esconder_fontes_colrv1_do_webkit();
+    }
+}
 
 /// Devolve ao filho o ambiente do sistema quando o app roda de um AppImage.
 ///

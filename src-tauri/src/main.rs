@@ -35,6 +35,9 @@ use tauri::{Emitter, Manager};
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // SAFETY: primeira coisa do `main`: nenhuma outra thread existe ainda e o
+    // GTK (que carrega o fontconfig) só sobe no `Builder` abaixo.
+    unsafe { lr_proc::esconder_fontes_colrv1_do_webkit() };
 
     tauri::Builder::default()
         // Sem o script que o plugin injeta para abrir os links clicados: no

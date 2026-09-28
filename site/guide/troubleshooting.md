@@ -157,6 +157,18 @@ reloaded; slow generation throughout is a configuration question.
 configurations honestly, with warmup and repetitions, instead of trusting a
 single run.
 
+## The app window goes blank when an emoji shows up (Linux)
+
+In the AppImage, the bundled browser engine was built against Ubuntu 22.04's
+FreeType and uses the system's. On systems with a newer FreeType and colour
+emoji in the COLRv1 format (Fedora 44, for instance), it cannot draw emoji with
+gradients, and the window went blank — again on every reload. Since 0.25.1 the
+app hides those fonts from its own interface on such systems, and emoji show in
+black and white; if no other emoji font is installed, they show as boxes, and a
+monochrome font such as Noto Emoji fixes that. The app log says when the
+protection is on (`fontes COLRv1 escondidas da interface`). The `.deb` package
+uses the system's browser engine and does not have this problem.
+
 ## Reporting something else
 
 Open an [issue](https://github.com/pedro-canedo/openweights/issues) with your

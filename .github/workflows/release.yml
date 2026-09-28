@@ -109,6 +109,22 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
             libayatana-appindicator3-dev librsvg2-dev patchelf
 
+      - name: FreeType com que o WebKit empacotado foi compilado
+        if: runner.os == 'Linux'
+        run: |
+          # O AppImage leva o WebKitGTK deste runner, compilado contra o
+          # FreeType dele, mas usa o FreeType do sistema da pessoa. O app
+          # compara os dois para esconder as fontes COLRv1 do WebKit
+          # (src-tauri/crates/proc/src/fontes.rs): trocar o runner sem
+          # trocar a constante faria o app errar a conta.
+          esperado=$(sed -n 's/^pub const FREETYPE_DO_WEBKIT: (i32, i32) = (\([0-9]*\), \([0-9]*\));.*/\1.\2/p' src-tauri/crates/proc/src/fontes.rs)
+          runner=$(dpkg-query -W -f='${Version}' libfreetype6 | sed -E 's/^([0-9]+:)?([0-9]+\.[0-9]+).*/\2/')
+          echo "FreeType do runner: $runner — FREETYPE_DO_WEBKIT: $esperado"
+          if [ -z "$esperado" ] || [ "$runner" != "$esperado" ]; then
+            echo "::error::O runner tem FreeType $runner e fontes.rs diz ${esperado:-nada}. Atualize FREETYPE_DO_WEBKIT."
+            exit 1
+          fi
+
       - uses: actions/setup-node@v5
         with:
           node-version: 22

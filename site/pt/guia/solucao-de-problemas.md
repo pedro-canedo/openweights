@@ -159,6 +159,18 @@ O [Desempenho no chat](/pt/guia/desempenho) explica como comparar duas
 configurações com honestidade, com aquecimento e repetições, em vez de confiar
 numa rodada só.
 
+## A janela do app apaga quando aparece um emoji (Linux)
+
+No AppImage, o navegador embutido foi compilado contra o FreeType do Ubuntu
+22.04 e usa o do sistema. Em sistemas com FreeType mais novo e emoji colorido
+no formato COLRv1 (o Fedora 44, por exemplo), ele não desenha os emojis com
+gradiente, e a janela apagava — de novo a cada recarga. Desde a 0.25.1 o app
+esconde essas fontes da própria interface nesses sistemas, e os emojis aparecem
+em preto e branco; se não houver outra fonte de emoji instalada, aparecem como
+quadradinhos, e uma fonte monocromática como a Noto Emoji resolve. O log do app
+diz quando a proteção está ligada (`fontes COLRv1 escondidas da interface`). O
+pacote `.deb` usa o navegador do sistema e não tem esse problema.
+
 ## Relatar outra coisa
 
 Abra uma [issue](https://github.com/pedro-canedo/openweights/issues) com o seu
