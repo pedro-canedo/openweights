@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
+import { useDismiss } from "./ui/camada";
 import { genStats } from "../lib/llama";
 import { formatBytes, formatCount } from "../lib/format";
 import MonitorPopover from "./monitor/MonitorPopover";
@@ -64,7 +65,8 @@ export default function StatusBar() {
   );
   const gen = useSyncExternalStore(genStats.subscribe, genStats.get);
   const [monitorOpen, setMonitorOpen] = useState(false);
-  const monitorRef = useRef<HTMLDivElement>(null);
+  // Esc e clique fora fecham; o foco volta ao botão do monitor.
+  const monitorRef = useDismiss(monitorOpen, () => setMonitorOpen(false));
   // O que o servidor está fazendo agora. Uma consulta só responde as três
   // perguntas que antes moravam três telas adiante — e capta o tráfego de
   // QUALQUER cliente, inclusive o harness batendo direto na API.
@@ -86,17 +88,6 @@ export default function StatusBar() {
     };
   }, []);
 
-  // Fecha o popover ao clicar fora dele.
-  useEffect(() => {
-    if (!monitorOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!monitorRef.current?.contains(e.target as Node)) {
-        setMonitorOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [monitorOpen]);
 
   return (
     <footer className="flex h-9 shrink-0 items-center gap-4 overflow-hidden border-t border-edge bg-panel px-4">
@@ -225,7 +216,7 @@ export default function StatusBar() {
         {/* A velocidade do SERVIDOR vem primeiro: ela conta o harness e
             qualquer app externo, não só o chat daqui. */}
         {(live?.generating || gen.generating) && (
-          <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-accent">
+          <span className="flex items-center gap-1.5 text-[11px] tabular-nums text-accent-ink">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             {(live?.tokensPerSec ?? gen.tokensPerSec) != null
               ? `${(live?.tokensPerSec ?? gen.tokensPerSec)!.toFixed(1)} ${t("status.tokensPerSec")}`
@@ -237,6 +228,8 @@ export default function StatusBar() {
           <button
             onClick={() => setMonitorOpen((v) => !v)}
             title="Monitor de hardware"
+            aria-expanded={monitorOpen}
+            aria-haspopup="dialog"
             className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
               monitorOpen
                 ? "bg-panel2 text-ink"
@@ -256,7 +249,12 @@ export default function StatusBar() {
             </svg>
           </button>
           {monitorOpen && (
-            <div className="absolute right-0 bottom-full z-50 mb-2">
+            <div
+              role="dialog"
+              aria-label="Monitor de hardware"
+              data-overlay=""
+              className="absolute right-0 bottom-full z-50 mb-2"
+            >
               <MonitorPopover />
             </div>
           )}

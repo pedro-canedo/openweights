@@ -91,7 +91,7 @@ export default function GateNotice({
             className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
               ocupado
                 ? "cursor-default bg-panel2 text-dim"
-                : "bg-accent text-white hover:opacity-90"
+                : "bg-accent-fill text-white hover:opacity-90"
             }`}
           >
             {t("settings.hfLogin")}

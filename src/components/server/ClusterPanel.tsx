@@ -158,7 +158,7 @@ export default function ClusterPanel() {
               type="button"
               disabled={busy || !canShare || !snap.pendingFrom.tagOk}
               onClick={() => void run(clusterAccept)}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-accent-fill px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
             >
               {t("server.cluster.accept")}
             </button>
@@ -247,7 +247,7 @@ export default function ClusterPanel() {
                   type="button"
                   disabled={busy}
                   onClick={() => void run(() => clusterRequestPair(p.id))}
-                  className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
+                  className="rounded-lg bg-accent-fill px-3 py-1.5 text-[12px] font-medium text-white disabled:opacity-50"
                 >
                   {t("server.cluster.useExtra")}
                 </button>

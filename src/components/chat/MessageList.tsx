@@ -192,7 +192,7 @@ export default function MessageList({
     const isLastAssistant = i === lastAssistantIdx;
     return (
       <div
-        className={`mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 ${generating ? "invisible pointer-events-none" : ""} ${
+        className={`mt-0.5 flex items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 ${generating ? "invisible pointer-events-none" : ""} ${
           m.role === "user" ? "justify-end" : ""
         }`}
       >
@@ -266,7 +266,7 @@ export default function MessageList({
           {m.role === "user" ? (
             <div key={i} className="group flex max-w-[80%] flex-col self-end">
               {m.images?.map((image, index) => <img key={index} src={image.dataUrl} alt={image.name} loading="lazy" className="mb-2 max-h-64 max-w-full rounded-xl object-contain" />)}
-              <div className="rounded-2xl rounded-br-sm bg-accent px-4 py-2.5 text-sm whitespace-pre-wrap text-white select-text">
+              <div className="rounded-2xl rounded-br-sm bg-accent-fill px-4 py-2.5 text-sm whitespace-pre-wrap text-white select-text">
                 {m.content}
               </div>
               {actionBar(m, i)}

@@ -106,7 +106,7 @@ export default function HarnessLauncher({
                   launching != null
                 }
                 onClick={() => void open(h.id)}
-                className="ml-auto rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                className="ml-auto rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
               >
                 {launching === h.id
                   ? t("common.loading")

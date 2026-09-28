@@ -172,12 +172,15 @@ export function Select({
   onChange,
   className,
   disabled,
+  label,
 }: {
   value: string;
   options: { value: string; label: string }[];
   onChange: (v: string) => void;
   className?: string;
   disabled?: boolean;
+  /** Nome para o leitor de tela quando não há `<label>` associado. */
+  label?: string;
 }) {
   const { t } = useTranslation();
   const conhecido = options.some((o) => o.value === value);
@@ -185,8 +188,9 @@ export function Select({
     <select
       value={value}
       disabled={disabled}
+      aria-label={label}
       onChange={(e) => onChange(e.target.value)}
-      className={`rounded-lg border border-edge bg-panel2 px-3 py-1.5 text-sm outline-none disabled:opacity-40 ${className ?? ""}`}
+      className={`rounded-lg border border-edge bg-panel2 px-3 py-1.5 text-sm outline-none focus:border-accent disabled:opacity-40 ${className ?? ""}`}
     >
       {!conhecido && (
         <option value={value}>{t("common.currentValue", { v: value })}</option>

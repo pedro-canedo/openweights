@@ -330,6 +330,7 @@ function ServerConfig({ running }: { running: boolean }) {
               value={modelsMax}
               options={oneToEight}
               onChange={setModelsMax}
+              label={t("server.modelsMax")}
             />
           </div>
           {/* Sem esta frase o número parece "quantos você tem"; ele é quanto
@@ -345,6 +346,7 @@ function ServerConfig({ running }: { running: boolean }) {
               value={parallel}
               options={oneToEight}
               onChange={setParallel}
+              label={t("server.parallel")}
             />
           </div>
           {/* Sem esta frase o número parece "quantas abas posso abrir"; ele
@@ -357,7 +359,7 @@ function ServerConfig({ running }: { running: boolean }) {
       <div className="mt-4 flex items-center gap-3">
         <button
           onClick={() => void save()}
-          className="flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
+          className="flex items-center gap-1.5 rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white"
         >
           {saved && <Icon name="check" className="h-3.5 w-3.5" />}
           {t("common.save")}

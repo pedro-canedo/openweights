@@ -162,9 +162,11 @@ export default function App() {
               <button
                 key={s}
                 onClick={() => setScreen(s)}
+                aria-current={screen === s ? "page" : undefined}
                 // Recolhida, o rótulo vira `title`: o ícone sozinho não diz
                 // "Fontes" para quem chegou agora.
                 title={recolhida ? t(`nav.${s}`) : undefined}
+                aria-label={recolhida ? t(`nav.${s}`) : undefined}
                 className={`flex items-center rounded-lg py-2 text-left text-sm transition-colors ${
                   recolhida ? "justify-center px-0" : "gap-3 px-3"
                 } ${

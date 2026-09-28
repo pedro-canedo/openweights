@@ -222,6 +222,7 @@ export default function Composer({
           }}
           onPaste={handlePaste}
           placeholder={t("chat.placeholder")}
+          aria-label={t("chat.placeholder")}
           rows={1}
           className="max-h-40 min-h-10 w-full resize-none bg-transparent px-1.5 py-1.5 text-sm outline-none select-text placeholder:text-dim"
         />

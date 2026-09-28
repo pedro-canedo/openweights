@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
+import { confirmar } from "./ui/Dialog";
 import { deleteChat, listChats, listMessages, renameChat } from "../lib/api";
 import { chatStore } from "../lib/chatStore";
 import { generationStore } from "../lib/generationStore";
@@ -59,10 +60,13 @@ export default function NavConversations() {
       .catch(() => {});
   };
 
-  const remove = (chat: ChatRow) => {
-    if (!window.confirm(t("chat.deleteChatConfirm", { title: chat.title }))) {
-      return;
-    }
+  const remove = async (chat: ChatRow) => {
+    const sim = await confirmar({
+      title: t("chat.deleteChatConfirm", { title: chat.title }),
+      confirmLabel: t("chat.deleteChat"),
+      tone: "danger",
+    });
+    if (!sim) return;
     generationStore.markDeleted(chat.id);
     void deleteChat(chat.id).catch(() => {});
     chatStore.setChats(chats.filter((c) => c.id !== chat.id));
@@ -131,6 +135,7 @@ export default function NavConversations() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("chat.search")}
+          aria-label={t("chat.search")}
           className="w-full rounded-lg border border-edge bg-panel2 py-1.5 pr-2 pl-8 text-xs outline-none placeholder:text-dim focus:border-accent"
         />
       </label>
@@ -181,7 +186,7 @@ export default function NavConversations() {
                     )}
                     <span className="truncate text-[13px]">{c.title}</span>
                   </button>
-                  <div className="mr-0.5 hidden shrink-0 items-center group-hover:flex">
+                  <div className="mr-0.5 hidden shrink-0 items-center group-focus-within:flex group-hover:flex">
                     <button
                       type="button"
                       onClick={() => void exportMd(c)}

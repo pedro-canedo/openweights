@@ -1,8 +1,9 @@
 // Seletor combinado de modelo + esforço, no estilo do picker do composer:
 // gatilho "Nome + esforço", lista de modelos e esforço / mais modelos no rodapé.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useDismiss } from "../ui/camada";
 import { splitModelRef } from "../../lib/providers";
 import {
   EFFORT_MAX_TOKENS,
@@ -37,7 +38,7 @@ function Origem({ modelRef }: { modelRef: string }) {
 function Check() {
   return (
     <svg
-      className="h-4 w-4 shrink-0 text-sky-400"
+      className="h-4 w-4 shrink-0 text-sky-400 light:text-sky-700"
       fill="none"
       stroke="currentColor"
       strokeWidth="2.4"
@@ -70,29 +71,13 @@ function Chevron({ dir = "down" }: { dir?: "down" | "right" }) {
   );
 }
 
-function useDismiss(open: boolean, onClose: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-  return ref;
-}
 
 function Submenu({ children }: { children: ReactNode }) {
   return (
-    <div className="absolute right-full bottom-0 z-40 mr-1 min-w-48 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+    <div
+      data-overlay=""
+      className="absolute right-full bottom-0 z-40 mr-1 min-w-48 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+    >
       {children}
     </div>
   );
@@ -160,6 +145,8 @@ export default function ModelSelect({
           setOpen((v) => !v);
           setPanel(null);
         }}
+        aria-expanded={open}
+        aria-haspopup="true"
         title={
           empty
             ? t("chat.modelSelect")
@@ -183,7 +170,10 @@ export default function ModelSelect({
       </button>
 
       {open && (
-        <div className="absolute right-0 bottom-full z-30 mb-2 w-80 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+        <div
+          data-overlay=""
+          className="absolute right-0 bottom-full z-30 mb-2 w-80 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+        >
           {primary.map((m) => (
             <button
               key={m}

@@ -183,7 +183,7 @@ export default function ParamsPanel({
             <button
               onClick={() => void saveCurrent()}
               disabled={!presetName.trim()}
-              className="shrink-0 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+              className="shrink-0 rounded-lg bg-accent-fill px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40"
             >
               {t("common.save")}
             </button>

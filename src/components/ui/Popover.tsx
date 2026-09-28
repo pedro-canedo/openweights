@@ -49,6 +49,7 @@ export function Popover({
   onClose,
   anchorRef,
   label,
+  bare = false,
   className = "",
   children,
 }: {
@@ -58,6 +59,8 @@ export function Popover({
   anchorRef?: RefObject<HTMLElement | null>;
   /** Nome acessível do painel ("Anexar", "Monitor de hardware"…). */
   label: string;
+  /** Sem a moldura padrão: o painel já tem a sua (migração sem mudar o visual). */
+  bare?: boolean;
   className?: string;
   children: ReactNode;
 }) {
@@ -72,7 +75,11 @@ export function Popover({
       aria-label={label}
       tabIndex={-1}
       data-overlay=""
-      className={`z-40 rounded-xl border border-edge bg-panel shadow-xl outline-none ${className}`}
+      className={
+        bare
+          ? `outline-none ${className}`
+          : `z-40 rounded-xl border border-edge bg-panel shadow-xl outline-none ${className}`
+      }
     >
       {children}
     </div>

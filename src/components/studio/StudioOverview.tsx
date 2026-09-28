@@ -141,7 +141,7 @@ export function StudioHistory({
                   </p>
                 </div>
                 <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${run.status === "completed" ? "studio-status-success" : finished(run) ? "studio-status-attention" : "bg-accent/10 text-accent"}`}
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${run.status === "completed" ? "studio-status-success" : finished(run) ? "studio-status-attention" : "bg-accent/10 text-accent-ink"}`}
                 >
                   <Icon
                     name={
@@ -245,7 +245,7 @@ export default function StudioOverview({
     <>
       <div className="studio-intro rounded-2xl border border-edge bg-panel p-6 sm:p-8">
         <div className="max-w-xl">
-          <span className="text-xs font-semibold uppercase tracking-widest text-accent">
+          <span className="text-xs font-semibold uppercase tracking-widest text-accent-ink">
             Sua oficina de modelos
           </span>
           <h2 className="mt-3 text-xl font-semibold tracking-tight sm:text-2xl">
@@ -269,7 +269,7 @@ export default function StudioOverview({
               key={number}
               className="flex gap-3 rounded-xl border border-edge bg-bg/50 p-4"
             >
-              <span className="text-xs font-semibold text-accent">
+              <span className="text-xs font-semibold text-accent-ink">
                 {number}
               </span>
               <div>

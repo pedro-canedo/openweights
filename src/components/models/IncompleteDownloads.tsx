@@ -110,7 +110,7 @@ function MiniCard({
           <button
             type="button"
             onClick={() => act(resumeDownload(status.id))}
-            className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-medium text-white transition-opacity hover:opacity-90"
+            className="rounded-lg bg-accent-fill px-2.5 py-1 text-[11px] font-medium text-white transition-opacity hover:opacity-90"
           >
             {t("models.resume")}
           </button>
@@ -215,6 +215,7 @@ export default function IncompleteDownloads({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={t("models.incompleteSearch")}
+          aria-label={t("models.incompleteSearch")}
           className="min-w-0 flex-1 rounded-xl border border-edge bg-panel px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent"
         />
         <div className="flex flex-wrap gap-1.5">
@@ -225,7 +226,7 @@ export default function IncompleteDownloads({
               onClick={() => setFilter(c.id)}
               className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
                 filter === c.id
-                  ? "bg-accent/15 text-accent"
+                  ? "bg-accent/15 text-accent-ink"
                   : "bg-panel2 text-dim hover:text-ink"
               }`}
             >

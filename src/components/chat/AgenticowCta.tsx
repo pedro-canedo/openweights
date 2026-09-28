@@ -36,7 +36,7 @@ export function AgenticowHeroCard() {
       <button
         type="button"
         onClick={irParaOAgenticow}
-        className="shrink-0 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
+        className="shrink-0 rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white"
       >
         {rodando ? t("chat.agenticow.openPanel") : t("chat.agenticow.open")}
       </button>

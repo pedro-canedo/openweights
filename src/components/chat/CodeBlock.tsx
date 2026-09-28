@@ -73,7 +73,7 @@ export default function CodeBlock({
         </span>
         <button
           onClick={copy}
-          className="rounded px-1.5 py-0.5 text-[10px] text-dim opacity-0 transition-opacity group-hover:opacity-100 hover:bg-panel2 hover:text-ink"
+          className="rounded px-1.5 py-0.5 text-[10px] text-dim opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 hover:bg-panel2 hover:text-ink"
         >
           {copied ? t("server.copied") : t("server.copy")}
         </button>

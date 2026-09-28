@@ -38,6 +38,10 @@
 @container (min-width: 900px) { .settings-layout { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); } .harness-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 @media (max-width: 640px) { .workspace-page { padding-top: 24px; } .settings-layout > section, .settings-layout > div > section, .harness-layout > section, .provider-details > div:first-child { padding: 20px; } .workspace-heading { gap: 12px; margin-bottom: 24px; } }
 
+/* `light:text-sky-800` — para o que usa a paleta do Tailwind direto (avatares,
+   selos de provedor) e some sobre o branco com o tom do escuro. */
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
 @theme {
   --color-bg: var(--lr-bg);
   --color-panel: var(--lr-panel);
@@ -128,6 +132,14 @@ body {
 :where(button, a[href], summary, select, [role="tab"], [role="button"], [role="menuitem"], [tabindex]:not([tabindex="-1"]), input:is([type="checkbox"], [type="radio"], [type="range"])):focus-visible {
   outline: 2px solid var(--lr-focus);
   outline-offset: 2px;
+}
+
+/* A interface não é selecionável (`body`), mas mensagem de erro e de estado
+   é o que a pessoa copia para pedir ajuda. */
+[role="alert"],
+[role="status"] {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 @media (prefers-reduced-motion: reduce) {

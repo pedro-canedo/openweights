@@ -24,6 +24,7 @@ import type { WorkspaceFile } from "../../lib/types";
 import PreviewPane, { canShowCode, previewKind } from "./PreviewPane";
 import FileIcon, { FolderIcon } from "./FileIcon";
 import Icon, { DirtyDot } from "../ui/Icon";
+import { Dialog, confirmar } from "../ui/Dialog";
 
 function folderName(dir: string): string {
   const parts = dir.replace(/[\\/]+$/, "").split(/[\\/]/);
@@ -291,8 +292,17 @@ export function WorkspaceHost({
     }
   };
 
-  const removeFolder = () => {
-    if (dirty && !window.confirm(t("workspace.discard"))) return;
+  // Trocar de arquivo ou fechar com alterações não salvas pergunta antes.
+  const podeDescartar = async () =>
+    !dirty ||
+    (await confirmar({
+      title: t("workspace.discard"),
+      confirmLabel: t("models.discard"),
+      tone: "danger",
+    }));
+
+  const removeFolder = async () => {
+    if (!(await podeDescartar())) return;
     onDirChange(null);
     setOpenPath(null);
     setEditorOpen(false);
@@ -303,9 +313,7 @@ export function WorkspaceHost({
 
   const openFile = async (file: WorkspaceFile) => {
     if (!dir) return;
-    if (dirty && openPath !== file.path && !window.confirm(t("workspace.discard"))) {
-      return;
-    }
+    if (openPath !== file.path && !(await podeDescartar())) return;
     setError(null);
     try {
       const text = await readWorkspaceFile(dir, file.path);
@@ -321,9 +329,7 @@ export function WorkspaceHost({
 
   const openPreview = async (file: WorkspaceFile) => {
     if (!dir) return;
-    if (dirty && openPath !== file.path && !window.confirm(t("workspace.discard"))) {
-      return;
-    }
+    if (openPath !== file.path && !(await podeDescartar())) return;
     setError(null);
     // HTML/SVG são texto: carregamos o conteúdo junto para o toggle
     // "código | prévia" já ter o que mostrar. Imagem binária não passa pelo
@@ -344,8 +350,8 @@ export function WorkspaceHost({
     setEditorOpen(true);
   };
 
-  const closeEditor = () => {
-    if (dirty && !window.confirm(t("workspace.discard"))) return;
+  const closeEditor = async () => {
+    if (!(await podeDescartar())) return;
     setEditorOpen(false);
     setPreviewMode(false);
     setOpenPath(null);
@@ -438,7 +444,7 @@ export function WorkspaceTrigger() {
       title={dir ? `${folderName(dir)} — ${t("workspace.change")}` : t("workspace.add")}
       className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40 ${
         dir
-          ? "text-accent hover:bg-panel hover:text-ink"
+          ? "text-accent-ink hover:bg-panel hover:text-ink"
           : "text-dim hover:bg-panel hover:text-ink"
       }`}
     >
@@ -460,7 +466,7 @@ export function WorkspaceToggle() {
       }
       className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
         explorerOpen
-          ? "border-accent text-accent"
+          ? "border-accent text-accent-ink"
           : dir
             ? "border-edge text-ink hover:border-accent"
             : "border-edge text-dim hover:border-accent hover:text-ink"
@@ -541,7 +547,7 @@ function FileTree({
                 type="button"
                 onClick={() => node.file && void openPreview(node.file)}
                 title={t("workspace.preview.open")}
-                className={`mr-1 h-5 w-5 shrink-0 items-center justify-center rounded text-dim group-hover:flex hover:text-ink ${
+                className={`mr-1 h-6 w-6 shrink-0 items-center justify-center rounded text-dim group-focus-within:flex group-hover:flex hover:text-ink ${
                   active ? "flex" : "hidden"
                 }`}
               >
@@ -604,7 +610,7 @@ export function WorkspaceExplorer() {
           type="button"
           onClick={() => setExplorerOpen(false)}
           title={t("workspace.closeExplorer")}
-          className="flex h-5 w-5 items-center justify-center rounded text-dim hover:text-ink"
+          className="flex h-6 w-6 items-center justify-center rounded text-dim hover:text-ink"
         >
           <Icon name="chevron-right" className="h-3.5 w-3.5" />
         </button>
@@ -616,7 +622,8 @@ export function WorkspaceExplorer() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("workspace.search")}
-            className="w-full border-b border-edge bg-transparent px-3 py-2 text-xs outline-none placeholder:text-dim"
+            aria-label={t("workspace.search")}
+            className="w-full border-b border-edge bg-transparent px-3 py-2 text-xs outline-none placeholder:text-dim focus:bg-panel2"
           />
           <div className="min-h-0 flex-1 overflow-y-auto py-1">
             {visible.length === 0 ? (
@@ -634,7 +641,7 @@ export function WorkspaceExplorer() {
           <button
             type="button"
             onClick={() => void addFolder()}
-            className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white"
+            className="rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-medium text-white"
           >
             {t("workspace.add")}
           </button>
@@ -684,11 +691,10 @@ function WorkspaceEditor() {
         // está vazio: salvar aqui destruiria o arquivo no disco.
         if (!previewMode) void save();
       }
-      if (e.key === "Escape") closeEditor();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [editorOpen, previewMode, save, closeEditor]);
+  }, [editorOpen, previewMode, save]);
 
   useEffect(() => {
     if (editorOpen && !previewMode) taRef.current?.focus();
@@ -706,13 +712,13 @@ function WorkspaceEditor() {
     // Ela lê do disco via protocolo asset — alterações não salvas no editor
     // não aparecem, igual a abrir o arquivo no navegador.
     return (
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget) closeEditor();
-        }}
+      <Dialog
+        open
+        bare
+        onClose={() => void closeEditor()}
+        title={fileName}
+        className="h-[min(86vh,820px)] w-full max-w-5xl shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
       >
-        <div className="h-[min(86vh,820px)] w-full max-w-5xl shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
           <PreviewPane
             path={absPath}
             name={fileName}
@@ -725,8 +731,7 @@ function WorkspaceEditor() {
               canShowCode(fileName) ? () => setPreviewMode(false) : undefined
             }
           />
-        </div>
-      </div>
+      </Dialog>
     );
   }
 
@@ -744,7 +749,8 @@ function WorkspaceEditor() {
   };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== "Tab") return;
+    // Tab indenta; Shift+Tab fica com o navegador e leva o foco aos botões.
+    if (e.key !== "Tab" || e.shiftKey) return;
     e.preventDefault();
     const el = e.currentTarget;
     const start = el.selectionStart;
@@ -759,13 +765,13 @@ function WorkspaceEditor() {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) closeEditor();
-      }}
+    <Dialog
+      open
+      bare
+      onClose={() => void closeEditor()}
+      title={openPath}
+      className="flex h-[min(86vh,820px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-edge bg-[#1e1e1e] shadow-[0_24px_80px_rgba(0,0,0,0.55)]"
     >
-      <div className="flex h-[min(86vh,820px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-edge bg-[#1e1e1e] shadow-[0_24px_80px_rgba(0,0,0,0.55)]">
         <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
           <FileIcon name={fileName} className="h-4 w-4" />
           <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-mono text-[12px] text-white/90">
@@ -800,7 +806,7 @@ function WorkspaceEditor() {
             type="button"
             onClick={() => void save()}
             disabled={busy || !dirty}
-            className="rounded-md bg-accent px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-40"
+            className="rounded-md bg-accent-fill px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-40"
           >
             {saved ? t("workspace.saved") : t("common.save")}
           </button>
@@ -825,6 +831,8 @@ function WorkspaceEditor() {
           </div>
           <textarea
             ref={taRef}
+            aria-label={openPath}
+            data-keeps-tab=""
             value={draft}
             spellCheck={false}
             wrap="off"
@@ -851,7 +859,6 @@ function WorkspaceEditor() {
             {dirty ? ` · ${t("workspace.unsaved")}` : ""}
           </span>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

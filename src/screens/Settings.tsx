@@ -238,7 +238,7 @@ function HfTokenCard() {
             className={`rounded-lg px-4 py-2 text-sm font-medium transition-opacity ${
               entrando
                 ? "cursor-default bg-panel2 text-dim"
-                : "bg-accent text-white hover:opacity-90"
+                : "bg-accent-fill text-white hover:opacity-90"
             }`}
           >
             {entrando ? t("settings.hfLoginWaiting") : t("settings.hfLogin")}
@@ -262,6 +262,7 @@ function HfTokenCard() {
               value={token}
               onChange={(e) => setToken(e.target.value)}
               placeholder="hf_..."
+              aria-label={t("settings.hfToken")}
               className="flex-1 rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent"
             />
             <button

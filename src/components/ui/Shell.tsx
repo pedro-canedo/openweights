@@ -21,6 +21,7 @@
 import {
   useEffect,
   useState,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import Icon, { type IconName } from "./Icon";
@@ -89,9 +90,27 @@ export function Tabs({
   value: string;
   onChange: (id: string) => void;
 }) {
+  // Setas trocam de aba e levam o foco junto; só a aba ativa entra no Tab
+  // da página (padrão WAI-ARIA de abas).
+  function setas(e: KeyboardEvent<HTMLDivElement>) {
+    const i = tabs.findIndex((tab) => tab.id === value);
+    const n = tabs.length;
+    const destino =
+      e.key === "ArrowRight" ? (i + 1) % n
+      : e.key === "ArrowLeft" ? (i - 1 + n) % n
+      : e.key === "Home" ? 0
+      : e.key === "End" ? n - 1
+      : -1;
+    if (destino < 0) return;
+    e.preventDefault();
+    onChange(tabs[destino].id);
+    const botoes = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    botoes[destino]?.focus();
+  }
   return (
     <div
       role="tablist"
+      onKeyDown={setas}
       className="mt-6 flex items-center gap-1 overflow-x-auto border-b border-edge"
     >
       {tabs.map((tab) => {
@@ -99,8 +118,10 @@ export function Tabs({
         return (
           <button
             key={tab.id}
+            type="button"
             role="tab"
             aria-selected={ativa}
+            tabIndex={ativa ? 0 : -1}
             onClick={() => onChange(tab.id)}
             className={`relative shrink-0 px-3.5 py-2.5 text-sm transition-colors ${
               ativa ? "text-ink" : "text-dim hover:text-ink"

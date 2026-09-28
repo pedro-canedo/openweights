@@ -1,8 +1,9 @@
 // Menu do "+" no composer: anexar arquivos; o resto ainda fica como
 // "em breve".
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { Popover } from "../ui/Popover";
 
 function Icon({ children }: { children: ReactNode }) {
   return (
@@ -51,21 +52,7 @@ export default function AttachMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const botao = useRef<HTMLButtonElement>(null);
 
   const soon = (
     <span className="rounded-md bg-panel2 px-1.5 py-0.5 text-[10px] text-dim">
@@ -78,8 +65,11 @@ export default function AttachMenu({
       <button
         type="button"
         disabled={disabled}
+        ref={botao}
         onClick={() => setOpen((v) => !v)}
         title={t("chat.plus.open")}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-40 ${
           open ? "bg-panel text-ink" : "text-dim hover:bg-panel hover:text-ink"
         }`}
@@ -97,8 +87,14 @@ export default function AttachMenu({
         </svg>
       </button>
 
-      {open && (
-        <div className="absolute bottom-full left-0 z-30 mb-2 w-72 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+      <Popover
+        bare
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={botao}
+        label={t("chat.plus.open")}
+        className="absolute bottom-full left-0 z-30 mb-2 w-72 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+      >
           <button
             type="button"
             onClick={() => {
@@ -148,8 +144,7 @@ export default function AttachMenu({
             <span className="min-w-0 flex-1">{t("chat.plus.plugins")}</span>
             {soon}
           </button>
-        </div>
-      )}
+      </Popover>
     </div>
   );
 }

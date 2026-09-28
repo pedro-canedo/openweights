@@ -12,15 +12,16 @@
 import { useState } from "react";
 import { useAuthorAvatar } from "../../lib/authorAvatars";
 
+// O tom 300 some sobre o branco (1,2–1,4:1): no claro as letras usam o 800.
 const TONS = [
-  "bg-sky-500/20 text-sky-300",
-  "bg-violet-500/20 text-violet-300",
-  "bg-emerald-500/20 text-emerald-300",
-  "bg-amber-500/20 text-amber-300",
-  "bg-rose-500/20 text-rose-300",
-  "bg-cyan-500/20 text-cyan-300",
-  "bg-orange-500/20 text-orange-300",
-  "bg-fuchsia-500/20 text-fuchsia-300",
+  "bg-sky-500/20 text-sky-300 light:text-sky-800",
+  "bg-violet-500/20 text-violet-300 light:text-violet-800",
+  "bg-emerald-500/20 text-emerald-300 light:text-emerald-800",
+  "bg-amber-500/20 text-amber-300 light:text-amber-800",
+  "bg-rose-500/20 text-rose-300 light:text-rose-800",
+  "bg-cyan-500/20 text-cyan-300 light:text-cyan-800",
+  "bg-orange-500/20 text-orange-300 light:text-orange-800",
+  "bg-fuchsia-500/20 text-fuchsia-300 light:text-fuchsia-800",
 ];
 
 /** Cor estável por autor: o mesmo nome cai sempre no mesmo tom. */

@@ -2,8 +2,9 @@
 // popover com o detalhe por categoria. A contagem é estimada (~4 chars /
 // token) até o llama-server expor tokenize; o teto vem de GET /props.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useDismiss } from "../ui/camada";
 import {
   engineBusyReason,
   getModelProfile,
@@ -34,25 +35,6 @@ function formatChip(n: number): string {
   return n % 1024 === 0 ? `${n / 1024}k` : String(n);
 }
 
-function useDismiss(open: boolean, onClose: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-  return ref;
-}
 
 export default function ContextMeter({
   model,
@@ -162,6 +144,8 @@ export default function ContextMeter({
         type="button"
         disabled={!model}
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         title={
           limit
             ? t("chat.ctx.usage.ringTitle", {
@@ -205,7 +189,12 @@ export default function ContextMeter({
       </button>
 
       {open && (
-        <div className="absolute right-0 bottom-full z-40 mb-2 w-80 rounded-xl border border-edge bg-panel p-3.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+        <div
+          role="dialog"
+          aria-label={t("chat.ctx.usage.title")}
+          data-overlay=""
+          className="absolute right-0 bottom-full z-40 mb-2 w-80 rounded-xl border border-edge bg-panel p-3.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)]"
+        >
           <div className="flex items-start justify-between gap-2">
             <div className="text-[13px] font-medium text-ink">
               {t("chat.ctx.usage.title")}

@@ -13,7 +13,7 @@ import type { FitVerdict } from "../../lib/types";
 
 const STYLES: Record<FitVerdict["kind"], string> = {
   fullGpu: "bg-ok/15 text-ok",
-  moeOffload: "bg-accent/15 text-accent",
+  moeOffload: "bg-accent/15 text-accent-ink",
   partial: "bg-warn/15 text-warn",
   cpuOnly: "bg-dim/15 text-dim",
   wontFit: "bg-bad/15 text-bad",

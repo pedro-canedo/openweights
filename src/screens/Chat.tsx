@@ -807,7 +807,7 @@ export default function Chat() {
             }}
           >
             {dragOver && (
-              <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-accent/10 text-sm font-medium text-accent">
+              <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-accent/10 text-sm font-medium text-accent-ink">
                 {t("chat.attach")}
               </div>
             )}
@@ -819,7 +819,7 @@ export default function Chat() {
                 title={t("chat.params")}
                 className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors ${
                   paramsOpen
-                    ? "border-accent text-accent"
+                    ? "border-accent text-accent-ink"
                     : "border-edge text-dim hover:border-accent hover:text-ink"
                 }`}
               >
@@ -843,7 +843,7 @@ export default function Chat() {
                 <span>{t("chat.noModels")}</span>
                 <button
                   onClick={() => navigate("discover")}
-                  className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white"
+                  className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white"
                 >
                   {t("nav.discover")}
                 </button>

@@ -33,7 +33,7 @@ import { errorMessage } from "../lib/serverSession";
 const botao =
   "rounded-lg border border-edge px-3 py-2 text-sm text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50";
 const botaoPrimario =
-  "rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
+  "rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white disabled:opacity-50";
 
 /** A subida automática acontece uma vez por sessão do app. */
 let autoTentado = false;
@@ -305,7 +305,7 @@ function CartaoFonte({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-edge bg-panel px-5 py-4">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-panel2 text-accent">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-panel2 text-accent-ink">
         <Icon name={icone} className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
@@ -346,7 +346,7 @@ function Controle() {
       <Page icon="terminal" title={t("agenticow.title")} subtitle={t("agenticow.subtitle")}>
         <div className="harness-layout">
           <Card className="harness-launch" tone={erro ? "warn" : "normal"}>
-            <div className="mb-6 flex items-center gap-3 text-accent">
+            <div className="mb-6 flex items-center gap-3 text-accent-ink">
               <Icon name="terminal" className="h-8 w-8" />
               <h2 className="harness-lead text-xl font-semibold text-ink">{t("agenticow.lead")}</h2>
             </div>
@@ -458,7 +458,7 @@ function Controle() {
             <ul className="mt-4 space-y-3 text-[12px] leading-relaxed text-dim">
               {["controlIsolated", "controlProviders", "controlKeys", "controlPrivacy"].map((key) => (
                 <li key={key} className="flex gap-3">
-                  <Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                  <Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-accent-ink" />
                   {t(`agenticow.${key}`)}
                 </li>
               ))}

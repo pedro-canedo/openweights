@@ -374,7 +374,7 @@ export default function BenchHistoryCard({
                       <div className="min-w-0 flex-1 basis-56">
                         <div className="flex flex-wrap items-center gap-2 text-[10px] text-dim">
                           <time dateTime={new Date(r.measuredAt).toISOString()}>{new Date(r.measuredAt).toLocaleString(i18n.language, { dateStyle: "short", timeStyle: "short" })}</time>
-                          {current && badge("border-accent/30 text-accent", t("tune.history.current"))}
+                          {current && badge("border-accent/30 text-accent-ink", t("tune.history.current"))}
                           {r.suspect && badge("border-warn/20 text-warn", <><Icon name="alert" className="h-3 w-3" />{t("tune.history.suspect")}</>, t("tune.benchSuspect"))}
                         </div>
                         <p className="mt-2 break-words font-mono text-[11px] leading-relaxed" title={cfg.title}>{cfg.text}</p>

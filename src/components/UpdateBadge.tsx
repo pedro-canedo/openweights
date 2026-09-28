@@ -94,7 +94,7 @@ export default function UpdateBadge() {
         className="flex w-full items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-left text-[11px] text-ink transition-colors hover:bg-accent/20 disabled:cursor-default disabled:opacity-70"
       >
         <svg
-          className="h-3.5 w-3.5 shrink-0 text-accent"
+          className="h-3.5 w-3.5 shrink-0 text-accent-ink"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
@@ -125,7 +125,7 @@ export default function UpdateBadge() {
       )}
 
       {fase === "erro" && (
-        <p className="mt-1.5 px-0.5 text-[10px] leading-snug text-red-400">
+        <p className="mt-1.5 px-0.5 text-[10px] leading-snug text-bad">
           {t("update.failed")} {erro}
         </p>
       )}

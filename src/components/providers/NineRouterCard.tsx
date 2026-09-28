@@ -140,7 +140,7 @@ export default function NineRouterCard({
             <button
               onClick={() => void comEventos("install", nineRouterInstall)}
               disabled={busy !== null || status === null}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {busy === "install"
                 ? t("common.loading")
@@ -151,7 +151,7 @@ export default function NineRouterCard({
             <button
               onClick={() => void comEventos("start", nineRouterStart)}
               disabled={busy !== null}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {busy === "start" ? t("common.loading") : t("providers.nineRouter.start")}
             </button>
@@ -250,7 +250,7 @@ export default function NineRouterCard({
                 </button>
                 {check?.updateAvailable && (
                   <button onClick={() => void comEventos("update", nineRouterUpdate)} disabled={busy !== null || checking}
-                    className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+                    className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
                     {busy === "update" ? t("providers.nineRouter.updating") : t("providers.nineRouter.update")}
                   </button>
                 )}

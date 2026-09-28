@@ -4,6 +4,7 @@
 
 import { useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
+import { useDismiss } from "./ui/camada";
 import { chatStore } from "../lib/chatStore";
 import { generationStore } from "../lib/generationStore";
 import { navigate } from "../lib/nav";
@@ -16,6 +17,7 @@ export default function GenerationPanel() {
   );
   const { chats } = useSyncExternalStore(chatStore.subscribe, chatStore.get);
   const [open, setOpen] = useState(false);
+  const caixa = useDismiss(open, () => setOpen(false));
 
   const jobs = gen.jobs.filter(
     (j) => j.state === "queued" || j.state === "running",
@@ -32,9 +34,14 @@ export default function GenerationPanel() {
   };
 
   return (
-    <div className="fixed right-4 bottom-24 z-40 flex flex-col items-end">
+    <div ref={caixa} className="fixed right-4 bottom-24 z-40 flex flex-col items-end">
       {open && (
-        <div className="mb-2 flex max-h-[60vh] w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-edge bg-panel shadow-2xl">
+        <div
+          role="dialog"
+          aria-label={t("jobs.title")}
+          data-overlay=""
+          className="mb-2 flex max-h-[60vh] w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-edge bg-panel shadow-2xl"
+        >
           <header className="flex items-center gap-2 border-b border-edge px-4 py-2.5">
             <span className="text-sm font-semibold">{t("jobs.title")}</span>
             <span className="rounded-full bg-panel2 px-2 py-0.5 text-[11px] text-dim">
@@ -95,6 +102,8 @@ export default function GenerationPanel() {
 
       <button
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         title={t("jobs.title")}
         className="flex items-center gap-2.5 rounded-full border border-edge bg-panel py-2 pr-4 pl-3 shadow-lg transition-colors hover:border-accent"
       >

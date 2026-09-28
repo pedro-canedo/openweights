@@ -28,7 +28,7 @@ export default function NineRouterPanel({ url }: { url: string }) {
             setErro(null);
             void nineRouterOpenPanel().catch((e) => setErro(String(e)));
           }}
-          className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-white"
+          className="rounded-lg bg-accent-fill px-3 py-2 text-sm font-medium text-white"
         >
           {t("providers.nineRouter.openPanel")}
         </button>

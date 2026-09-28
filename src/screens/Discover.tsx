@@ -98,6 +98,7 @@ export default function Discover() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={t("discover.searchPlaceholder")}
+            aria-label={t("discover.searchPlaceholder")}
             className="mt-3 w-full rounded-xl border border-edge bg-panel px-3 py-2 text-[13px] outline-none placeholder:text-dim focus:border-accent"
           />
 
@@ -106,6 +107,7 @@ export default function Discover() {
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SearchSort)}
+              aria-label={t("discover.sortBy")}
               className="min-w-0 flex-1 rounded-lg border border-edge bg-panel px-2 py-1.5 text-[12px] text-ink outline-none focus:border-accent"
             >
               {SORTS.map((s) => (
@@ -160,7 +162,7 @@ export default function Discover() {
                   <button
                     type="button"
                     onClick={() => setQuery(semFormato(query))}
-                    className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                    className="rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
                   >
                     {t("discover.findGguf")}
                   </button>

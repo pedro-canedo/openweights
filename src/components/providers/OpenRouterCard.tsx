@@ -194,7 +194,7 @@ export default function OpenRouterCard() {
             <button
               onClick={() => void salvarChave()}
               disabled={busy || !cfg}
-              className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
             >
               {busy ? t("common.loading") : t("common.save")}
             </button>
@@ -292,7 +292,7 @@ export default function OpenRouterCard() {
                       title={joinModelRef("openrouter", m.id)}
                       className={`shrink-0 rounded-lg border px-3 py-1.5 text-[12px] disabled:opacity-50 ${
                         fav
-                          ? "border-accent text-accent"
+                          ? "border-accent text-accent-ink"
                           : "border-edge text-dim hover:text-ink"
                       }`}
                     >
@@ -342,7 +342,7 @@ function Filtro({
       aria-pressed={ativo}
       className={`rounded-lg border px-2.5 py-1.5 text-[12px] transition-colors ${
         ativo
-          ? "border-accent text-accent"
+          ? "border-accent text-accent-ink"
           : "border-edge text-dim hover:text-ink"
       }`}
     >

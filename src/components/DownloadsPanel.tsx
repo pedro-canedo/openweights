@@ -4,6 +4,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
+import { useDismiss } from "./ui/camada";
 import type { DownloadStatus } from "../lib/types";
 import { carregarPrism, prismStore } from "../lib/prism";
 import { assinarDecisor, decisionStore } from "../lib/decision";
@@ -239,6 +240,7 @@ export default function DownloadsPanel() {
   const { t } = useTranslation();
   const [items, setItems] = useState<DownloadStatus[]>([]);
   const [open, setOpen] = useState(false);
+  const caixa = useDismiss(open, () => setOpen(false));
   const prism = useSyncExternalStore(prismStore.subscribe, prismStore.get);
   const decision = useSyncExternalStore(decisionStore.subscribe, decisionStore.get);
 
@@ -289,9 +291,14 @@ export default function DownloadsPanel() {
   const aggregate = totalBytes > 0 ? (receivedBytes / totalBytes) * 100 : 0;
 
   return (
-    <div className="fixed right-4 bottom-12 z-40 flex flex-col items-end">
+    <div ref={caixa} className="fixed right-4 bottom-12 z-40 flex flex-col items-end">
       {open && (
-        <div className="mb-2 flex max-h-[60vh] w-96 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-edge bg-panel shadow-2xl">
+        <div
+          role="dialog"
+          aria-label={t("downloadsPanel.title")}
+          data-overlay=""
+          className="mb-2 flex max-h-[60vh] w-96 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-edge bg-panel shadow-2xl"
+        >
           <header className="flex items-center gap-2 border-b border-edge px-4 py-2.5">
             <span className="text-sm font-semibold">
               {t("downloadsPanel.title")}
@@ -329,11 +336,13 @@ export default function DownloadsPanel() {
 
       <button
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
         title={t("downloadsPanel.title")}
         className="flex items-center gap-2.5 rounded-full border border-edge bg-panel py-2 pr-4 pl-3 shadow-lg transition-colors hover:border-accent"
       >
         <svg
-          className={`h-4 w-4 ${active.length > 0 || prism.installing || decision.installing ? "text-accent" : "text-dim"}`}
+          className={`h-4 w-4 ${active.length > 0 || prism.installing || decision.installing ? "text-accent-ink" : "text-dim"}`}
           fill="none"
           stroke="currentColor"
           strokeWidth="2"

@@ -1,7 +1,8 @@
 // Aprovação na barra esquerda do composer (esforço fica no seletor de modelo).
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useDismiss } from "../ui/camada";
 import { type ApprovalMode, type ChatParams } from "../../lib/types";
 
 const APPROVALS: ApprovalMode[] = ["manual", "auto", "ignore"];
@@ -9,7 +10,7 @@ const APPROVALS: ApprovalMode[] = ["manual", "auto", "ignore"];
 function Check() {
   return (
     <svg
-      className="h-4 w-4 text-sky-400"
+      className="h-4 w-4 text-sky-400 light:text-sky-700"
       fill="none"
       stroke="currentColor"
       strokeWidth="2.4"
@@ -90,6 +91,7 @@ function MenuShell({
 }) {
   return (
     <div
+      data-overlay=""
       className={`absolute bottom-full z-30 mb-2 rounded-xl border border-edge bg-panel py-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.45)] ${widthClass} ${
         align === "right" ? "right-0" : "left-0"
       }`}
@@ -99,25 +101,6 @@ function MenuShell({
   );
 }
 
-function useDismiss(open: boolean, onClose: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, onClose]);
-  return ref;
-}
 
 const triggerClass =
   "flex items-center gap-1 rounded-full px-2 py-1 text-xs transition-colors disabled:opacity-40 hover:bg-panel";
@@ -141,6 +124,8 @@ export function ApprovalSelect({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="true"
         title={t(`chat.approval.${params.approval}`)}
         className={`${triggerClass} ${open ? "bg-panel text-ink" : "text-ink"}`}
       >

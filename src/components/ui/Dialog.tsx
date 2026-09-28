@@ -37,6 +37,7 @@ export function Dialog({
   footer,
   size = "md",
   dismissable = true,
+  bare = false,
   className = "",
 }: {
   open: boolean;
@@ -51,7 +52,12 @@ export function Dialog({
   size?: keyof typeof LARGURA;
   /** `false` para o que não pode ser interrompido (instalação em curso). */
   dismissable?: boolean;
-  /** Troca o acolchoamento padrão (editor em tela cheia, por exemplo). */
+  /**
+   * Layout próprio (editor, prévia): o painel só leva o papel de diálogo e o
+   * `className` de quem usa; o título fica só para o leitor de tela.
+   */
+  bare?: boolean;
+  /** Troca o acolchoamento padrão; com `bare`, é o estilo inteiro do painel. */
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -80,11 +86,15 @@ export function Dialog({
         aria-describedby={description ? `${id}-d` : undefined}
         tabIndex={-1}
         data-overlay=""
-        className={`flex max-h-[calc(100vh-2rem)] w-full ${LARGURA[size]} flex-col overflow-y-auto rounded-2xl border border-edge bg-panel shadow-2xl outline-none ${className || "p-6"}`}
+        className={
+          bare
+            ? `outline-none ${className}`
+            : `flex max-h-[calc(100vh-2rem)] w-full ${LARGURA[size]} flex-col overflow-y-auto rounded-2xl border border-edge bg-panel shadow-2xl outline-none ${className || "p-6"}`
+        }
       >
         <h2
           id={`${id}-t`}
-          className={hideTitle ? "sr-only" : "text-base font-semibold text-ink"}
+          className={hideTitle || bare ? "sr-only" : "text-base font-semibold text-ink"}
         >
           {title}
         </h2>

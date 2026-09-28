@@ -9,6 +9,8 @@ import {
 import { formatBytes } from "../lib/format";
 import type { HardwareProfile, RuntimeEvent } from "../lib/types";
 import { OwLockup } from "./OpenWeightsLogo";
+import { Button } from "./ui/Button";
+import { Dialog } from "./ui/Dialog";
 
 type Step = "hidden" | "welcome" | "installing" | "ready";
 
@@ -62,9 +64,22 @@ export default function Onboarding() {
     setStep("hidden");
   }
 
+  const pct =
+    progress?.kind === "progress" && progress.totalBytes > 0
+      ? Math.round((progress.receivedBytes / progress.totalBytes) * 100)
+      : null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-[480px] rounded-2xl border border-edge bg-panel p-8 shadow-2xl">
+    <Dialog
+      open
+      // Esc e clique fora valem "pular" — menos durante a instalação, que
+      // não pode ser largada pela metade.
+      onClose={step === "ready" ? () => setStep("hidden") : skip}
+      dismissable={step !== "installing"}
+      title={t("onboarding.welcome")}
+      hideTitle
+      className="p-8"
+    >
         <div className="flex justify-center">
           <OwLockup className="text-2xl" />
         </div>
@@ -105,15 +120,17 @@ export default function Onboarding() {
                 ? `${t("onboarding.runtimeStep")} (${progress.asset})`
                 : t("onboarding.runtimeStep")}
             </div>
-            <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-panel2">
+            <div
+              role="progressbar"
+              aria-label={t("onboarding.runtimeStep")}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={pct ?? undefined}
+              className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-panel2"
+            >
               <div
                 className="h-full rounded-full bg-accent transition-[width]"
-                style={{
-                  width:
-                    progress?.kind === "progress" && progress.totalBytes > 0
-                      ? `${(progress.receivedBytes / progress.totalBytes) * 100}%`
-                      : "15%",
-                }}
+                style={{ width: pct != null ? `${pct}%` : "15%" }}
               />
             </div>
             {progress?.kind === "progress" && (
@@ -131,35 +148,33 @@ export default function Onboarding() {
           </div>
         )}
 
-        {error && <div className="mt-4 text-[12px] text-bad">{error}</div>}
+        {error && (
+          <div role="alert" className="mt-4 select-text text-[12px] text-bad">
+            {error}
+          </div>
+        )}
 
         <div className="mt-6 flex justify-center gap-3">
           {step === "welcome" && (
             <>
-              <button
-                onClick={skip}
-                className="rounded-lg px-4 py-2 text-sm text-dim hover:text-ink"
-              >
+              <Button variant="ghost" onClick={skip}>
                 {t("onboarding.skip")}
-              </button>
-              <button
-                onClick={install}
-                className="rounded-lg bg-accent px-6 py-2 text-sm font-medium text-white"
-              >
+              </Button>
+              <Button variant="primary" onClick={install} data-autofocus="">
                 {t("onboarding.start")}
-              </button>
+              </Button>
             </>
           )}
           {step === "ready" && (
-            <button
+            <Button
+              variant="primary"
               onClick={() => setStep("hidden")}
-              className="rounded-lg bg-accent px-6 py-2 text-sm font-medium text-white"
+              data-autofocus=""
             >
               {t("onboarding.start")}
-            </button>
+            </Button>
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

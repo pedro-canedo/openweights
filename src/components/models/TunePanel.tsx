@@ -351,7 +351,7 @@ export default function TunePanel({
               type="button"
               disabled={aplicando}
               onClick={() => void aplicar()}
-              className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {aplicando ? t("tune.applying") : t("tune.apply")}
             </button>

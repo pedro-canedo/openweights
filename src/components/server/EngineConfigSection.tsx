@@ -444,7 +444,7 @@ export default function EngineConfigSection({
             type="button"
             disabled={loadBusy || !selected}
             onClick={() => void load()}
-            className="rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+            className="rounded-lg bg-accent-fill px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
           >
             {loadBusy
               ? t("server.engineConfig.loading")
@@ -839,6 +839,7 @@ export default function EngineConfigSection({
             <Select
               value={loadModeAtual}
               disabled={disabled}
+              label={t("chat.engine.loadMode.label")}
               onChange={(v) =>
                 patch({
                   loadMode: v === "auto" ? null : (v as LoadMode),

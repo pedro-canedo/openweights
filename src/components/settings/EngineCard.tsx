@@ -141,7 +141,7 @@ export default function EngineCard() {
             disabled={busy || checking}
             className={`rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50 ${
               precisaBaixar
-                ? "bg-accent text-white"
+                ? "bg-accent-fill text-white"
                 : "border border-edge text-dim hover:text-ink"
             }`}
           >

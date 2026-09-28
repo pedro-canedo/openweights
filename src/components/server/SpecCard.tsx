@@ -154,7 +154,7 @@ export default function SpecCard({ model }: { model: string }) {
           </span>
         </span>
         {medindo && (
-          <span className="shrink-0 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] text-accent">
+          <span className="shrink-0 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] text-accent-ink">
             {t("tune.spec.card.running")}
           </span>
         )}

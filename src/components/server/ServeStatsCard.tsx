@@ -139,6 +139,7 @@ export default function ServeStatsCard({ running }: { running: boolean }) {
           <Select
             value={model}
             onChange={setModel}
+            label={t("server.stats.allModels")}
             className="max-w-56 text-xs"
             options={[
               { value: "", label: t("server.stats.allModels") },

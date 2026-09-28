@@ -116,7 +116,7 @@ export default function ComparisonCard({ model }: { model: string }) {
     >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <span className="rounded-xl bg-accent/10 p-2.5 text-accent">
+          <span className="rounded-xl bg-accent/10 p-2.5 text-accent-ink">
             <Icon name="sparkles" className="h-5 w-5" />
           </span>
           <div className="min-w-0">
@@ -247,7 +247,7 @@ export default function ComparisonCard({ model }: { model: string }) {
                     )}
                   </span>
                   {i === fastest && (
-                    <span className="text-accent">
+                    <span className="text-accent-ink">
                       {t("comparison.fastestGeneration")}
                     </span>
                   )}

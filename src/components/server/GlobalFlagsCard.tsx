@@ -193,6 +193,7 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t("server.engineConfig.searchPlaceholder")}
+            aria-label={t("server.engineConfig.searchPlaceholder")}
             className="mt-3 w-full rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent"
           />
           <div className="mt-3 flex flex-col gap-3">

@@ -87,6 +87,10 @@ export function useCamada(
         return;
       }
       if (prenderFoco && e.key === "Tab" && raiz) {
+        // Um editor de código usa o Tab para indentar (`data-keeps-tab`):
+        // ali o Tab é dele, e o Shift+Tab continua saindo para os botões.
+        const ativo = document.activeElement as HTMLElement | null;
+        if (!e.shiftKey && ativo?.closest("[data-keeps-tab]")) return;
         const lista = focaveis(raiz);
         if (lista.length === 0) {
           e.preventDefault();
@@ -136,4 +140,19 @@ export function useCamada(
     };
     // `ref`, `ancora` e as opções são estáveis durante a vida da camada.
   }, [aberto]);
+}
+
+/**
+ * Para os painéis que embrulham botão e conteúdo no mesmo elemento (o
+ * `ref` devolvido): fecha no Esc e no clique fora do embrulho, entra na pilha
+ * de camadas e devolve o foco ao botão. O painel em si ainda precisa de
+ * `data-overlay` para a webview do AgenticOw se esconder.
+ */
+export function useDismiss<T extends HTMLElement = HTMLDivElement>(
+  open: boolean,
+  onClose: () => void,
+) {
+  const ref = useRef<T>(null);
+  useCamada(ref, { aberto: open, onFechar: onClose });
+  return ref;
 }
