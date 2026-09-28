@@ -1,5 +1,18 @@
 # Novidades
 
+## 0.26.0
+
+**O agente OwCLI chega ao app, e o Descobrir passa a dizer o que acontece com
+cada download.** Na tela OwCLI, toda sessão nova oferece duas saídas: um
+terminal comum ou o agente OwCLI, o nosso fork do Codex CLI da OpenAI, que lê,
+escreve e roda código na pasta que você escolher pensando só com os modelos do
+app. Na primeira vez, o agente se instala: o app mostra o tamanho antes de
+baixar, confere o pacote e testa o agente na sua máquina. Ele não fala com a
+OpenAI nem com o GitHub. No Descobrir, o botão de cada arquivo acompanha o
+download de verdade, a versão recomendada vem no topo com o tamanho no botão, o
+espaço em disco é conferido antes, e quando o modelo fica pronto um aviso leva
+direto à conversa. Veja [o OwCLI](/pt/guia/owcli) e [os modelos](/pt/guia/modelos).
+
 ## 0.25.1
 
 **No Linux, a janela do app deixa de apagar quando aparece um emoji.** O

@@ -45,8 +45,13 @@ Windows, macOS and Linux.
   the process memory, never in a file. Other agents — Claude Code, Aider,
   OpenCode — open in a terminal session inside the app, pointed at the local
   API.
-- 🖥️ **Real terminals inside the app** — the OwCLI screen runs shells (bash,
-  zsh, PowerShell) and coding agents side by side in a grid of 1, 2 or 4 panes.
+- 🖥️ **Real terminals and a coding agent inside the app** — the OwCLI screen
+  runs shells (bash, zsh, PowerShell) and the **OwCLI agent**, our fork of
+  [Codex CLI](https://github.com/openai/codex)
+  ([pedro-canedo/owcli](https://github.com/pedro-canedo/owcli)) that thinks only
+  with the app's models, side by side in a grid of 1, 2 or 4 panes. The agent
+  installs the first time, with its size shown beforehand and the package
+  checked against the sha256 built into the app.
   Sessions keep running when you switch screens, and one that needs you gets a
   mark in the list and, with the window unfocused, a system notification.
 - 🧭 **Simple to start, everything when you want it** — a new install opens in

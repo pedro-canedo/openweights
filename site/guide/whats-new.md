@@ -1,5 +1,19 @@
 # What's new
 
+## 0.26.0
+
+**The OwCLI agent arrives in the app, and Discover says what is happening with
+each download.** On the OwCLI screen, every new session offers two ways in: a
+plain terminal or the OwCLI agent, our fork of OpenAI's Codex CLI, which reads,
+writes and runs code in the folder you choose, thinking only with the app's
+models. The first time, the agent installs itself: the app shows the size
+before downloading, checks the package and tries the agent on your machine. It
+does not talk to OpenAI or GitHub. In Discover, each file's button follows the
+actual download, the recommended version comes first with its size on the
+button, disk space is checked beforehand, and when the model is ready a notice
+takes you straight to the conversation. See [OwCLI](/guide/owcli) and
+[models](/guide/models).
+
 ## 0.25.1
 
 **On Linux, the app window no longer goes blank when an emoji shows up.** The

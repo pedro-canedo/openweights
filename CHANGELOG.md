@@ -10,6 +10,16 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.26.0] — 2026-09-29
+
+- **Terminal or agent, in every new session.** On the OwCLI screen, the **+**, the empty screen, every empty pane of the grid and the palette (Ctrl+K, "Open the OwCLI agent") offer both ways in: a plain terminal or the **OwCLI agent**, our fork of OpenAI's Codex CLI, which reads, writes and runs code in the folder you choose, thinking only with the app's models.
+- **The agent installs the first time you pick it.** It is a separate program of about 100 MB: the app shows the size on the button and only downloads if you accept, checks the package against the size and sha256 it carries, and tries the agent on this machine before keeping it. There are packages for Linux x64, Windows x64 and macOS.
+- The agent does not talk to OpenAI or GitHub: telemetry, version checks and OpenAI's features are off, and even `owcli doctor` only tests OpenWeights.
+- **Discover says what is happening with each download.** Each file's button follows the actual download — Downloading with the percentage, Resume, Try again with the reason, Chat once the file is in your library — and no longer gets stuck on "Downloading…". A download that does not even start says why.
+- When a download finishes, a notice that the model is ready shows up on any screen, with **Chat**; with the window unfocused, a system notification too.
+- The version recommended for the machine comes first, with its size on the button (**Download recommended**); the others sit under **Other versions**. Before starting, the app checks the disk space and, if it does not fit, says how much is missing.
+- In the results list, a badge flags the clear cases: **Fits the GPU** and **Too big**.
+
 ## [0.25.1] — 2026-09-28
 
 - On Linux (AppImage), the app window went blank — and blank again on every reload — when an emoji with a gradient, such as the smiling face or the rocket, showed up on screen. It happened at the end of a chat answer, in the terminal or in a text field. The browser engine bundled in the package was built against one version of FreeType (the library that draws fonts) and uses the system's; on systems with a newer FreeType and the colour emoji in the COLRv1 format, such as Fedora 44, it read the gradient colours from the wrong place and crashed. The app now hides those fonts from its own interface when the versions differ, and emoji show in black and white. Programs the app opens (an editor started from the terminal, for instance) keep the system fonts.
