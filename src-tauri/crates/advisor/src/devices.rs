@@ -174,6 +174,7 @@ pub async fn list_devices(
         .current_dir(runtime_dir)
         .kill_on_drop(true);
     lr_proc::no_window(&mut cmd);
+    lr_proc::host_env(&mut cmd);
 
     let saida = tokio::time::timeout(LIST_TIMEOUT, cmd.output())
         .await

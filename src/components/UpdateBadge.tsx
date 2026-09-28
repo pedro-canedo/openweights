@@ -15,6 +15,7 @@ import {
   onUpdateProgress,
   type UpdateInfo,
 } from "../lib/api";
+import { openUrl } from "../lib/openExternal";
 
 type Fase = "parado" | "baixando" | "erro";
 
@@ -61,7 +62,6 @@ export default function UpdateBadge() {
     // Instalação por gerenciador de pacotes não se troca por fora: o clique
     // leva à página do release, que é onde a atualização de fato acontece.
     if (nova && !nova.canInstall) {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
       await openUrl(RELEASES);
       return;
     }

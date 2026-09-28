@@ -426,10 +426,7 @@ pub async fn hf_login(
         let _ = state.store.set_setting("hf_oauth_client", &json);
     }
 
-    use tauri_plugin_opener::OpenerExt;
-    app.opener()
-        .open_url(login.url(), None::<&str>)
-        .map_err(err_str)?;
+    crate::externo::abrir_url(&app, login.url())?;
 
     let sessao = login
         .finish(&state.http, std::time::Duration::from_secs(300))

@@ -96,6 +96,12 @@ webview2-com = "0.38"
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18"
 webkit2gtk = "2.0"
+# O seletor de pasta fala com o portal direto (ver `workspace.rs`): o
+# fallback do rfd roda o zenity com o ambiente do AppImage. Mesmas features
+# que o rfd já liga — custo zero de lockfile.
+ashpd = { version = "0.11", default-features = false, features = ["async-std", "raw_handle"] }
+pollster = "0.4"
+raw-window-handle = "0.6"
 
 [profile.release]
 lto = true

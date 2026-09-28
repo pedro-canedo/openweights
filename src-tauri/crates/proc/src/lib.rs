@@ -49,6 +49,51 @@ pub fn no_window(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
+#[cfg(target_os = "linux")]
+mod appimage;
+
+/// Devolve ao filho o ambiente do sistema quando o app roda de um AppImage.
+///
+/// O AppRun põe a glib, o Python e o GTK de dentro do pacote na frente de
+/// tudo (`LD_LIBRARY_PATH`, `PYTHONHOME`, `PATH`…); herdado por um programa
+/// do sistema, isso derruba o `zenity`, o `python3` e o `curl` — detalhes em
+/// `appimage.rs`. Programa que mora dentro do `$APPDIR` fica como está. Fora
+/// de um AppImage (e fora do Linux) é no-op.
+///
+/// Só mexe no que o filho herdaria: o que o comando define com `.env(...)`
+/// ou `.env_remove(...)` é respeitado, então a ordem em relação a essas
+/// chamadas não importa — exceto `env_clear`: depois dele, esta função (e o
+/// [`spawn_supervised`]) devolve ao filho o `PATH` e o `XDG_DATA_DIRS` do
+/// sistema. Quem monta uma variável a partir da do app parte de [`host_var`]. O [`spawn_supervised`]
+/// já chama; os demais spawns chamam antes do `.spawn()`/`.output()` — há um
+/// teste (`no_process_spawn_escapes_the_host_env_rule`) que cobra isso.
+pub fn host_env_std(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    #[cfg(target_os = "linux")]
+    appimage::aplicar(cmd);
+    cmd
+}
+
+/// A irmã assíncrona de [`host_env_std`], para `tokio::process::Command`.
+pub fn host_env(cmd: &mut Command) -> &mut Command {
+    #[cfg(target_os = "linux")]
+    appimage::aplicar(cmd.as_std_mut());
+    cmd
+}
+
+/// O valor de `nome` como um programa do sistema o veria — o `var_os` sem o
+/// que o AppImage acrescentou. Para quem monta a variável de um filho a
+/// partir da do app (ex.: um diretório a mais na frente do `PATH`).
+pub fn host_var(nome: &str) -> Option<std::ffi::OsString> {
+    #[cfg(target_os = "linux")]
+    {
+        appimage::host_var(nome)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        std::env::var_os(nome)
+    }
+}
+
 /// Mata o PID e toda a árvore (Windows: `taskkill /T /F`; Unix: grupo).
 pub fn kill_process_tree(pid: u32) {
     if pid == 0 {
@@ -114,7 +159,11 @@ pub fn prepare(cmd: &mut Command) -> &mut Command {
 /// O terminal do Cursor (e o WebView2) costuma colocar o app num job *sem*
 /// essa permissão — aí o `CreateProcess` falha com acesso negado (os error 5).
 /// Tentamos breakaway só quando dá; se mesmo assim vier 5, repetimos sem.
+///
+/// Também devolve ao filho o ambiente do sistema ([`host_env`]): um sidecar
+/// que herde o do AppImage passa a glib embutida para tudo o que ele subir.
 pub fn spawn_supervised(cmd: &mut Command) -> std::io::Result<Child> {
+    host_env(cmd);
     #[cfg(not(windows))]
     {
         cmd.spawn()
@@ -341,6 +390,47 @@ mod tests {
             "estes arquivos criam processo sem suprimir o console do Windows:\n  {}\n\
              Passe o comando por `lr_proc::no_window` (tokio) ou `lr_proc::no_window_std` \
              (std) antes do spawn — fora do Windows é no-op, então aplicar nunca é errado.",
+            faltando.join("\n  ")
+        );
+    }
+
+    /// Nenhum arquivo do app pode criar processo sem devolver ao filho o
+    /// ambiente do sistema — no AppImage, herdar o do pacote derruba o
+    /// `zenity`, o `python3` e o `curl` que o filho chamar.
+    ///
+    /// Mesma granularidade (e a mesma ressalva) da regra do console acima:
+    /// por arquivo. `spawn_supervised` já aplica o `host_env`.
+    #[test]
+    fn no_process_spawn_escapes_the_host_env_rule() {
+        const ANCORAS: [&str; 2] = ["host_env", "spawn_supervised"];
+
+        let Some(raiz) = raiz_do_src_tauri() else {
+            return;
+        };
+        let mut fontes = Vec::new();
+        colher_rs(&raiz.join("src"), &mut fontes);
+        if let Ok(crates) = std::fs::read_dir(raiz.join("crates")) {
+            for entrada in crates.flatten() {
+                colher_rs(&entrada.path().join("src"), &mut fontes);
+            }
+        }
+        assert!(fontes.len() > 20, "a varredura não achou as fontes");
+
+        let faltando: Vec<String> = fontes
+            .iter()
+            .filter_map(|arquivo| {
+                let conteudo = std::fs::read_to_string(arquivo).ok()?;
+                let linha = conteudo.lines().position(|l| l.contains("Command::new("))?;
+                (!ANCORAS.iter().any(|a| conteudo.contains(a)))
+                    .then(|| format!("{}:{}", arquivo.display(), linha + 1))
+            })
+            .collect();
+
+        assert!(
+            faltando.is_empty(),
+            "estes arquivos criam processo sem devolver ao filho o ambiente do sistema:\n  {}\n\
+             Passe o comando por `lr_proc::host_env` (tokio) ou `lr_proc::host_env_std` (std) \
+             antes do spawn — fora de um AppImage é no-op.",
             faltando.join("\n  ")
         );
     }

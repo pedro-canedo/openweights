@@ -3178,6 +3178,7 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 name = "openweights"
 version = "0.24.1"
 dependencies = [
+ "ashpd",
  "env_logger",
  "getrandom 0.3.4",
  "gtk",
@@ -3200,6 +3201,8 @@ dependencies = [
  "lr_store",
  "lr_types",
  "minisign-verify",
+ "pollster",
+ "raw-window-handle",
  "reqwest 0.12.28",
  "rfd",
  "serde",

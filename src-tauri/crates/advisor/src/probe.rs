@@ -211,6 +211,7 @@ pub async fn probe(
         // `creation_flags` já vem do `tokio::process::Command` no Windows.
         cmd.creation_flags(0x0800_0000);
     }
+    lr_proc::host_env(&mut cmd);
 
     let saida = tokio::time::timeout(PROBE_TIMEOUT, cmd.output())
         .await

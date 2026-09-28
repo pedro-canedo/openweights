@@ -58,19 +58,105 @@ pub struct WorkspaceFile {
     pub bytes: u64,
 }
 
+const TITULO_DO_SELETOR: &str = "Adicionar pasta à sessão";
+
 /// Abre o seletor de pastas.
 ///
 /// `parent` amarra o diálogo à janela do app: sem isso, no Windows ele abre
 /// ATRÁS da janela principal e dá a impressão de que nada aconteceu.
 pub async fn pick_folder(parent: Option<tauri::WebviewWindow>) -> Option<String> {
-    let mut dialog = rfd::AsyncFileDialog::new().set_title("Adicionar pasta à sessão");
-    if let Some(window) = parent.as_ref() {
-        dialog = dialog.set_parent(window);
+    #[cfg(target_os = "linux")]
+    {
+        seletor_linux::pick_folder(TITULO_DO_SELETOR, parent.as_ref()).await
     }
-    dialog
-        .pick_folder()
-        .await
-        .map(|h| h.path().to_string_lossy().into_owned())
+    #[cfg(not(target_os = "linux"))]
+    {
+        let mut dialog = rfd::AsyncFileDialog::new().set_title(TITULO_DO_SELETOR);
+        if let Some(window) = parent.as_ref() {
+            dialog = dialog.set_parent(window);
+        }
+        dialog
+            .pick_folder()
+            .await
+            .map(|h| h.path().to_string_lossy().into_owned())
+    }
+}
+
+/// O seletor do Linux: o portal (`org.freedesktop.portal.FileChooser`), como
+/// o rfd faz — e, sem portal (i3, sway sem o backend de arquivos), o zenity
+/// do sistema com o ambiente do sistema. O fallback do próprio rfd roda o
+/// zenity herdando o ambiente do AppImage, e ele morre contra a glib
+/// embutida (`g_once_init_leave_pointer`); aqui o `Command` é nosso.
+#[cfg(target_os = "linux")]
+mod seletor_linux {
+    use ashpd::WindowIdentifier;
+    use ashpd::desktop::file_chooser::OpenFileRequest;
+    use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
+
+    pub async fn pick_folder(
+        titulo: &str,
+        parent: Option<&tauri::WebviewWindow>,
+    ) -> Option<String> {
+        let pedido = OpenFileRequest::default()
+            .identifier(identificador(parent))
+            .modal(true)
+            .multiple(false)
+            .directory(true)
+            .title(titulo)
+            .send()
+            .await;
+        match pedido {
+            // Resposta com erro é cancelamento (ou o portal fechou o
+            // diálogo): o rfd trata igual, sem cair no zenity.
+            Ok(pedido) => pedido
+                .response()
+                .ok()?
+                .uris()
+                .first()?
+                .to_file_path()
+                .ok()
+                .map(|p| p.to_string_lossy().into_owned()),
+            Err(e) => {
+                log::warn!("portal de arquivos indisponível ({e}); usando o zenity");
+                zenity(titulo).await
+            }
+        }
+    }
+
+    /// Síncrono de propósito, como no rfd: os handles crus da janela não
+    /// são `Send` e não podem atravessar um `.await` do comando. No X11 (o
+    /// AppImage força `GDK_BACKEND=x11`) não há espera nenhuma.
+    fn identificador(parent: Option<&tauri::WebviewWindow>) -> Option<WindowIdentifier> {
+        let janela = parent?;
+        let w = janela.window_handle().ok()?.as_raw();
+        let d = janela.display_handle().ok()?.as_raw();
+        pollster::block_on(WindowIdentifier::from_raw_handle(&w, Some(&d)))
+    }
+
+    async fn zenity(titulo: &str) -> Option<String> {
+        let mut cmd = tokio::process::Command::new("zenity");
+        lr_proc::no_window(&mut cmd);
+        lr_proc::host_env(&mut cmd);
+        cmd.args(["--file-selection", "--directory"])
+            .arg(format!("--title={titulo}"))
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .kill_on_drop(true);
+        let saida = match cmd.output().await {
+            Ok(s) => s,
+            Err(e) => {
+                log::warn!("zenity indisponível ({e}); sem seletor de pasta");
+                return None;
+            }
+        };
+        // Código 1 é "cancelou".
+        if !saida.status.success() {
+            return None;
+        }
+        let caminho = String::from_utf8(saida.stdout).ok()?;
+        let caminho = caminho.trim_end_matches('\n');
+        (!caminho.is_empty()).then(|| caminho.to_string())
+    }
 }
 
 pub fn list_files(root: &str) -> WsResult<Vec<WorkspaceFile>> {
@@ -132,7 +218,7 @@ fn open_in_file_manager(path: &Path) -> WsResult<()> {
     #[cfg(target_os = "windows")]
     {
         let mut cmd = std::process::Command::new("explorer");
-        lr_proc::no_window_std(&mut cmd);
+        lr_proc::host_env_std(lr_proc::no_window_std(&mut cmd));
         if path.is_file() {
             cmd.arg(format!("/select,{}", path.display()));
         } else {
@@ -143,7 +229,7 @@ fn open_in_file_manager(path: &Path) -> WsResult<()> {
     #[cfg(target_os = "macos")]
     {
         let mut cmd = std::process::Command::new("open");
-        lr_proc::no_window_std(&mut cmd);
+        lr_proc::host_env_std(lr_proc::no_window_std(&mut cmd));
         if path.is_file() {
             cmd.args(["-R", &path.to_string_lossy()]);
         } else {
@@ -158,8 +244,7 @@ fn open_in_file_manager(path: &Path) -> WsResult<()> {
         } else {
             path
         };
-        let mut cmd = std::process::Command::new("xdg-open");
-        lr_proc::no_window_std(&mut cmd).arg(target).spawn()?;
+        crate::externo::abrir_no_sistema(target.as_os_str())?;
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {

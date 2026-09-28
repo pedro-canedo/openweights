@@ -328,7 +328,11 @@ impl NodeManager {
     /// O `PATH` importa mesmo depois da instalação: o 9router chama `npm` em
     /// tempo de execução para preparar as dependências de SQLite dele.
     pub fn env_isolado(&self, prefix: &Path) -> Vec<(String, String)> {
-        let path_atual = std::env::var("PATH").unwrap_or_default();
+        // O PATH que um programa do sistema veria: no AppImage, o do app
+        // começa pelo `$APPDIR/usr/bin` (ver `lr_proc::host_var`).
+        let path_atual = lr_proc::host_var("PATH")
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let separador = if cfg!(windows) { ";" } else { ":" };
         vec![
             (
@@ -377,6 +381,7 @@ impl NodeManager {
         // não tem como saber que faltava, e um `npm install` com console
         // aberto é uma janela preta na cara do usuário.
         lr_proc::no_window(&mut cmd);
+        lr_proc::host_env(&mut cmd);
         cmd.arg(npm).args(args).current_dir(cwd);
         for (k, v) in self.env_isolado(prefix) {
             cmd.env(k, v);

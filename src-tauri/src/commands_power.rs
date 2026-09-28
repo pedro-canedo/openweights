@@ -77,6 +77,7 @@ pub async fn gpu_power_set(
         // equivalente do UAC — o `sudo` precisaria de um terminal.
         let mut cmd = std::process::Command::new("pkexec");
         lr_proc::no_window_std(&mut cmd);
+        lr_proc::host_env_std(&mut cmd);
         let saida = cmd
             .args([
                 "nvidia-smi",

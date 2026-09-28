@@ -272,6 +272,7 @@ pub(crate) async fn probe_build(dir: &Path) -> Result<(u64, u64), String> {
         .current_dir(dir)
         .kill_on_drop(true);
     lr_proc::no_window(&mut cmd);
+    lr_proc::host_env(&mut cmd);
     let saida = tokio::time::timeout(PROBE_TIMEOUT, cmd.output())
         .await
         .map_err(|_| format!("{} não respondeu em {PROBE_TIMEOUT:?}", server_exe_name()))?

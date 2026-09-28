@@ -183,7 +183,7 @@ pub async fn verify_capabilities(exe: &std::path::Path) -> Result<(), String> {
     let mut cmd = tokio::process::Command::new(exe);
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(30),
-        lr_proc::no_window(&mut cmd)
+        lr_proc::host_env(lr_proc::no_window(&mut cmd))
             .arg("--help")
             .kill_on_drop(true)
             .output(),

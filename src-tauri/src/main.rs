@@ -12,6 +12,7 @@ mod commands_providers;
 mod commands_tuning;
 mod comparison;
 mod desktop_host;
+mod externo;
 mod gpu_lease;
 mod janela;
 mod optimization;
@@ -32,7 +33,15 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+        // Sem o script que o plugin injeta para abrir os links clicados: no
+        // Linux ele leva ao `xdg-open` de dentro do AppImage, que não abre
+        // nada. A interface instala o equivalente dela (`openExternal.ts`),
+        // que passa pelo `externo::open_external`.
+        .plugin(
+            tauri_plugin_opener::Builder::new()
+                .open_js_links_on_click(false)
+                .build(),
+        )
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
@@ -231,6 +240,7 @@ fn main() {
             commands::workspace_read,
             commands::workspace_write,
             commands::workspace_reveal,
+            externo::open_external,
             commands::chat_set_model,
             // Outras fontes de LLM (OpenRouter, 9router).
             commands_providers::providers_config_get,

@@ -150,6 +150,7 @@ async fn probe(bin: &str) -> Option<String> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null());
     lr_proc::no_window(&mut c);
+    lr_proc::host_env(&mut c);
     let out = tokio::time::timeout(std::time::Duration::from_secs(5), c.output())
         .await
         .ok()?
@@ -398,6 +399,7 @@ pub async fn harness_launch(
                 c.env(k, v);
             }
         }
+        lr_proc::host_env_std(&mut c);
         c.spawn().map_err(|e| e.to_string())?;
     }
     Ok(())

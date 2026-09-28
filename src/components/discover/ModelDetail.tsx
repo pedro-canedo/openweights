@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "../../lib/openExternal";
 import type { ModelSummary, QuantsView, QuantView } from "../../lib/types";
 import { getModelQuants, hfLogin, modelReadme, startDownload } from "../../lib/api";
 import { formatAgo, formatBytes, formatCount, formatParams } from "../../lib/format";
@@ -26,12 +26,7 @@ import GateNotice from "./GateNotice";
 import VerdictBadge from "./VerdictBadge";
 
 async function abrirNoHub(repoId: string) {
-  const url = `https://huggingface.co/${repoId}`;
-  try {
-    await openUrl(url);
-  } catch {
-    window.open(url, "_blank", "noopener");
-  }
+  await openUrl(`https://huggingface.co/${repoId}`);
 }
 
 /** Um campo do bloco "Detalhes": rótulo pequeno, valor legível. */

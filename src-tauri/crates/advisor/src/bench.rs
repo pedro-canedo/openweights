@@ -324,6 +324,7 @@ pub async fn sweep(
     {
         cmd.creation_flags(0x0800_0000);
     }
+    lr_proc::host_env(&mut cmd);
     let saida = cmd.output().await?;
     if cancel.load(Ordering::SeqCst) {
         return Err(BenchError::Cancelled);
@@ -417,6 +418,7 @@ pub async fn bench(
     {
         cmd.creation_flags(0x0800_0000);
     }
+    lr_proc::host_env(&mut cmd);
 
     let saida = cmd.output().await?;
     if cancel.load(Ordering::SeqCst) {

@@ -3,7 +3,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./i18n";
+import { installExternalLinks } from "./lib/openExternal";
 import "./styles.css";
+
+installExternalLinks();
 
 const theme = localStorage.getItem("theme");
 if (theme === "light") {

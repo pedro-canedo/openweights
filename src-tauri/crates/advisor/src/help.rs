@@ -229,6 +229,7 @@ pub async fn help_flags_cached(
         .current_dir(exe.parent().unwrap_or(Path::new(".")))
         .kill_on_drop(true);
     lr_proc::no_window(&mut cmd);
+    lr_proc::host_env(&mut cmd);
 
     let saida = tokio::time::timeout(HELP_TIMEOUT, cmd.output())
         .await
