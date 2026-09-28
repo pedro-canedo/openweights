@@ -20,12 +20,12 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: owcli-runtime-34d992ac-v1
+  group: owcli-runtime-6621daf3-v1
   cancel-in-progress: false
 env:
   OWCLI_REPOSITORY: pedro-canedo/owcli
-  OWCLI_REVISION: 34d992ac469aa4dcf9bb41f02f959dee918bfdbb
-  OWCLI_TAG: owcli-runtime-34d992ac-v1
+  OWCLI_REVISION: 6621daf3bcf54ec851cb38aa6e8db6764223b55f
+  OWCLI_TAG: owcli-runtime-6621daf3-v1
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
   CARGO_NET_RETRY: "10"
