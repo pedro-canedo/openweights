@@ -1,0 +1,215 @@
+name: OwCLI runtime
+# O runtime do OwCLI (o fork pedro-canedo/owcli do OpenAI Codex CLI) empacotado
+# para o app: o executável `owcli` no layout canônico do Codex — bwrap no
+# Linux, os auxiliares do sandbox no Windows, o rg que o fork pina — e o
+# runtime.json que o app confere. Compila a revisão pinada, prova o PACOTE
+# extraído (scripts/package-owcli-runtime.py smoke) e publica numa tag imutável
+# com um pins.json (sha256 e tamanho por alvo), que o app embute — o pin vai no
+# binário, então herda a assinatura do updater.
+#
+# Sem cache do target do cargo: o cache de 10 GB é do repositório inteiro e
+# despejaria o da CI. Um build a frio leva ~14 min em 16 núcleos; nos runners
+# padrão (4 vCPU; o Mac ARM tem 3 e 7 GB), bem mais.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+        description: Publish verified runtime packages for the app
+permissions:
+  contents: read
+concurrency:
+  group: owcli-runtime-34d992ac-v1
+  cancel-in-progress: false
+env:
+  OWCLI_REPOSITORY: pedro-canedo/owcli
+  OWCLI_REVISION: 34d992ac469aa4dcf9bb41f02f959dee918bfdbb
+  OWCLI_TAG: owcli-runtime-34d992ac-v1
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_RETRY: "10"
+  PYTHONUNBUFFERED: "1"
+  PYTHONUTF8: "1"
+jobs:
+  build:
+    name: runtime (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux em musl, como o release do upstream: estático, sem depender
+          # da glibc nem da libssl de quem instala.
+          - { os: ubuntu-24.04, target: linux-x64, rust: x86_64-unknown-linux-musl, ext: tar.gz, sandbox: exigir }
+          # O sandbox do Windows depende do que a conta do runner pode: a
+          # fumaça dele avisa, não barra.
+          - { os: windows-2022, target: win32-x64, rust: x86_64-pc-windows-msvc, ext: zip, sandbox: tentar }
+          - { os: macos-14, target: darwin-arm64, rust: aarch64-apple-darwin, ext: tar.gz, sandbox: exigir }
+          # Mac Intel: o único runner Intel que resta; se faltar, o app diz que
+          # o OwCLI não está disponível nesta máquina.
+          - { os: macos-15-intel, target: darwin-x64, rust: x86_64-apple-darwin, ext: tar.gz, sandbox: exigir, optional: true }
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.optional == true }}
+    timeout-minutes: 180
+    steps:
+      - name: Windows — caminhos longos no git
+        if: runner.os == 'Windows'
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OWCLI_REPOSITORY }}
+          ref: ${{ env.OWCLI_REVISION }}
+          path: owcli
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Máquina
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Linux) nproc; free -h ;;
+            macOS) sysctl -n hw.ncpu; echo "$(( $(sysctl -n hw.memsize) / 1073741824 )) GiB" ;;
+            Windows) echo "$NUMBER_OF_PROCESSORS CPUs" ;;
+          esac
+          df -h
+
+      - name: Windows — target no disco com mais espaço, fora do Defender
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $discos = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Name -in 'C','D' }
+          $discos | Format-Table -AutoSize Name, @{n='Livre (GB)';e={[math]::Round($_.Free/1GB,1)}}, @{n='Usado (GB)';e={[math]::Round($_.Used/1GB,1)}}
+          $disco = $discos | Sort-Object Free -Descending | Select-Object -First 1
+          # Pasta curta: os caminhos dentro do target passam fácil de 260.
+          $target = "$($disco.Name):\owt"
+          New-Item -ItemType Directory -Force -Path $target | Out-Null
+          "CARGO_TARGET_DIR=$target" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          foreach ($p in @($target, "$env:USERPROFILE\.cargo", "$env:USERPROFILE\.rustup", $env:GITHUB_WORKSPACE)) {
+            try { Add-MpPreference -ExclusionPath $p -ErrorAction Stop } catch { Write-Warning "Defender: $($_.Exception.Message)" }
+          }
+
+      # A do codex-rs/rust-toolchain.toml do fork, com os mesmos componentes:
+      # o rustup não tem nada a instalar quando o cargo roda dentro de codex-rs.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+          targets: ${{ matrix.rust }}
+          components: clippy, rustfmt, rust-src
+
+      - name: Linux — dependências do bwrap
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends binutils pkg-config libcap-dev
+
+      - name: Linux — Zig (o cc dos wrappers do musl)
+        if: runner.os == 'Linux'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+          use-cache: false
+
+      - name: Linux — musl, libcap e OpenSSL estáticos (o script do upstream)
+        if: runner.os == 'Linux'
+        env:
+          TARGET: ${{ matrix.rust }}
+        run: |
+          bash owcli/.github/scripts/install-musl-build-tools.sh
+          # O caminho de entropia "jitter" do aws-lc dá problema no musl.
+          echo "AWS_LC_SYS_NO_JITTER_ENTROPY=1" >> "$GITHUB_ENV"
+          echo "AWS_LC_SYS_NO_JITTER_ENTROPY_${TARGET//-/_}=1" >> "$GITHUB_ENV"
+
+      - name: Windows — ambiente do MSVC e o rust-lld como linker (a action do fork)
+        if: runner.os == 'Windows'
+        uses: ./owcli/.github/actions/setup-msvc-env
+        with:
+          target: ${{ matrix.rust }}
+
+      - name: Compilar — bwrap primeiro (Linux), o codex com o hash dele
+        shell: bash
+        run: |
+          python scripts/package-owcli-runtime.py build --source owcli --target ${{ matrix.target }} \
+            --revision "$OWCLI_REVISION" --out "$RUNNER_TEMP/owcli-bins"
+          df -h
+
+      - name: Empacotar
+        shell: bash
+        run: |
+          python scripts/package-owcli-runtime.py package --source owcli --target ${{ matrix.target }} \
+            --revision "$OWCLI_REVISION" --tag "$OWCLI_TAG" --bins "$RUNNER_TEMP/owcli-bins" --output output
+          ls -la output
+
+      - name: Linux — namespaces de usuário para o bwrap (o AppArmor do Ubuntu 24.04 barra)
+        if: runner.os == 'Linux'
+        run: |
+          sudo sysctl -w kernel.unprivileged_userns_clone=1
+          if sudo sysctl -a 2>/dev/null | grep -q '^kernel.apparmor_restrict_unprivileged_userns'; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+      # A casa do OwCLI fica em $RUNNER_TEMP, fora da pasta temporária do
+      # sistema: lá o Codex de release se recusa a criar os aliases do arg0.
+      - name: Fumaça — o pacote extraído
+        shell: bash
+        run: |
+          python scripts/package-owcli-runtime.py smoke --target ${{ matrix.target }} --revision "$OWCLI_REVISION" \
+            --archive "output/openweights-${OWCLI_TAG}-${{ matrix.target }}.${{ matrix.ext }}" \
+            --work "$RUNNER_TEMP/owcli-smoke" --build-info "$RUNNER_TEMP/owcli-bins/build.json" \
+            --sandbox ${{ matrix.sandbox }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: owcli-${{ matrix.target }}
+          path: output/*
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    if: always() && inputs.publish
+    needs: [build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: owcli-*
+          merge-multiple: true
+          path: output
+      - name: pins.json
+        run: |
+          # Os três alvos obrigatórios têm de estar aqui; o Mac Intel é opcional.
+          for alvo in linux-x64 win32-x64 darwin-arm64; do
+            ls output/ | grep -q -- "-$alvo\." || { echo "falta o pacote de $alvo"; exit 1; }
+          done
+          node -e '
+            const fs = require("fs"), crypto = require("crypto"), path = require("path")
+            const assets = {}
+            for (const nome of fs.readdirSync("output").sort()) {
+              const m = /-(linux-x64|win32-x64|darwin-arm64|darwin-x64)\.(zip|tar\.gz)$/.exec(nome)
+              if (!m) continue
+              const buf = fs.readFileSync(path.join("output", nome))
+              assets[m[1]] = { name: nome, sha256: crypto.createHash("sha256").update(buf).digest("hex"), size: buf.length }
+            }
+            const pins = { format: 1, repository: process.env.GITHUB_REPOSITORY, tag: process.env.OWCLI_TAG, revision: process.env.OWCLI_REVISION, assets }
+            fs.writeFileSync("output/pins.json", JSON.stringify(pins, null, 2) + "\n")
+            console.log(JSON.stringify(pins, null, 2))
+          '
+      - name: Publicar a release imutável
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # A tag é imutável, mas uma publicação parcial precisa de caminho de
+          # volta: reenviar os anexos na release que já existe.
+          if gh release view "$OWCLI_TAG" >/dev/null 2>&1; then
+            gh release upload "$OWCLI_TAG" output/* --clobber
+          else
+            gh release create "$OWCLI_TAG" output/* --target "$GITHUB_SHA" --prerelease --title 'OwCLI runtime' --notes "OwCLI runtime (pedro-canedo/owcli at $OWCLI_REVISION, based on the OpenAI Codex CLI, Apache-2.0; not made or endorsed by OpenAI): the owcli terminal agent OpenWeights installs. Install through OpenWeights; pins.json carries the sha256 and size the app embeds."
+          fi
