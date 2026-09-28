@@ -13,6 +13,7 @@
 // esconder não derruba a sessão aberta.
 
 import { invoke, listen } from "./tauri";
+import type { EstadoDasFontes } from "./fontes";
 import { errorMessage } from "./serverSession";
 
 export interface AgenticowStatus {
@@ -32,16 +33,7 @@ export interface AgenticowStatus {
   /** Modelos no último catálogo entregue (null antes do primeiro). */
   models: number | null;
   /** O que cada fonte do OpenWeights tem agora. */
-  sources: AgenticowSources;
-}
-
-export interface AgenticowSources {
-  localModels: number;
-  serverRunning: boolean;
-  openrouterKey: boolean;
-  openrouterFavorites: number;
-  ninerouterInstalled: boolean;
-  ninerouterRunning: boolean;
+  sources: EstadoDasFontes;
 }
 
 export type AgenticowEvent =

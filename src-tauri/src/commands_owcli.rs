@@ -11,6 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 
@@ -113,6 +114,44 @@ pub fn conexao(base_url: &str, token: &str, fontes: &[Fonte]) -> Value {
     })
 }
 
+/// Um modelo que a tela oferece ao abrir o OwCLI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModeloDoOwcli {
+    /// O id com o prefixo da fonte (`local:…`), o que vai no `-m`.
+    pub id: String,
+    /// O id que a fonte conhece.
+    pub nome: String,
+    /// O nome da fonte, para agrupar.
+    pub fonte: &'static str,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelosDoOwcli {
+    pub modelos: Vec<ModeloDoOwcli>,
+    /// Sem modelo nenhum, a tela mostra o que falta em cada fonte.
+    pub fontes: catalogo::EstadoDasFontes,
+}
+
+fn modelos_do_owcli(fontes: &[Fonte]) -> Vec<ModeloDoOwcli> {
+    fontes
+        .iter()
+        .flat_map(|f| {
+            f.modelos.iter().map(|m| ModeloDoOwcli {
+                id: format!("{}:{}", prefixo(f), m.id),
+                nome: m.id.clone(),
+                fonte: f.nome,
+            })
+        })
+        .collect()
+}
+
+/// Um id de modelo que pode ir para o `-m` sem virar opção da linha de comando.
+pub fn modelo_valido(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 256 && !id.starts_with('-') && !id.chars().any(char::is_control)
+}
+
 /// Escreve de forma atômica e, no Unix, só para o dono (o token vale a chave
 /// do OpenRouter de quem o tiver).
 fn escrever_privado(caminho: &Path, conteudo: &[u8]) -> std::io::Result<()> {
@@ -201,6 +240,16 @@ pub async fn owcli_ligar(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Os modelos com que o OwCLI pode abrir agora, e o estado de cada fonte.
+#[tauri::command]
+pub async fn owcli_modelos(app: AppHandle) -> Result<ModelosDoOwcli, String> {
+    let state = app.state::<AppState>();
+    Ok(ModelosDoOwcli {
+        modelos: modelos_do_owcli(&catalogo::fontes(&state).await),
+        fontes: catalogo::estado_das_fontes(&state),
+    })
+}
+
 /// As conversas gravadas do OwCLI. Vazio quando ele não está instalado ou
 /// nunca foi usado — não é erro para a tela.
 #[tauri::command]
@@ -280,6 +329,24 @@ mod tests {
         );
         assert_eq!(v["modeloPadrao"], "local:Qwen3-Coder-30B");
         assert_eq!(v["modelos"][0]["janela"], 65_536);
+    }
+
+    #[test]
+    fn a_tela_recebe_o_id_com_prefixo_e_o_nome_da_fonte() {
+        let m = modelos_do_owcli(&fontes());
+        assert_eq!(m[0].id, "local:Qwen3-Coder-30B");
+        assert_eq!(m[0].nome, "Qwen3-Coder-30B");
+        assert_eq!(m[0].fonte, "OpenWeights (local)");
+        assert_eq!(m[1].id, "openrouter:openai/gpt-oss-20b:free");
+        assert_eq!(m[1].fonte, "OpenRouter");
+    }
+
+    #[test]
+    fn so_modelo_de_verdade_vai_para_o_dash_m() {
+        assert!(modelo_valido("openrouter:openai/gpt-oss-20b:free"));
+        assert!(!modelo_valido("--sandbox"));
+        assert!(!modelo_valido(""));
+        assert!(!modelo_valido("a\nb"));
     }
 
     #[test]

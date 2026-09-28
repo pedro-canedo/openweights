@@ -142,14 +142,53 @@ test("o agente abre pelo diálogo com aprovação e sandbox escolhidos", async (
   const dialogo = page.getByRole("dialog", { name: "Abrir o agente OwCLI" });
   await expect(dialogo).toBeVisible();
   await expect(dialogo).toContainText("Pasta pessoal");
+  // O primeiro do catálogo (os locais vêm antes) já vem escolhido.
+  await expect(dialogo.getByLabel("Modelo")).toHaveValue("local:Qwen3-Coder-30B");
+  await dialogo.getByLabel("Modelo").selectOption("openrouter:qwen/qwen3-coder");
   await dialogo.getByLabel("Quando pedir sua aprovação").selectOption("untrusted");
   await dialogo.getByLabel("O que ele pode fazer").selectOption("read-only");
   await dialogo.getByRole("button", { name: "Abrir", exact: true }).click();
   await expect(dialogo).toBeHidden();
   const tela = page.locator(".xterm-rows");
   await expect(tela).toContainText("OwCLI");
+  await expect(tela).toContainText("modelo: openrouter:qwen/qwen3-coder");
   await expect(tela).toContainText("aprovação: untrusted · sandbox: read-only");
   await expect(page.locator("[data-sessao]").first()).toContainText("OwCLI");
+
+  // A escolha fica lembrada para a próxima sessão.
+  await page.getByRole("button", { name: "Nova sessão" }).click();
+  await page.getByRole("menuitem", { name: "Agente OwCLI…" }).click();
+  await expect(
+    page.getByRole("dialog", { name: "Abrir o agente OwCLI" }).getByLabel("Modelo"),
+  ).toHaveValue("openrouter:qwen/qwen3-coder");
+});
+
+test("sem modelo nenhum, o diálogo mostra de onde tirar um", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as { __owcliSemModelos?: boolean }).__owcliSemModelos = true;
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "OwCLI", exact: true }).click();
+  await page.getByRole("button", { name: "Abrir o agente OwCLI" }).click();
+  const dialogo = page.getByRole("dialog", { name: "Escolha o cérebro do OwCLI" });
+  await expect(dialogo).toBeVisible();
+  await expect(dialogo.getByRole("button", { name: "Abrir", exact: true })).toHaveCount(0);
+  await expect(dialogo).toContainText("2 modelos na biblioteca, servidor parado.");
+
+  // Continuar uma conversa gravada também cai aqui, em vez de abrir sem modelo.
+  await dialogo.getByRole("button", { name: "Fechar" }).click();
+  await page
+    .getByRole("button", { name: "Continuar a conversa Migração do banco" })
+    .click();
+  await expect(page.getByRole("dialog", { name: "Escolha o cérebro do OwCLI" })).toBeVisible();
+
+  // As ações levam à tela certa e fecham o diálogo.
+  await page.getByRole("button", { name: "Configurar em Fontes" }).first().click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Fontes", exact: true })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
 });
 
 test("o histórico continua uma conversa e renomeia outra", async ({ page }) => {
@@ -162,6 +201,8 @@ test("o histórico continua uma conversa e renomeia outra", async ({ page }) => 
     .click();
   const tela = page.locator(".xterm-rows");
   await expect(tela).toContainText("retomando 01a0e747-cde3-79e1-bd44-168d74d9976c");
+  // O modelo da conversa, que ainda está no catálogo.
+  await expect(tela).toContainText("modelo: local:Qwen3-Coder-30B");
   await expect(tela).toContainText("aprovação: on-request · sandbox: workspace-write");
 
   await historico.getByRole("button", { name: "Renomear Migração do banco" }).click();

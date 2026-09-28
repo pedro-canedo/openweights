@@ -1584,6 +1584,10 @@
     "renameTitle": "Rename conversation",
     "renameLabel": "Conversation name",
     "rename": "Rename",
-    "renameFailed": "Could not rename: {{error}}"
+    "renameFailed": "Could not rename: {{error}}",
+    "model": "Model",
+    "loadingModels": "Looking for OpenWeights models…",
+    "brainTitle": "Choose OwCLI's brain",
+    "brainBody": "OwCLI thinks with the models OpenWeights can already serve, and there are none right now. Turn on one of the sources below and come back."
   }
 }

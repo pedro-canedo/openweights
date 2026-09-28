@@ -1584,6 +1584,10 @@
     "renameTitle": "Renomear a conversa",
     "renameLabel": "Nome da conversa",
     "rename": "Renomear",
-    "renameFailed": "Não foi possível renomear: {{error}}"
+    "renameFailed": "Não foi possível renomear: {{error}}",
+    "model": "Modelo",
+    "loadingModels": "Procurando os modelos do OpenWeights…",
+    "brainTitle": "Escolha o cérebro do OwCLI",
+    "brainBody": "O OwCLI pensa com os modelos que o OpenWeights já sabe servir, e agora não há nenhum. Ligue uma das fontes abaixo e volte aqui."
   }
 }

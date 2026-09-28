@@ -25,10 +25,8 @@ import {
 } from "../lib/agenticow";
 import { formatBytes, formatEta } from "../lib/format";
 import { Card, Page, StatusDot } from "../components/ui/Shell";
-import Icon, { type IconName } from "../components/ui/Icon";
-import { navigate } from "../lib/nav";
-import { startServer } from "../lib/api";
-import { errorMessage } from "../lib/serverSession";
+import Icon from "../components/ui/Icon";
+import CartoesDasFontes from "../components/agents/CartoesDasFontes";
 
 const botao =
   "rounded-lg border border-edge px-3 py-2 text-sm text-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50";
@@ -189,65 +187,11 @@ function Barra({ erro }: { erro: string | null }) {
 function Cerebro() {
   const { t } = useTranslation();
   const s = useSyncExternalStore(agenticowStore.subscribe, agenticowStore.get);
-  const f = s.status?.sources;
-  const [subindo, setSubindo] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
 
   // A webview do AgenticOw sai da frente enquanto este painel está à vista.
   useEffect(() => {
     void esconder();
   }, []);
-
-  const subirServidor = async () => {
-    setSubindo(true);
-    setErro(null);
-    try {
-      await startServer();
-      // O catálogo chega sozinho (o motor subindo reenvia); o status vem junto.
-      await refreshStatus();
-    } catch (e) {
-      setErro(errorMessage(e));
-    } finally {
-      setSubindo(false);
-    }
-  };
-
-  const fontes = (tab: "openrouter" | "9router") => navigate("providers", { providersTab: tab });
-
-  let local: Fonte;
-  if (!f || f.localModels === 0) {
-    local = {
-      estado: t("agenticow.brain.local.none"),
-      acao: t("agenticow.brain.local.find"),
-      aoClicar: () => navigate("discover"),
-    };
-  } else if (!f.serverRunning) {
-    local = {
-      estado: t("agenticow.brain.local.stopped", { count: f.localModels }),
-      acao: subindo ? t("common.loading") : t("agenticow.brain.local.start"),
-      aoClicar: () => void subirServidor(),
-      primaria: true,
-      ocupada: subindo,
-    };
-  } else {
-    local = {
-      estado: t("agenticow.brain.local.running"),
-      acao: t("agenticow.brain.local.open"),
-      aoClicar: () => navigate("server"),
-    };
-  }
-
-  const openrouter: Fonte = !f?.openrouterKey
-    ? { estado: t("agenticow.brain.openrouter.noKey"), acao: t("agenticow.brain.configure"), aoClicar: () => fontes("openrouter") }
-    : f.openrouterFavorites === 0
-      ? { estado: t("agenticow.brain.openrouter.noFavorites"), acao: t("agenticow.brain.openrouter.pick"), aoClicar: () => fontes("openrouter") }
-      : { estado: t("agenticow.brain.openrouter.ready", { count: f.openrouterFavorites }), acao: t("agenticow.brain.configure"), aoClicar: () => fontes("openrouter") };
-
-  const nove: Fonte = !f?.ninerouterInstalled
-    ? { estado: t("agenticow.brain.ninerouter.notInstalled"), acao: t("agenticow.brain.ninerouter.install"), aoClicar: () => fontes("9router") }
-    : !f.ninerouterRunning
-      ? { estado: t("agenticow.brain.ninerouter.stopped"), acao: t("agenticow.brain.configure"), aoClicar: () => fontes("9router") }
-      : { estado: t("agenticow.brain.ninerouter.noModels"), acao: t("agenticow.brain.configure"), aoClicar: () => fontes("9router") };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -256,70 +200,13 @@ function Cerebro() {
         <div className="mx-auto max-w-3xl px-6 py-10">
           <h2 className="text-xl font-semibold">{t("agenticow.brain.title")}</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-dim">{t("agenticow.brain.body")}</p>
-          <div className="mt-6 space-y-3">
-            <CartaoFonte
-              icone="cpu"
-              nome={t("agenticow.brain.local.name")}
-              descricao={t("agenticow.brain.local.hint")}
-              fonte={local}
-            />
-            <CartaoFonte
-              icone="network"
-              nome={t("agenticow.brain.openrouter.name")}
-              descricao={t("agenticow.brain.openrouter.hint")}
-              fonte={openrouter}
-            />
-            <CartaoFonte
-              icone="layers"
-              nome={t("agenticow.brain.ninerouter.name")}
-              descricao={t("agenticow.brain.ninerouter.hint")}
-              fonte={nove}
-            />
+          <div className="mt-6">
+            {/* O catálogo chega sozinho (o motor subindo reenvia); o status vem junto. */}
+            <CartoesDasFontes fontes={s.status?.sources} aoMudar={refreshStatus} />
           </div>
-          {erro && <p className="mt-4 text-sm text-bad">{erro}</p>}
           <p className="mt-6 text-xs leading-relaxed text-dim">{t("agenticow.brain.footnote")}</p>
         </div>
       </div>
-    </div>
-  );
-}
-
-interface Fonte {
-  estado: string;
-  acao: string;
-  aoClicar: () => void;
-  primaria?: boolean;
-  ocupada?: boolean;
-}
-
-function CartaoFonte({
-  icone,
-  nome,
-  descricao,
-  fonte,
-}: {
-  icone: IconName;
-  nome: string;
-  descricao: string;
-  fonte: Fonte;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-edge bg-panel px-5 py-4">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-panel2 text-accent-ink">
-        <Icon name={icone} className="h-4 w-4" />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">{nome}</div>
-        <div className="mt-0.5 text-xs leading-relaxed text-dim">{descricao}</div>
-        <div className="mt-1.5 text-[12px] text-ink">{fonte.estado}</div>
-      </div>
-      <button
-        onClick={fonte.aoClicar}
-        disabled={fonte.ocupada}
-        className={fonte.primaria ? botaoPrimario : botao}
-      >
-        {fonte.acao}
-      </button>
     </div>
   );
 }

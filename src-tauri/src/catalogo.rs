@@ -12,6 +12,7 @@
 
 use std::sync::atomic::Ordering;
 
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
@@ -43,6 +44,37 @@ pub struct ModeloDaFonte {
     pub esforcos: Vec<String>,
     /// O raciocínio pode ser ligado e desligado por quem chama.
     pub raciocinio: bool,
+}
+
+/// O que cada fonte tem agora, sem ir à rede: é o que as telas dos agentes
+/// mostram para a pessoa escolher o cérebro quando não há modelo nenhum.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EstadoDasFontes {
+    /// Modelos GGUF na biblioteca.
+    pub local_models: usize,
+    /// O Servidor Local está no ar.
+    pub server_running: bool,
+    /// OpenRouter ligado e com chave.
+    pub openrouter_key: bool,
+    /// Favoritos do OpenRouter (só eles entram no catálogo).
+    pub openrouter_favorites: usize,
+    pub ninerouter_installed: bool,
+    pub ninerouter_running: bool,
+}
+
+pub fn estado_das_fontes(state: &AppState) -> EstadoDasFontes {
+    let cfg = crate::commands_providers::load_config(state);
+    // PIDs, não os mutexes: uma partida do motor segura o dele enquanto espera
+    // o /health, e o status das telas não pode ficar preso atrás disso.
+    EstadoDasFontes {
+        local_models: lr_models::scan_local(&state.models_dir).len(),
+        server_running: state.server_pid.load(Ordering::SeqCst) != 0,
+        openrouter_key: cfg.open_router.enabled && !cfg.open_router.api_key.trim().is_empty(),
+        openrouter_favorites: cfg.open_router.favorites.len(),
+        ninerouter_installed: cfg.nine_router.installed,
+        ninerouter_running: state.ninerouter_pid.load(Ordering::SeqCst) != 0,
+    }
 }
 
 /// Modelos do Router local: todos os que o servidor atende agora, sem as

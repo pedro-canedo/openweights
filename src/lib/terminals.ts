@@ -26,6 +26,7 @@ import i18n from "../i18n";
 import { copiarTexto, lerTexto } from "./clipboard";
 import { openUrl } from "./openExternal";
 import { invoke, isTauri, listen } from "./tauri";
+import type { EstadoDasFontes } from "./fontes";
 
 // ------------------------------------------------------------ tipos ---
 
@@ -61,6 +62,22 @@ export interface OpcoesOwcli {
   sandbox: "workspace-write" | "read-only" | "danger-full-access";
   /** Id de uma conversa gravada para continuar. */
   retomar?: string | null;
+  /** O modelo, com o prefixo da fonte (`local:…`). */
+  modelo?: string | null;
+}
+
+/** Espelho do `commands_owcli::ModeloDoOwcli`. */
+export interface ModeloDoOwcli {
+  /** Com o prefixo da fonte: o que vai no `--model`. */
+  id: string;
+  nome: string;
+  /** O nome da fonte, para agrupar. */
+  fonte: string;
+}
+
+export interface ModelosDoOwcli {
+  modelos: ModeloDoOwcli[];
+  fontes: EstadoDasFontes;
 }
 
 /** Espelho do `owcli_historico::SessaoPassada`: uma conversa gravada do OwCLI. */
@@ -79,6 +96,7 @@ interface Backend {
   abrirShell(pasta: string | null, colunas: number, linhas: number): Promise<number>;
   abrirOwcli(opcoes: OpcoesOwcli, colunas: number, linhas: number): Promise<number>;
   historico(): Promise<SessaoPassada[]>;
+  modelos(): Promise<ModelosDoOwcli>;
   renomear(id: string, nome: string): Promise<void>;
   anexar(id: number, desde: number | null, onBloco: (b: ArrayBuffer) => void): Promise<boolean>;
   escrever(id: number, dados: string): Promise<void>;
@@ -486,13 +504,50 @@ export function novoOwcli(opcoes: OpcoesOwcli): Promise<number | null> {
 }
 
 /** Continua uma conversa gravada, na pasta dela, com o modo recomendado. */
-export function retomarOwcli(conversa: SessaoPassada): Promise<number | null> {
+export function retomarOwcli(conversa: SessaoPassada, modelo: string): Promise<number | null> {
   return novoOwcli({
     pasta: conversa.pasta || null,
     aprovacao: "on-request",
     sandbox: "workspace-write",
     retomar: conversa.id,
+    modelo,
   });
+}
+
+/** Os modelos com que o OwCLI pode abrir agora, e o estado de cada fonte. */
+export function modelosDoOwcli(): Promise<ModelosDoOwcli> {
+  return backend.modelos();
+}
+
+const CHAVE_MODELO = "ow.owcli.modelo";
+
+/**
+ * O modelo para abrir: o `desejado` (o de uma conversa gravada), senão o
+ * último escolhido no diálogo, senão o primeiro do catálogo (os locais vêm
+ * antes). Só vale o que está no catálogo agora.
+ */
+export function modeloPreferido(
+  modelos: ModeloDoOwcli[],
+  desejado?: string | null,
+): string | null {
+  let lembrado: string | null = null;
+  try {
+    lembrado = localStorage.getItem(CHAVE_MODELO);
+  } catch {
+    // sem armazenamento: fica o primeiro
+  }
+  const existe = (id: string | null | undefined) => !!id && modelos.some((m) => m.id === id);
+  if (existe(desejado)) return desejado!;
+  if (existe(lembrado)) return lembrado;
+  return modelos[0]?.id ?? null;
+}
+
+export function lembrarModelo(id: string) {
+  try {
+    localStorage.setItem(CHAVE_MODELO, id);
+  } catch {
+    // sem armazenamento: a escolha vale só agora
+  }
 }
 
 /** Relê as conversas gravadas. Falhar aqui não é erro da tela. */
@@ -649,6 +704,7 @@ const backendTauri: Backend = {
   abrirOwcli: (opcoes, colunas, linhas) =>
     invoke<number>("terminal_abrir_owcli", { pedido: { ...opcoes, colunas, linhas } }),
   historico: () => invoke<SessaoPassada[]>("owcli_historico"),
+  modelos: () => invoke<ModelosDoOwcli>("owcli_modelos"),
   renomear: (id, nome) => invoke<void>("owcli_renomear", { id, nome }),
   async anexar(id, desde, onBloco) {
     const { Channel } = await import("@tauri-apps/api/core");
@@ -740,10 +796,32 @@ function backendSimulado(): Backend {
       const s = nova("OwCLI", { kind: "owCli" }, opcoes.pasta ?? "~");
       emitir(s, "\x1b[2m>_\x1b[0m \x1b[1mOwCLI\x1b[0m \x1b[2m(v0.157.1)\x1b[0m\r\n\r\n");
       if (opcoes.retomar) emitir(s, `retomando ${opcoes.retomar}\r\n`);
+      emitir(s, `modelo: ${opcoes.modelo ?? "padrão"}\r\n`);
       emitir(s, `aprovação: ${opcoes.aprovacao} · sandbox: ${opcoes.sandbox}\r\n\r\n› `);
       return s.resumo.id;
     },
     historico: async () => conversas.map((c) => ({ ...c })),
+    async modelos() {
+      // O teste do "escolha o cérebro" liga isto antes de a página carregar.
+      const semModelos = (window as { __owcliSemModelos?: boolean }).__owcliSemModelos;
+      return {
+        modelos: semModelos
+          ? []
+          : [
+              { id: "local:Qwen3-Coder-30B", nome: "Qwen3-Coder-30B", fonte: "OpenWeights (local)" },
+              { id: "local:Qwen3-8B", nome: "Qwen3-8B", fonte: "OpenWeights (local)" },
+              { id: "openrouter:qwen/qwen3-coder", nome: "qwen/qwen3-coder", fonte: "OpenRouter" },
+            ],
+        fontes: {
+          localModels: 2,
+          serverRunning: !semModelos,
+          openrouterKey: !semModelos,
+          openrouterFavorites: semModelos ? 0 : 1,
+          ninerouterInstalled: false,
+          ninerouterRunning: false,
+        },
+      };
+    },
     async renomear(id, nome) {
       const c = conversas.find((x) => x.id === id);
       if (c) Object.assign(c, { titulo: nome.trim(), renomeada: true });

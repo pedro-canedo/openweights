@@ -29,8 +29,11 @@ import {
   fechar,
   focarPainel,
   iniciar,
+  lembrarModelo,
   limpar,
   marcarTelaVisivel,
+  modeloPreferido,
+  modelosDoOwcli,
   montar,
   novoOwcli,
   novoShell,
@@ -39,6 +42,7 @@ import {
   temSelecao,
   terminaisStore,
   type Layout,
+  type ModelosDoOwcli,
   type OpcoesOwcli,
   type SessaoPassada,
   type SessaoTerminal,
@@ -52,6 +56,7 @@ import { Menu, usePopover } from "../components/ui/Popover";
 import { StatusDot } from "../components/ui/Shell";
 import { Split } from "../components/ui/Split";
 import { toast } from "../components/ui/Toast";
+import CartoesDasFontes from "../components/agents/CartoesDasFontes";
 
 type MenuAberto = { x: number; y: number; id: number };
 
@@ -84,6 +89,18 @@ export default function OwCLI() {
     ev.currentTarget
       .querySelectorAll<HTMLButtonElement>("[data-sessao]")
       [destino]?.focus();
+  }
+
+  // Continuar uma conversa pede um modelo: o dela, se ainda existe. Sem
+  // modelo nenhum, o diálogo mostra de onde tirar um.
+  async function continuar(conversa: SessaoPassada) {
+    const m = await modelosDoOwcli().catch(() => null);
+    const modelo = m && modeloPreferido(m.modelos, conversa.modelo);
+    if (!modelo) {
+      setDialogo(true);
+      return;
+    }
+    void retomarOwcli(conversa, modelo);
   }
 
   const abrirMenu = (x: number, y: number, id: number) => setMenu({ x, y, id });
@@ -195,7 +212,12 @@ export default function OwCLI() {
             </h2>
             <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
               {e.historico.map((c) => (
-                <ItemConversa key={c.id} conversa={c} aoRenomear={() => setRenomeando(c)} />
+                <ItemConversa
+                  key={c.id}
+                  conversa={c}
+                  aoContinuar={() => void continuar(c)}
+                  aoRenomear={() => setRenomeando(c)}
+                />
               ))}
             </ul>
           </section>
@@ -296,7 +318,10 @@ export default function OwCLI() {
   );
 }
 
-/** Pasta, aprovação e sandbox do agente, antes de abrir. */
+/**
+ * Modelo, pasta, aprovação e sandbox do agente, antes de abrir. Sem modelo
+ * nenhum no catálogo, o que falta em cada fonte.
+ */
 function NovaSessaoOwcli({
   aberto,
   aoFechar,
@@ -307,75 +332,138 @@ function NovaSessaoOwcli({
   aoAbrir: (opcoes: OpcoesOwcli) => void;
 }) {
   const { t } = useTranslation();
+  const [catalogo, setCatalogo] = useState<ModelosDoOwcli | null>(null);
+  const [modelo, setModelo] = useState<string | null>(null);
   const [pasta, setPasta] = useState<string | null>(null);
   const [aprovacao, setAprovacao] = useState<OpcoesOwcli["aprovacao"]>("on-request");
   const [sandbox, setSandbox] = useState<OpcoesOwcli["sandbox"]>("workspace-write");
+
+  async function carregar() {
+    try {
+      const c = await modelosDoOwcli();
+      setCatalogo(c);
+      setModelo(modeloPreferido(c.modelos));
+    } catch (err) {
+      setCatalogo(null);
+      toast({ message: String(err), tone: "bad" });
+    }
+  }
+
+  useEffect(() => {
+    if (!aberto) return;
+    setCatalogo(null);
+    void carregar();
+  }, [aberto]);
+
+  const semModelos = catalogo != null && catalogo.modelos.length === 0;
+  const grupos = new Map<string, ModelosDoOwcli["modelos"]>();
+  for (const m of catalogo?.modelos ?? []) {
+    grupos.set(m.fonte, [...(grupos.get(m.fonte) ?? []), m]);
+  }
+
   return (
     <Dialog
       open={aberto}
       onClose={aoFechar}
-      title={t("owcli.agentDialogTitle")}
-      description={t("owcli.agentDialogHint")}
+      title={semModelos ? t("owcli.brainTitle") : t("owcli.agentDialogTitle")}
+      description={semModelos ? t("owcli.brainBody") : t("owcli.agentDialogHint")}
       footer={
-        <>
-          <Button onClick={aoFechar}>{t("common.cancel")}</Button>
-          <Button
-            variant="primary"
-            icon="sparkles"
-            data-autofocus=""
-            onClick={() => aoAbrir({ pasta, aprovacao, sandbox })}
-          >
-            {t("owcli.open")}
-          </Button>
-        </>
-      }
-    >
-      <div className="mt-5 grid gap-4">
-        <div>
-          <span className="mb-1 block text-[12px] text-dim">{t("owcli.folder")}</span>
-          <div className="flex items-center gap-2">
-            <span
-              className="min-w-0 flex-1 truncate rounded-lg border border-edge-strong bg-panel2 px-3 py-1.5 font-mono text-[12px] text-ink select-text"
-              title={pasta ?? undefined}
-            >
-              {pasta ?? t("owcli.folderHome")}
-            </span>
+        semModelos ? (
+          <Button onClick={aoFechar}>{t("common.close")}</Button>
+        ) : (
+          <>
+            <Button onClick={aoFechar}>{t("common.cancel")}</Button>
             <Button
-              size="sm"
-              onClick={async () => {
-                const escolhida = await pickWorkspace().catch(() => null);
-                if (escolhida) setPasta(escolhida);
+              variant="primary"
+              icon="sparkles"
+              data-autofocus=""
+              disabled={!modelo}
+              onClick={() => {
+                if (!modelo) return;
+                lembrarModelo(modelo);
+                aoAbrir({ pasta, aprovacao, sandbox, modelo });
               }}
             >
-              {t("owcli.chooseFolder")}
+              {t("owcli.open")}
             </Button>
-          </div>
+          </>
+        )
+      }
+    >
+      {catalogo == null ? (
+        <p role="status" className="mt-5 text-sm text-dim">
+          {t("owcli.loadingModels")}
+        </p>
+      ) : semModelos ? (
+        <div className="mt-5">
+          <CartoesDasFontes fontes={catalogo.fontes} aoMudar={carregar} aoSair={aoFechar} />
         </div>
-        <label className="grid gap-1">
-          <span className="text-[12px] text-dim">{t("owcli.approval")}</span>
-          <select
-            value={aprovacao}
-            onChange={(e) => setAprovacao(e.target.value as OpcoesOwcli["aprovacao"])}
-            className={inputClass}
-          >
-            <option value="on-request">{t("owcli.approvalOnRequest")}</option>
-            <option value="untrusted">{t("owcli.approvalUntrusted")}</option>
-            <option value="never">{t("owcli.approvalNever")}</option>
-          </select>
-        </label>
-        <label className="grid gap-1">
-          <span className="text-[12px] text-dim">{t("owcli.sandbox")}</span>
-          <select
-            value={sandbox}
-            onChange={(e) => setSandbox(e.target.value as OpcoesOwcli["sandbox"])}
-            className={inputClass}
-          >
-            <option value="workspace-write">{t("owcli.sandboxWrite")}</option>
-            <option value="read-only">{t("owcli.sandboxRead")}</option>
-            <option value="danger-full-access">{t("owcli.sandboxFull")}</option>
-          </select>
-        </label>
-      </div>
+      ) : (
+        <div className="mt-5 grid gap-4">
+          <label className="grid gap-1">
+            <span className="text-[12px] text-dim">{t("owcli.model")}</span>
+            <select
+              value={modelo ?? ""}
+              onChange={(e) => setModelo(e.target.value)}
+              className={inputClass}
+            >
+              {[...grupos].map(([fonte, modelos]) => (
+                <optgroup key={fonte} label={fonte}>
+                  {modelos.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.nome}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+          <div>
+            <span className="mb-1 block text-[12px] text-dim">{t("owcli.folder")}</span>
+            <div className="flex items-center gap-2">
+              <span
+                className="min-w-0 flex-1 truncate rounded-lg border border-edge-strong bg-panel2 px-3 py-1.5 font-mono text-[12px] text-ink select-text"
+                title={pasta ?? undefined}
+              >
+                {pasta ?? t("owcli.folderHome")}
+              </span>
+              <Button
+                size="sm"
+                onClick={async () => {
+                  const escolhida = await pickWorkspace().catch(() => null);
+                  if (escolhida) setPasta(escolhida);
+                }}
+              >
+                {t("owcli.chooseFolder")}
+              </Button>
+            </div>
+          </div>
+          <label className="grid gap-1">
+            <span className="text-[12px] text-dim">{t("owcli.approval")}</span>
+            <select
+              value={aprovacao}
+              onChange={(e) => setAprovacao(e.target.value as OpcoesOwcli["aprovacao"])}
+              className={inputClass}
+            >
+              <option value="on-request">{t("owcli.approvalOnRequest")}</option>
+              <option value="untrusted">{t("owcli.approvalUntrusted")}</option>
+              <option value="never">{t("owcli.approvalNever")}</option>
+            </select>
+          </label>
+          <label className="grid gap-1">
+            <span className="text-[12px] text-dim">{t("owcli.sandbox")}</span>
+            <select
+              value={sandbox}
+              onChange={(e) => setSandbox(e.target.value as OpcoesOwcli["sandbox"])}
+              className={inputClass}
+            >
+              <option value="workspace-write">{t("owcli.sandboxWrite")}</option>
+              <option value="read-only">{t("owcli.sandboxRead")}</option>
+              <option value="danger-full-access">{t("owcli.sandboxFull")}</option>
+            </select>
+          </label>
+        </div>
+      )}
     </Dialog>
   );
 }
@@ -449,9 +537,11 @@ function RenomearConversa({
 /** Uma conversa gravada: clicar continua de onde parou, numa sessão nova. */
 function ItemConversa({
   conversa,
+  aoContinuar,
   aoRenomear,
 }: {
   conversa: SessaoPassada;
+  aoContinuar: () => void;
   aoRenomear: () => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -460,7 +550,7 @@ function ItemConversa({
     <li className="group flex items-center gap-1 rounded-lg pr-1 transition-colors hover:bg-panel2/60">
       <button
         type="button"
-        onClick={() => void retomarOwcli(conversa)}
+        onClick={aoContinuar}
         title={`${conversa.titulo}\n${t("owcli.resumeHint", { folder: conversa.pasta })}`}
         aria-label={t("owcli.resume", { title: conversa.titulo })}
         className="flex min-w-0 flex-1 items-start gap-2.5 px-2 py-1.5 text-left"

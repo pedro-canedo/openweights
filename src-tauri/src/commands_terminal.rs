@@ -134,6 +134,9 @@ pub struct PedidoDeOwcli {
     pub sandbox: Option<String>,
     /// Id de uma conversa gravada para continuar (`owcli resume <id>`).
     pub retomar: Option<String>,
+    /// O modelo, com o prefixo da fonte (`local:…`). Sem ele, vale o da
+    /// config do OwCLI ou o padrão do app.
+    pub modelo: Option<String>,
 }
 
 /// Abre o agente OwCLI numa sessão: liga o gateway e o `openweights.json`
@@ -170,6 +173,13 @@ pub async fn terminal_abrir_owcli(
     let mut args: Vec<OsString> = Vec::new();
     if let Some(id) = retomar {
         args.extend(["resume".into(), id.into()]);
+    }
+    match pedido.modelo {
+        Some(m) if crate::commands_owcli::modelo_valido(&m) => {
+            args.extend(["--model".into(), m.into()]);
+        }
+        Some(_) => return Err("modelo inválido".to_string()),
+        None => {}
     }
     args.extend::<[OsString; 6]>([
         "--cd".into(),
