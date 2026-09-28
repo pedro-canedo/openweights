@@ -1544,6 +1544,12 @@
     "exited": "processo terminou com código {{code}}",
     "truncated": "o começo da saída foi descartado",
     "needsYou": "pede sua atenção",
-    "ended": "encerrado"
+    "ended": "encerrado",
+    "sessions": "Sessões",
+    "menu": "Ações do terminal",
+    "copy": "Copiar",
+    "paste": "Colar",
+    "clear": "Limpar a tela",
+    "closeSession": "Fechar a sessão"
   }
 }

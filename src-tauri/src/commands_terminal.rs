@@ -193,3 +193,45 @@ pub async fn terminal_visto(state: State<'_, AppState>, id: lr_pty::SessaoId) ->
 pub async fn terminal_listar(state: State<'_, AppState>) -> CmdResult<Vec<lr_pty::Resumo>> {
     Ok(state.terminais.listar())
 }
+
+// ------------------------------------------------- área de transferência ---
+
+/// A área de transferência do sistema, para copiar e colar nos terminais.
+///
+/// No WebKitGTK a API do navegador não é confiável para ler, e colar num
+/// terminal é ler. A instância fica viva: no X11 quem copiou continua dono do
+/// conteúdo e tem de estar lá para entregá-lo a quem colar.
+fn area_de_transferencia() -> CmdResult<std::sync::MutexGuard<'static, arboard::Clipboard>> {
+    static AREA: std::sync::OnceLock<Result<std::sync::Mutex<arboard::Clipboard>, String>> =
+        std::sync::OnceLock::new();
+    let area = AREA
+        .get_or_init(|| {
+            arboard::Clipboard::new()
+                .map(std::sync::Mutex::new)
+                .map_err(|e| e.to_string())
+        })
+        .as_ref()
+        .map_err(|e| format!("área de transferência indisponível: {e}"))?;
+    Ok(area.lock().unwrap_or_else(|e| e.into_inner()))
+}
+
+#[tauri::command]
+pub async fn area_de_transferencia_ler() -> CmdResult<String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        // Vazia ou com imagem: nada a colar, não é erro.
+        Ok(area_de_transferencia()?.get_text().unwrap_or_default())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn area_de_transferencia_escrever(texto: String) -> CmdResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        area_de_transferencia()?
+            .set_text(texto)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

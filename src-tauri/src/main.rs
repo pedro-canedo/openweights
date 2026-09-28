@@ -215,6 +215,8 @@ fn main() {
             commands_terminal::terminal_fechar,
             commands_terminal::terminal_visto,
             commands_terminal::terminal_listar,
+            commands_terminal::area_de_transferencia_ler,
+            commands_terminal::area_de_transferencia_escrever,
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,

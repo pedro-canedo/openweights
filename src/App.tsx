@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { onNavigate, type Screen } from "./lib/nav";
 import { engineStore, motorPedeAtencao, verificarMotor } from "./lib/engine";
+import { iniciar as iniciarTerminais } from "./lib/terminals";
 import StatusBar from "./components/StatusBar";
 import DownloadsPanel from "./components/DownloadsPanel";
 import GenerationPanel from "./components/GenerationPanel";
@@ -60,6 +61,13 @@ export default function App() {
   });
 
   useEffect(() => onNavigate(setScreen), []);
+
+  // Os terminais do OwCLI avisam mesmo com a tela fechada ("precisa de
+  // você" vira aviso do sistema) — o store liga os avisos logo no começo.
+  useEffect(() => {
+    const id = window.setTimeout(() => void iniciarTerminais(), 1500);
+    return () => window.clearTimeout(id);
+  }, []);
 
   // O motor é verificado uma vez por sessão, um pouco depois da abertura —
   // o `--version` sobe o executável e carrega os backends do ggml, e isso

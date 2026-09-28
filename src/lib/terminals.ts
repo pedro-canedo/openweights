@@ -23,6 +23,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import i18n from "../i18n";
+import { copiarTexto, lerTexto } from "./clipboard";
 import { openUrl } from "./openExternal";
 import { invoke, isTauri, listen } from "./tauri";
 
@@ -203,6 +204,45 @@ function criarXterm(id: number): Vivo {
   el.className = "h-full w-full";
   el.dataset.terminal = String(id);
 
+  // Ctrl+Shift+C / Ctrl+Shift+V (e Cmd+C / Cmd+V no macOS): o Ctrl+C e o
+  // Ctrl+V sozinhos são do programa (interromper, inserção literal no vim).
+  const mac = navigator.platform.toLowerCase().includes("mac");
+  term.attachCustomKeyEventHandler((ev) => {
+    if (ev.type !== "keydown") return true;
+    const tecla = ev.key.toLowerCase();
+    const copiar = mac ? ev.metaKey && tecla === "c" : ev.ctrlKey && ev.shiftKey && tecla === "c";
+    const colar = mac ? ev.metaKey && tecla === "v" : ev.ctrlKey && ev.shiftKey && tecla === "v";
+    // `false` só tira a tecla do xterm; sem o preventDefault o WebKitGTK
+    // também cola sozinho (Ctrl+Shift+V é colar nativo no GTK) e o texto
+    // entrava duas vezes.
+    if (copiar && term.hasSelection()) {
+      ev.preventDefault();
+      void copiarSelecao(id);
+      return false;
+    }
+    if (colar) {
+      ev.preventDefault();
+      void colarNo(id);
+      return false;
+    }
+    return true;
+  });
+
+  // OSC 52: o programa pede para copiar (tmux, vim, ssh). Só escrita — pedido
+  // de LEITURA ("?") é ignorado, senão qualquer saída leria a área de
+  // transferência de quem usa.
+  term.parser.registerOscHandler(52, (dados) => {
+    const b64 = dados.slice(dados.indexOf(";") + 1);
+    if (!b64 || b64 === "?") return true;
+    try {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      void copiarTexto(new TextDecoder().decode(bytes)).catch(() => {});
+    } catch {
+      // base64 inválido: nada a copiar.
+    }
+    return true;
+  });
+
   term.onData((dados) => void backend.escrever(id, dados).catch(() => {}));
   term.onBinary((dados) => void backend.escrever(id, dados).catch(() => {}));
   term.onResize(({ cols, rows }) => void backend.redimensionar(id, cols, rows).catch(() => {}));
@@ -296,8 +336,12 @@ function aplicarAviso(id: number, aviso: Aviso) {
       break;
     case "atencao":
       // Na sessão que a pessoa está olhando, o pedido já foi visto.
-      if (id === estado.ativa && document.hasFocus()) void backend.visto(id).catch(() => {});
-      else mudarSessao(id, { atencao: true });
+      if (id === estado.ativa && telaVisivel && document.hasFocus()) {
+        void backend.visto(id).catch(() => {});
+      } else {
+        mudarSessao(id, { atencao: true });
+        avisarNoSistema(id, aviso.texto);
+      }
       break;
     case "saiu": {
       mudarSessao(id, { viva: false, codigoSaida: aviso.codigo });
@@ -308,6 +352,58 @@ function aplicarAviso(id: number, aviso: Aviso) {
       break;
     }
   }
+}
+
+/** A tela do OwCLI está montada? (ela avisa ao montar e ao desmontar) */
+let telaVisivel = false;
+
+export function marcarTelaVisivel(visivel: boolean) {
+  telaVisivel = visivel;
+}
+
+const ultimoAviso = new Map<number, number>();
+/** Um agente que pede aprovação a cada passo não pode virar uma rajada. */
+const INTERVALO_ENTRE_AVISOS_MS = 15_000;
+
+/** Aviso do sistema quando a pessoa não está olhando a sessão que chamou. */
+function avisarNoSistema(id: number, texto: string) {
+  if (document.hasFocus() && telaVisivel && estado.ativa === id) return;
+  const agora = Date.now();
+  if (agora - (ultimoAviso.get(id) ?? 0) < INTERVALO_ENTRE_AVISOS_MS) return;
+  ultimoAviso.set(id, agora);
+  const sessao = estado.sessoes.find((s) => s.id === id);
+  const titulo = sessao?.titulo || i18n.t("nav.owcli");
+  const corpo = texto || i18n.t("owcli.needsYou");
+  void (async () => {
+    if (!isTauri) return;
+    const n = await import("@tauri-apps/plugin-notification");
+    let permitido = await n.isPermissionGranted();
+    if (!permitido) permitido = (await n.requestPermission()) === "granted";
+    if (permitido) n.sendNotification({ title: titulo, body: corpo });
+  })().catch(() => {});
+}
+
+export async function copiarSelecao(id: number) {
+  const v = vivos.get(id);
+  const texto = v?.term.getSelection();
+  if (texto) await copiarTexto(texto).catch(() => {});
+}
+
+export async function colarNo(id: number) {
+  const v = vivos.get(id);
+  if (!v) return;
+  const texto = await lerTexto().catch(() => "");
+  // `paste` aplica o bracketed paste quando o programa pediu: um texto de
+  // várias linhas não vira vários comandos executados.
+  if (texto) v.term.paste(texto);
+}
+
+export function temSelecao(id: number): boolean {
+  return vivos.get(id)?.term.hasSelection() ?? false;
+}
+
+export function limpar(id: number) {
+  vivos.get(id)?.term.clear();
 }
 
 export async function novoShell(pasta: string | null = null): Promise<number | null> {
@@ -483,6 +579,10 @@ function backendSimulado(): Backend {
           emitir(s, "\r\n");
           const [cmd, ...resto] = s.linha.trim().split(/\s+/);
           if (cmd === "echo") emitir(s, `${resto.join(" ")}\r\n`);
+          else if (cmd === "avisar") {
+            // Como o agente pedindo aprovação (OSC 9), um pouco depois.
+            window.setTimeout(() => aviso?.(id, { kind: "atencao", texto: resto.join(" ") }), 300);
+          }
           else if (cmd === "exit") {
             s.resumo.viva = false;
             aviso?.(id, { kind: "saiu", codigo: 0 });

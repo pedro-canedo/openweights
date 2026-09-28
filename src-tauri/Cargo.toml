@@ -48,6 +48,10 @@ tauri-plugin-opener = "2"
 # Aviso do sistema (cluster: pareamento, empréstimo de GPU). Quem faz isso
 # direito em cada sistema é o plugin oficial.
 tauri-plugin-notification = "2"
+# Copiar e colar nos terminais do OwCLI: no WebKitGTK a API de clipboard do
+# navegador não é confiável para ler. Só texto (sem `image-data`), e sem o
+# plugin do Tauri, que exigiria subir o Tauri inteiro.
+arboard = { version = "3", default-features = false }
 # Atualização de dentro do app. A assinatura é do próprio updater (minisign,
 # de graça) e não tem relação com o certificado de code signing que falta:
 # ela garante que o pacote baixado veio deste projeto, não que o sistema

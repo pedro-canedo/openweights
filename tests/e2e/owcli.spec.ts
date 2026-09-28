@@ -43,7 +43,7 @@ test("duas sessões, setas trocam e fechar volta ao estado vazio", async ({ page
   await expect(botoes.nth(1)).toHaveAttribute("aria-current", "true");
 
   await botoes.nth(1).focus();
-  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowUp");
   await expect(botoes.first()).toHaveAttribute("aria-current", "true");
   await expect(botoes.first()).toBeFocused();
   await expect(page.locator(".xterm-rows")).toContainText("primeira");
@@ -53,6 +53,39 @@ test("duas sessões, setas trocam e fechar volta ao estado vazio", async ({ page
     await fechar.first().click();
   }
   await expect(page.getByRole("heading", { name: "Nenhum terminal aberto" })).toBeVisible();
+});
+
+test("menu de contexto limpa a tela e fecha a sessão", async ({ page }) => {
+  await page.getByRole("button", { name: "Novo terminal" }).first().click();
+  await page.keyboard.type("echo marca-unica");
+  await page.keyboard.press("Enter");
+  const tela = page.locator(".xterm-rows");
+  await expect(tela).toContainText("marca-unica");
+
+  await page.getByRole("region", { name: "bash" }).click({ button: "right", position: { x: 200, y: 120 } });
+  const menu = page.getByRole("menu", { name: "Ações do terminal" });
+  await expect(menu).toBeVisible();
+  // Sem seleção, copiar não tem o que copiar.
+  await expect(menu.getByRole("menuitem", { name: "Copiar" })).toBeDisabled();
+  await menu.getByRole("menuitem", { name: "Limpar a tela" }).click();
+  await expect(tela).not.toContainText("marca-unica");
+
+  await page.getByRole("region", { name: "bash" }).click({ button: "right", position: { x: 200, y: 120 } });
+  await page.getByRole("menuitem", { name: "Fechar a sessão" }).click();
+  await expect(page.getByRole("heading", { name: "Nenhum terminal aberto" })).toBeVisible();
+});
+
+test("a sessão fora de vista que pede atenção aparece na lista", async ({ page }) => {
+  const novo = page.getByRole("button", { name: "Novo terminal" }).first();
+  await novo.click();
+  await page.keyboard.type("avisar Aprovar o comando?");
+  await page.keyboard.press("Enter");
+  // Troca de sessão antes do aviso chegar: ele vem para a que não está à vista.
+  await novo.click();
+  const primeira = page.locator("[data-sessao]").first();
+  await expect(primeira).toContainText("pede sua atenção");
+  await primeira.click();
+  await expect(primeira).not.toContainText("pede sua atenção");
 });
 
 test("a tela do OwCLI não tem violação séria de acessibilidade", async ({ page }) => {

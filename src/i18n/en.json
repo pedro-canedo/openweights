@@ -1544,6 +1544,12 @@
     "exited": "process exited with code {{code}}",
     "truncated": "the beginning of the output was discarded",
     "needsYou": "needs your attention",
-    "ended": "ended"
+    "ended": "ended",
+    "sessions": "Sessions",
+    "menu": "Terminal actions",
+    "copy": "Copy",
+    "paste": "Paste",
+    "clear": "Clear the screen",
+    "closeSession": "Close the session"
   }
 }
