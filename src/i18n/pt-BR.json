@@ -1550,6 +1550,14 @@
     "copy": "Copiar",
     "paste": "Colar",
     "clear": "Limpar a tela",
-    "closeSession": "Fechar a sessão"
+    "closeSession": "Fechar a sessão",
+    "layout": "Disposição",
+    "layout1": "Um painel",
+    "layout2": "Dois lado a lado",
+    "layout4": "Quatro em grade",
+    "emptyPane": "Escolha uma sessão na lista ou abra um terminal neste painel.",
+    "paneLabel": "Painel {{n}}",
+    "splitWidth": "Largura dos painéis",
+    "splitHeight": "Altura dos painéis"
   }
 }

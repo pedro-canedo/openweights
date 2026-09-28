@@ -88,6 +88,46 @@ test("a sessão fora de vista que pede atenção aparece na lista", async ({ pag
   await expect(primeira).not.toContainText("pede sua atenção");
 });
 
+test("grade de dois painéis: cada sessão no seu, sem duplicar", async ({ page }) => {
+  await page.getByRole("button", { name: "Novo terminal" }).first().click();
+  await page.keyboard.type("echo painel-um");
+  await page.keyboard.press("Enter");
+
+  const dois = page.getByRole("button", { name: "Dois lado a lado" });
+  await dois.click();
+  await expect(dois).toHaveAttribute("aria-pressed", "true");
+  const p1 = page.locator('[data-painel="0"]');
+  const p2 = page.locator('[data-painel="1"]');
+  await expect(p2).toContainText("Escolha uma sessão na lista");
+
+  await p2.getByRole("button", { name: "Novo terminal" }).click();
+  await expect(page.locator(".xterm-rows")).toHaveCount(2);
+  await page.keyboard.type("echo painel-dois");
+  await page.keyboard.press("Enter");
+  await expect(p2.locator(".xterm-rows")).toContainText("painel-dois");
+  await expect(p1.locator(".xterm-rows")).toContainText("painel-um");
+  await expect(p1.locator(".xterm-rows")).not.toContainText("painel-dois");
+
+  // A sessão 1 já está à vista: clicar nela na lista leva o foco ao painel
+  // dela, não a copia para o painel com foco.
+  await page.locator("[data-sessao]").first().click();
+  await expect(page.locator(".xterm-rows")).toHaveCount(2);
+  await expect(p2.locator(".xterm-rows")).toContainText("painel-dois");
+  await expect(page.locator("[data-sessao]").first()).toHaveAttribute("aria-current", "true");
+});
+
+test("quatro painéis e de volta a um mantém as sessões vivas", async ({ page }) => {
+  await page.getByRole("button", { name: "Novo terminal" }).first().click();
+  await page.keyboard.type("echo sobrevive");
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Quatro em grade" }).click();
+  await expect(page.locator("[data-painel]")).toHaveCount(4);
+  await expect(page.getByRole("separator")).toHaveCount(3);
+  await page.getByRole("button", { name: "Um painel" }).click();
+  await expect(page.locator("[data-painel]")).toHaveCount(1);
+  await expect(page.locator(".xterm-rows")).toContainText("sobrevive");
+});
+
 test("a tela do OwCLI não tem violação séria de acessibilidade", async ({ page }) => {
   await page.getByRole("button", { name: "Novo terminal" }).first().click();
   await expect(page.locator(".xterm-rows")).toContainText("voce@navegador");

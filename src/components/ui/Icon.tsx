@@ -24,6 +24,10 @@ const PATHS = {
   close: "M6 6l12 12M18 6L6 18",
   // Acrescentar (novo terminal, nova sessão).
   plus: "M12 5v14M5 12h14",
+  // Disposição da grade de terminais (um, dois lado a lado, quatro).
+  "painel-1": "M4 5h16v14H4z",
+  "painel-2": "M4 5h16v14H4zM12 5v14",
+  "painel-4": "M4 5h16v14H4zM12 5v14M4 12h16",
   // Confirmado / salvo / teste ok.
   check: "M20 6L9 17l-5-5",
   // Copiar valor (endereço, chave, comando).

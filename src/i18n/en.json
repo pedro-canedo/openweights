@@ -1550,6 +1550,14 @@
     "copy": "Copy",
     "paste": "Paste",
     "clear": "Clear the screen",
-    "closeSession": "Close the session"
+    "closeSession": "Close the session",
+    "layout": "Layout",
+    "layout1": "One pane",
+    "layout2": "Two side by side",
+    "layout4": "Four in a grid",
+    "emptyPane": "Pick a session from the list or open a terminal in this pane.",
+    "paneLabel": "Pane {{n}}",
+    "splitWidth": "Pane width",
+    "splitHeight": "Pane height"
   }
 }

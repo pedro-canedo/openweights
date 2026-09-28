@@ -4,18 +4,28 @@
 // shell, e em breve o agente OwCLI e os harnesses. Ali se vê, sem abrir,
 // quem terminou, quem ainda roda e quem está pedindo você (o agente manda
 // OSC 9 ao pedir aprovação; com a janela sem foco vira aviso do sistema).
-// À direita, o terminal da sessão escolhida. O terminal mora em
-// `lib/terminals.ts` e continua vivo, e desenhando, com a tela fechada.
+// À direita, uma grade de 1, 2 ou 4 painéis, cada um com uma sessão. O
+// terminal mora em `lib/terminals.ts` e continua vivo, e desenhando, com a
+// tela fechada ou fora da grade.
 
-import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import {
   ajustar,
   ativar,
   colarNo,
   copiarSelecao,
+  definirLayout,
   desmontar,
   fechar,
+  focarPainel,
   iniciar,
   limpar,
   marcarTelaVisivel,
@@ -23,18 +33,21 @@ import {
   novoShell,
   temSelecao,
   terminaisStore,
+  type Layout,
   type SessaoTerminal,
 } from "../lib/terminals";
 import { Button, IconButton } from "../components/ui/Button";
-import Icon from "../components/ui/Icon";
+import Icon, { type IconName } from "../components/ui/Icon";
 import { Menu } from "../components/ui/Popover";
 import { StatusDot } from "../components/ui/Shell";
+import { Split } from "../components/ui/Split";
+
+type MenuAberto = { x: number; y: number; id: number };
 
 export default function OwCLI() {
   const { t } = useTranslation();
   const e = useSyncExternalStore(terminaisStore.subscribe, terminaisStore.get);
-  const painel = useRef<HTMLDivElement>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<MenuAberto | null>(null);
 
   useEffect(() => {
     void iniciar();
@@ -42,29 +55,8 @@ export default function OwCLI() {
     return () => marcarTelaVisivel(false);
   }, []);
 
-  // A sessão ativa fica pendurada no painel enquanto a tela existir.
-  const ativa = e.ativa;
-  useEffect(() => {
-    const el = painel.current;
-    if (ativa == null || !el) return;
-    montar(ativa, el, terminaisStore.get().focar);
-    return () => desmontar(ativa);
-  }, [ativa]);
-
-  // O painel muda de tamanho com a janela e com a barra lateral.
-  useEffect(() => {
-    const el = painel.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      const id = terminaisStore.get().ativa;
-      if (id != null) ajustar(id);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
   function setas(ev: KeyboardEvent<HTMLDivElement>) {
-    const i = e.sessoes.findIndex((s) => s.id === ativa);
+    const i = e.sessoes.findIndex((s) => s.id === e.ativa);
     const n = e.sessoes.length;
     if (n === 0) return;
     const destino =
@@ -77,6 +69,53 @@ export default function OwCLI() {
     ev.currentTarget
       .querySelectorAll<HTMLButtonElement>("[data-sessao]")
       [destino]?.focus();
+  }
+
+  const abrirMenu = (x: number, y: number, id: number) => setMenu({ x, y, id });
+  const painel = (i: number) => <Painel indice={i} aoMenu={abrirMenu} />;
+
+  let grade: ReactNode;
+  if (e.layout === 1) {
+    grade = painel(0);
+  } else if (e.layout === 2) {
+    grade = (
+      <Split
+        label={t("owcli.splitWidth")}
+        defaultSize={560}
+        min={240}
+        minSecond={240}
+        storageKey="ow.owcli.split.2"
+        first={painel(0)}
+        second={painel(1)}
+        className="h-full"
+      />
+    );
+  } else {
+    const linha = (a: number, b: number, chave: string) => (
+      <Split
+        label={t("owcli.splitWidth")}
+        defaultSize={560}
+        min={240}
+        minSecond={240}
+        storageKey={chave}
+        first={painel(a)}
+        second={painel(b)}
+        className="h-full"
+      />
+    );
+    grade = (
+      <Split
+        direction="vertical"
+        label={t("owcli.splitHeight")}
+        defaultSize={340}
+        min={140}
+        minSecond={140}
+        storageKey="ow.owcli.split.4v"
+        first={linha(0, 1, "ow.owcli.split.4a")}
+        second={linha(2, 3, "ow.owcli.split.4b")}
+        className="h-full"
+      />
+    );
   }
 
   return (
@@ -97,12 +136,37 @@ export default function OwCLI() {
           className="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
         >
           {e.sessoes.map((s) => (
-            <ItemSessao key={s.id} sessao={s} ativa={s.id === ativa} />
+            <ItemSessao
+              key={s.id}
+              sessao={s}
+              ativa={s.id === e.ativa}
+              naGrade={e.paineis.slice(0, e.layout).includes(s.id)}
+            />
           ))}
         </div>
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
+        <div className="flex shrink-0 items-center justify-end gap-1 border-b border-edge bg-panel px-2 py-1">
+          <span className="mr-1 text-[11px] text-dim">{t("owcli.layout")}</span>
+          {(
+            [
+              [1, "painel-1", "owcli.layout1"],
+              [2, "painel-2", "owcli.layout2"],
+              [4, "painel-4", "owcli.layout4"],
+            ] as [Layout, IconName, string][]
+          ).map(([n, icone, rotulo]) => (
+            <IconButton
+              key={n}
+              icon={icone}
+              size="sm"
+              label={t(rotulo)}
+              aria-pressed={e.layout === n}
+              onClick={() => definirLayout(n)}
+              className={e.layout === n ? "bg-panel2 text-ink" : ""}
+            />
+          ))}
+        </div>
         {e.erro && (
           <p
             role="alert"
@@ -112,19 +176,7 @@ export default function OwCLI() {
           </p>
         )}
         <div className="relative min-h-0 flex-1">
-          {/* O painel existe sempre: é nele que o ResizeObserver mora. */}
-          <div
-            ref={painel}
-            role="region"
-            aria-label={e.sessoes.find((s) => s.id === ativa)?.titulo ?? t("owcli.tabs")}
-            onContextMenu={(ev) => {
-              if (ativa == null) return;
-              ev.preventDefault();
-              setMenu({ x: ev.clientX, y: ev.clientY });
-            }}
-            className="absolute inset-0 overflow-hidden px-2 pt-2"
-          />
-          {e.pronto && e.sessoes.length === 0 && (
+          {e.pronto && e.sessoes.length === 0 ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-8 text-center">
               <div className="workspace-icon">
                 <Icon name="terminal" className="h-6 w-6" />
@@ -135,11 +187,13 @@ export default function OwCLI() {
                 {t("owcli.newShell")}
               </Button>
             </div>
+          ) : (
+            <div className="absolute inset-0">{grade}</div>
           )}
         </div>
       </section>
 
-      {menu && ativa != null && (
+      {menu && (
         <div className="fixed z-50" style={{ left: menu.x, top: menu.y }}>
           <Menu
             open
@@ -150,22 +204,112 @@ export default function OwCLI() {
                 id: "copiar",
                 label: t("owcli.copy"),
                 icon: "copy",
-                disabled: !temSelecao(ativa),
-                onSelect: () => void copiarSelecao(ativa),
+                disabled: !temSelecao(menu.id),
+                onSelect: () => void copiarSelecao(menu.id),
               },
-              { id: "colar", label: t("owcli.paste"), onSelect: () => void colarNo(ativa) },
-              { id: "limpar", label: t("owcli.clear"), onSelect: () => limpar(ativa) },
+              { id: "colar", label: t("owcli.paste"), onSelect: () => void colarNo(menu.id) },
+              { id: "limpar", label: t("owcli.clear"), onSelect: () => limpar(menu.id) },
               {
                 id: "fechar",
                 label: t("owcli.closeSession"),
                 icon: "close",
                 danger: true,
-                onSelect: () => void fechar(ativa),
+                onSelect: () => void fechar(menu.id),
               },
             ]}
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/** Um painel da grade: pendura o terminal da sessão que é dele. */
+function Painel({
+  indice,
+  aoMenu,
+}: {
+  indice: number;
+  aoMenu: (x: number, y: number, id: number) => void;
+}) {
+  const { t } = useTranslation();
+  const e = useSyncExternalStore(terminaisStore.subscribe, terminaisStore.get);
+  const corpo = useRef<HTMLDivElement>(null);
+  const id = e.paineis[indice] ?? null;
+  const sessao = e.sessoes.find((s) => s.id === id);
+  const grade = e.layout > 1;
+  const comFoco = e.foco === indice;
+
+  useEffect(() => {
+    const el = corpo.current;
+    if (id == null || !el) return;
+    const s = terminaisStore.get();
+    montar(id, el, s.focar && s.foco === indice);
+    return () => desmontar(id);
+  }, [id, indice]);
+
+  // O painel muda de tamanho com a janela, a barra lateral e o divisor.
+  useEffect(() => {
+    const el = corpo.current;
+    if (id == null || !el) return;
+    const ro = new ResizeObserver(() => ajustar(id));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [id]);
+
+  return (
+    <div
+      data-painel={indice}
+      onMouseDownCapture={() => focarPainel(indice)}
+      className={`flex h-full min-h-0 flex-col ${
+        grade ? `border ${comFoco ? "border-accent/60" : "border-transparent"}` : ""
+      }`}
+    >
+      {grade && (
+        <div className="flex h-7 shrink-0 items-center gap-2 border-b border-edge px-2 text-[12px]">
+          {sessao ? (
+            <>
+              <StatusDot
+                tone={sessao.atencao ? "warn" : sessao.viva ? "ok" : "off"}
+                pulse={sessao.atencao}
+              />
+              <span className={`truncate ${comFoco ? "text-ink" : "text-dim"}`}>
+                {sessao.titulo}
+              </span>
+            </>
+          ) : (
+            <span className="text-dim">{t("owcli.paneLabel", { n: indice + 1 })}</span>
+          )}
+        </div>
+      )}
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={corpo}
+          role="region"
+          aria-label={sessao?.titulo ?? t("owcli.paneLabel", { n: indice + 1 })}
+          onContextMenu={(ev) => {
+            if (id == null) return;
+            ev.preventDefault();
+            aoMenu(ev.clientX, ev.clientY, id);
+          }}
+          className="absolute inset-0 overflow-hidden px-2 pt-1"
+        />
+        {id == null && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center">
+            <p className="max-w-xs text-[12px] leading-relaxed text-dim">{t("owcli.emptyPane")}</p>
+            <Button
+              size="sm"
+              icon="plus"
+              onClick={() => {
+                focarPainel(indice);
+                void novoShell();
+              }}
+            >
+              {t("owcli.newShell")}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -176,7 +320,15 @@ function pastaCurta(pasta: string): string {
   return partes.slice(-2).join("/") || pasta;
 }
 
-function ItemSessao({ sessao, ativa }: { sessao: SessaoTerminal; ativa: boolean }) {
+function ItemSessao({
+  sessao,
+  ativa,
+  naGrade,
+}: {
+  sessao: SessaoTerminal;
+  ativa: boolean;
+  naGrade: boolean;
+}) {
   const { t } = useTranslation();
   const tom = sessao.atencao ? "warn" : sessao.viva ? "ok" : "off";
   const detalhe = sessao.atencao
@@ -188,7 +340,7 @@ function ItemSessao({ sessao, ativa }: { sessao: SessaoTerminal; ativa: boolean 
     <div
       role="listitem"
       className={`group flex items-center gap-1 rounded-lg pr-1 transition-colors ${
-        ativa ? "bg-panel2" : "hover:bg-panel2/60"
+        ativa ? "bg-panel2" : naGrade ? "bg-panel2/50" : "hover:bg-panel2/60"
       }`}
     >
       <button

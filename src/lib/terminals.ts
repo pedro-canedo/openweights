@@ -68,8 +68,21 @@ interface Backend {
 
 // ------------------------------------------------------------ estado ---
 
+export type Layout = 1 | 2 | 4;
+
 export interface EstadoTerminais {
   sessoes: SessaoTerminal[];
+  /** Quantos painéis a grade mostra. */
+  layout: Layout;
+  /**
+   * A sessão de cada painel. Sempre 4 posições; só as `layout` primeiras
+   * aparecem — reduzir a grade esconde, não fecha, e crescer de novo traz
+   * de volta. Uma sessão nunca está em dois painéis (um elemento DOM só).
+   */
+  paineis: (number | null)[];
+  /** O painel com foco: é nele que entra a sessão escolhida na lista. */
+  foco: number;
+  /** A sessão do painel com foco. */
   ativa: number | null;
   /** A sessão ativa leva o foco ao montar? Não quando se anda pela lista com setas. */
   focar: boolean;
@@ -77,8 +90,22 @@ export interface EstadoTerminais {
   pronto: boolean;
 }
 
+const CHAVE_LAYOUT = "ow.owcli.layout";
+
+function layoutGuardado(): Layout {
+  try {
+    const n = Number(localStorage.getItem(CHAVE_LAYOUT));
+    return n === 2 || n === 4 ? n : 1;
+  } catch {
+    return 1;
+  }
+}
+
 let estado: EstadoTerminais = {
   sessoes: [],
+  layout: 1,
+  paineis: [null, null, null, null],
+  foco: 0,
   ativa: null,
   focar: true,
   erro: null,
@@ -89,6 +116,17 @@ const ouvintes = new Set<() => void>();
 function mudar(parcial: Partial<EstadoTerminais>) {
   estado = { ...estado, ...parcial };
   ouvintes.forEach((f) => f());
+}
+
+/** Troca painéis e foco juntos, mantendo `ativa` coerente com eles. */
+function mudarPaineis(paineis: (number | null)[], foco: number, focar: boolean) {
+  mudar({ paineis, foco, ativa: paineis[foco] ?? null, focar });
+}
+
+/** A sessão está num painel que aparece agora? */
+function visivel(id: number): boolean {
+  const j = estado.paineis.indexOf(id);
+  return j >= 0 && j < estado.layout;
 }
 
 function mudarSessao(id: number, parcial: Partial<SessaoTerminal>) {
@@ -314,11 +352,13 @@ export function iniciar(): Promise<void> {
         const v = criarXterm(s.id);
         await anexar(s.id, v);
       }
-      mudar({
-        sessoes: existentes,
-        ativa: existentes.at(-1)?.id ?? null,
-        pronto: true,
-      });
+      // Webview recarregada: as sessões mais recentes voltam aos painéis.
+      const layout = layoutGuardado();
+      const paineis: (number | null)[] = [null, null, null, null];
+      existentes.slice(-layout).forEach((s, i) => (paineis[i] = s.id));
+      const foco = Math.max(0, Math.min(layout, existentes.length) - 1);
+      mudar({ sessoes: existentes, layout, pronto: true });
+      mudarPaineis(paineis, foco, true);
     } catch (e) {
       mudar({ erro: String(e), pronto: true });
     }
@@ -336,7 +376,7 @@ function aplicarAviso(id: number, aviso: Aviso) {
       break;
     case "atencao":
       // Na sessão que a pessoa está olhando, o pedido já foi visto.
-      if (id === estado.ativa && telaVisivel && document.hasFocus()) {
+      if (visivel(id) && telaVisivel && document.hasFocus()) {
         void backend.visto(id).catch(() => {});
       } else {
         mudarSessao(id, { atencao: true });
@@ -367,7 +407,7 @@ const INTERVALO_ENTRE_AVISOS_MS = 15_000;
 
 /** Aviso do sistema quando a pessoa não está olhando a sessão que chamou. */
 function avisarNoSistema(id: number, texto: string) {
-  if (document.hasFocus() && telaVisivel && estado.ativa === id) return;
+  if (document.hasFocus() && telaVisivel && visivel(id)) return;
   const agora = Date.now();
   if (agora - (ultimoAviso.get(id) ?? 0) < INTERVALO_ENTRE_AVISOS_MS) return;
   ultimoAviso.set(id, agora);
@@ -412,12 +452,10 @@ export async function novoShell(pasta: string | null = null): Promise<number | n
     const id = await backend.abrirShell(pasta, 80, 24);
     const v = criarXterm(id);
     const novas = await backend.listar();
-    mudar({
-      sessoes: novas,
-      ativa: id,
-      focar: true,
-      erro: null,
-    });
+    const paineis = [...estado.paineis];
+    paineis[estado.foco] = id;
+    mudar({ sessoes: novas, erro: null });
+    mudarPaineis(paineis, estado.foco, true);
     await anexar(id, v);
     return id;
   } catch (e) {
@@ -426,10 +464,46 @@ export async function novoShell(pasta: string | null = null): Promise<number | n
   }
 }
 
+/**
+ * Mostra a sessão: se ela já está num painel à vista, o foco vai até lá;
+ * senão ela entra no painel com foco (saindo de um painel escondido, se
+ * estava num).
+ */
 export function ativar(id: number, focar = true) {
-  mudar({ ativa: id, focar });
+  const paineis = [...estado.paineis];
+  const j = paineis.indexOf(id);
+  let foco = estado.foco;
+  if (j >= 0 && j < estado.layout) {
+    foco = j;
+  } else {
+    if (j >= 0) paineis[j] = null;
+    paineis[foco] = id;
+  }
+  mudarPaineis(paineis, foco, focar);
   mudarSessao(id, { atencao: false });
   void backend.visto(id).catch(() => {});
+}
+
+/** O painel `i` passa a ter o foco (clique dentro dele). */
+export function focarPainel(i: number) {
+  if (i === estado.foco) return;
+  mudarPaineis(estado.paineis, i, false);
+  const id = estado.paineis[i];
+  if (id != null) {
+    mudarSessao(id, { atencao: false });
+    void backend.visto(id).catch(() => {});
+  }
+}
+
+export function definirLayout(layout: Layout) {
+  try {
+    localStorage.setItem(CHAVE_LAYOUT, String(layout));
+  } catch {
+    // sem armazenamento: vale até fechar o app
+  }
+  const foco = estado.foco < layout ? estado.foco : 0;
+  mudar({ layout });
+  mudarPaineis(estado.paineis, foco, false);
 }
 
 export async function fechar(id: number) {
@@ -442,10 +516,18 @@ export async function fechar(id: number) {
     vivos.delete(id);
   }
   const restantes = estado.sessoes.filter((s) => s.id !== id);
-  mudar({
-    sessoes: restantes,
-    ativa: estado.ativa === id ? (restantes.at(-1)?.id ?? null) : estado.ativa,
-  });
+  const paineis = estado.paineis.map((p) => (p === id ? null : p));
+  // O painel com foco que ficou vazio recebe a sessão mais recente que não
+  // está à vista — com um painel só, fechar a aba mostra a anterior.
+  if (paineis[estado.foco] == null) {
+    const vistas = new Set(paineis.slice(0, estado.layout));
+    const proxima = restantes.filter((s) => !vistas.has(s.id)).at(-1)?.id ?? null;
+    const j = proxima == null ? -1 : paineis.indexOf(proxima);
+    if (j >= 0) paineis[j] = null;
+    paineis[estado.foco] = proxima;
+  }
+  mudar({ sessoes: restantes });
+  mudarPaineis(paineis, estado.foco, true);
 }
 
 /**
