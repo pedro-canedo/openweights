@@ -225,3 +225,18 @@ test("a tela do OwCLI não tem violação séria de acessibilidade", async ({ pa
   const graves = r.violations.filter((v) => v.impact === "serious" || v.impact === "critical");
   expect(graves.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
 });
+
+test("sem o agente instalado, a tela é só de terminais", async ({ page }) => {
+  await page.addInitScript(() => {
+    (globalThis as { __owcliSemAgente?: boolean }).__owcliSemAgente = true;
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "OwCLI", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Nenhum terminal aberto" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Abrir o agente OwCLI" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Nova sessão" })).toHaveCount(0);
+  // O "+" abre o terminal direto, sem menu de uma opção só.
+  await page.locator("aside").getByRole("button", { name: "Novo terminal" }).click();
+  await expect(page.locator(".xterm-rows")).toContainText("voce@navegador");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+});

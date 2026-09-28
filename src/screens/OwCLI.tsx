@@ -157,28 +157,34 @@ export default function OwCLI() {
           <h2 className="text-[11px] font-semibold tracking-wide text-dim uppercase">
             {t("owcli.sessions")}
           </h2>
-          <span className="relative">
-            <IconButton icon="plus" label={t("owcli.newSession")} {...nova.triggerProps} />
-            <Menu
-              {...nova.popoverProps}
-              label={t("owcli.newSession")}
-              className="absolute right-0 top-full mt-1"
-              items={[
-                {
-                  id: "agente",
-                  label: t("owcli.newAgent"),
-                  icon: "sparkles",
-                  onSelect: () => setDialogo(true),
-                },
-                {
-                  id: "terminal",
-                  label: t("owcli.newShell"),
-                  icon: "terminal",
-                  onSelect: () => void novoShell(),
-                },
-              ]}
-            />
-          </span>
+          {/* Sem o agente instalado, um menu de uma opção só seria um clique
+              a mais: o "+" abre o terminal direto. */}
+          {e.agente ? (
+            <span className="relative">
+              <IconButton icon="plus" label={t("owcli.newSession")} {...nova.triggerProps} />
+              <Menu
+                {...nova.popoverProps}
+                label={t("owcli.newSession")}
+                className="absolute right-0 top-full mt-1"
+                items={[
+                  {
+                    id: "agente",
+                    label: t("owcli.newAgent"),
+                    icon: "sparkles",
+                    onSelect: () => setDialogo(true),
+                  },
+                  {
+                    id: "terminal",
+                    label: t("owcli.newShell"),
+                    icon: "terminal",
+                    onSelect: () => void novoShell(),
+                  },
+                ]}
+              />
+            </span>
+          ) : (
+            <IconButton icon="plus" label={t("owcli.newShell")} onClick={() => void novoShell()} />
+          )}
         </div>
         {/* Lista, não tablist: cada sessão tem o próprio botão de fechar, e
             um tablist só pode conter abas. A ativa leva aria-current. */}
@@ -262,10 +268,16 @@ export default function OwCLI() {
               <h1 className="text-lg font-semibold text-ink">{t("owcli.emptyTitle")}</h1>
               <p className="max-w-md text-sm leading-relaxed text-dim">{t("owcli.emptyHint")}</p>
               <div className="flex flex-wrap justify-center gap-2">
-                <Button variant="primary" icon="sparkles" onClick={() => setDialogo(true)}>
-                  {t("owcli.openAgent")}
-                </Button>
-                <Button icon="terminal" onClick={() => void novoShell()}>
+                {e.agente && (
+                  <Button variant="primary" icon="sparkles" onClick={() => setDialogo(true)}>
+                    {t("owcli.openAgent")}
+                  </Button>
+                )}
+                <Button
+                  variant={e.agente ? "secondary" : "primary"}
+                  icon="terminal"
+                  onClick={() => void novoShell()}
+                >
                   {t("owcli.newShell")}
                 </Button>
               </div>

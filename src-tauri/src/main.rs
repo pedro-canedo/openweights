@@ -233,6 +233,7 @@ fn main() {
             commands_terminal::area_de_transferencia_ler,
             commands_terminal::area_de_transferencia_escrever,
             commands_owcli::owcli_ligar,
+            commands_owcli::owcli_disponivel,
             commands_owcli::owcli_historico,
             commands_owcli::owcli_modelos,
             commands_owcli::owcli_renomear,

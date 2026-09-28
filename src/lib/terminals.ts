@@ -96,6 +96,8 @@ interface Backend {
   abrirShell(pasta: string | null, colunas: number, linhas: number): Promise<number>;
   abrirOwcli(opcoes: OpcoesOwcli, colunas: number, linhas: number): Promise<number>;
   historico(): Promise<SessaoPassada[]>;
+  /** O agente OwCLI está instalado (ou há um build de desenvolvimento)? */
+  agenteDisponivel(): Promise<boolean>;
   modelos(): Promise<ModelosDoOwcli>;
   renomear(id: string, nome: string): Promise<void>;
   anexar(id: number, desde: number | null, onBloco: (b: ArrayBuffer) => void): Promise<boolean>;
@@ -131,6 +133,8 @@ export interface EstadoTerminais {
   pronto: boolean;
   /** As conversas gravadas do OwCLI, a mais recente primeiro. */
   historico: SessaoPassada[];
+  /** O agente OwCLI pode abrir aqui; sem ele, a tela é só de terminais. */
+  agente: boolean;
 }
 
 const CHAVE_LAYOUT = "ow.owcli.layout";
@@ -154,6 +158,7 @@ let estado: EstadoTerminais = {
   erro: null,
   pronto: false,
   historico: [],
+  agente: false,
 };
 const ouvintes = new Set<() => void>();
 
@@ -390,6 +395,7 @@ let iniciado: Promise<void> | null = null;
 export function iniciar(): Promise<void> {
   iniciado ??= (async () => {
     await backend.aoAvisar(aplicarAviso);
+    mudar({ agente: await backend.agenteDisponivel().catch(() => false) });
     try {
       const existentes = await backend.listar();
       for (const s of existentes) {
@@ -704,6 +710,7 @@ const backendTauri: Backend = {
   abrirOwcli: (opcoes, colunas, linhas) =>
     invoke<number>("terminal_abrir_owcli", { pedido: { ...opcoes, colunas, linhas } }),
   historico: () => invoke<SessaoPassada[]>("owcli_historico"),
+  agenteDisponivel: () => invoke<boolean>("owcli_disponivel"),
   modelos: () => invoke<ModelosDoOwcli>("owcli_modelos"),
   renomear: (id, nome) => invoke<void>("owcli_renomear", { id, nome }),
   async anexar(id, desde, onBloco) {
@@ -801,6 +808,9 @@ function backendSimulado(): Backend {
       return s.resumo.id;
     },
     historico: async () => conversas.map((c) => ({ ...c })),
+    // O teste da tela sem o agente liga isto antes de a página carregar.
+    agenteDisponivel: async () =>
+      !(globalThis as { __owcliSemAgente?: boolean }).__owcliSemAgente,
     async modelos() {
       // O teste do "escolha o cérebro" liga isto antes de a página carregar.
       const semModelos = (window as { __owcliSemModelos?: boolean }).__owcliSemModelos;

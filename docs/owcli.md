@@ -135,6 +135,11 @@ protocolo de teclado do kitty.
 O diálogo pede os modelos a `owcli_modelos`, que devolve o catálogo e o estado das
 fontes. Sem modelo nenhum, mostra os cartões de fonte (os mesmos do AgenticOw).
 
+Sem o executável (nem o runtime pinado nem `OW_OWCLI_BIN`), `owcli_disponivel` responde
+`false` e a tela esconde o agente: o "+" abre um terminal direto e o estado vazio oferece só
+o terminal. A 0.25.0 saiu assim, com os terminais e os harnesses; o agente aparece quando o
+runtime do fork estiver pinado.
+
 ## Histórico
 
 Quem lê as conversas gravadas é o próprio OwCLI: `owcli app-server` fala JSON-RPC, uma

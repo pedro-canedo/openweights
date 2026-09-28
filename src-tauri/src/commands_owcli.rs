@@ -233,6 +233,13 @@ pub async fn ativar(app: &AppHandle) {
     sincronizar(app).await;
 }
 
+/// O agente pode abrir aqui? Sem o runtime do OwCLI (nem um build de
+/// desenvolvimento em `OW_OWCLI_BIN`), a tela mostra só os terminais.
+#[tauri::command]
+pub fn owcli_disponivel() -> bool {
+    binario().is_ok()
+}
+
 /// A tela liga o OwCLI ao abrir a primeira sessão dele.
 #[tauri::command]
 pub async fn owcli_ligar(app: AppHandle) -> Result<(), String> {
