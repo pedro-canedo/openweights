@@ -117,6 +117,17 @@ pub fn is_vision_projector(path: &str) -> bool {
     base.starts_with("mmproj") || base.contains("mmproj-") || base.contains("-mmproj")
 }
 
+/// GGUF que acompanha o modelo mas não é um: a matriz de importância da
+/// quantização (`imatrix*.gguf`) e a cabeça MTP separada (`MTP/mtp-*.gguf`),
+/// que só serve de rascunho para o modelo principal. O modelo que embute a
+/// cabeça (`…-MTP-Q4_K_M.gguf`) continua sendo modelo.
+pub fn is_auxiliary_gguf(path: &str) -> bool {
+    let mut partes = path.rsplit(['/', '\\']);
+    let base = partes.next().unwrap_or(path).to_lowercase();
+    let na_pasta_mtp = partes.next().is_some_and(|p| p.eq_ignore_ascii_case("mtp"));
+    base.starts_with("imatrix") || base.starts_with("mtp-") || na_pasta_mtp
+}
+
 pub fn group_artifacts(files: &[RepoFile]) -> Vec<GgufArtifact> {
     use std::collections::BTreeMap;
 
@@ -124,7 +135,10 @@ pub fn group_artifacts(files: &[RepoFile]) -> Vec<GgufArtifact> {
     let mut sharded: BTreeMap<(String, u32), Vec<(u32, RepoFile)>> = BTreeMap::new();
 
     for f in files {
-        if !f.path.to_lowercase().ends_with(".gguf") || is_vision_projector(&f.path) {
+        if !f.path.to_lowercase().ends_with(".gguf")
+            || is_vision_projector(&f.path)
+            || is_auxiliary_gguf(&f.path)
+        {
             continue;
         }
         match parse_shard(&f.path) {
@@ -243,6 +257,33 @@ mod tests {
         assert_eq!(projetores.len(), 3);
         // Do menor para o maior: é o que a visão sob demanda vai preferir.
         assert_eq!(projetores[0].path, "subpasta/gemma-3-mmproj-BF16.gguf");
+    }
+
+    /// A cabeça MTP separada e a imatrix também são `.gguf` com rótulo de
+    /// quantização: sem separá-las, o Qwen3.8-27B oferecia um "Q4_0 de 1,3
+    /// GB" que não é modelo nenhum — e o primeiro uso o sugeria para a CPU.
+    #[test]
+    fn the_mtp_head_and_the_imatrix_are_not_models() {
+        let arquivos = [
+            f("Qwen3.8-27B-Q4_0.gguf", 14_950_000_000),
+            f("MTP/mtp-Qwen3.8-27B-Q4_0.gguf", 1_280_000_000),
+            f("imatrix_unsloth.gguf", 10_000_000),
+            f("Qwen3.6-35B-A3B-MTP-UD-Q4_K_M.gguf", 21_000_000_000),
+        ];
+        let mut nomes: Vec<String> = group_artifacts(&arquivos)
+            .into_iter()
+            .map(|a| a.name)
+            .collect();
+        nomes.sort();
+        assert_eq!(
+            nomes,
+            [
+                "Qwen3.6-35B-A3B-MTP-UD-Q4_K_M.gguf",
+                "Qwen3.8-27B-Q4_0.gguf"
+            ]
+        );
+        assert!(is_auxiliary_gguf("mtp\\mtp-x-Q8_0.gguf"));
+        assert!(!is_auxiliary_gguf("modelos/Qwen3-MTP-Q4_K_M.gguf"));
     }
 
     #[test]
