@@ -352,7 +352,14 @@ function PrimeiroModelo({ aoFechar }: { aoFechar: () => void }) {
               className="flex flex-wrap items-center gap-3 rounded-xl border border-edge bg-panel2 px-4 py-3"
             >
               <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-medium text-ink">{s.candidato.nome}</div>
+                <div className="flex flex-wrap items-center gap-2 text-[13px] font-medium text-ink">
+                  {s.candidato.nome}
+                  {s.candidato.padrao && (
+                    <span className="rounded-md bg-accent/15 px-1.5 py-0.5 text-[10.5px] font-normal text-accent-ink">
+                      {t("onboarding.startHere")}
+                    </span>
+                  )}
+                </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-dim">
                   <span>
                     {s.quant.label} · {formatBytes(s.quant.totalBytes)}

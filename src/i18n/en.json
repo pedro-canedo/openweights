@@ -797,6 +797,7 @@
     "engineHint": "The AI engine (llama.cpp) is what runs the models. It is downloaded once, verified before it runs, and lives in an app folder.",
     "installEngine": "Install the engine",
     "modelTitle": "Choose your first model",
+    "startHere": "Recommended to start",
     "modelHint": "These fit your computer, each in the version that runs best here. You can switch any time in Discover.",
     "modelLoading": "Looking for models that fit here…",
     "modelNone": "I could not fetch suggestions right now. In Discover you can search and pick a model.",

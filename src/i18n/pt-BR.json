@@ -797,6 +797,7 @@
     "engineHint": "O motor de IA (llama.cpp) é o que roda os modelos. Ele é baixado uma vez, verificado antes de rodar, e fica numa pasta do app.",
     "installEngine": "Instalar o motor",
     "modelTitle": "Escolha o seu primeiro modelo",
+    "startHere": "Recomendado para começar",
     "modelHint": "Estes cabem no seu computador, cada um na versão que roda melhor aqui. Dá para trocar a qualquer hora em Descobrir.",
     "modelLoading": "Procurando modelos que cabem aqui…",
     "modelNone": "Não consegui buscar sugestões agora. Em Descobrir você procura e escolhe um modelo.",

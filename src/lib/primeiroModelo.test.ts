@@ -64,6 +64,22 @@ describe("escolherSugestoes", () => {
     expect(s.quant.label).toBe("Q4_K_M");
   });
 
+  it("o candidato padrão vem na frente sempre que cabe", () => {
+    const padrao: Candidato = { repoId: "x/leve", nome: "leve", padrao: true };
+    const s = escolherSugestoes([
+      { candidato: c("grande"), quants: [quant({ kind: "fullGpu", ngl: 60 }, 17)] },
+      { candidato: padrao, quants: [quant({ kind: "partial", ngl: 20, layersTotal: 40 }, 6)] },
+      { candidato: c("medio"), quants: [quant({ kind: "fullGpu", ngl: 40 }, 7)] },
+    ]);
+    expect(s.map((x) => x.candidato.nome)).toEqual(["leve", "grande", "medio"]);
+    // Se não cabe, não entra.
+    const semEle = escolherSugestoes([
+      { candidato: padrao, quants: [quant({ kind: "wontFit" }, 60)] },
+      { candidato: c("medio"), quants: [quant({ kind: "fullGpu", ngl: 40 }, 7)] },
+    ]);
+    expect(semEle.map((x) => x.candidato.nome)).toEqual(["medio"]);
+  });
+
   it("deixa de fora o que não cabe, o que não respondeu e o que pede o motor da PrismML", () => {
     const s = escolherSugestoes([
       { candidato: c("nao-cabe"), quants: [quant({ kind: "wontFit" }, 50)] },

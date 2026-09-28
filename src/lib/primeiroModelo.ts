@@ -11,9 +11,12 @@ import type { QuantView } from "./types";
 export interface Candidato {
   repoId: string;
   nome: string;
+  /** O ponto de partida: leve para começar, vem na frente sempre que couber. */
+  padrao?: boolean;
 }
 
 export const CANDIDATOS: Candidato[] = [
+  { repoId: "unsloth/Ornith-1.0-9B-GGUF", nome: "Ornith 9B", padrao: true },
   { repoId: "unsloth/Qwen3.6-35B-A3B-GGUF", nome: "Qwen3.6 35B-A3B" },
   { repoId: "unsloth/Qwen3.8-27B-GGUF", nome: "Qwen3.8 27B" },
   { repoId: "unsloth/gemma-4-12b-it-GGUF", nome: "Gemma 4 12B" },
@@ -65,9 +68,9 @@ function versaoParaCpu(quants: QuantView[], recomendada: QuantView): QuantView {
 }
 
 /**
- * As `n` melhores para esta máquina: primeiro as que rodam bem, na ordem da
- * lista (a mais capaz antes). Só na CPU, a menor vem antes — ali o tamanho é
- * a velocidade. Candidato sem resposta do Hub (`quants: null`) fica de fora,
+ * As `n` melhores para esta máquina. O candidato padrão, se cabe, vem na
+ * frente; depois, as que rodam bem, na ordem da lista (a mais capaz antes).
+ * Só na CPU, a menor vem antes — ali o tamanho é a velocidade. Candidato sem resposta do Hub (`quants: null`) fica de fora,
  * e o que só abre no motor da PrismML também: primeiro modelo não é hora de
  * baixar um segundo motor.
  */
@@ -84,6 +87,7 @@ export function escolherSugestoes(
   });
   aptos.sort(
     (x, y) =>
+      Number(!!y.sugestao.candidato.padrao) - Number(!!x.sugestao.candidato.padrao) ||
       x.f - y.f ||
       (x.f === 2
         ? x.sugestao.quant.totalBytes - y.sugestao.quant.totalBytes
