@@ -1,7 +1,28 @@
 {
   "format": 1,
   "repository": "pedro-canedo/openweights",
-  "tag": "owcli-runtime-34d992ac-v1",
-  "revision": "34d992ac469aa4dcf9bb41f02f959dee918bfdbb",
-  "assets": {}
+  "tag": "owcli-runtime-6621daf3-v1",
+  "revision": "6621daf3bcf54ec851cb38aa6e8db6764223b55f",
+  "assets": {
+    "darwin-arm64": {
+      "name": "openweights-owcli-runtime-6621daf3-v1-darwin-arm64.tar.gz",
+      "sha256": "f08296cfa9c55eb06920256ac9e99e5511d9a4f1068983817abcdec4ed6de59c",
+      "size": 95545656
+    },
+    "darwin-x64": {
+      "name": "openweights-owcli-runtime-6621daf3-v1-darwin-x64.tar.gz",
+      "sha256": "369942ba29e241c3d3ed92f77bbd4ad7d5f8ae3f012569fe4bf459407a36d62b",
+      "size": 103802502
+    },
+    "linux-x64": {
+      "name": "openweights-owcli-runtime-6621daf3-v1-linux-x64.tar.gz",
+      "sha256": "e91260412cdcdec5aa20357098d0d4253769484a3804d8f9b1ffb323e5133c24",
+      "size": 109513603
+    },
+    "win32-x64": {
+      "name": "openweights-owcli-runtime-6621daf3-v1-win32-x64.zip",
+      "sha256": "1271cc404f31ff6c2045e0c2f7365d9d56df2df71dd7db9e6090b50aef4a68c7",
+      "size": 118146441
+    }
+  }
 }
