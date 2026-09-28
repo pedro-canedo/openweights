@@ -39,6 +39,8 @@ const PATHS = {
   "arrow-right": "M4 12h16m0 0l-5-5m5 5l-5 5",
   // Aviso (qualidade divergente, suspeito térmico).
   alert: "M12 4L2.5 20h19L12 4zM12 10v4m0 3.5h.01",
+  // Ajuda contextual (o "?" ao lado de um termo técnico).
+  help: "M12 21a9 9 0 110-18 9 9 0 010 18zM9.6 9.3a2.5 2.5 0 014.8.9c0 1.6-2.4 2-2.4 3.5M12 17h.01",
   // Barra de status. Em 14px o que distingue um pictograma do vizinho é a
   // silhueta, não o detalhe: chip quadrado, módulo de memória deitado, placa
   // com ventoinha, raio, cilindros empilhados. O nome de cada medidor está no

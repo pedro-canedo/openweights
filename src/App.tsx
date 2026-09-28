@@ -9,6 +9,8 @@ import Onboarding from "./components/Onboarding";
 import NavConversations from "./components/NavConversations";
 import UpdateBadge from "./components/UpdateBadge";
 import { OwMark, OwWordmark } from "./components/OpenWeightsLogo";
+import { ConfirmHost } from "./components/ui/Dialog";
+import { ToastHost } from "./components/ui/Toast";
 import Discover from "./screens/Discover";
 import MyModels from "./screens/MyModels";
 import Chat from "./screens/Chat";
@@ -246,6 +248,8 @@ export default function App() {
       <GenerationPanel />
       <DownloadsPanel />
       <Onboarding />
+      <ToastHost />
+      <ConfirmHost />
     </div>
   );
 }

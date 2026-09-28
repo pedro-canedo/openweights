@@ -19,17 +19,20 @@ const CONTROLE = 3;
 const FUNDOS = ["bg", "panel", "panel2"];
 
 /**
- * Pares [frente, fundos, piso, uso]. "#ffffff" é o texto dos botões cheios;
- * "cor@15" é o fundo tingido dos selos (`bg-ok/15 text-ok`), a cor a 15% sobre
- * o painel.
+ * O fundo tingido dos selos (`bg-ok/15 text-ok`): a cor a 15% sobre cada um
+ * dos três fundos, porque o selo aparece em qualquer um deles — medir só
+ * sobre o painel deixou passar o claro, onde o fundo é mais escuro.
  */
+const tingidos = (cor) => FUNDOS.map((f) => `${cor}@15:${f}`);
+
+/** Pares [frente, fundos, piso, uso]. "#ffffff" é o texto dos botões cheios. */
 const PARES = [
   ["ink", FUNDOS, TEXTO, "texto principal"],
   ["dim", FUNDOS, TEXTO, "texto secundário"],
-  ["ok", [...FUNDOS, "ok@15"], TEXTO, "texto de sucesso"],
-  ["warn", [...FUNDOS, "warn@15"], TEXTO, "texto de aviso"],
-  ["bad", [...FUNDOS, "bad@15"], TEXTO, "texto de erro"],
-  ["accent-ink", [...FUNDOS, "accent@15"], TEXTO, "texto na cor da marca"],
+  ["ok", [...FUNDOS, ...tingidos("ok")], TEXTO, "texto de sucesso"],
+  ["warn", [...FUNDOS, ...tingidos("warn")], TEXTO, "texto de aviso"],
+  ["bad", [...FUNDOS, ...tingidos("bad")], TEXTO, "texto de erro"],
+  ["accent-ink", [...FUNDOS, ...tingidos("accent")], TEXTO, "texto na cor da marca"],
   ["#ffffff", ["accent-fill"], TEXTO, "rótulo de botão cheio"],
   ["edge-strong", FUNDOS, CONTROLE, "borda de campo"],
   ["focus", FUNDOS, CONTROLE, "anel de foco"],
@@ -78,8 +81,8 @@ const falhas = [];
 for (const [nome, vars] of [["escuro", escuro], ["claro", claro]]) {
   const cor = (token) => {
     if (token.startsWith("#")) return token;
-    const tinta = token.match(/^([\w-]+)@(\d+)$/);
-    if (tinta) return misturar(cor(tinta[1]), cor("panel"), Number(tinta[2]) / 100);
+    const tinta = token.match(/^([\w-]+)@(\d+):([\w-]+)$/);
+    if (tinta) return misturar(cor(tinta[1]), cor(tinta[3]), Number(tinta[2]) / 100);
     const v = vars[token];
     if (!v) throw new Error(`tema ${nome}: --lr-${token} não está definido`);
     return v;

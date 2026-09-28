@@ -65,9 +65,17 @@ export default function AgenticOw() {
   return s.status.models === 0 ? <Cerebro /> : <Palco />;
 }
 
-/** Algum modal do app aberto? A webview nativa ficaria por cima dele. */
+/**
+ * Algum painel do app aberto por cima da tela? A webview nativa ficaria por
+ * cima dele. `data-overlay` é a marca de todo diálogo, popover e menu do kit
+ * (`components/ui/camada.ts`); os outros dois seletores pegam o que ainda não
+ * migrou.
+ */
 function haModalAberto(): boolean {
-  return document.querySelector('[role="dialog"], [aria-modal="true"]') !== null;
+  return (
+    document.querySelector('[data-overlay], [role="dialog"], [aria-modal="true"]') !==
+    null
+  );
 }
 
 /** No ar: a interface do AgenticOw ocupa a tela, com uma barra fina em cima. */
@@ -117,7 +125,7 @@ function Palco() {
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["role", "aria-modal"],
+      attributeFilter: ["role", "aria-modal", "data-overlay"],
     });
     return () => {
       ro.disconnect();
