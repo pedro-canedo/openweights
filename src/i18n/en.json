@@ -141,7 +141,15 @@
       "none": "none declared"
     },
     "downloads": "Downloads",
-    "likes": "Likes"
+    "likes": "Likes",
+    "downloadingPct": "Downloading… {{pct}}%",
+    "resume": "Resume",
+    "retry": "Try again",
+    "chat": "Chat",
+    "inLibrary": "In your library",
+    "downloadFailed": "The download did not start: {{error}}",
+    "downloadStopped": "The download stopped: {{error}}",
+    "modelReady": "{{name}} is ready to chat."
   },
   "downloadsPanel": {
     "title": "Downloads",

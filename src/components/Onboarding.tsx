@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { silenciarDownload } from "../lib/downloads";
 import {
   ensureRuntime,
   getHardwareProfile,
@@ -270,7 +271,7 @@ function PrimeiroModelo({ aoFechar }: { aoFechar: () => void }) {
       setBaixando((b) => b && { ...b, status: e.status });
       if (e.status.state === "done") {
         aoFechar();
-        navigate("chat", { chatModel: e.status.artifactName });
+        navigate("chat", { chatModel: e.status.localName ?? e.status.artifactName });
       } else if (e.status.state === "error") {
         setErro(e.status.error ?? t("onboarding.downloadFailed"));
       }
@@ -287,6 +288,8 @@ function PrimeiroModelo({ aoFechar }: { aoFechar: () => void }) {
   async function baixar(sugestao: Sugestao) {
     setErro(null);
     try {
+      // O primeiro uso cuida do fim sozinho (abre o Chat): nada de aviso.
+      silenciarDownload(sugestao.candidato.repoId, sugestao.quant.artifactName);
       const id = await startDownload(sugestao.candidato.repoId, sugestao.quant.artifactName);
       setBaixando({ sugestao, id, status: null });
     } catch (e) {

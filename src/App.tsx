@@ -5,7 +5,9 @@ import { enderecoDaAjuda, montarComandos, novaConversa, TELAS_POR_NUMERO } from 
 import { openUrl } from "./lib/openExternal";
 import { aplicarEscala, escalaGuardada } from "./lib/escala";
 import { decidirModoInicial, useModo } from "./lib/mode";
-import { onNavigate, type Screen } from "./lib/nav";
+import { navigate, onNavigate, type Screen } from "./lib/nav";
+import { aoConcluirDownload, iniciarDownloads } from "./lib/downloads";
+import { notificarSemFoco } from "./lib/notificar";
 import { errorMessage } from "./lib/serverSession";
 import { useTema } from "./lib/tema";
 import { engineStore, motorPedeAtencao, verificarMotor } from "./lib/engine";
@@ -156,6 +158,23 @@ export default function App() {
       })
       .catch(() => {});
   }, []);
+
+  // "Modelo pronto → Conversar", de qualquer tela, quando um download que
+  // esta sessão viu correr termina; com a janela sem foco, também um aviso
+  // do sistema.
+  useEffect(() => {
+    void iniciarDownloads();
+    return aoConcluirDownload((s) => {
+      const nome = s.localName ?? s.artifactName;
+      const message = t("discover.modelReady", { name: nome });
+      toast({
+        message,
+        tone: "ok",
+        action: { label: t("discover.chat"), run: () => navigate("chat", { chatModel: nome }) },
+      });
+      void notificarSemFoco("OpenWeights", message).catch(() => {});
+    });
+  }, [t]);
 
   // Os terminais do OwCLI avisam mesmo com a tela fechada ("precisa de
   // você" vira aviso do sistema) — o store liga os avisos logo no começo.

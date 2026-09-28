@@ -61,6 +61,14 @@ mandavam você para o navegador:
 - **O que o autor escreveu** — o cartão do modelo do repositório, renderizado
   aqui dentro.
 
+O botão de cada arquivo acompanha o download de verdade: **Baixar**, **Baixando…**
+com a porcentagem, **Retomar** se ele foi pausado, **Tentar de novo** se parou
+com erro (o motivo aparece logo abaixo) e **Conversar** quando o arquivo já está
+na biblioteca, com o selo **Na biblioteca**. Se o download nem começa, o aviso
+diz por quê. Quando um download termina, de qualquer tela aparece o aviso de que
+o modelo está pronto, com **Conversar**; com a janela do app sem foco, chega
+também uma notificação do sistema.
+
 ## Meus Modelos
 
 Tudo que foi baixado aparece em **Meus Modelos**, com tamanho e quantização,

@@ -59,6 +59,14 @@ you to the browser:
   branch is there, the capability is real.
 - **What its author wrote** — the repository's model card, rendered in the app.
 
+Each file's button follows the actual download: **Download**, **Downloading…**
+with the percentage, **Resume** if it was paused, **Try again** if it stopped
+with an error (the reason shows right below) and **Chat** once the file is in
+your library, with the **In your library** badge. If a download does not even
+start, a notice says why. When a download finishes, a notice that the model is
+ready shows up on any screen, with **Chat**; with the app window unfocused, a
+system notification comes too.
+
 ## My Models
 
 Everything downloaded shows up in **My Models**, with size and quantization, a

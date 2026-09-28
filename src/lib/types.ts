@@ -251,6 +251,10 @@ export interface QuantView {
   kvCacheBytes: number;
   /** Pelo nome, só abre no motor da PrismML (Bonsai 2); instalado junto. */
   requiresPrism: boolean;
+  /** Já está inteiro na biblioteca: a tela oferece conversar, não baixar. */
+  inLibrary?: boolean;
+  /** O nome com que a biblioteca (e o Chat) o conhece depois de baixado. */
+  localName?: string | null;
 }
 
 /** O que a gaveta de quantizações recebe do backend. */
@@ -279,6 +283,8 @@ export interface DownloadStatus {
   bytesPerSec: number;
   state: DownloadState;
   error: string | null;
+  /** O nome com que a biblioteca (e o Chat) o conhece depois de baixado. */
+  localName?: string | null;
 }
 
 export type DownloadEvent =

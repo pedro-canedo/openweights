@@ -604,6 +604,10 @@ pub struct QuantView {
     pub artifact_name: String,
     pub files: Vec<String>,
     pub total_bytes: u64,
+    /// Já está inteiro na biblioteca: a tela oferece conversar, não baixar.
+    pub in_library: bool,
+    /// O nome com que a biblioteca (e o Chat) o conhece depois de baixado.
+    pub local_name: Option<String>,
     #[serde(flatten)]
     pub option: advisor::QuantOption,
 }
@@ -717,6 +721,8 @@ pub async fn models_quants(
             .into_iter()
             .zip(options)
             .map(|(a, option)| QuantView {
+                in_library: lr_models::artifact_on_disk(&state.models_dir, &repo_id, &a.files),
+                local_name: lr_models::local_name(&a.files),
                 artifact_name: a.name,
                 files: a.files.iter().map(|f| f.path.clone()).collect(),
                 total_bytes: a.total_bytes,

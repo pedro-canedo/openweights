@@ -141,7 +141,15 @@
       "none": "nenhuma declarada"
     },
     "downloads": "Downloads",
-    "likes": "Curtidas"
+    "likes": "Curtidas",
+    "downloadingPct": "Baixando… {{pct}}%",
+    "resume": "Retomar",
+    "retry": "Tentar de novo",
+    "chat": "Conversar",
+    "inLibrary": "Na biblioteca",
+    "downloadFailed": "O download não começou: {{error}}",
+    "downloadStopped": "O download parou: {{error}}",
+    "modelReady": "{{name}} está pronto para conversar."
   },
   "downloadsPanel": {
     "title": "Downloads",

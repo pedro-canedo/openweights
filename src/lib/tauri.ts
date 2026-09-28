@@ -2,6 +2,7 @@
 // num navegador comum (npm run dev sem Tauri) para desenvolver a UI.
 
 import type { HardwareProfile, Telemetry } from "./types";
+import { ouvirMock } from "./mocks";
 
 export const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -144,6 +145,7 @@ async function mockInvoke(cmd: string, _args?: Record<string, unknown>) {
 }
 
 function mockListen(event: string, handler: (payload: unknown) => void) {
+  if (event === "download") return ouvirMock(event, handler);
   if (event !== "telemetry") return () => {};
   let t = 0;
   const timer = setInterval(() => {

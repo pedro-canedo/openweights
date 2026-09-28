@@ -194,7 +194,7 @@ export async function modelQuants(_repoId: string): Promise<QuantsView> {
   return {
     quants: [
       mk("UD-Q2_K_XL", 10.3, { kind: "fullGpu", ngl: 64 }),
-      mk("Q3_K_M", 13.8, { kind: "fullGpu", ngl: 64 }),
+      { ...mk("Q3_K_M", 13.8, { kind: "fullGpu", ngl: 64 }), inLibrary: true, localName: "model-Q3_K_M.gguf" },
       mk("UD-Q4_K_XL", 17.9, { kind: "partial", ngl: 52, layersTotal: 64 }, true),
       mk("Q5_K_M", 19.8, { kind: "partial", ngl: 46, layersTotal: 64 }),
       mk("Q8_0", 29, { kind: "cpuOnly" }),
@@ -209,21 +209,55 @@ export async function modelQuants(_repoId: string): Promise<QuantsView> {
 
 const downloads = new Map<string, DownloadStatus>();
 
+// Os eventos que o backend mandaria (`listen` no navegador cai aqui). Só o
+// "download" por enquanto: a telemetria tem o timer dela em tauri.ts.
+type OuvinteMock = (payload: unknown) => void;
+const ouvintesMock = new Map<string, Set<OuvinteMock>>();
+
+export function ouvirMock(evento: string, f: OuvinteMock): () => void {
+  const lista = ouvintesMock.get(evento) ?? new Set<OuvinteMock>();
+  lista.add(f);
+  ouvintesMock.set(evento, lista);
+  return () => lista.delete(f);
+}
+
+function emitirMock(evento: string, payload: unknown) {
+  ouvintesMock.get(evento)?.forEach((f) => f(payload));
+}
+
+/**
+ * Começa a "baixar": o evento mostra o progresso e o download fica correndo.
+ * Os testes ligam, antes de a página carregar, `__downloadsTerminam` (termina
+ * logo depois) ou `__downloadFalha` (o backend recusa, com essa mensagem).
+ */
 export async function startDownload(
   repoId: string,
   artifactName: string,
 ): Promise<string> {
+  const g = globalThis as { __downloadsTerminam?: boolean; __downloadFalha?: string };
+  if (g.__downloadFalha) throw g.__downloadFalha;
   const id = `${repoId}::${artifactName}`;
-  downloads.set(id, {
+  const total = 5 * 2 ** 30;
+  const status: DownloadStatus = {
     id,
     repoId,
     artifactName,
     receivedBytes: 1.2 * 2 ** 30,
-    totalBytes: 5 * 2 ** 30,
+    totalBytes: total,
     bytesPerSec: 48 * 2 ** 20,
     state: "running",
     error: null,
-  });
+    localName: artifactName.split("/").pop() ?? artifactName,
+  };
+  downloads.set(id, status);
+  setTimeout(() => emitirMock("download", { kind: "update", status }), 50);
+  if (g.__downloadsTerminam) {
+    setTimeout(() => {
+      const pronto: DownloadStatus = { ...status, receivedBytes: total, bytesPerSec: 0, state: "done" };
+      downloads.set(id, pronto);
+      emitirMock("download", { kind: "update", status: pronto });
+    }, 600);
+  }
   return id;
 }
 

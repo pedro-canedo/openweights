@@ -5,6 +5,7 @@
 // desenho do `prism.ts`.
 
 import { onDecisionEvent } from "./api";
+import { silenciarDownload } from "./downloads";
 import { jevLocalInstall, type JevLocalStatus } from "./jev";
 import { isTauri } from "./tauri";
 import type { RuntimeEvent } from "./types";
@@ -47,6 +48,9 @@ export function instalarDecisor(): Promise<JevLocalStatus> {
     emit({ error: null });
     try {
       const st = await jevLocalInstall();
+      // O modelo do decisor é da casa: o painel mostra o download, mas
+      // "modelo pronto → Conversar" não faz sentido para ele.
+      silenciarDownload(st.modelRepo, st.model);
       if (!st.runtimeInstalled) emit({ installing: true });
       return st;
     } catch (e) {

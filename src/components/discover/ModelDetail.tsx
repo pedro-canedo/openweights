@@ -14,8 +14,17 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "../../lib/openExternal";
-import type { ModelSummary, QuantsView, QuantView } from "../../lib/types";
-import { getModelQuants, hfLogin, modelReadme, startDownload } from "../../lib/api";
+import type { DownloadStatus, ModelSummary, QuantsView, QuantView } from "../../lib/types";
+import {
+  getModelQuants,
+  hfLogin,
+  modelReadme,
+  resumeDownload,
+  startDownload,
+} from "../../lib/api";
+import { iniciarDownloads, useDownload } from "../../lib/downloads";
+import { navigate } from "../../lib/nav";
+import { toast } from "../ui/Toast";
 import { formatAgo, formatBytes, formatCount, formatParams } from "../../lib/format";
 import { carregarPrism, prismParaDownload, prismStore } from "../../lib/prism";
 import Markdown from "../chat/Markdown";
@@ -40,21 +49,67 @@ function Campo({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+/**
+ * O botão de uma quantização, pelo que está acontecendo com ela: baixar,
+ * baixando (com a porcentagem), retomar, tentar de novo ou, já na
+ * biblioteca, conversar. Vem do download de verdade (`lib/downloads`), não de
+ * um "clicou" local — é o que impedia o botão de ficar preso em "Baixando…".
+ */
+function acaoDaQuant(
+  quant: QuantView,
+  status: DownloadStatus | undefined,
+  iniciando: boolean,
+): "baixar" | "baixando" | "retomar" | "tentar" | "conversar" {
+  if (status?.state === "queued" || status?.state === "running") return "baixando";
+  if (status?.state === "paused") return "retomar";
+  if (status?.state === "error") return "tentar";
+  if (status?.state === "done" || quant.inLibrary) return "conversar";
+  return iniciando ? "baixando" : "baixar";
+}
+
 function QuantRow({
+  repoId,
   quant,
-  started,
+  iniciando,
   onDownload,
   ctxLen,
 }: {
+  repoId: string;
   quant: QuantView;
-  started: boolean;
+  iniciando: boolean;
   onDownload: () => void;
   ctxLen: number;
 }) {
   const { t } = useTranslation();
+  const status = useDownload(repoId, quant.artifactName);
+  const acao = acaoDaQuant(quant, status, iniciando);
+  const pct =
+    status && status.totalBytes > 0
+      ? Math.floor((status.receivedBytes / status.totalBytes) * 100)
+      : null;
+  const rotulo = {
+    baixar: t("discover.download"),
+    baixando: pct != null ? t("discover.downloadingPct", { pct }) : t("discover.downloading"),
+    retomar: t("discover.resume"),
+    tentar: t("discover.retry"),
+    conversar: t("discover.chat"),
+  }[acao];
+  const clicar = () => {
+    if (acao === "conversar") {
+      navigate("chat", { chatModel: status?.localName ?? quant.localName ?? undefined });
+    } else if (acao === "retomar" && status) {
+      void resumeDownload(status.id).catch((err) =>
+        toast({ message: t("discover.downloadFailed", { error: String(err) }), tone: "bad" }),
+      );
+    } else if (acao !== "baixando") {
+      onDownload();
+    }
+  };
 
   return (
     <div
+      role="group"
+      aria-label={quant.label}
       className={`rounded-xl border p-3 transition-colors ${
         quant.recommended ? "border-accent/60 bg-accent/5" : "border-edge bg-panel2/40"
       }`}
@@ -70,20 +125,27 @@ function QuantRow({
           {formatBytes(quant.sizeBytes)}
         </span>
         <button
-          onClick={onDownload}
-          disabled={started}
-          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-            started
+          onClick={clicar}
+          disabled={acao === "baixando"}
+          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium tabular-nums transition-colors ${
+            acao === "baixando"
               ? "cursor-default bg-panel2 text-dim"
-              : "bg-accent text-white hover:opacity-90"
+              : acao === "conversar"
+                ? "border border-accent/60 text-ink hover:bg-accent/10"
+                : "bg-accent text-white hover:opacity-90"
           }`}
         >
-          {started ? t("discover.downloading") : t("discover.download")}
+          {rotulo}
         </button>
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <VerdictBadge verdict={quant.verdict} />
+        {(quant.inLibrary || status?.state === "done") && (
+          <span className="rounded-full bg-ok/15 px-2 py-0.5 text-[11px] font-medium text-ok">
+            {t("discover.inLibrary")}
+          </span>
+        )}
         {quant.recommended && (
           <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent">
             {t("badge.recommended")}
@@ -102,6 +164,11 @@ function QuantRow({
 
       {quant.verdict.kind === "partial" && (
         <p className="mt-1.5 text-[11px] text-warn/90">{t("badge.partialWarn")}</p>
+      )}
+      {status?.state === "error" && status.error && (
+        <p role="alert" className="mt-1.5 text-[11px] text-bad select-text">
+          {t("discover.downloadStopped", { error: status.error })}
+        </p>
       )}
       {quant.requiresPrism && <PrismQuantNote artifactName={quant.artifactName} />}
     </div>
@@ -140,15 +207,20 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
   const { t, i18n } = useTranslation();
   const [view, setView] = useState<QuantsView | null>(null);
   const [failed, setFailed] = useState(false);
-  const [started, setStarted] = useState<ReadonlySet<string>>(new Set());
+  /** Clicou e o backend ainda não respondeu: o botão já mostra "Baixando…". */
+  const [iniciando, setIniciando] = useState<ReadonlySet<string>>(new Set());
   const [readme, setReadme] = useState<string | null>(null);
+
+  useEffect(() => {
+    void iniciarDownloads();
+  }, []);
 
   // Quantizações do repositório escolhido.
   useEffect(() => {
     let cancelado = false;
     setView(null);
     setFailed(false);
-    setStarted(new Set());
+    setIniciando(new Set());
     getModelQuants(model.id, model.paramsTotal)
       .then((q) => !cancelado && setView(q))
       .catch(() => !cancelado && setFailed(true));
@@ -214,18 +286,22 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
 
   const iniciar = useCallback(
     (q: QuantView) => {
-      // Feedback imediato; reverte se o backend recusar.
-      setStarted((prev) => new Set(prev).add(q.artifactName));
-      startDownload(model.id, q.artifactName).catch((err) => {
-        console.error(err);
-        setStarted((prev) => {
+      // Feedback imediato; o estado de verdade chega pelo evento do download.
+      const tirar = () =>
+        setIniciando((prev) => {
           const next = new Set(prev);
           next.delete(q.artifactName);
           return next;
         });
-      });
+      setIniciando((prev) => new Set(prev).add(q.artifactName));
+      startDownload(model.id, q.artifactName)
+        .then(tirar)
+        .catch((err) => {
+          tirar();
+          toast({ message: t("discover.downloadFailed", { error: String(err) }), tone: "bad" });
+        });
     },
-    [model.id],
+    [model.id, t],
   );
 
   // Clicar em baixar num modelo com o portão fechado não é erro nem recusa:
@@ -351,8 +427,9 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
                 {ordenadas.map((q) => (
                   <QuantRow
                     key={q.artifactName}
+                    repoId={model.id}
                     quant={q}
-                    started={started.has(q.artifactName)}
+                    iniciando={iniciando.has(q.artifactName)}
                     onDownload={() => baixar(q)}
                     ctxLen={view?.ctxLen ?? 8192}
                   />

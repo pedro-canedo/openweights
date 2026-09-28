@@ -73,6 +73,9 @@ pub struct DownloadStatus {
     pub bytes_per_sec: u64,
     pub state: DownloadState,
     pub error: Option<String>,
+    /// Como a biblioteca vai chamar o artefato depois de baixado (o nome que
+    /// o Chat recebe): ver [`crate::local_name`].
+    pub local_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -230,6 +233,19 @@ fn dest_path(models_dir: &Path, repo_id: &str, filename: &str) -> Result<PathBuf
     Ok(out)
 }
 
+/// O artefato está inteiro na biblioteca: cada arquivo no destino, com o
+/// tamanho que o Hub informa. É a mesma regra com que a fila pula o que já
+/// está no disco.
+pub fn artifact_on_disk(models_dir: &Path, repo_id: &str, files: &[RepoFile]) -> bool {
+    !files.is_empty()
+        && files.iter().all(|f| {
+            dest_path(models_dir, repo_id, &f.path)
+                .ok()
+                .and_then(|d| std::fs::metadata(d).ok())
+                .is_some_and(|m| m.is_file() && m.len() == f.size_bytes)
+        })
+}
+
 fn part_path(dest: &Path) -> PathBuf {
     append_suffix(dest, ".part")
 }
@@ -325,6 +341,7 @@ fn job_from_record(models_dir: &Path, rec: IncompleteRecord) -> Option<Job> {
         .sum();
     let total: u64 = rec.files.iter().map(|f| f.size_bytes).sum();
     let id = download_id(&rec.repo_id, &rec.artifact_name);
+    let local_name = crate::local_name(&rec.files);
     Some(Job {
         req: DownloadRequest {
             repo_id: rec.repo_id.clone(),
@@ -341,6 +358,7 @@ fn job_from_record(models_dir: &Path, rec: IncompleteRecord) -> Option<Job> {
             bytes_per_sec: 0,
             state: DownloadState::Paused,
             error: None,
+            local_name,
         },
         received: Arc::new(AtomicU64::new(received)),
         speed: Arc::new(AtomicU64::new(0)),
@@ -602,6 +620,7 @@ impl DownloadManager {
                     bytes_per_sec: 0,
                     state: DownloadState::Queued,
                     error: None,
+                    local_name: crate::local_name(&req.files),
                 };
                 let mut job = Job {
                     req,
@@ -1677,6 +1696,45 @@ mod tests {
                 return status;
             }
         }
+    }
+
+    #[test]
+    fn artefato_na_biblioteca_so_com_todos_os_arquivos_inteiros() {
+        let dir = temp_dir("na-biblioteca");
+        std::fs::create_dir_all(dir.join("a/b/Q4")).unwrap();
+        std::fs::write(dir.join("a/b/Q4/m-00001-of-00002.gguf"), vec![0u8; 10]).unwrap();
+        let arquivos = |segundo: u64| {
+            vec![
+                RepoFile {
+                    path: "Q4/m-00001-of-00002.gguf".to_string(),
+                    size_bytes: 10,
+                },
+                RepoFile {
+                    path: "Q4/m-00002-of-00002.gguf".to_string(),
+                    size_bytes: segundo,
+                },
+            ]
+        };
+        assert!(
+            !artifact_on_disk(&dir, "a/b", &arquivos(7)),
+            "falta um shard"
+        );
+        std::fs::write(dir.join("a/b/Q4/m-00002-of-00002.gguf.part"), vec![0u8; 7]).unwrap();
+        assert!(
+            !artifact_on_disk(&dir, "a/b", &arquivos(7)),
+            ".part não conta"
+        );
+        std::fs::write(dir.join("a/b/Q4/m-00002-of-00002.gguf"), vec![0u8; 3]).unwrap();
+        assert!(
+            !artifact_on_disk(&dir, "a/b", &arquivos(7)),
+            "tamanho errado"
+        );
+        assert!(artifact_on_disk(&dir, "a/b", &arquivos(3)));
+        assert!(!artifact_on_disk(&dir, "a/b", &[]));
+        assert!(
+            !artifact_on_disk(&dir, "../fora", &arquivos(3)),
+            "travessia"
+        );
     }
 
     #[tokio::test]

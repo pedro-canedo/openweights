@@ -23,7 +23,8 @@ mod hf;
 mod local;
 mod oauth;
 pub use download::{
-    DownloadEvent, DownloadManager, DownloadRequest, DownloadState, DownloadStatus, download_id,
+    DownloadEvent, DownloadManager, DownloadRequest, DownloadState, DownloadStatus,
+    artifact_on_disk, download_id,
 };
 pub use gguf_local::{GGML_TYPE_PQ2_0, LocalGgufMeta, expert_slot_bytes, read_local_meta};
 pub use hf::{BaseConfig, GgufRepoMeta, HfAccess, HfClient, HfIdentity, HfWhoami, SortBy};
@@ -128,6 +129,20 @@ pub fn is_auxiliary_gguf(path: &str) -> bool {
     base.starts_with("imatrix") || base.starts_with("mtp-") || na_pasta_mtp
 }
 
+/// Como a biblioteca vai chamar um artefato do Hub depois de baixado: o
+/// agrupamento pelos nomes dos arquivos sem a subpasta do repositório, que é
+/// o que [`scan_local`] enxerga em cada pasta. É o nome que o Chat recebe.
+pub fn local_name(files: &[RepoFile]) -> Option<String> {
+    let soltos: Vec<RepoFile> = files
+        .iter()
+        .map(|f| RepoFile {
+            path: f.path.rsplit('/').next().unwrap_or(&f.path).to_string(),
+            size_bytes: f.size_bytes,
+        })
+        .collect();
+    group_artifacts(&soltos).into_iter().next().map(|a| a.name)
+}
+
 pub fn group_artifacts(files: &[RepoFile]) -> Vec<GgufArtifact> {
     use std::collections::BTreeMap;
 
@@ -226,6 +241,31 @@ mod tests {
             path: path.into(),
             size_bytes: size,
         }
+    }
+
+    /// O Hub guarda algumas quantizações numa subpasta; a biblioteca vê a
+    /// pasta e chama o artefato pelo nome dos arquivos dela. O nome que o
+    /// Chat recebe tem de ser esse.
+    #[test]
+    fn o_nome_local_ignora_a_subpasta_do_repositorio() {
+        let na_subpasta = [f("UD-Q4_K_XL/Qwen3-8B-UD-Q4_K_XL.gguf", 5)];
+        let na_raiz = [f("Qwen3-8B-UD-Q4_K_XL.gguf", 5)];
+        assert!(local_name(&na_subpasta).is_some());
+        assert_eq!(local_name(&na_subpasta), local_name(&na_raiz));
+        let shards = [
+            f("Q2_K/Qwen3-235B-Q2_K-00001-of-00002.gguf", 5),
+            f("Q2_K/Qwen3-235B-Q2_K-00002-of-00002.gguf", 5),
+        ];
+        let local = scan_names(&[
+            f("Qwen3-235B-Q2_K-00001-of-00002.gguf", 5),
+            f("Qwen3-235B-Q2_K-00002-of-00002.gguf", 5),
+        ]);
+        assert_eq!(local_name(&shards), local);
+        assert_eq!(local_name(&[]), None);
+    }
+
+    fn scan_names(files: &[RepoFile]) -> Option<String> {
+        group_artifacts(files).into_iter().next().map(|a| a.name)
     }
 
     #[test]
