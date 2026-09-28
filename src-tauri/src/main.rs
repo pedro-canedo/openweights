@@ -1,6 +1,7 @@
 // Evita janela de console no Windows em release.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod catalogo;
 mod commands;
 mod commands_agenticow;
 mod commands_cluster;

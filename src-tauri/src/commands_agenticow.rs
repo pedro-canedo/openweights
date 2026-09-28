@@ -207,195 +207,63 @@ pub async fn agenticow_status(state: State<'_, AppState>) -> CmdResult<Agenticow
 
 // ------------------------------------------------------------- catálogo ---
 
-/// Modelos do Router local: todos os que o servidor atende agora, sem as
-/// entradas internas de visão (mesmo filtro do seletor do chat).
-async fn modelos_locais(state: &AppState) -> Result<(String, Option<String>, Vec<Modelo>), String> {
-    let cfg = {
-        let guard = state.server.lock().await;
-        match guard.as_ref() {
-            Some(srv) if srv.is_spawned() => srv.config().clone(),
-            _ => return Err("servidor não está rodando".to_string()),
-        }
-    };
-    // Com o portão do Jev ligado para harnesses, a rota local passa pelo
-    // proxy — é ele que decide o esforço por requisição. A chave é a mesma:
-    // o proxy repassa o `Authorization`.
-    let base = crate::commands_jev::base_local_para_harness(state)
-        .await
-        .unwrap_or_else(|| cfg.connect_url());
-    let chave = cfg.api_key.clone();
-    let ids: Vec<String> = lr_engine::LlamaServer::new(cfg)
-        .models_status()
-        .await
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .map(|m| m.id)
-        .filter(|id| !id.ends_with(crate::commands::VISION_SUFFIX))
-        .collect();
-
-    // Janela de contexto: perfil gravado > cabeçalho do GGUF > 32768. O
-    // cabeçalho de cada modelo é lido UMA vez — dele saem a janela de treino e
-    // o interruptor de raciocínio.
-    let artefatos = lr_models::scan_local(&state.models_dir);
-    let sem_gguf = |s: &str| {
-        s.strip_suffix(".gguf")
-            .or_else(|| s.strip_suffix(".GGUF"))
-            .map(str::to_string)
-            .unwrap_or_else(|| s.to_string())
-    };
-    let cabecalho = |id: &str| {
-        artefatos
-            .iter()
-            .find(|a| a.name == id || sem_gguf(&a.name) == sem_gguf(id))
-            .map(|a| lr_models::read_local_meta(&a.primary_path))
-    };
-    let modelos = ids
-        .into_iter()
-        .map(|id| {
-            let meta = cabecalho(&id);
-            let ctx = crate::commands::profile_for(state, &id)
-                .and_then(|p| p.ctx)
-                .or_else(|| meta.as_ref().and_then(|m| m.context_length))
-                .unwrap_or(32_768);
-            Modelo {
-                name: id.clone(),
-                id,
-                context_window: Some(ctx),
-                max_tokens: Some(lr_agenticow::catalog::teto_de_saida(ctx)),
-                efforts: meta
-                    .as_ref()
-                    .map(|m| m.reasoning_efforts.clone())
-                    .unwrap_or_default(),
-                thinking: meta.is_some_and(|m| m.thinking_toggle),
-            }
-        })
-        .collect();
-    Ok((base, chave, modelos))
-}
-
-/// As rotas e as chaves do catálogo.
-///
-/// `openweights` sempre que o Router tem modelos; `openrouter` só com o
-/// provedor ligado, chave e favoritos; `ninerouter` só instalado E rodando
-/// com catálogo. Rota sem modelos não entra. Catálogo VAZIO é válido: o
-/// AgenticOw abre do mesmo jeito e mostra como configurar um provedor.
+/// O catálogo no formato do AgenticOw (a seção `llm-pi-ai` e as chaves), a
+/// partir das fontes do app (`crate::catalogo`).
 async fn montar_catalogo(state: &AppState) -> (Vec<(String, Rota)>, BTreeMap<String, String>) {
     let mut rotas = Vec::new();
     let mut chaves = BTreeMap::new();
-
-    match modelos_locais(state).await {
-        Ok((base, chave, modelos)) if !modelos.is_empty() => {
-            rotas.push((
-                "openweights".to_string(),
-                Rota {
-                    display_name: "OpenWeights (local)".to_string(),
-                    base_url: format!("{base}/v1"),
-                    api_key_env: OPENWEIGHTS_KEY_ENV.to_string(),
-                    models: modelos,
-                },
-            ));
-            // O adaptador exige credencial mesmo de endpoint que não
-            // autentica: sem chave real, o dummy consagrado `local`.
-            chaves.insert(
-                OPENWEIGHTS_KEY_ENV.to_string(),
-                chave.unwrap_or_else(|| "local".to_string()),
-            );
-        }
-        Ok(_) => {}
-        Err(e) => log::info!("AgenticOw sem a rota local ({e}); seguindo com as remotas"),
-    }
-
-    let cfg = crate::commands_providers::load_config(state);
-
-    let chave_or = cfg.open_router.api_key.trim().to_string();
-    if cfg.open_router.enabled && !chave_or.is_empty() && !cfg.open_router.favorites.is_empty() {
-        // Janela do catálogo em cache — sem ir à rede aqui.
-        let cache = state.openrouter_cache.lock().await;
-        let ctx_de = |id: &str| {
-            cache
-                .as_ref()
-                .and_then(|(_, ms)| ms.iter().find(|m| m.id == id))
-                .and_then(|m| m.context_length)
+    for fonte in crate::catalogo::fontes(state).await {
+        let local = fonte.id == crate::catalogo::LOCAL;
+        let env = if local {
+            OPENWEIGHTS_KEY_ENV
+        } else if fonte.id == crate::catalogo::OPENROUTER {
+            OPENROUTER_KEY_ENV
+        } else {
+            NINEROUTER_KEY_ENV
         };
-        let modelos = cfg
-            .open_router
-            .favorites
-            .iter()
-            .map(|id| Modelo {
-                id: id.clone(),
-                name: id.clone(),
-                context_window: ctx_de(id),
-                // O teto de saída e o formato de raciocínio de um modelo
-                // remoto são do provedor.
-                max_tokens: None,
-                efforts: Vec::new(),
-                thinking: false,
+        let modelos = fonte
+            .modelos
+            .into_iter()
+            .map(|m| Modelo {
+                name: m.id.clone(),
+                id: m.id,
+                context_window: m.janela,
+                // O teto de saída de um modelo remoto é do provedor.
+                max_tokens: if local {
+                    m.janela.map(lr_agenticow::catalog::teto_de_saida)
+                } else {
+                    None
+                },
+                efforts: m.esforcos,
+                thinking: m.raciocinio,
             })
             .collect();
-        drop(cache);
         rotas.push((
-            "openrouter".to_string(),
+            fonte.id.to_string(),
             Rota {
-                display_name: "OpenRouter".to_string(),
-                base_url: lr_providers::OPENROUTER_BASE_URL.to_string(),
-                api_key_env: OPENROUTER_KEY_ENV.to_string(),
+                display_name: fonte.nome.to_string(),
+                base_url: fonte.base_url,
+                api_key_env: env.to_string(),
                 models: modelos,
             },
         ));
-        chaves.insert(OPENROUTER_KEY_ENV.to_string(), chave_or);
-    }
-
-    let nove_rodando = state.ninerouter.lock().await.is_some();
-    if cfg.nine_router.installed && nove_rodando {
-        let porta = cfg.nine_router.port;
-        let modelos9 = lr_ninerouter::listar_modelos(porta)
-            .await
-            .unwrap_or_default();
-        if !modelos9.is_empty() {
-            rotas.push((
-                "ninerouter".to_string(),
-                Rota {
-                    display_name: "9Router".to_string(),
-                    base_url: format!("http://127.0.0.1:{porta}/v1"),
-                    api_key_env: NINEROUTER_KEY_ENV.to_string(),
-                    models: modelos9
-                        .into_iter()
-                        .map(|m| Modelo {
-                            name: m.id.clone(),
-                            id: m.id,
-                            context_window: m.context_length,
-                            max_tokens: None,
-                            efforts: Vec::new(),
-                            thinking: false,
-                        })
-                        .collect(),
-                },
-            ));
-            let mut chave9 = cfg.nine_router.api_key.trim().to_string();
-            if chave9.is_empty() {
-                let l9 = lr_ninerouter::Layout::new(&state.data_dir.join("providers"));
-                match lr_ninerouter::garantir_api_key(&l9, porta).await {
-                    Ok(chave) => {
-                        let mut cfg2 = crate::commands_providers::load_config(state);
-                        cfg2.nine_router.api_key = chave.clone();
-                        let _ = state
-                            .store
-                            .set_setting(crate::commands_providers::SETTING, &cfg2.to_json());
-                        chave9 = chave;
-                    }
-                    Err(e) => log::warn!("9router sem chave de API utilizável: {e}"),
-                }
+        // O adaptador exige credencial mesmo de endpoint que não autentica:
+        // sem chave real, o dummy consagrado `local`.
+        match fonte.chave {
+            Some(c) => {
+                chaves.insert(env.to_string(), c);
             }
-            if !chave9.is_empty() {
-                chaves.insert(NINEROUTER_KEY_ENV.to_string(), chave9);
+            None if local => {
+                chaves.insert(env.to_string(), "local".to_string());
             }
+            None => {}
         }
     }
     (rotas, chaves)
 }
 
 /// Monta e manda o catálogo ao Host, se ele estiver de pé.
-async fn empurrar_catalogo(state: &AppState) {
+pub(crate) async fn empurrar_catalogo(state: &AppState) {
     let (rotas, chaves) = montar_catalogo(state).await;
     *state
         .agenticow_modelos
@@ -415,30 +283,9 @@ async fn empurrar_catalogo(state: &AppState) {
     }
 }
 
-/// Pede um novo catálogo. Chamado por quem muda o que o AgenticOw enxerga:
-/// motor subindo ou caindo, modelo baixado ou apagado, Jev, OpenRouter,
-/// 9router. Rajadas viram UM envio (a última vence).
-pub(crate) fn agendar_catalogo(app: &AppHandle) {
-    let state = app.state::<AppState>();
-    let geracao = state.agenticow_agendado.fetch_add(1, Ordering::SeqCst) + 1;
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-        let state = app.state::<AppState>();
-        if state.agenticow_agendado.load(Ordering::SeqCst) != geracao {
-            return;
-        }
-        let de_pe = state
-            .agenticow
-            .lock()
-            .await
-            .as_ref()
-            .is_some_and(|h| h.url().is_some());
-        if de_pe {
-            empurrar_catalogo(&state).await;
-        }
-    });
-}
+/// O agendamento mora em `crate::catalogo` (atende AgenticOw e OwCLI); o nome
+/// antigo continua valendo para quem já chamava daqui.
+pub(crate) use crate::catalogo::agendar as agendar_catalogo;
 
 #[tauri::command]
 pub async fn agenticow_refresh_catalog(state: State<'_, AppState>) -> CmdResult<()> {
