@@ -430,18 +430,31 @@ fn skip_array<R: Read + Seek>(r: &mut R) -> Option<()> {
 ///
 /// Template sem essa validação devolve lista vazia — aí o app fica no que
 /// sabe (ligado/desligado), em vez de inventar nomes.
+///
+/// A busca não sai da tag `if`: vai de `not in` até o `%}` que a fecha, e a
+/// lista tem de ser literal logo ali, entre `( )` ou `[ ]`. Procurar o
+/// primeiro `(` do resto do texto pegava o do `raise_exception('...')` da
+/// linha seguinte quando a lista morava numa variável — e a mensagem de erro
+/// virava "nível". Lista em variável devolve vazio: não dá para ler dali.
 fn niveis_de_esforco(tpl: &str) -> Vec<String> {
-    let Some(i) = tpl.find("reasoning_effort not in") else {
+    const GATILHO: &str = "reasoning_effort not in";
+    let Some(i) = tpl.find(GATILHO) else {
         return Vec::new();
     };
-    let resto = &tpl[i..];
-    let Some(a) = resto.find('(') else {
+    let resto = &tpl[i + GATILHO.len()..];
+    let Some(fim) = resto.find("%}") else {
         return Vec::new();
     };
-    let Some(b) = resto[a..].find(')') else {
+    let condicao = resto[..fim].trim_start();
+    let fecha = match condicao.chars().next() {
+        Some('(') => ')',
+        Some('[') => ']',
+        _ => return Vec::new(),
+    };
+    let Some(b) = condicao.find(fecha) else {
         return Vec::new();
     };
-    resto[a + 1..a + b]
+    condicao[1..b]
         .split(',')
         .filter_map(|p| {
             let n = p.trim().trim_matches('\'').trim_matches('"').trim();
@@ -641,6 +654,22 @@ mod tests {
         assert_eq!(meta.reasoning_efforts, vec!["xhigh", "medium", "low"]);
     }
 
+    /// O template real do Qwen3.8 — o mesmo que o Ternary-Bonsai-2 traz no
+    /// GGUF, com o `raise_exception('...')` logo abaixo da tag e o texto
+    /// inteiro (quase 9 KB) em volta. É ele que dava 500 no `high`.
+    #[test]
+    fn the_real_qwen3_8_template_offers_its_three_levels() {
+        let tpl = include_str!("../tests/fixtures/qwen3.8-chat-template.jinja");
+        let f = escreve(&gguf(&[
+            ("general.architecture", KV::Str("qwen35")),
+            ("qwen35.block_count", KV::U32(64)),
+            ("tokenizer.chat_template", KV::Str(tpl)),
+        ]));
+        let meta = read_local_meta(f.path());
+        assert!(meta.thinking_toggle);
+        assert_eq!(meta.reasoning_efforts, vec!["xhigh", "medium", "low"]);
+    }
+
     /// Template sem a validação não ganha níveis inventados: o app fica no
     /// que sabe (ligado/desligado) em vez de oferecer um valor que dá erro.
     #[test]
@@ -656,6 +685,33 @@ mod tests {
         let meta = read_local_meta(f.path());
         assert!(meta.thinking_toggle, "o interruptor continua sendo lido");
         assert!(meta.reasoning_efforts.is_empty());
+    }
+
+    /// Lista entre colchetes também é lista literal.
+    #[test]
+    fn the_effort_levels_can_be_listed_in_brackets() {
+        let tpl = "{%- if reasoning_effort not in ['low', \"medium\", 'high'] -%}\
+                   {{- raise_exception('Unexpected reasoning effort') }}{%- endif %}";
+        assert_eq!(niveis_de_esforco(tpl), vec!["low", "medium", "high"]);
+    }
+
+    /// O `(` do `raise_exception(...)` fica DEPOIS do `%}` da tag `if`: não
+    /// é a lista, e a mensagem de erro não pode virar nível.
+    #[test]
+    fn the_raise_exception_after_the_tag_is_not_the_list() {
+        let tpl = "{%- if reasoning_effort not in efforts %}\
+                   {{- raise_exception('xhigh, medium') }}{%- endif %}";
+        assert!(niveis_de_esforco(tpl).is_empty());
+    }
+
+    /// Lista numa variável não é legível daqui: vazio, em vez de chute.
+    #[test]
+    fn a_list_held_in_a_variable_offers_no_levels() {
+        let tpl = "{%- set efforts = ('xhigh', 'medium', 'low') %}\
+                   {%- if resolved_reasoning_effort not in efforts %}\
+                   {{- raise_exception('Unexpected reasoning effort ' ~ resolved_reasoning_effort) }}\
+                   {%- endif %}";
+        assert!(niveis_de_esforco(tpl).is_empty());
     }
 
     /// Lixo, arquivo vazio e magic errado devolvem "não sei" — nunca pânico.

@@ -12,7 +12,7 @@ import {
   visionModelFor,
 } from "./serverSession";
 import { splitModelRef } from "./providers";
-import { jevDecideEffort, summarizeForJev } from "./jev";
+import { chatReasoningEffort, jevDecideEffort, summarizeForJev } from "./jev";
 import {
   completeOnce,
   streamChat,
@@ -294,6 +294,14 @@ async function runJob(row: InternalJob): Promise<void> {
         patch(chatId, { metrics: { ...row.public.metrics, jev: { effort: d.effort, confidence: d.confidence, source: d.source } } });
       }
     }
+    // O esforço final no vocabulário do template: o Bonsai 2 recusa `high`
+    // com erro 500 e só aceita `xhigh`. `params.effort` fica como está — é
+    // o nível do app, o que as métricas mostram.
+    let templateEffort: string | null = null;
+    if (provider === "local" && params?.effort) {
+      templateEffort = await chatReasoningEffort(splitModelRef(row.opts.model).model, params.effort);
+      if (cancelled()) return;
+    }
     // Sem evento confirmado do motor, espera não significa carregamento.
     patch(chatId, { metrics: { ...row.public.metrics, phase: "waiting" } });
     if (provider === "local") {
@@ -334,8 +342,8 @@ async function runJob(row: InternalJob): Promise<void> {
         loadingModel: false,
       }, true);
     };
-    const result = await streamChat({ baseUrl, headers, model: resolved, messages: row.opts.messages, params,
-      signal: row.abort.signal, onDelta: d => delta(d, false), onReasoningDelta: d => delta(d, true) });
+    const result = await streamChat({ baseUrl, headers, model: resolved, messages: row.opts.messages, params, templateEffort,
+      retryWithoutEffort: provider === "local", signal: row.abort.signal, onDelta: d => delta(d, false), onReasoningDelta: d => delta(d, true) });
     if (cancelled()) return;
     patch(chatId, { content: result.content, reasoning: result.reasoning, thinkingMs: result.thinkingMs,
       tokensPerSec: result.tokensPerSec, genTokens: result.genTokens, genMs: result.genMs,

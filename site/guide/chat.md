@@ -48,6 +48,11 @@ The panel on the right has two halves, and the split is the point:
 
 Presets save a set of parameters under a name.
 
+On a local model, the app translates **Effort** into the levels the model
+itself accepts, read from the file: High, Extra and Max become its highest
+level (`xhigh` on Qwen3.8 and Bonsai 2, which reject `high`), and Low turns
+thinking off.
+
 With [Jev](/integrations/providers#jev-a-decision-layer) enabled in Sources,
 **Effort** becomes a ceiling rather than a fixed value: before each send a
 decision model looks at the message and turns the local model's thinking off,

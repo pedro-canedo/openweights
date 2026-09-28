@@ -260,6 +260,7 @@ fn main() {
             commands_jev::jev_status,
             commands_jev::jev_testar,
             commands_jev::jev_decidir_esforco,
+            commands_jev::chat_reasoning_effort,
             commands_jev::jev_local_install,
         ])
         .build(tauri::generate_context!())

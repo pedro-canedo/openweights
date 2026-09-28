@@ -187,7 +187,12 @@ fn capacidade_cacheada(models_dir: &Path, cache: &CacheCapacidades, id: &str) ->
     if let Some(c) = cache.lock().unwrap_or_else(|e| e.into_inner()).get(id) {
         return c.clone();
     }
-    let capacidade = ler_capacidade(models_dir, id).unwrap_or_default();
+    // Artefato não achado NÃO entra no cache: o download pode terminar
+    // depois, e um "não pensa" guardado aqui calaria o modelo até o motor
+    // reiniciar.
+    let Some(capacidade) = ler_capacidade(models_dir, id) else {
+        return CapacidadeModelo::default();
+    };
     cache
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -211,7 +216,13 @@ fn sem_gguf(s: &str) -> &str {
         .unwrap_or(s)
 }
 
+fn sem_visao(s: &str) -> &str {
+    s.strip_suffix(crate::commands::VISION_SUFFIX).unwrap_or(s)
+}
+
 fn ler_capacidade(models_dir: &Path, id: &str) -> Option<CapacidadeModelo> {
+    // "X.gguf (visão)" é o mesmo arquivo com o mmproj: o template é o dele.
+    let id = sem_visao(id);
     let artefatos = lr_models::scan_local(models_dir);
     let a = artefatos
         .iter()
@@ -456,6 +467,25 @@ pub async fn jev_decidir_esforco(
             reason: decisao.motivo,
         },
     })
+}
+
+/// O `reasoning_effort` que o template deste modelo local aceita para o
+/// `effort` do chat — o Bonsai 2 recusa `high` e só conhece `xhigh`.
+/// Independe do Jev estar ligado: é tradução, não decisão. `None` quando o
+/// template não declara níveis; aí o chat manda a tabela de sempre.
+#[tauri::command]
+pub async fn chat_reasoning_effort(
+    state: State<'_, AppState>,
+    model: String,
+    effort: String,
+) -> CmdResult<Option<String>> {
+    // Cache frio varre a pasta de modelos e abre o GGUF: fora do runtime.
+    let (models_dir, cache) = (state.models_dir.clone(), state.jev_capacidades.clone());
+    let capacidade =
+        tokio::task::spawn_blocking(move || capacidade_cacheada(&models_dir, &cache, &model))
+            .await
+            .map_err(err_str)?;
+    Ok(capacidade.esforco_do_chat(&effort))
 }
 
 // ----------------------------------------------------------------- proxy ---
@@ -820,5 +850,57 @@ mod tests {
         assert_eq!(sem_gguf("qwen3.gguf"), "qwen3");
         assert_eq!(sem_gguf("qwen3.GGUF"), "qwen3");
         assert_eq!(sem_gguf("qwen3"), "qwen3");
+    }
+
+    /// GGUF v3 só de cabeçalho: a arquitetura (sem ela a leitura desiste) e
+    /// o chat template, que é de onde saem os níveis.
+    fn gguf_com_template(tpl: &str) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(b"GGUF");
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(&0u64.to_le_bytes());
+        out.extend_from_slice(&2u64.to_le_bytes());
+        for (key, val) in [
+            ("general.architecture", "qwen35"),
+            ("tokenizer.chat_template", tpl),
+        ] {
+            out.extend_from_slice(&(key.len() as u64).to_le_bytes());
+            out.extend_from_slice(key.as_bytes());
+            out.extend_from_slice(&8u32.to_le_bytes());
+            out.extend_from_slice(&(val.len() as u64).to_le_bytes());
+            out.extend_from_slice(val.as_bytes());
+        }
+        out
+    }
+
+    /// Um "não achei" não fica no cache (o download pode chegar depois), e
+    /// a entrada de visão acha o mesmo GGUF que a sem visão — com os níveis
+    /// dele, até o `xhigh` que o chat manda no Alto.
+    #[test]
+    fn a_missing_model_is_not_cached_and_the_vision_entry_finds_its_gguf() {
+        let dir = std::env::temp_dir().join(format!("ow-jev-cap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cache: CacheCapacidades = Default::default();
+
+        let cap = capacidade_cacheada(&dir, &cache, "bonsai.gguf");
+        assert_eq!(cap, CapacidadeModelo::default());
+        assert!(cache.lock().unwrap().is_empty(), "negativo não é cacheado");
+
+        let repo = dir.join("prism-ml/Bonsai-GGUF");
+        std::fs::create_dir_all(&repo).unwrap();
+        let tpl = "{%- if enable_thinking is undefined or enable_thinking is true %}\
+                   {%- if resolved_reasoning_effort not in ('xhigh', 'medium', 'low') %}\
+                   {{- raise_exception('Unexpected reasoning effort ' ~ reasoning_effort) }}\
+                   {%- endif %}{%- endif %}";
+        std::fs::write(repo.join("bonsai.gguf"), gguf_com_template(tpl)).unwrap();
+        let id = format!("bonsai.gguf{}", crate::commands::VISION_SUFFIX);
+        let cap = capacidade_cacheada(&dir, &cache, &id);
+        assert!(cache.lock().unwrap().contains_key(&id), "achou o GGUF");
+        assert!(cap.thinking_toggle);
+        assert_eq!(cap.efforts, vec!["xhigh", "medium", "low"]);
+        assert_eq!(cap.esforco_do_chat("high").as_deref(), Some("xhigh"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

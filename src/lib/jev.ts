@@ -191,6 +191,24 @@ export async function jevDecideEffort(
   }
 }
 
+/**
+ * O `reasoning_effort` que o template deste modelo local aceita para o
+ * `effort` do chat (o Bonsai 2 só conhece `xhigh`, não `high`). Não depende
+ * do Jev: é tradução do vocabulário, lida do GGUF. `null` fora do Tauri, em
+ * erro, ou quando o template não declara níveis — aí vale a tabela padrão.
+ */
+export async function chatReasoningEffort(
+  model: string,
+  effort: EffortLevel,
+): Promise<string | null> {
+  if (!isTauri) return null;
+  try {
+    return (await invoke<string | null>("chat_reasoning_effort", { model, effort })) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export const jevStatus = (): Promise<JevStatus> =>
   isTauri ? invoke<JevStatus>("jev_status") : Promise.resolve(defaultJevStatus());
 

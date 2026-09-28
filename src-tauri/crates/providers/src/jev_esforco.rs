@@ -244,6 +244,39 @@ impl CapacidadeModelo {
         };
         Some(escolhido.to_string())
     }
+
+    /// O `reasoning_effort` que o chat manda para um `effort` do app
+    /// (`low`/`medium`/`high`/`extra`/`max`), traduzido para o vocabulário
+    /// deste template: `low` é o menor nível, `medium` o do meio e os três
+    /// de cima o maior — `extra` e `max` são orçamentos do app, não nomes
+    /// que o template conheça.
+    ///
+    /// Só os nomes do vocabulário entram na escolha. Um desconhecido iria
+    /// para o fim da ordem e viraria "o maior": com `['none', 'low',
+    /// 'medium', 'high']` (o `none` do OpenAI), o Máx pediria ao template
+    /// para NÃO raciocinar.
+    ///
+    /// `None` quando não há o que traduzir: modelo sem níveis, `effort`
+    /// desconhecido, ou nenhum nível do vocabulário conhecido (a ordem seria
+    /// chute, e aí o chat fica na tabela de sempre).
+    pub fn esforco_do_chat(&self, effort: &str) -> Option<String> {
+        let nivel = match effort.trim() {
+            "low" => NivelRaciocinio::Nenhum,
+            "medium" => NivelRaciocinio::Medio,
+            "high" | "extra" | "max" => NivelRaciocinio::Alto,
+            _ => return None,
+        };
+        let conhecidos = CapacidadeModelo {
+            thinking_toggle: self.thinking_toggle,
+            efforts: self
+                .efforts
+                .iter()
+                .filter(|n| posicao(n) < ORDEM_NIVEIS.len())
+                .cloned()
+                .collect(),
+        };
+        conhecidos.nivel_do_template(nivel)
+    }
 }
 
 // --- estado ---------------------------------------------------------------
@@ -872,6 +905,73 @@ mod tests {
             efforts: vec![],
         };
         assert_eq!(qwen.nivel_do_template(NivelRaciocinio::Alto), None);
+    }
+
+    /// O Bonsai 2 (template do Qwen3.8) recusa `high`: os três esforços de
+    /// cima do chat viram o `xhigh` que ele aceita.
+    #[test]
+    fn chat_efforts_become_the_levels_the_template_accepts() {
+        let bonsai = CapacidadeModelo {
+            thinking_toggle: true,
+            efforts: vec!["xhigh".into(), "medium".into(), "low".into()],
+        };
+        assert_eq!(bonsai.esforco_do_chat("low").as_deref(), Some("low"));
+        assert_eq!(bonsai.esforco_do_chat("medium").as_deref(), Some("medium"));
+        for effort in ["high", "extra", "max"] {
+            assert_eq!(bonsai.esforco_do_chat(effort).as_deref(), Some("xhigh"));
+        }
+        // gpt-oss: o vocabulário é o do OpenAI, e `max` para em `high`.
+        let oss = CapacidadeModelo {
+            thinking_toggle: false,
+            efforts: vec!["low".into(), "medium".into(), "high".into()],
+        };
+        assert_eq!(oss.esforco_do_chat("max").as_deref(), Some("high"));
+    }
+
+    /// Um nome fora do vocabulário não vira "o maior": o `none` do OpenAI
+    /// no fim da ordem faria o Máx desligar o raciocínio.
+    #[test]
+    fn an_unknown_level_is_never_picked_as_the_highest() {
+        let com_none = CapacidadeModelo {
+            thinking_toggle: false,
+            efforts: vec!["none".into(), "low".into(), "medium".into(), "high".into()],
+        };
+        assert_eq!(com_none.esforco_do_chat("low").as_deref(), Some("low"));
+        assert_eq!(
+            com_none.esforco_do_chat("medium").as_deref(),
+            Some("medium")
+        );
+        for effort in ["high", "extra", "max"] {
+            assert_eq!(com_none.esforco_do_chat(effort).as_deref(), Some("high"));
+        }
+        let misturado = CapacidadeModelo {
+            thinking_toggle: true,
+            efforts: vec!["none".into(), "xhigh".into(), "medium".into(), "low".into()],
+        };
+        assert_eq!(misturado.esforco_do_chat("max").as_deref(), Some("xhigh"));
+        assert_eq!(misturado.esforco_do_chat("low").as_deref(), Some("low"));
+    }
+
+    /// Sem nada confiável para traduzir, o chat fica na tabela de sempre.
+    #[test]
+    fn chat_effort_without_known_levels_is_not_translated() {
+        let so_interruptor = CapacidadeModelo {
+            thinking_toggle: true,
+            efforts: vec![],
+        };
+        assert_eq!(so_interruptor.esforco_do_chat("high"), None);
+        // Nomes que o parser tirou de outro lugar: a ordem seria chute.
+        let lixo = CapacidadeModelo {
+            thinking_toggle: true,
+            efforts: vec!["Unexpected".into(), "foo".into()],
+        };
+        assert_eq!(lixo.esforco_do_chat("high"), None);
+        let bonsai = CapacidadeModelo {
+            thinking_toggle: true,
+            efforts: vec!["xhigh".into(), "medium".into(), "low".into()],
+        };
+        assert_eq!(bonsai.esforco_do_chat("turbo"), None);
+        assert_eq!(bonsai.esforco_do_chat(""), None);
     }
 
     // -------------------------------------------------------- contadores ---

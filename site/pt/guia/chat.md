@@ -48,6 +48,11 @@ O painel da direita tem duas metades, e a divisão é o ponto:
 
 Presets salvam um conjunto de parâmetros com um nome.
 
+Em modelo local, o app traduz o **Esforço** para os níveis que o próprio
+modelo aceita, lidos do arquivo: Alto, Extra e Máx viram o nível mais alto
+dele (`xhigh` no Qwen3.8 e no Bonsai 2, que recusam `high`), e Baixo desliga o
+raciocínio.
+
 Com o [Jev](/pt/integracoes/provedores#jev-camada-de-decisao) ligado em Fontes,
 **Esforço** vira um teto em vez de um valor fixo: antes de cada envio um modelo
 de decisão olha a mensagem e desliga o raciocínio do modelo local, põe no médio

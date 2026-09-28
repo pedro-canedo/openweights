@@ -35,3 +35,66 @@ describe("stream protocol", () => {
     expect(result).toMatchObject({ genTokens: 3, cachedTokens: 2, promptTokens: 12, tokensPerSec: null });
   });
 });
+describe("reasoning effort in the request body", () => {
+  const done = () => response(event({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "data: [DONE]\n\n");
+  const params = (effort: string) => ({ temperature: 0.7, topP: 0.9, topK: 40, maxTokens: null, systemPrompt: "", effort }) as any;
+  async function sentBody(effort: string, templateEffort?: string | null) {
+    const fetch = vi.fn(async (..._: unknown[]) => done());
+    vi.stubGlobal("fetch", fetch);
+    await streamChat({ baseUrl: "http://test", model: "m", messages: [], params: params(effort), templateEffort, signal: new AbortController().signal, onDelta: () => {} });
+    return JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+  }
+  it("sends the level the template accepts (Bonsai 2 / Qwen3.8 only knows xhigh)", async () => {
+    for (const effort of ["high", "extra", "max"]) {
+      expect(await sentBody(effort, "xhigh")).toMatchObject({ reasoning_effort: "xhigh", chat_template_kwargs: { enable_thinking: true } });
+    }
+    expect(await sentBody("medium", "medium")).toMatchObject({ reasoning_effort: "medium", chat_template_kwargs: { enable_thinking: true } });
+    expect(await sentBody("low", "low")).toMatchObject({ reasoning_effort: "low", chat_template_kwargs: { enable_thinking: false } });
+  });
+  it("keeps the usual table without a translated level (remote or unknown template)", async () => {
+    expect(await sentBody("low")).toMatchObject({ reasoning_effort: "low", chat_template_kwargs: { enable_thinking: false } });
+    expect(await sentBody("medium", null)).toMatchObject({ reasoning_effort: "medium" });
+    for (const effort of ["high", "extra", "max"]) {
+      expect(await sentBody(effort)).toMatchObject({ reasoning_effort: "high", chat_template_kwargs: { enable_thinking: true } });
+    }
+  });
+  it("retries once without the level when the template rejects it", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response("Jinja Exception: Unexpected reasoning effort high. Supported types are xhigh (default), medium, and low.", { status: 500 }))
+      .mockResolvedValueOnce(done());
+    vi.stubGlobal("fetch", fetch);
+    let content = "";
+    await streamChat({ baseUrl: "http://test", model: "m", messages: [], params: params("high"), retryWithoutEffort: true, signal: new AbortController().signal, onDelta: d => { content += d; } });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).reasoning_effort).toBe("high");
+    const retry = JSON.parse(fetch.mock.calls[1][1].body);
+    expect(retry).not.toHaveProperty("reasoning_effort");
+    expect(retry.chat_template_kwargs).toEqual({ enable_thinking: true });
+    expect(content).toBe("ok");
+  });
+  it("does not retry other errors, a body without a level, or a second rejection", async () => {
+    const retry = { retryWithoutEffort: true, signal: new AbortController().signal, onDelta: () => {} };
+    let fetch = vi.fn(async () => new Response("model not found", { status: 400 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(streamChat({ baseUrl: "http://test", model: "m", messages: [], params: params("high"), ...retry })).rejects.toThrow("HTTP 400: model not found");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    fetch = vi.fn(async () => new Response("invalid reasoning_effort", { status: 400 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(streamChat({ baseUrl: "http://test", model: "m", messages: [], ...retry })).rejects.toThrow("HTTP 400");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    fetch = vi.fn(async () => new Response("Unexpected reasoning effort", { status: 500 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(streamChat({ baseUrl: "http://test", model: "m", messages: [], params: params("max"), ...retry })).rejects.toThrow("HTTP 500: Unexpected reasoning effort");
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it("does not retry a remote model or a status that is not the template's", async () => {
+    let fetch = vi.fn(async () => new Response("reasoning_effort is not supported for this model", { status: 400 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(streamChat({ baseUrl: "http://test", model: "m", messages: [], params: params("high"), signal: new AbortController().signal, onDelta: () => {} })).rejects.toThrow("HTTP 400: reasoning_effort");
+    expect(fetch).toHaveBeenCalledTimes(1);
+    fetch = vi.fn(async () => new Response("rate limited on reasoning_effort=high", { status: 429 }));
+    vi.stubGlobal("fetch", fetch);
+    await expect(streamChat({ baseUrl: "http://test", model: "m", messages: [], params: params("high"), retryWithoutEffort: true, signal: new AbortController().signal, onDelta: () => {} })).rejects.toThrow("HTTP 429");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});

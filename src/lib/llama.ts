@@ -29,6 +29,17 @@ export interface StreamChatOptions {
   signal: AbortSignal;
   /** Parâmetros de amostragem + system prompt da conversa. */
   params?: ChatParams;
+  /**
+   * `reasoning_effort` no vocabulário do template do modelo local (lido do
+   * GGUF pelo backend: `xhigh` no Qwen3.8/Bonsai 2). Ausente = a tabela
+   * padrão, que é o que remotos e modelos sem níveis declarados recebem.
+   */
+  templateEffort?: string | null;
+  /**
+   * Se o template recusar o `reasoning_effort` (400/500 falando dele), tenta
+   * UMA vez sem o nível. Só o llama-server local: remoto erra como sempre.
+   */
+  retryWithoutEffort?: boolean;
   /** Chamado a cada pedaço de texto recebido (delta.content). */
   onDelta: (text: string) => void;
   /** Chamado a cada pedaço de raciocínio (reasoning_content ou <think>). */
@@ -179,11 +190,35 @@ const REASONING_EFFORT: Record<EffortLevel, "low" | "medium" | "high"> = {
   max: "high",
 };
 
-/** Esforço → campos que o llama-server / modelos thinking reconhecem. */
-function applyEffort(body: Record<string, unknown>, effort?: EffortLevel) {
+/**
+ * Esforço → campos que o llama-server / modelos thinking reconhecem.
+ * `templateEffort` é o nível já traduzido para o que o template aceita; sem
+ * ele, a tabela padrão (que o Qwen3.8 recusa em `high`).
+ */
+function applyEffort(
+  body: Record<string, unknown>,
+  effort?: EffortLevel,
+  templateEffort?: string | null,
+) {
   if (!effort) return;
-  body.reasoning_effort = REASONING_EFFORT[effort];
+  body.reasoning_effort = templateEffort ?? REASONING_EFFORT[effort];
   body.chat_template_kwargs = { enable_thinking: effort !== "low" };
+}
+
+/**
+ * Tira o `reasoning_effort` do corpo (topo e `chat_template_kwargs`) para a
+ * segunda tentativa. Devolve `false` quando não havia nada a tirar — aí o
+ * erro não é nosso e não se repete.
+ */
+function dropReasoningEffort(body: Record<string, unknown>): boolean {
+  let had = "reasoning_effort" in body;
+  delete body.reasoning_effort;
+  const kwargs = body.chat_template_kwargs;
+  if (kwargs && typeof kwargs === "object" && "reasoning_effort" in kwargs) {
+    had = true;
+    delete (kwargs as Record<string, unknown>).reasoning_effort;
+  }
+  return had;
 }
 
 /** Injeta o system prompt (se houver) como primeira mensagem. */
@@ -221,6 +256,8 @@ async function streamReal({
   messages,
   signal,
   params,
+  templateEffort,
+  retryWithoutEffort,
   onDelta,
   onReasoningDelta,
 }: StreamChatOptions): Promise<StreamChatResult> {
@@ -235,18 +272,31 @@ async function streamReal({
     body.top_p = params.topP;
     body.top_k = params.topK;
     if (params.maxTokens != null) body.max_tokens = params.maxTokens;
-    applyEffort(body, params.effort);
+    applyEffort(body, params.effort, templateEffort);
   }
 
-  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(body),
-    signal,
-  });
+  const send = () =>
+    fetch(`${baseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify(body),
+      signal,
+    });
+  let res = await send();
   if (!res.ok) {
-    const errBody = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status}: ${errBody.slice(0, 300)}`);
+    let errBody = await res.text().catch(() => "");
+    // Rede de segurança: o template recusou o nível ("Unexpected reasoning
+    // effort high") — template trocado por flag no perfil, ou uma validação
+    // que o backend não soube ler. Uma tentativa sem o nível, antes de
+    // qualquer token: o interruptor `enable_thinking` continua valendo. Só
+    // no local e só em 400/500 — o que o llama-server devolve para isso; um
+    // 401/429 que cite o campo não é o template.
+    if (retryWithoutEffort && (res.status === 400 || res.status === 500)
+      && /reasoning[ _]effort/i.test(errBody) && dropReasoningEffort(body)) {
+      res = await send();
+      if (!res.ok) errBody = await res.text().catch(() => "");
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${errBody.slice(0, 300)}`);
   }
   if (!res.body) throw new Error("resposta sem corpo (stream indisponível)");
 
