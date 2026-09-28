@@ -17,6 +17,7 @@
     "models": "Meus Modelos",
     "chat": "Chat",
     "agenticow": "AgenticOw",
+    "owcli": "OwCLI",
     "server": "Servidor Local",
     "providers": "Fontes",
     "settings": "Configurações",
@@ -1533,5 +1534,16 @@
     "selectedRates": "Selecionada: geração {{gen}} tok/s · leitura {{prompt}} tok/s. Clique em Usar configuração para aplicar e carregar o modelo.",
     "optionalEngineNote": "Esta opção usa o motor otimizado. Confira a configuração medida: ela pode alterar a especulação e a distribuição da memória.",
     "manualSettings": "Ajustes manuais e presets"
+  },
+  "owcli": {
+    "tabs": "Terminais abertos",
+    "newShell": "Novo terminal",
+    "close": "Fechar {{title}}",
+    "emptyTitle": "Nenhum terminal aberto",
+    "emptyHint": "Abra um terminal na sua pasta pessoal. Ele continua rodando quando você troca de tela, e o que ele escreveu estará lá quando você voltar.",
+    "exited": "processo terminou com código {{code}}",
+    "truncated": "o começo da saída foi descartado",
+    "needsYou": "pede sua atenção",
+    "ended": "encerrado"
   }
 }

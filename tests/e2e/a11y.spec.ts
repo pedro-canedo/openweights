@@ -5,7 +5,7 @@ import AxeBuilder from "@axe-core/playwright";
 // Só violações sérias e críticas — as que impedem alguém de usar a tela:
 // controle sem nome, contraste abaixo do AA, diálogo sem papel.
 
-const TELAS = ["Descobrir", "Meus Modelos", "Chat", "Servidor Local", "Fontes", "Configurações"];
+const TELAS = ["Descobrir", "Meus Modelos", "Chat", "OwCLI", "Servidor Local", "Fontes", "Configurações"];
 
 // Botões cheios com o roxo da marca que ainda vivem em arquivos de outra
 // frente de trabalho (MyModels.tsx, ServerHeader.tsx): migram para

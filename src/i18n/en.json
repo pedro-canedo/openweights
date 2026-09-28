@@ -17,6 +17,7 @@
     "models": "My Models",
     "chat": "Chat",
     "agenticow": "AgenticOw",
+    "owcli": "OwCLI",
     "server": "Local Server",
     "providers": "Sources",
     "settings": "Settings",
@@ -1533,5 +1534,16 @@
     "selectedRates": "Selected: generation {{gen}} tok/s · reading {{prompt}} tok/s. Click Use configuration to apply it and load the model.",
     "optionalEngineNote": "This option uses the optimized engine. Review the measured configuration: it may change speculation and memory placement.",
     "manualSettings": "Manual settings and presets"
+  },
+  "owcli": {
+    "tabs": "Open terminals",
+    "newShell": "New terminal",
+    "close": "Close {{title}}",
+    "emptyTitle": "No terminal open",
+    "emptyHint": "Open a terminal in your home folder. It keeps running when you switch screens, and what it printed is still there when you come back.",
+    "exited": "process exited with code {{code}}",
+    "truncated": "the beginning of the output was discarded",
+    "needsYou": "needs your attention",
+    "ended": "ended"
   }
 }

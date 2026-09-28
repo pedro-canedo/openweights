@@ -9,6 +9,7 @@ mod commands_harness;
 mod commands_jev;
 mod commands_power;
 mod commands_providers;
+mod commands_terminal;
 mod commands_tuning;
 mod comparison;
 mod desktop_host;
@@ -205,6 +206,15 @@ fn main() {
             commands_agenticow::agenticow_show,
             commands_agenticow::agenticow_hide,
             commands_agenticow::agenticow_set_bounds,
+            commands_terminal::terminal_abrir_shell,
+            commands_terminal::terminal_anexar,
+            commands_terminal::terminal_desanexar,
+            commands_terminal::terminal_escrever,
+            commands_terminal::terminal_redimensionar,
+            commands_terminal::terminal_confirmar,
+            commands_terminal::terminal_fechar,
+            commands_terminal::terminal_visto,
+            commands_terminal::terminal_listar,
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,

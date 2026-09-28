@@ -22,6 +22,8 @@ const PATHS = {
   "chevron-right": "M9 6l6 6-6 6",
   // Fechar / remover (editor, explorador, chips de flag, prévia).
   close: "M6 6l12 12M18 6L6 18",
+  // Acrescentar (novo terminal, nova sessão).
+  plus: "M12 5v14M5 12h14",
   // Confirmado / salvo / teste ok.
   check: "M20 6L9 17l-5-5",
   // Copiar valor (endereço, chave, comando).

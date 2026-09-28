@@ -7,6 +7,7 @@ export type Screen =
   | "models"
   | "chat"
   | "agenticow"
+  | "owcli"
   | "server"
   | "providers"
   | "settings";
