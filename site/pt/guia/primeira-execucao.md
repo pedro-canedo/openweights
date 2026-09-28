@@ -40,8 +40,16 @@ para devolver o espaço.
 
 ## 3. Seu primeiro modelo
 
-Em **Descobrir**, busque um modelo (`qwen`, `llama`, `gemma`…) e abra. A lista
-de quantizações é colorida para a *sua* máquina:
+Com o motor pronto, a janela de boas-vindas sugere **três modelos que cabem
+neste computador**, cada um na versão que roda melhor aqui (numa máquina sem GPU
+aproveitável, uma versão leve de 4 bits, porque na CPU o tamanho é a
+velocidade). **Baixar e conversar** baixa o escolhido e, quando o download
+termina, abre o Chat com ele já selecionado. Fechar a janela não interrompe o
+download: ele segue no painel de downloads.
+
+Para escolher por conta própria, vá a **Descobrir**, busque um modelo (`qwen`,
+`llama`, `gemma`…) e abra. A lista de quantizações é colorida para a *sua*
+máquina:
 
 - <span class="ow-verdict ow-verdict--gpu"></span> **verde** — roda inteiro na GPU;
 - <span class="ow-verdict ow-verdict--split"></span> **amarelo** — divide entre GPU e CPU, mais devagar;

@@ -22,11 +22,15 @@ import type {
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// O teste do primeiro uso liga isto antes de a página carregar: sem motor e
+// sem modelo, como numa instalação nova. Instalar o motor liga o motor.
+let motorInstalado = !(globalThis as { __owInstalacaoNova?: boolean }).__owInstalacaoNova;
+
 export async function runtimeStatus(): Promise<RuntimeState> {
   return {
     tag: "b10441",
     variant: "cuda13",
-    installed: true,
+    installed: motorInstalado,
     serverExe: "C:/fake/llama-server.exe",
     rpcReady: true,
     rpcExe: "C:/fake/ggml-rpc-server.exe",
@@ -35,6 +39,7 @@ export async function runtimeStatus(): Promise<RuntimeState> {
 
 export async function ensureRuntime(): Promise<RuntimeState> {
   await delay(800);
+  motorInstalado = true;
   return runtimeStatus();
 }
 
@@ -230,6 +235,7 @@ export async function listDownloads(): Promise<DownloadStatus[]> {
 }
 
 export async function localModels(): Promise<LocalModel[]> {
+  if ((globalThis as { __owInstalacaoNova?: boolean }).__owInstalacaoNova) return [];
   return [
     {
       repoId: "unsloth/Qwen3-8B-GGUF",
