@@ -22,7 +22,7 @@ import {
   resumeDownload,
   startDownload,
 } from "../../lib/api";
-import { iniciarDownloads, useDownload } from "../../lib/downloads";
+import { iniciarDownloads, motivoDoDownload, useDownload } from "../../lib/downloads";
 import { navigate } from "../../lib/nav";
 import { toast } from "../ui/Toast";
 import { formatAgo, formatBytes, formatCount, formatParams } from "../../lib/format";
@@ -73,12 +73,15 @@ function QuantRow({
   iniciando,
   onDownload,
   ctxLen,
+  destaque = false,
 }: {
   repoId: string;
   quant: QuantView;
   iniciando: boolean;
   onDownload: () => void;
   ctxLen: number;
+  /** A recomendada, no topo: o botão diz o tamanho do que vai baixar. */
+  destaque?: boolean;
 }) {
   const { t } = useTranslation();
   const status = useDownload(repoId, quant.artifactName);
@@ -88,7 +91,9 @@ function QuantRow({
       ? Math.floor((status.receivedBytes / status.totalBytes) * 100)
       : null;
   const rotulo = {
-    baixar: t("discover.download"),
+    baixar: destaque
+      ? t("discover.downloadRecommended", { size: formatBytes(quant.sizeBytes) })
+      : t("discover.download"),
     baixando: pct != null ? t("discover.downloadingPct", { pct }) : t("discover.downloading"),
     retomar: t("discover.resume"),
     tentar: t("discover.retry"),
@@ -99,7 +104,7 @@ function QuantRow({
       navigate("chat", { chatModel: status?.localName ?? quant.localName ?? undefined });
     } else if (acao === "retomar" && status) {
       void resumeDownload(status.id).catch((err) =>
-        toast({ message: t("discover.downloadFailed", { error: String(err) }), tone: "bad" }),
+        toast({ message: motivoDoDownload(err), tone: "bad" }),
       );
     } else if (acao !== "baixando") {
       onDownload();
@@ -127,7 +132,9 @@ function QuantRow({
         <button
           onClick={clicar}
           disabled={acao === "baixando"}
-          className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-medium tabular-nums transition-colors ${
+          className={`shrink-0 rounded-lg font-medium tabular-nums transition-colors ${
+            destaque ? "px-4 py-2 text-sm" : "px-3 py-1.5 text-xs"
+          } ${
             acao === "baixando"
               ? "cursor-default bg-panel2 text-dim"
               : acao === "conversar"
@@ -258,6 +265,22 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
   // O portão do repositório, e o que ele exige desta conta. Só é consultado
   // depois que as quantizações chegam, para a sondagem testar o arquivo que
   // a pessoa vai baixar de verdade.
+  // A recomendada vai no topo, com o botão principal; as outras ficam
+  // recolhidas. Sem recomendada (nenhuma cabe bem), a lista inteira à vista.
+  const recomendada = ordenadas?.find((q) => q.recommended) ?? null;
+  const outras = ordenadas?.filter((q) => q !== recomendada) ?? [];
+  const linha = (q: QuantView, destaque = false) => (
+    <QuantRow
+      key={q.artifactName}
+      repoId={model.id}
+      quant={q}
+      iniciando={iniciando.has(q.artifactName)}
+      onDownload={() => baixar(q)}
+      ctxLen={view?.ctxLen ?? 8192}
+      destaque={destaque}
+    />
+  );
+
   const gate = useHfAccess(
     model.id,
     ordenadas?.[0]?.files?.[0],
@@ -298,7 +321,7 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
         .then(tirar)
         .catch((err) => {
           tirar();
-          toast({ message: t("discover.downloadFailed", { error: String(err) }), tone: "bad" });
+          toast({ message: motivoDoDownload(err), tone: "bad" });
         });
     },
     [model.id, t],
@@ -424,16 +447,21 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                {ordenadas.map((q) => (
-                  <QuantRow
-                    key={q.artifactName}
-                    repoId={model.id}
-                    quant={q}
-                    iniciando={iniciando.has(q.artifactName)}
-                    onDownload={() => baixar(q)}
-                    ctxLen={view?.ctxLen ?? 8192}
-                  />
-                ))}
+                {recomendada ? (
+                  linha(recomendada, true)
+                ) : (
+                  <p className="text-[12px] text-dim">{t("discover.noneFits")}</p>
+                )}
+                {recomendada && outras.length > 0 ? (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer py-1 text-[12px] text-dim select-none hover:text-ink">
+                      {t("discover.otherVersions", { n: outras.length })}
+                    </summary>
+                    <div className="mt-2 flex flex-col gap-2">{outras.map((q) => linha(q))}</div>
+                  </details>
+                ) : (
+                  outras.map((q) => linha(q))
+                )}
               </div>
             )}
           </div>

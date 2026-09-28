@@ -791,6 +791,7 @@ pub(crate) async fn enfileirar_download(
         .find(|a| a.name == artifact_name)
         .ok_or_else(|| format!("artefato não encontrado: {artifact_name}"))?;
 
+    checar_espaco(state, repo_id, artifact_name, &artifact.files).await?;
     let token = state.store.get_setting("hf_token").ok().flatten();
     state
         .downloads
@@ -802,6 +803,66 @@ pub(crate) async fn enfileirar_download(
         })
         .await
         .map_err(err_str)
+}
+
+/// A folga que um download nunca come: o disco cheio até o último byte
+/// trava o sistema inteiro, não só o download.
+const RESERVA_DE_DISCO: u64 = 1 << 30;
+
+/// Cabe no disco? O que falta deste download (os arquivos que ainda não
+/// estão inteiros, menos o que um job pausado já recebeu), mais o que falta
+/// aos outros downloads em andamento, mais a folga. Recusa com
+/// `disk-space:<precisa>:<livres>` — a tela traduz. Sem saber o espaço livre
+/// (o sistema não diz), segue: a checagem não pode travar quem baixa.
+async fn checar_espaco(
+    state: &AppState,
+    repo_id: &str,
+    artifact_name: &str,
+    files: &[lr_models::RepoFile],
+) -> CmdResult<()> {
+    let Some(livres) = lr_fetch::available_space(&state.models_dir) else {
+        return Ok(());
+    };
+    let faltam: u64 = files
+        .iter()
+        .filter(|f| {
+            !lr_models::artifact_on_disk(&state.models_dir, repo_id, std::slice::from_ref(f))
+        })
+        .map(|f| f.size_bytes)
+        .sum();
+    let id = lr_models::download_id(repo_id, artifact_name);
+    let lista = state.downloads.list().await;
+    let recebido = lista
+        .iter()
+        .find(|s| s.id == id)
+        .map_or(0, |s| s.received_bytes);
+    let outros: u64 = lista
+        .iter()
+        .filter(|s| {
+            s.id != id
+                && matches!(
+                    s.state,
+                    lr_models::DownloadState::Queued | lr_models::DownloadState::Running
+                )
+        })
+        .map(|s| s.total_bytes.saturating_sub(s.received_bytes))
+        .sum();
+    match falta_espaco(faltam.saturating_sub(recebido), outros, livres) {
+        Some(precisa) => Err(format!("disk-space:{precisa}:{livres}")),
+        None => Ok(()),
+    }
+}
+
+/// `Some(precisa)` quando o download, somado aos outros em andamento e à
+/// folga, não cabe no espaço livre.
+fn falta_espaco(deste: u64, outros: u64, livres: u64) -> Option<u64> {
+    if deste == 0 {
+        return None;
+    }
+    let precisa = deste
+        .saturating_add(outros)
+        .saturating_add(RESERVA_DE_DISCO);
+    (precisa > livres).then_some(precisa)
 }
 
 #[tauri::command]
@@ -2142,6 +2203,28 @@ mod testes_motor {
         assert_eq!(
             motor_de_medicao(true, false),
             Err("optimization-prism-required")
+        );
+    }
+}
+
+#[cfg(test)]
+mod testes_espaco {
+    use super::falta_espaco;
+
+    #[test]
+    fn o_download_so_comeca_se_couber_com_os_outros_e_a_folga() {
+        let gb = 1u64 << 30;
+        assert_eq!(falta_espaco(0, 50 * gb, 0), None, "nada a baixar");
+        assert_eq!(falta_espaco(10 * gb, 0, 12 * gb), None);
+        assert_eq!(
+            falta_espaco(10 * gb, 0, 10 * gb + 1),
+            Some(11 * gb),
+            "sem a folga não cabe"
+        );
+        assert_eq!(
+            falta_espaco(10 * gb, 5 * gb, 12 * gb),
+            Some(16 * gb),
+            "os outros downloads contam"
         );
     }
 }

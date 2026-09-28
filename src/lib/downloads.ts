@@ -9,7 +9,9 @@
 // "done", e não é hora de dizer "modelo pronto".
 
 import { useSyncExternalStore } from "react";
+import i18n from "../i18n";
 import { listDownloads, onDownloadEvent } from "./api";
+import { formatBytes } from "./format";
 import type { DownloadEvent, DownloadStatus } from "./types";
 
 export function idDoDownload(repoId: string, artifactName: string): string {
@@ -87,6 +89,22 @@ export function aoConcluirDownload(f: (s: DownloadStatus) => void): () => void {
 /** Quem começou o download cuida do fim dele: nada de aviso "modelo pronto". */
 export function silenciarDownload(repoId: string, artifactName: string) {
   silenciosos.add(idDoDownload(repoId, artifactName));
+}
+
+/**
+ * Por que o download não começou, em palavras. O backend recusa por falta de
+ * espaço com `disk-space:<precisa>:<livres>` (bytes); o resto vai como veio.
+ */
+export function motivoDoDownload(erro: unknown): string {
+  const texto = String(erro);
+  const espaco = /^disk-space:(\d+):(\d+)$/.exec(texto);
+  if (espaco) {
+    return i18n.t("discover.noSpace", {
+      need: formatBytes(Number(espaco[1])),
+      free: formatBytes(Number(espaco[2])),
+    });
+  }
+  return i18n.t("discover.downloadFailed", { error: texto });
 }
 
 /** Para os testes: começa do zero. */

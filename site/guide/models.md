@@ -59,6 +59,13 @@ you to the browser:
   branch is there, the capability is real.
 - **What its author wrote** — the repository's model card, rendered in the app.
 
+The version recommended for this machine comes first, with its size on the
+button itself (**Download recommended**); the others sit under **Other
+versions**, in the usual order. Before starting, the app checks the disk space
+— what this download still needs, plus what the other downloads in progress
+still need, plus 1 GB of headroom — and, if it does not fit, says how much is
+missing instead of stopping halfway.
+
 Each file's button follows the actual download: **Download**, **Downloading…**
 with the percentage, **Resume** if it was paused, **Try again** if it stopped
 with an error (the reason shows right below) and **Chat** once the file is in

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { silenciarDownload } from "../lib/downloads";
+import { motivoDoDownload, silenciarDownload } from "../lib/downloads";
 import {
   ensureRuntime,
   getHardwareProfile,
@@ -293,7 +293,7 @@ function PrimeiroModelo({ aoFechar }: { aoFechar: () => void }) {
       const id = await startDownload(sugestao.candidato.repoId, sugestao.quant.artifactName);
       setBaixando({ sugestao, id, status: null });
     } catch (e) {
-      setErro(String(e));
+      setErro(motivoDoDownload(e));
     }
   }
 

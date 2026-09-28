@@ -61,6 +61,12 @@ mandavam você para o navegador:
 - **O que o autor escreveu** — o cartão do modelo do repositório, renderizado
   aqui dentro.
 
+A versão recomendada para esta máquina vem no topo, com o tamanho no próprio
+botão (**Baixar recomendado**); as outras ficam em **Outras versões**, na ordem
+de sempre. Antes de começar, o app confere o espaço em disco — o que este
+download ainda precisa, mais o que falta aos outros em andamento e uma folga de
+1 GB — e, se não couber, diz quanto falta em vez de parar no meio.
+
 O botão de cada arquivo acompanha o download de verdade: **Baixar**, **Baixando…**
 com a porcentagem, **Retomar** se ele foi pausado, **Tentar de novo** se parou
 com erro (o motivo aparece logo abaixo) e **Conversar** quando o arquivo já está

@@ -149,7 +149,11 @@
     "inLibrary": "In your library",
     "downloadFailed": "The download did not start: {{error}}",
     "downloadStopped": "The download stopped: {{error}}",
-    "modelReady": "{{name}} is ready to chat."
+    "modelReady": "{{name}} is ready to chat.",
+    "noSpace": "Not enough disk space: this download needs {{need}} free (counting the other downloads and some headroom) and there is {{free}}.",
+    "downloadRecommended": "Download recommended ({{size}})",
+    "otherVersions": "Other versions ({{n}})",
+    "noneFits": "No version fits this machine well. They are all below, with what each one needs."
   },
   "downloadsPanel": {
     "title": "Downloads",

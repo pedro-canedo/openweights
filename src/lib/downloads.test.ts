@@ -11,11 +11,17 @@ vi.mock("./api", () => ({
   listDownloads: async () => listaInicial,
 }));
 
+// O i18n de verdade lê o localStorage ao carregar; aqui basta ver a chave.
+vi.mock("../i18n", () => ({
+  default: { t: (chave: string, v?: Record<string, string>) => `${chave} ${JSON.stringify(v)}` },
+}));
+
 const {
   _reiniciarDownloads,
   aoConcluirDownload,
   downloadsStore,
   iniciarDownloads,
+  motivoDoDownload,
   silenciarDownload,
 } = await import("./downloads");
 
@@ -78,5 +84,11 @@ describe("downloads", () => {
     emitir({ kind: "update", status: status("x.gguf", "paused") });
     emitir({ kind: "removed", id: "a/b::x.gguf" });
     expect(downloadsStore.get().has("a/b::x.gguf")).toBe(false);
+  });
+
+  it("falta de espaço vira a mensagem com os tamanhos; o resto vai como veio", () => {
+    expect(motivoDoDownload("disk-space:20000000000:5000000000")).toMatch(/^discover\.noSpace /);
+    expect(motivoDoDownload("disk-space:20000000000:5000000000")).toContain('"need":');
+    expect(motivoDoDownload("HTTP 403")).toBe('discover.downloadFailed {"error":"HTTP 403"}');
   });
 });

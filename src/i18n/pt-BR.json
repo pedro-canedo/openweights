@@ -149,7 +149,11 @@
     "inLibrary": "Na biblioteca",
     "downloadFailed": "O download não começou: {{error}}",
     "downloadStopped": "O download parou: {{error}}",
-    "modelReady": "{{name}} está pronto para conversar."
+    "modelReady": "{{name}} está pronto para conversar.",
+    "noSpace": "Falta espaço em disco: este download precisa de {{need}} livres (contando os outros downloads e uma folga) e há {{free}}.",
+    "downloadRecommended": "Baixar recomendado ({{size}})",
+    "otherVersions": "Outras versões ({{n}})",
+    "noneFits": "Nenhuma versão cabe bem nesta máquina. Todas estão abaixo, com o que cada uma pede."
   },
   "downloadsPanel": {
     "title": "Downloads",
