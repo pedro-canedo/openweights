@@ -25,6 +25,8 @@ site/                 Este site de documentação (VitePress)
 | `providers` | Provedores de LLM: o catálogo remoto (OpenRouter) e a resolução de endpoint |
 | `ninerouter` | Instala, supervisiona e remove o 9router de forma isolada |
 | `agenticow` | O AgenticOw, nosso fork do DeepSeek Harness: instala o runtime pré-compilado contra os pins sha256 gravados no app, supervisiona o Host por um protocolo de controle em JSON por linha e empurra para ele o catálogo de modelos (detalhes em `docs/agenticow.md`) |
+| `pty` | Os terminais embutidos: sessões de pseudoterminal com o ambiente do sistema, um anel reenviado a partir de um deslocamento em bytes, controle de fluxo e encerramento por sessão (detalhes em `docs/owcli.md`) |
+| `owgw` | O gateway do OwCLI: um endereço de loopback com token, que roteia pelo prefixo da fonte no id do modelo e põe a chave de cada fonte, então as chaves não saem do app |
 | `gateway` | Ponto de entrada único (um Traefik local) para os provedores de LLM |
 | `nodejs` | Runtime Node.js portátil, isolado do Node do sistema |
 | `proc` | Supervisão de processos filhos de longa duração: árvore, Job Object e porta livre |
@@ -45,5 +47,5 @@ interface no navegador com dados simulados, sem Rust envolvido — é onde a mai
 parte do trabalho de interface acontece.
 
 As telas espelham os crates acima: Descobrir (`models` + `advisor`), Meus
-Modelos, Chat (`engine`), Servidor Local (`engine`), Fontes de modelo
-(`providers`), Configurações.
+Modelos, Chat (`engine`), OwCLI (`pty` + `owgw`), Servidor Local (`engine`),
+Fontes de modelo (`providers`), Configurações.

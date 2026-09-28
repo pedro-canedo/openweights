@@ -40,6 +40,7 @@ const PARES = [
   ["guide/studio.md", "pt/guia/studio.md"],
   ["guide/performance.md", "pt/guia/desempenho.md"],
   ["guide/harness.md", "pt/guia/harness.md"],
+  ["guide/owcli.md", "pt/guia/owcli.md"],
   ["guide/troubleshooting.md", "pt/guia/solucao-de-problemas.md"],
   ["integrations/local-api.md", "pt/integracoes/api-local.md"],
   ["integrations/cluster.md", "pt/integracoes/cluster.md"],

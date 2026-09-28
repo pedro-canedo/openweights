@@ -159,6 +159,10 @@ qualquer coisa. Veja
 ## Os outros agentes
 
 Claude Code, Aider e OpenCode não são gerenciados pelo app, mas ganham o
-comando pronto apontado para a sua API local, com a chave mascarada na prévia.
-Eles moram em **Servidor Local → Abrir em um harness**. Veja
+comando pronto apontado para a sua API local, com a chave mascarada na prévia,
+e abrem numa sessão de terminal da [tela do OwCLI](/pt/guia/owcli). Eles moram
+em **Servidor Local → Abrir em um harness**. Veja
 [o servidor de API local](/pt/integracoes/api-local#abrir-em-um-harness).
+
+O OwCLI tem também um agente próprio, fork do Codex CLI da OpenAI, que roda
+lado a lado com os seus shells: veja [OwCLI: agente e terminais](/pt/guia/owcli).

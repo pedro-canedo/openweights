@@ -160,8 +160,11 @@ chat-com-ferramentas próprio.
 | **OpenCode** | Idem, pelas variáveis de ambiente que ele espera |
 
 Cada cartão diz se o programa está instalado, mostra o comando (copiável) e
-oferece o botão **Abrir**. Quando não está instalado mas o `npx` existe, o app
-usa o `npx` e mostra o comando de instalação definitiva.
+oferece o botão **Abrir**, que sobe o programa numa sessão de terminal da
+[tela do OwCLI](/pt/guia/owcli) e leva você até lá. No Windows, o cartão
+oferece ainda **Terminal externo**, para uma janela à parte. Quando não está
+instalado mas o `npx` existe, o app usa o `npx` e mostra o comando de
+instalação definitiva.
 
 A tela do AgenticOw é onde o ciclo de vida dele inteiro mora: o progresso da
 primeira abertura (download, verificação, subida), a interface dele quando está

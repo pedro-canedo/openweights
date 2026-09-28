@@ -160,8 +160,11 @@ own.
 | **OpenCode** | Same, through the environment variables it expects |
 
 Each card says whether the program is installed, shows the command (copyable)
-and offers the **Open** button. When it is not installed but `npx` exists, the
-app uses `npx` and shows the command for installing it for good.
+and offers the **Open** button, which starts the program in a terminal session
+on the [OwCLI screen](/guide/owcli) and takes you there. On Windows the card
+also offers **External terminal**, for a window of its own. When it is not
+installed but `npx` exists, the app uses `npx` and shows the command for
+installing it for good.
 
 The AgenticOw screen is where its whole life cycle lives: the progress of the
 first open (download, verification, start), its interface once it is up, and
