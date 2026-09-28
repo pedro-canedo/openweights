@@ -42,10 +42,13 @@ to reclaim the space.
 ## 3. Your first model
 
 Once the engine is ready, the welcome window suggests **three models that fit
-this computer**, each in the version that runs best here (on a machine without
-a usable GPU, a light 4-bit version, because on the CPU size is speed). **Download
-and chat** fetches it and, when the download finishes, opens Chat with that
-model already selected. Closing the window does not stop the download: it keeps
+this computer**, each in a light version, 4 to 5 bits per weight: it downloads
+quickly and runs where the top-quality one would (fully on the GPU, if that one
+fits there). On a machine without a usable GPU, the light version also answers
+faster, because on the CPU size is speed. The best-quality version that fits is
+still in **Discover**, with the *Recommended* badge. **Download and chat**
+fetches it and, when the download finishes, opens Chat with that model already
+selected. Closing the window does not stop the download: it keeps
 going in the downloads panel.
 
 To choose for yourself, go to **Discover**, search for a model (`qwen`, `llama`,

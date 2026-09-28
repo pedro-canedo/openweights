@@ -41,9 +41,11 @@ para devolver o espaço.
 ## 3. Seu primeiro modelo
 
 Com o motor pronto, a janela de boas-vindas sugere **três modelos que cabem
-neste computador**, cada um na versão que roda melhor aqui (numa máquina sem GPU
-aproveitável, uma versão leve de 4 bits, porque na CPU o tamanho é a
-velocidade). **Baixar e conversar** baixa o escolhido e, quando o download
+neste computador**, cada um numa versão leve, de 4 a 5 bits por peso: baixa
+rápido e roda onde a de qualidade máxima rodaria (inteira na GPU, se aquela cabe
+lá). Numa máquina sem GPU aproveitável, a versão leve ainda responde mais
+depressa, porque na CPU o tamanho é a velocidade. A de qualidade máxima que cabe
+continua em **Descobrir**, com o selo *Recomendado*. **Baixar e conversar** baixa o escolhido e, quando o download
 termina, abre o Chat com ele já selecionado. Fechar a janela não interrompe o
 download: ele segue no painel de downloads.
 
