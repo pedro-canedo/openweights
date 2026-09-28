@@ -113,6 +113,12 @@ suíte do upstream verde. No modo OwCLI o lançador:
   do upstream: uma mudança de esquema quebra na compilação do merge, não na máquina de
   ninguém.
 
+No modo OwCLI o provedor também declara que não aceita ferramenta em namespace nem as
+hospedadas da OpenAI. O Codex manda as ferramentas do MCP como `type: "namespace"`, e o
+shim de Responses do llama.cpp só aceita `function` (llama.cpp#24295): descartava as
+ferramentas sem erro. O fork as achata em `mcp__servidor__ferramenta` e reconhece esse nome
+quando a chamada volta.
+
 Ele se recusa a abrir uma conversa, com código 2 e uma mensagem nos dois idiomas, em três
 casos: sem o `openweights.json`, com o gateway sem responder (o app foi fechado) e com o
 catálogo vazio. Sem essa última recusa, o Codex cairia no modelo padrão dele, um da OpenAI.
@@ -161,7 +167,4 @@ então não há servidor vivo para supervisionar. Continuar uma conversa é
   sistema, os pins com sha256 e o workflow de release vêm com o repositório público do
   fork.
 - **`owcli` no PATH**, para usar os modelos do app a partir do terminal do sistema.
-- **MCP com modelo local.** O Codex manda as ferramentas MCP como `type: "namespace"`, e o
-  shim do llama.cpp só aceita `function` (llama.cpp#24295): falta achatar por provedor no
-  fork.
 - TUI em português, visualizador de transcrição, arquivar e apagar conversas.
