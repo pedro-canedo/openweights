@@ -29,6 +29,8 @@ import {
   routerLoadModel,
   routerModels,
   routerUnloadModel,
+  contarCategorias,
+  filtrarFlags,
   type EnginePresetView,
   type EnginePreview,
   type FlagCatalog,
@@ -36,6 +38,7 @@ import {
   type FlagSpec,
   type ModelCaps,
 } from "../../lib/flags";
+import ChipsDeCategoria from "./ChipsDeCategoria";
 import { takePendingServerModel } from "../../lib/nav";
 import { tuneAdvise } from "../../lib/tuning";
 import {
@@ -114,6 +117,7 @@ export default function EngineConfigSection({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [issues, setIssues] = useState<FlagIssue[]>([]);
   const [search, setSearch] = useState("");
+  const [categoria, setCategoria] = useState<string | null>(null);
   const [more, setMore] = useState(false);
   const [pendingReload, setPendingReload] = useState(false);
   const [busyWith, setBusyWith] = useState<string[]>([]);
@@ -343,19 +347,15 @@ export default function EngineConfigSection({
     patch({ extras: value == null ? rest : [...rest, [key, value]] });
   };
 
+  const categorias = useMemo(() => (catalog ? contarCategorias(catalog.flags) : []), [catalog]);
   const matches: FlagSpec[] = useMemo(() => {
-    if (!catalog) return [];
-    const q = search.trim().toLowerCase();
-    if (!q) return [];
-    return catalog.flags
-      .filter(
-        (f) =>
-          f.key.includes(q) ||
-          f.aliases.some((a) => a.toLowerCase().includes(q)) ||
-          (f.curated && t(`flags.catalog.${f.key}.label`, "").toLowerCase().includes(q)),
-      )
-      .slice(0, 30);
-  }, [catalog, search, t]);
+    if (!catalog || (!search.trim() && !categoria)) return [];
+    return filtrarFlags(catalog.flags, search, categoria, (f) =>
+      f.curated
+        ? `${t(`flags.catalog.${f.key}.label`, "")} ${t(`flags.catalog.${f.key}.hint`, "")}`
+        : "",
+    );
+  }, [catalog, search, categoria, t]);
 
   // O modo de carga que a tela mostra, já convertendo perfis gravados antes
   // da b10441 — quando a mesma escolha morava em `mmap` e `mlock`.
@@ -931,9 +931,11 @@ export default function EngineConfigSection({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={t("server.engineConfig.searchPlaceholder")}
+          aria-label={t("server.engineConfig.searchPlaceholder")}
           className="w-full rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent"
         />
-        {search.trim() && (
+        <ChipsDeCategoria categorias={categorias} ativa={categoria} aoEscolher={setCategoria} />
+        {(search.trim() || categoria) && (
           <div className="flex flex-col gap-3">
             {matches.length === 0 && (
               <p className={hintCls}>{t("server.engineConfig.noMatches")}</p>

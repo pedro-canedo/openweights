@@ -1138,6 +1138,22 @@
     "readyCount": "{{n}} of {{total}} sources ready to answer."
   },
   "flags": {
+    "categoriesLabel": "Flag categories",
+    "categories": {
+      "memory": "Memory",
+      "context": "Context",
+      "kv": "KV cache",
+      "spec": "Speculation",
+      "cpu": "CPU",
+      "multimodal": "Vision and audio",
+      "adapters": "Adapters (LoRA)",
+      "rope": "RoPE",
+      "usage": "Use and template",
+      "server": "Server",
+      "router": "Router",
+      "advanced": "Advanced",
+      "dynamic": "Other from --help"
+    },
     "control": {
       "auto": "auto",
       "on": "on",

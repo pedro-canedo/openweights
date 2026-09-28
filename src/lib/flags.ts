@@ -364,3 +364,41 @@ function mockCatalog(): FlagCatalog {
     ],
   };
 }
+
+/** Minúsculas e sem acento, para a busca achar "memoria" em "Memória". */
+function semAcento(texto: string): string {
+  return texto
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
+/**
+ * As flags que batem com a busca e a categoria. A busca olha a chave, os
+ * apelidos, o rótulo e o texto de ajuda (de quem tem: o `--help` do binário
+ * ou o texto curado), e cada palavra tem de aparecer. Sem teto: quem procura
+ * uma flag pelo que ela faz precisa ver todas as que fazem aquilo.
+ */
+export function filtrarFlags(
+  flags: FlagSpec[],
+  busca: string,
+  categoria: string | null,
+  textos: (f: FlagSpec) => string,
+): FlagSpec[] {
+  const termos = semAcento(busca).split(/\s+/).filter(Boolean);
+  return flags.filter((f) => {
+    if (categoria && f.category !== categoria) return false;
+    if (termos.length === 0) return true;
+    const alvo = semAcento(
+      [f.key, ...f.aliases, f.helpText ?? "", textos(f)].join(" "),
+    );
+    return termos.every((t) => alvo.includes(t));
+  });
+}
+
+/** As categorias presentes, com quantas flags cada uma tem, na ordem do catálogo. */
+export function contarCategorias(flags: FlagSpec[]): [string, number][] {
+  const contas = new Map<string, number>();
+  for (const f of flags) contas.set(f.category, (contas.get(f.category) ?? 0) + 1);
+  return [...contas];
+}

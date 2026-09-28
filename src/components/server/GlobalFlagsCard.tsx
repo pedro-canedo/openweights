@@ -10,12 +10,15 @@ import { getSetting, setSetting } from "../../lib/api";
 import {
   flagsCatalog,
   flagsValidate,
+  contarCategorias,
+  filtrarFlags,
   type EnvVar,
   type FlagCatalog,
   type FlagIssue,
   type FlagSpec,
   type GlobalFlag,
 } from "../../lib/flags";
+import ChipsDeCategoria from "./ChipsDeCategoria";
 import FlagControl from "../form/FlagControl";
 import Icon from "../ui/Icon";
 import { Chips } from "../form/controls";
@@ -38,6 +41,7 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
   const [catalog, setCatalog] = useState<FlagCatalog | null>(null);
   const [issues, setIssues] = useState<FlagIssue[]>([]);
   const [search, setSearch] = useState("");
+  const [categoria, setCategoria] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [envs, setEnvs] = useState<EnvVar[]>([]);
   const [envKey, setEnvKey] = useState("");
@@ -120,21 +124,21 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
   const value = (key: string): string | null =>
     flags.find((f) => f.key === key)?.value ?? null;
 
+  const usable = useMemo(
+    () => (catalog?.flags ?? []).filter((f) => f.scope === "global" || f.scope === "both"),
+    [catalog],
+  );
+  const categorias = useMemo(() => contarCategorias(usable), [usable]);
   const matches: FlagSpec[] = useMemo(() => {
-    if (!catalog) return [];
-    const q = search.trim().toLowerCase();
-    const usable = catalog.flags.filter(
-      (f) => f.scope === "global" || f.scope === "both",
+    // Sem busca nem categoria, a lista mostra as flags já ligadas.
+    if (!search.trim() && !categoria) return usable.filter((f) => value(f.key) != null);
+    return filtrarFlags(usable, search, categoria, (f) =>
+      f.curated
+        ? `${t(`flags.catalog.${f.key}.label`, "")} ${t(`flags.catalog.${f.key}.hint`, "")}`
+        : "",
     );
-    if (!q) return usable.filter((f) => value(f.key) != null);
-    return usable
-      .filter(
-        (f) =>
-          f.key.includes(q) || f.aliases.some((a) => a.toLowerCase().includes(q)),
-      )
-      .slice(0, 30);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [catalog, search, flags]);
+  }, [usable, search, categoria, flags, t]);
 
   return (
     <div className="mt-4 rounded-xl border border-edge bg-panel">
@@ -196,6 +200,9 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
             aria-label={t("server.engineConfig.searchPlaceholder")}
             className="mt-3 w-full rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent"
           />
+          <div className="mt-2">
+            <ChipsDeCategoria categorias={categorias} ativa={categoria} aoEscolher={setCategoria} />
+          </div>
           <div className="mt-3 flex flex-col gap-3">
             {matches.map((f) => (
               <div key={f.key} className="rounded-lg border border-edge bg-panel2/50 p-3">
@@ -226,7 +233,7 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
                 </div>
               </div>
             ))}
-            {search.trim() && matches.length === 0 && (
+            {(search.trim() || categoria) && matches.length === 0 && (
               <p className="text-[11px] text-dim">{t("server.engineConfig.noMatches")}</p>
             )}
           </div>

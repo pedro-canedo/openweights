@@ -1138,6 +1138,22 @@
     "readyCount": "{{n}} de {{total}} fontes prontas para atender."
   },
   "flags": {
+    "categoriesLabel": "Categorias de flags",
+    "categories": {
+      "memory": "Memória",
+      "context": "Contexto",
+      "kv": "Cache KV",
+      "spec": "Especulação",
+      "cpu": "CPU",
+      "multimodal": "Visão e áudio",
+      "adapters": "Adaptadores (LoRA)",
+      "rope": "RoPE",
+      "usage": "Uso e template",
+      "server": "Servidor",
+      "router": "Router",
+      "advanced": "Avançado",
+      "dynamic": "Outras do --help"
+    },
     "control": {
       "auto": "auto",
       "on": "ligado",
