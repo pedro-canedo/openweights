@@ -185,6 +185,25 @@ pub(crate) fn host_var(nome: &str) -> Option<OsString> {
     }
 }
 
+/// O ambiente inteiro de um programa do sistema: o do processo com as
+/// correções aplicadas. Fora de um AppImage, o do processo.
+pub(crate) fn ambiente_do_sistema() -> Vec<(OsString, OsString)> {
+    let mut vars: std::collections::BTreeMap<OsString, OsString> = std::env::vars_os().collect();
+    if let Some(pacote) = pacote() {
+        for (nome, valor) in correcoes(pacote, &|n| std::env::var_os(n)) {
+            match valor {
+                Some(v) => {
+                    vars.insert(OsString::from(nome), v);
+                }
+                None => {
+                    vars.remove(OsStr::new(nome));
+                }
+            }
+        }
+    }
+    vars.into_iter().collect()
+}
+
 /// O que muda para um programa do sistema: `Some` define, `None` remove.
 /// Variável que já está certa não aparece.
 fn correcoes(

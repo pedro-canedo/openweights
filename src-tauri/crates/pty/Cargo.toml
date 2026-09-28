@@ -1,0 +1,15 @@
+[package]
+name = "lr_pty"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Terminais embutidos: pseudoterminal por sessão, anel de saída com replay, controle de fluxo e encerramento da árvore inteira"
+
+[dependencies]
+lr_proc = { path = "../proc" }
+portable-pty = "0.9"
+serde.workspace = true
+log.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

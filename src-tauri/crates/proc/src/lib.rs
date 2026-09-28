@@ -217,6 +217,19 @@ pub fn attach_job(_child: &Child) -> Option<JobGuard> {
     None
 }
 
+/// [`attach_job`] para quem só tem o handle do processo — o filho de um
+/// pseudoterminal (ConPTY), que não é um `tokio::process::Child`.
+#[cfg(windows)]
+pub fn attach_job_raw(handle: std::os::windows::io::RawHandle) -> Option<JobGuard> {
+    let job = windows_job::create()?;
+    if windows_job::assign(&job, handle) {
+        Some(JobGuard(job))
+    } else {
+        log::warn!("não foi possível colocar o processo do terminal num Job Object");
+        None
+    }
+}
+
 /// Mata tudo que está no job. No Unix é no-op (quem mata é o grupo).
 #[cfg(windows)]
 pub fn terminate_job(job: &JobGuard) {
@@ -250,6 +263,29 @@ pub fn free_port(preferida: u16) -> u16 {
     match std::net::TcpListener::bind(("127.0.0.1", 0)) {
         Ok(l) => l.local_addr().map(|a| a.port()).unwrap_or(preferida),
         Err(_) => preferida,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ambiente inteiro
+// ---------------------------------------------------------------------------
+
+/// O ambiente inteiro que um programa do sistema receberia, como lista.
+///
+/// Para quem monta o processo sem `std::process::Command` — o terminal do
+/// `lr_pty` usa o `CommandBuilder` do portable-pty, que parte do ambiente do
+/// app. Dentro de um AppImage é o ambiente de antes do AppRun (sem o `PATH`,
+/// o `LD_LIBRARY_PATH` e as marcas do pacote); fora dele, o do processo. Quem
+/// usa chama `env_clear()` e aplica esta lista — há um teste
+/// (`no_pty_spawn_escapes_the_host_environment_rule`) que cobra isso.
+pub fn host_environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    #[cfg(target_os = "linux")]
+    {
+        appimage::ambiente_do_sistema()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        std::env::vars_os().collect()
     }
 }
 
@@ -431,6 +467,43 @@ mod tests {
             "estes arquivos criam processo sem devolver ao filho o ambiente do sistema:\n  {}\n\
              Passe o comando por `lr_proc::host_env` (tokio) ou `lr_proc::host_env_std` (std) \
              antes do spawn — fora de um AppImage é no-op.",
+            faltando.join("\n  ")
+        );
+    }
+
+    /// O terminal embutido cria processo pelo `CommandBuilder` do
+    /// portable-pty, que nenhuma das duas regras acima enxerga (não tem
+    /// `Command::new(`) e que parte do ambiente INTEIRO do app — dentro de um
+    /// AppImage, o `PATH` e o `LD_LIBRARY_PATH` do pacote. Quem o usa limpa o
+    /// ambiente e aplica o do sistema.
+    #[test]
+    fn no_pty_spawn_escapes_the_host_environment_rule() {
+        let Some(raiz) = raiz_do_src_tauri() else {
+            return;
+        };
+        let mut fontes = Vec::new();
+        colher_rs(&raiz.join("src"), &mut fontes);
+        if let Ok(crates) = std::fs::read_dir(raiz.join("crates")) {
+            for entrada in crates.flatten() {
+                colher_rs(&entrada.path().join("src"), &mut fontes);
+            }
+        }
+        let faltando: Vec<String> = fontes
+            .iter()
+            .filter_map(|arquivo| {
+                let conteudo = std::fs::read_to_string(arquivo).ok()?;
+                let linha = conteudo
+                    .lines()
+                    .position(|l| l.contains("CommandBuilder::new("))?;
+                let cumpre =
+                    conteudo.contains("env_clear()") && conteudo.contains("host_environment");
+                (!cumpre).then(|| format!("{}:{}", arquivo.display(), linha + 1))
+            })
+            .collect();
+        assert!(
+            faltando.is_empty(),
+            "estes arquivos abrem terminal sem o ambiente do sistema:\n  {}\n\
+             Chame `env_clear()` no CommandBuilder e aplique `lr_proc::host_environment()`.",
             faltando.join("\n  ")
         );
     }

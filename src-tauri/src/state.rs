@@ -4,7 +4,7 @@ use lr_types::HardwareProfile;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub struct AppState {
     pub studio: tokio::sync::Mutex<Option<crate::studio::Service>>,
@@ -68,6 +68,10 @@ pub struct AppState {
     pub agenticow_idioma: std::sync::Mutex<Option<String>>,
     /// Quantos modelos foram no último catálogo (None antes do primeiro).
     pub agenticow_modelos: std::sync::Mutex<Option<usize>>,
+    /// Terminais embutidos (tela do OwCLI): um pseudoterminal por sessão. Os
+    /// avisos de cada sessão (título, pasta, "precisa de você", saída) saem
+    /// no evento `terminal`.
+    pub terminais: Arc<lr_pty::Gerente>,
     /// Ponto de entrada único (Traefik), quando ligado. Opcional: nada no
     /// chat depende dele.
     pub gateway: tokio::sync::Mutex<Option<lr_gateway::Gateway>>,
@@ -276,6 +280,12 @@ impl AppState {
             agenticow_upstream: std::sync::Mutex::new(None),
             agenticow_idioma: std::sync::Mutex::new(None),
             agenticow_modelos: std::sync::Mutex::new(None),
+            terminais: Arc::new(lr_pty::Gerente::new({
+                let app = app.clone();
+                Arc::new(move |id, aviso| {
+                    let _ = app.emit("terminal", serde_json::json!({ "id": id, "aviso": aviso }));
+                })
+            })),
             gateway: tokio::sync::Mutex::new(None),
             gateway_pid: AtomicU32::new(0),
             decisor: tokio::sync::Mutex::new(None),
@@ -357,6 +367,10 @@ impl AppState {
             *studio = None;
         }
         self.cluster.stop_blocking();
+        // Quem ignorou o SIGHUP em 0,5 s morre com a sessão inteira: fechar o
+        // app não deixa `npm run dev` nem agente rodando sem janela.
+        self.terminais
+            .encerrar_todas(std::time::Duration::from_millis(500));
         self.kill_orphan_pids();
     }
 

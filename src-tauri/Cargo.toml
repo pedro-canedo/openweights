@@ -79,6 +79,7 @@ lr_nodejs = { path = "crates/nodejs" }
 lr_fetch = { path = "crates/fetch" }
 lr_ninerouter = { path = "crates/ninerouter" }
 lr_agenticow = { path = "crates/agenticow" }
+lr_pty = { path = "crates/pty" }
 lr_proc = { path = "crates/proc" }
 lr_gateway = { path = "crates/gateway" }
 lr_decisor = { path = "crates/decisor" }
