@@ -25,9 +25,13 @@ export function downloadPercent(received: number, total: number): number {
   return Math.max(0, Math.min(100, (received / total) * 100));
 }
 
-/** "há 2 h" / "in 3 days" — do próprio navegador, sem biblioteca. */
-export function formatAgo(lang: string, tsMs: number): string {
-  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
+/** "há 2 horas" / "in 3 days" — do próprio navegador, sem biblioteca. `short`: "há 2 h". */
+export function formatAgo(
+  lang: string,
+  tsMs: number,
+  style: Intl.RelativeTimeFormatStyle = "long",
+): string {
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto", style });
   const minutos = Math.round((tsMs - Date.now()) / 60_000);
   if (Math.abs(minutos) < 60) return rtf.format(minutos, "minute");
   const horas = Math.round(minutos / 60);

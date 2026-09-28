@@ -1576,6 +1576,14 @@
     "sandboxWrite": "Ler e editar a pasta (recomendado)",
     "sandboxRead": "Só ler",
     "sandboxFull": "Tudo, sem limites",
-    "open": "Abrir"
+    "open": "Abrir",
+    "history": "Histórico",
+    "resume": "Continuar a conversa {{title}}",
+    "resumeHint": "Continuar de onde parou, em {{folder}}",
+    "renameOf": "Renomear {{title}}",
+    "renameTitle": "Renomear a conversa",
+    "renameLabel": "Nome da conversa",
+    "rename": "Renomear",
+    "renameFailed": "Não foi possível renomear: {{error}}"
   }
 }

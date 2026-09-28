@@ -59,12 +59,27 @@ export interface OpcoesOwcli {
   pasta: string | null;
   aprovacao: "on-request" | "untrusted" | "never";
   sandbox: "workspace-write" | "read-only" | "danger-full-access";
+  /** Id de uma conversa gravada para continuar. */
+  retomar?: string | null;
+}
+
+/** Espelho do `owcli_historico::SessaoPassada`: uma conversa gravada do OwCLI. */
+export interface SessaoPassada {
+  id: string;
+  titulo: string;
+  renomeada: boolean;
+  pasta: string;
+  modelo: string | null;
+  /** Segundos desde a época. */
+  atualizadaEm: number;
 }
 
 interface Backend {
   listar(): Promise<SessaoTerminal[]>;
   abrirShell(pasta: string | null, colunas: number, linhas: number): Promise<number>;
   abrirOwcli(opcoes: OpcoesOwcli, colunas: number, linhas: number): Promise<number>;
+  historico(): Promise<SessaoPassada[]>;
+  renomear(id: string, nome: string): Promise<void>;
   anexar(id: number, desde: number | null, onBloco: (b: ArrayBuffer) => void): Promise<boolean>;
   escrever(id: number, dados: string): Promise<void>;
   redimensionar(id: number, colunas: number, linhas: number): Promise<void>;
@@ -96,6 +111,8 @@ export interface EstadoTerminais {
   focar: boolean;
   erro: string | null;
   pronto: boolean;
+  /** As conversas gravadas do OwCLI, a mais recente primeiro. */
+  historico: SessaoPassada[];
 }
 
 const CHAVE_LAYOUT = "ow.owcli.layout";
@@ -118,6 +135,7 @@ let estado: EstadoTerminais = {
   focar: true,
   erro: null,
   pronto: false,
+  historico: [],
 };
 const ouvintes = new Set<() => void>();
 
@@ -397,6 +415,10 @@ function aplicarAviso(id: number, aviso: Aviso) {
       v?.term.write(
         `\r\n\x1b[2m[${i18n.t("owcli.exited", { code: aviso.codigo ?? "?" })}]\x1b[0m\r\n`,
       );
+      // A conversa que acabou já está gravada: entra no histórico.
+      if (estado.sessoes.find((s) => s.id === id)?.tipo.kind === "owCli") {
+        void carregarHistorico();
+      }
       break;
     }
   }
@@ -461,6 +483,30 @@ export function novoShell(pasta: string | null = null): Promise<number | null> {
 /** O agente OwCLI, com os modelos do OpenWeights, na pasta escolhida. */
 export function novoOwcli(opcoes: OpcoesOwcli): Promise<number | null> {
   return abrirSessao(() => backend.abrirOwcli(opcoes, 100, 30));
+}
+
+/** Continua uma conversa gravada, na pasta dela, com o modo recomendado. */
+export function retomarOwcli(conversa: SessaoPassada): Promise<number | null> {
+  return novoOwcli({
+    pasta: conversa.pasta || null,
+    aprovacao: "on-request",
+    sandbox: "workspace-write",
+    retomar: conversa.id,
+  });
+}
+
+/** Relê as conversas gravadas. Falhar aqui não é erro da tela. */
+export async function carregarHistorico(): Promise<void> {
+  try {
+    mudar({ historico: await backend.historico() });
+  } catch (e) {
+    console.warn("histórico do OwCLI:", e);
+  }
+}
+
+export async function renomearConversa(id: string, nome: string): Promise<void> {
+  await backend.renomear(id, nome);
+  await carregarHistorico();
 }
 
 async function abrirSessao(abrir: () => Promise<number>): Promise<number | null> {
@@ -602,6 +648,8 @@ const backendTauri: Backend = {
     invoke<number>("terminal_abrir_shell", { pedido: { pasta, colunas, linhas } }),
   abrirOwcli: (opcoes, colunas, linhas) =>
     invoke<number>("terminal_abrir_owcli", { pedido: { ...opcoes, colunas, linhas } }),
+  historico: () => invoke<SessaoPassada[]>("owcli_historico"),
+  renomear: (id, nome) => invoke<void>("owcli_renomear", { id, nome }),
   async anexar(id, desde, onBloco) {
     const { Channel } = await import("@tauri-apps/api/core");
     const canal = new Channel<ArrayBuffer>();
@@ -630,6 +678,25 @@ function backendSimulado(): Backend {
   let proximo = 1;
   let aviso: ((id: number, a: Aviso) => void) | null = null;
   const cod = new TextEncoder();
+  const agora = Math.floor(Date.now() / 1000);
+  const conversas: SessaoPassada[] = [
+    {
+      id: "01a0e747-cde3-79e1-bd44-168d74d9976c",
+      titulo: "Conserte o teste que falha no parser",
+      renomeada: false,
+      pasta: "/home/voce/projetos/api",
+      modelo: "local:Qwen3-Coder-30B",
+      atualizadaEm: agora - 2 * 3600,
+    },
+    {
+      id: "01a0e5f2-7b1c-7aa0-9e4d-2f7c1d0b8a31",
+      titulo: "Migração do banco",
+      renomeada: true,
+      pasta: "/home/voce/projetos/web",
+      modelo: "openrouter:qwen/qwen3-coder",
+      atualizadaEm: agora - 3 * 86400,
+    },
+  ];
 
   function emitir(s: Simulada, texto: string) {
     const dados = cod.encode(texto);
@@ -672,8 +739,14 @@ function backendSimulado(): Backend {
     async abrirOwcli(opcoes) {
       const s = nova("OwCLI", { kind: "owCli" }, opcoes.pasta ?? "~");
       emitir(s, "\x1b[2m>_\x1b[0m \x1b[1mOwCLI\x1b[0m \x1b[2m(v0.157.1)\x1b[0m\r\n\r\n");
+      if (opcoes.retomar) emitir(s, `retomando ${opcoes.retomar}\r\n`);
       emitir(s, `aprovação: ${opcoes.aprovacao} · sandbox: ${opcoes.sandbox}\r\n\r\n› `);
       return s.resumo.id;
+    },
+    historico: async () => conversas.map((c) => ({ ...c })),
+    async renomear(id, nome) {
+      const c = conversas.find((x) => x.id === id);
+      if (c) Object.assign(c, { titulo: nome.trim(), renomeada: true });
     },
     async abrirShell() {
       const s = nova("bash", { kind: "shell" }, "~");

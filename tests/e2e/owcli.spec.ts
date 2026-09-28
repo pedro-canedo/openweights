@@ -152,6 +152,29 @@ test("o agente abre pelo diálogo com aprovação e sandbox escolhidos", async (
   await expect(page.locator("[data-sessao]").first()).toContainText("OwCLI");
 });
 
+test("o histórico continua uma conversa e renomeia outra", async ({ page }) => {
+  const historico = page.getByRole("region", { name: "Histórico" });
+  await expect(historico.getByRole("listitem")).toHaveCount(2);
+  await expect(historico).toContainText("projetos/api");
+
+  await historico
+    .getByRole("button", { name: "Continuar a conversa Conserte o teste que falha no parser" })
+    .click();
+  const tela = page.locator(".xterm-rows");
+  await expect(tela).toContainText("retomando 01a0e747-cde3-79e1-bd44-168d74d9976c");
+  await expect(tela).toContainText("aprovação: on-request · sandbox: workspace-write");
+
+  await historico.getByRole("button", { name: "Renomear Migração do banco" }).click();
+  const dialogo = page.getByRole("dialog", { name: "Renomear a conversa" });
+  const campo = dialogo.getByLabel("Nome da conversa");
+  await expect(campo).toBeFocused();
+  await expect(campo).toHaveValue("Migração do banco");
+  await campo.fill("Migração para o Postgres");
+  await campo.press("Enter");
+  await expect(dialogo).toBeHidden();
+  await expect(historico).toContainText("Migração para o Postgres");
+});
+
 test("a tela do OwCLI não tem violação séria de acessibilidade", async ({ page }) => {
   await page.getByRole("button", { name: "Novo terminal" }).first().click();
   await expect(page.locator(".xterm-rows")).toContainText("voce@navegador");

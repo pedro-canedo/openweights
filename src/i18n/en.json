@@ -1576,6 +1576,14 @@
     "sandboxWrite": "Read and edit the folder (recommended)",
     "sandboxRead": "Read only",
     "sandboxFull": "Everything, no limits",
-    "open": "Open"
+    "open": "Open",
+    "history": "History",
+    "resume": "Continue the conversation {{title}}",
+    "resumeHint": "Pick up where it left off, in {{folder}}",
+    "renameOf": "Rename {{title}}",
+    "renameTitle": "Rename conversation",
+    "renameLabel": "Conversation name",
+    "rename": "Rename",
+    "renameFailed": "Could not rename: {{error}}"
   }
 }

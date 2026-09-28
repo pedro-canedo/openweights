@@ -132,10 +132,13 @@ pub struct PedidoDeOwcli {
     pub aprovacao: Option<String>,
     /// `workspace-write` (padrão), `read-only` ou `danger-full-access`.
     pub sandbox: Option<String>,
+    /// Id de uma conversa gravada para continuar (`owcli resume <id>`).
+    pub retomar: Option<String>,
 }
 
 /// Abre o agente OwCLI numa sessão: liga o gateway e o `openweights.json`
-/// (primeira vez) e sobe a TUI na pasta escolhida.
+/// (primeira vez) e sobe a TUI na pasta escolhida — nova, ou continuando uma
+/// conversa gravada.
 #[tauri::command]
 pub async fn terminal_abrir_owcli(
     app: AppHandle,
@@ -145,7 +148,17 @@ pub async fn terminal_abrir_owcli(
     let exe = crate::commands_owcli::binario()?;
     crate::commands_owcli::ativar(&app).await;
     let casa = crate::commands_owcli::casa(&app).ok_or("sem pasta pessoal")?;
-    let pasta = pasta_ou_pessoal(&app, pedido.pasta)?;
+    let retomar = match pedido.retomar {
+        Some(id) if crate::owcli_historico::id_valido(&id) => Some(id),
+        Some(_) => return Err("conversa inválida".to_string()),
+        None => None,
+    };
+    // A pasta de uma conversa antiga pode ter sido apagada ou movida: aí ela
+    // continua na pasta pessoal, em vez de não abrir.
+    let pasta = match pasta_ou_pessoal(&app, pedido.pasta) {
+        Err(_) if retomar.is_some() => pasta_ou_pessoal(&app, None)?,
+        outra => outra?,
+    };
     let aprovacao = match pedido.aprovacao.as_deref() {
         Some(a @ ("untrusted" | "never" | "on-request")) => a.to_string(),
         _ => "on-request".to_string(),
@@ -154,14 +167,18 @@ pub async fn terminal_abrir_owcli(
         Some(s @ ("read-only" | "danger-full-access" | "workspace-write")) => s.to_string(),
         _ => "workspace-write".to_string(),
     };
-    let args: Vec<OsString> = vec![
+    let mut args: Vec<OsString> = Vec::new();
+    if let Some(id) = retomar {
+        args.extend(["resume".into(), id.into()]);
+    }
+    args.extend::<[OsString; 6]>([
         "--cd".into(),
         pasta.clone().into_os_string(),
         "--ask-for-approval".into(),
         aprovacao.into(),
         "--sandbox".into(),
         sandbox.into(),
-    ];
+    ]);
     let gerente = state.terminais.clone();
     tauri::async_runtime::spawn_blocking(move || {
         gerente.abrir(lr_pty::Pedido {

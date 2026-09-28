@@ -19,6 +19,7 @@ mod externo;
 mod gpu_lease;
 mod janela;
 mod optimization;
+mod owcli_historico;
 mod serve_stats;
 mod spec_bench;
 mod state;
@@ -230,6 +231,8 @@ fn main() {
             commands_terminal::area_de_transferencia_ler,
             commands_terminal::area_de_transferencia_escrever,
             commands_owcli::owcli_ligar,
+            commands_owcli::owcli_historico,
+            commands_owcli::owcli_renomear,
             // Ajustar para esta máquina.
             commands_tuning::tune_advise,
             commands_tuning::tune_apply,

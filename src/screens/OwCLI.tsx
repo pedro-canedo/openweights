@@ -1,9 +1,10 @@
 // OwCLI: terminais de verdade dentro do app.
 //
-// À esquerda, as sessões — cada uma um processo no backend (lr_pty): um
-// shell, e em breve o agente OwCLI e os harnesses. Ali se vê, sem abrir,
-// quem terminou, quem ainda roda e quem está pedindo você (o agente manda
-// OSC 9 ao pedir aprovação; com a janela sem foco vira aviso do sistema).
+// À esquerda, as sessões — cada uma um processo no backend (lr_pty): o
+// agente OwCLI, um shell ou um harness. Ali se vê, sem abrir, quem
+// terminou, quem ainda roda e quem está pedindo você (o agente manda OSC 9
+// ao pedir aprovação; com a janela sem foco vira aviso do sistema). Abaixo,
+// o histórico: as conversas que o OwCLI gravou, para continuar ou renomear.
 // À direita, uma grade de 1, 2 ou 4 painéis, cada um com uma sessão. O
 // terminal mora em `lib/terminals.ts` e continua vivo, e desenhando, com a
 // tela fechada ou fora da grade.
@@ -20,6 +21,7 @@ import { useTranslation } from "react-i18next";
 import {
   ajustar,
   ativar,
+  carregarHistorico,
   colarNo,
   copiarSelecao,
   definirLayout,
@@ -32,19 +34,24 @@ import {
   montar,
   novoOwcli,
   novoShell,
+  renomearConversa,
+  retomarOwcli,
   temSelecao,
   terminaisStore,
   type Layout,
   type OpcoesOwcli,
+  type SessaoPassada,
   type SessaoTerminal,
 } from "../lib/terminals";
 import { pickWorkspace } from "../lib/api";
-import { Button, IconButton, inputClass } from "../components/ui/Button";
+import { formatAgo } from "../lib/format";
+import { Button, IconButton, Input, inputClass } from "../components/ui/Button";
 import { Dialog } from "../components/ui/Dialog";
 import Icon, { type IconName } from "../components/ui/Icon";
 import { Menu, usePopover } from "../components/ui/Popover";
 import { StatusDot } from "../components/ui/Shell";
 import { Split } from "../components/ui/Split";
+import { toast } from "../components/ui/Toast";
 
 type MenuAberto = { x: number; y: number; id: number };
 
@@ -53,10 +60,12 @@ export default function OwCLI() {
   const e = useSyncExternalStore(terminaisStore.subscribe, terminaisStore.get);
   const [menu, setMenu] = useState<MenuAberto | null>(null);
   const [dialogo, setDialogo] = useState(false);
+  const [renomeando, setRenomeando] = useState<SessaoPassada | null>(null);
   const nova = usePopover("menu");
 
   useEffect(() => {
     void iniciar();
+    void carregarHistorico();
     marcarTelaVisivel(true);
     return () => marcarTelaVisivel(false);
   }, []);
@@ -160,7 +169,9 @@ export default function OwCLI() {
           role="list"
           aria-label={t("owcli.tabs")}
           onKeyDown={setas}
-          className="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
+          className={`overflow-y-auto px-2 pb-2 ${
+            e.historico.length > 0 ? "max-h-[45%] shrink-0" : "min-h-0 flex-1"
+          }`}
         >
           {e.sessoes.map((s) => (
             <ItemSessao
@@ -171,6 +182,24 @@ export default function OwCLI() {
             />
           ))}
         </div>
+        {e.historico.length > 0 && (
+          <section
+            aria-labelledby="owcli-historico"
+            className="flex min-h-0 flex-1 flex-col border-t border-edge"
+          >
+            <h2
+              id="owcli-historico"
+              className="px-3 pt-3 pb-2 text-[11px] font-semibold tracking-wide text-dim uppercase"
+            >
+              {t("owcli.history")}
+            </h2>
+            <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+              {e.historico.map((c) => (
+                <ItemConversa key={c.id} conversa={c} aoRenomear={() => setRenomeando(c)} />
+              ))}
+            </ul>
+          </section>
+        )}
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
@@ -224,6 +253,8 @@ export default function OwCLI() {
           )}
         </div>
       </section>
+
+      <RenomearConversa conversa={renomeando} aoFechar={() => setRenomeando(null)} />
 
       <NovaSessaoOwcli
         aberto={dialogo}
@@ -346,6 +377,110 @@ function NovaSessaoOwcli({
         </label>
       </div>
     </Dialog>
+  );
+}
+
+/** Um nome para a conversa, no lugar do começo da primeira mensagem. */
+function RenomearConversa({
+  conversa,
+  aoFechar,
+}: {
+  conversa: SessaoPassada | null;
+  aoFechar: () => void;
+}) {
+  const { t } = useTranslation();
+  const [nome, setNome] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  useEffect(() => {
+    if (conversa) setNome(conversa.renomeada ? conversa.titulo : "");
+  }, [conversa]);
+
+  async function salvar() {
+    if (!conversa || !nome.trim()) return;
+    setSalvando(true);
+    try {
+      await renomearConversa(conversa.id, nome);
+      aoFechar();
+    } catch (err) {
+      toast({ message: t("owcli.renameFailed", { error: String(err) }), tone: "bad" });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={conversa != null}
+      onClose={aoFechar}
+      title={t("owcli.renameTitle")}
+      footer={
+        <>
+          <Button onClick={aoFechar}>{t("common.cancel")}</Button>
+          <Button
+            variant="primary"
+            disabled={!nome.trim() || salvando}
+            onClick={() => void salvar()}
+          >
+            {t("owcli.rename")}
+          </Button>
+        </>
+      }
+    >
+      <form
+        className="mt-4"
+        onSubmit={(ev) => {
+          ev.preventDefault();
+          void salvar();
+        }}
+      >
+        <Input
+          label={t("owcli.renameLabel")}
+          value={nome}
+          placeholder={conversa?.titulo}
+          maxLength={120}
+          data-autofocus=""
+          onChange={(ev) => setNome(ev.target.value)}
+        />
+      </form>
+    </Dialog>
+  );
+}
+
+/** Uma conversa gravada: clicar continua de onde parou, numa sessão nova. */
+function ItemConversa({
+  conversa,
+  aoRenomear,
+}: {
+  conversa: SessaoPassada;
+  aoRenomear: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const quando = formatAgo(i18n.language, conversa.atualizadaEm * 1000, "short");
+  return (
+    <li className="group flex items-center gap-1 rounded-lg pr-1 transition-colors hover:bg-panel2/60">
+      <button
+        type="button"
+        onClick={() => void retomarOwcli(conversa)}
+        title={`${conversa.titulo}\n${t("owcli.resumeHint", { folder: conversa.pasta })}`}
+        aria-label={t("owcli.resume", { title: conversa.titulo })}
+        className="flex min-w-0 flex-1 items-start gap-2.5 px-2 py-1.5 text-left"
+      >
+        <Icon name="history" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-dim" />
+        <span className="min-w-0">
+          <span className="block truncate text-[13px] text-ink">{conversa.titulo}</span>
+          <span className="block truncate text-[11px] text-dim">
+            {quando} · {pastaCurta(conversa.pasta)}
+          </span>
+        </span>
+      </button>
+      <IconButton
+        icon="pencil"
+        size="sm"
+        label={t("owcli.renameOf", { title: conversa.titulo })}
+        onClick={aoRenomear}
+        className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+      />
+    </li>
   );
 }
 

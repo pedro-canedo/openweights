@@ -15,6 +15,7 @@ use serde_json::{Value, json};
 use tauri::{AppHandle, Manager};
 
 use crate::catalogo::{self, Fonte};
+use crate::owcli_historico::SessaoPassada;
 use crate::state::AppState;
 
 /// Setting: o OwCLI já foi usado (liga o gateway e o arquivo no boot).
@@ -198,6 +199,29 @@ pub async fn ativar(app: &AppHandle) {
 pub async fn owcli_ligar(app: AppHandle) -> Result<(), String> {
     ativar(&app).await;
     Ok(())
+}
+
+/// As conversas gravadas do OwCLI. Vazio quando ele não está instalado ou
+/// nunca foi usado — não é erro para a tela.
+#[tauri::command]
+pub async fn owcli_historico(app: AppHandle) -> Result<Vec<SessaoPassada>, String> {
+    let Ok(exe) = binario() else {
+        return Ok(Vec::new());
+    };
+    let Some(casa) = casa(&app).filter(|c| c.join("sessions").is_dir()) else {
+        return Ok(Vec::new());
+    };
+    crate::owcli_historico::listar(&exe, &casa).await
+}
+
+#[tauri::command]
+pub async fn owcli_renomear(app: AppHandle, id: String, nome: String) -> Result<(), String> {
+    if !crate::owcli_historico::id_valido(&id) || nome.trim().is_empty() {
+        return Err("conversa ou nome inválido".to_string());
+    }
+    let exe = binario()?;
+    let casa = casa(&app).ok_or("sem pasta pessoal para a casa do OwCLI")?;
+    crate::owcli_historico::renomear(&exe, &casa, &id, &nome).await
 }
 
 #[cfg(test)]
