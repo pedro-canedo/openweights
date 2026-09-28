@@ -88,6 +88,11 @@
   --lr-ok: #22c55e;
   --lr-warn: #eab308;
   --lr-bad: #f46a6a;
+  /* Sem isto o WebKitGTK pinta o <select> fechado com o rosto claro do
+     Adwaita por cima do fundo do app, e o texto claro some. */
+  color-scheme: dark;
+  /* A seta do <select> (url() não aceita currentColor): a cor de --lr-dim. */
+  --lr-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b93a5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 :root[data-theme="light"] {
@@ -109,6 +114,8 @@
   --lr-ok: #136b35;
   --lr-warn: #7f5305;
   --lr-bad: #a91a1a;
+  color-scheme: light;
+  --lr-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235d6577' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 html,
@@ -132,6 +139,28 @@ body {
 :where(button, a[href], summary, select, [role="tab"], [role="button"], [role="menuitem"], [tabindex]:not([tabindex="-1"]), input:is([type="checkbox"], [type="radio"], [type="range"])):focus-visible {
   outline: 2px solid var(--lr-focus);
   outline-offset: 2px;
+}
+
+/* O <select> fechado desenhado pelo app, igual nos três motores de webview.
+   Fora das camadas para vencer o px-* e o py-* do Tailwind; o padding do fim é
+   obrigatório, porque sem appearance o WebKit zera o espaço da seta e o
+   texto longo passaria por baixo dela. A lista aberta continua do sistema. */
+select:not([multiple]):not([size]) {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: var(--lr-chevron);
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 0.75rem;
+  padding-inline-end: 1.9rem;
+}
+/* O preflight força opacity 1; vários <select> desabilitados não tinham estilo. */
+select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+select:focus-visible {
+  border-color: var(--lr-focus);
 }
 
 /* A interface não é selecionável (`body`), mas mensagem de erro e de estado
