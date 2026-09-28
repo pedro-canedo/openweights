@@ -1,5 +1,19 @@
 # What's new
 
+## 0.24.2
+
+**On Linux, AgenticOw opens folders again — and the Bonsai 2 chat on High
+effort answers again.** The AppImage carries its own libraries (an older
+glib, GTK, Python) and puts them ahead of the system's so the app finds what
+it needs. Everything the app launched inherited that: AgenticOw's folder
+picker, the `python3` and `curl` the agent runs in the workspace and the
+browser behind links all died against the wrong library, and links did not
+even show an error. Each system program now gets the system environment, and
+the package stays with the app itself. In the chat, Qwen3.8 and Ternary
+Bonsai 2 only accept their own reasoning levels and rejected the `high` that
+High sent; the app now translates the effort into the level the model
+declares in its file. See [the chat](/guide/chat).
+
 ## 0.24.1
 
 **AgenticOw thinks only with OpenWeights' models.** Opening AgenticOw with no

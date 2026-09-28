@@ -1,5 +1,19 @@
 # Novidades
 
+## 0.24.2
+
+**No Linux, o AgenticOw volta a abrir pastas — e o chat do Bonsai 2 no
+esforço Alto volta a responder.** O AppImage leva as próprias bibliotecas
+(uma glib mais antiga, o GTK, o Python) e as põe na frente das do sistema
+para o app achar o que precisa. Tudo o que o app abria herdava isso: o
+seletor de pasta do AgenticOw, o `python3` e o `curl` que o agente roda no
+workspace e o navegador dos links morriam contra a biblioteca errada, e os
+links nem chegavam a mostrar erro. Agora cada programa do sistema recebe o
+ambiente do sistema, e o pacote fica só para o próprio app. No chat, o
+Qwen3.8 e o Ternary Bonsai 2 só aceitam os próprios níveis de raciocínio e
+recusavam o `high` que o Alto mandava; o app passa a traduzir o esforço para
+o nível que o modelo declara no arquivo. Veja [o chat](/pt/guia/chat).
+
 ## 0.24.1
 
 **O AgenticOw pensa só com os modelos do OpenWeights.** Abrir o AgenticOw sem

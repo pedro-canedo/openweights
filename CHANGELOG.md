@@ -10,6 +10,14 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.24.2] — 2026-09-28
+
+- On Linux (AppImage), AgenticOw's "Choose workspace" opens the folder picker again. System programs launched by the app and by AgenticOw — `zenity`, `python3`, `curl`, `git`, the file manager, the browser — inherited the libraries bundled in the package and died with "symbol lookup error"; they now get the system environment, and the agent's tools can run Python and curl in the workspace again.
+- For the same reason, on Linux external links, "Open on Hugging Face" and the Hugging Face login opened nothing, with no error shown. They now open in the default browser.
+- The app's own folder picker on Linux also works without the file portal (i3, sway), through the system's zenity.
+- In the chat, High, Extra and Max returned HTTP 500 ("Unexpected reasoning effort high") on models that only accept their own reasoning levels, such as Qwen3.8 and Ternary Bonsai 2. The app now translates the effort into the level the model declares — `xhigh` on those two —, including when Jev picks the effort.
+- With an image in the message, Jev recognises the model again and decides the effort, instead of skipping the decision.
+
 ## [0.24.1] — 2026-09-23
 
 - AgenticOw no longer asks for a DeepSeek key when it opens. It has no provider of its own: the native DeepSeek provider and its web search are out of the build, and models come only from OpenWeights' sources — the Local Server, OpenRouter and 9router.
