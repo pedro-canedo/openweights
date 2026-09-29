@@ -69,3 +69,40 @@ test("apagar a última resposta some na hora e dá cinco segundos para desfazer"
   await expect(aviso).toBeHidden({ timeout: 8000 });
   await expect(resposta).toHaveCount(0);
 });
+
+test("um erro conhecido do servidor diz o que houve e o que fazer", async ({ page }) => {
+  await page.addInitScript(() => {
+    (globalThis as { __chatFalha?: string }).__chatFalha = "Failed to fetch";
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  const input = page.getByRole("textbox", { name: "O que você quer saber... (@arquivo)" });
+  await input.fill("Olá");
+  await page.getByRole("button", { name: "Enviar", exact: true }).click();
+
+  const cartao = page.getByRole("alert").filter({ hasText: "O servidor local não respondeu" });
+  await expect(cartao).toBeVisible({ timeout: 15000 });
+  await expect(cartao.getByRole("button", { name: "Abrir o Servidor Local" })).toBeVisible();
+  // O texto que o sistema deu fica recolhido, mas está lá.
+  await cartao.locator("summary").click();
+  await expect(cartao.locator("pre")).toContainText("Failed to fetch");
+
+  // Refazer é o mesmo gesto do "Gerar de novo" da mensagem; aqui basta o botão
+  // estar no cartão (o navegador simulado não guarda a conversa para refazer).
+  await expect(cartao.getByRole("button", { name: "Tentar de novo" })).toBeVisible();
+});
+
+test("o botão principal do erro leva à tela que resolve", async ({ page }) => {
+  await page.addInitScript(() => {
+    (globalThis as { __chatFalha?: string }).__chatFalha = "HTTP 401: Missing API key";
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByRole("textbox", { name: "O que você quer saber... (@arquivo)" }).fill("Olá");
+  await page.getByRole("button", { name: "Enviar", exact: true }).click();
+  const cartao = page.getByRole("alert").filter({ hasText: "A chave desta fonte não foi aceita" });
+  await cartao.getByRole("button", { name: "Abrir Fontes" }).click();
+  await expect(
+    page.getByRole("navigation").getByRole("button", { name: "Fontes", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+});

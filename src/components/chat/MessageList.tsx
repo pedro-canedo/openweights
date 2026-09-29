@@ -17,6 +17,7 @@ import { speechStore } from "../../lib/speech";
 import Markdown from "./Markdown";
 import ThinkingBlock from "./ThinkingBlock";
 import PrismEngineCard from "../models/PrismEngineCard";
+import ErroAcionavel from "../ErroAcionavel";
 import { isPrismRequired } from "../../lib/prism";
 import { formatDuration } from "../../lib/format";
 
@@ -113,6 +114,7 @@ export default function MessageList({
   generating,
   loadingModel,
   onRegenerate,
+  onNewChat,
   onEditResend,
   onDeleteMsg,
 }: {
@@ -120,6 +122,8 @@ export default function MessageList({
   generating: boolean;
   loadingModel: boolean;
   onRegenerate?: () => void;
+  /** "Nova conversa", para o erro de contexto estourado. */
+  onNewChat?: () => void;
   onEditResend?: (index: number) => void;
   onDeleteMsg?: (index: number) => void;
 }) {
@@ -279,9 +283,16 @@ export default function MessageList({
                 // que resolve — e a mensagem é reenviada quando ele chega.
                 <PrismEngineCard onInstalled={onRegenerate} />
               ) : m.error ? (
-                <div className="rounded-xl border border-bad/40 bg-bad/10 px-4 py-2.5 text-sm text-bad">
-                  {m.content}
-                </div>
+                // Erro conhecido vira "o que houve e o que fazer"; o texto
+                // original fica recolhido no próprio cartão. Refazer só
+                // vale para a última mensagem.
+                <ErroAcionavel
+                  erro={m.content}
+                  acoes={{
+                    tentar: i === messages.length - 1 && !generating ? onRegenerate : undefined,
+                    novaConversa: onNewChat,
+                  }}
+                />
               ) : m.content === "" &&
                 !m.reasoning &&
                 generating &&

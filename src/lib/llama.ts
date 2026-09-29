@@ -552,6 +552,15 @@ async function streamMock({
 }: StreamChatOptions): Promise<StreamChatResult> {
   await sleep(400); // latência fake de "carregar o modelo"
 
+  // Os testes ligam `__chatFalha` com a mensagem do erro; ele acontece uma vez
+  // só, e a tentativa seguinte (o "Tentar de novo") responde normalmente.
+  const g = globalThis as { __chatFalha?: string };
+  if (g.__chatFalha) {
+    const mensagem = g.__chatFalha;
+    delete g.__chatFalha;
+    throw new Error(mensagem);
+  }
+
   const throwIfAborted = () => {
     if (signal.aborted) {
       throw new DOMException("Geração cancelada", "AbortError");

@@ -899,6 +899,7 @@ export default function Chat() {
                 key={activeChatId ?? "new"}
                 loadingModel={loadingModel}
                 onRegenerate={() => void regenerate()}
+                onNewChat={() => chatStore.requestNew()}
                 onEditResend={startEdit}
                 onDeleteMsg={(i) => void removeMessage(i)}
               />
