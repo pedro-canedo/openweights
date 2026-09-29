@@ -69,6 +69,8 @@ let agenticowMock = {
   revision: "0".repeat(40),
   upstreamTag: null as string | null,
   lastError: null as string | null,
+  downloadBytes: 78 * 2 ** 20,
+  nodeInstalled: false,
   models: null as number | null,
   sources: {
     localModels: 2,
@@ -116,13 +118,13 @@ async function mockInvoke(cmd: string, _args?: Record<string, unknown>) {
       return { ...agenticowMock };
     case "agenticow_start":
       await new Promise((resolve) => setTimeout(resolve, 600));
-      agenticowMock = { ...agenticowMock, installed: true, running: true, ready: true, port: 11730, upstreamTag: "dsh-v0.1.5-rc.3" };
+      agenticowMock = { ...agenticowMock, installed: true, running: true, ready: true, port: 11730, upstreamTag: "dsh-v0.1.5-rc.3", downloadBytes: 0, nodeInstalled: true };
       return { ...agenticowMock };
     case "agenticow_stop":
       agenticowMock = { ...agenticowMock, running: false, ready: false, port: null };
       return { ...agenticowMock };
     case "agenticow_uninstall":
-      agenticowMock = { ...agenticowMock, installed: false, running: false, ready: false, port: null };
+      agenticowMock = { ...agenticowMock, installed: false, running: false, ready: false, port: null, downloadBytes: 42 * 2 ** 20 };
       return { ...agenticowMock };
     case "agenticow_set_locale":
     case "agenticow_refresh_catalog":

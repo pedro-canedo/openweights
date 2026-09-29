@@ -83,6 +83,13 @@ pub struct AgenticowStatus {
     /// Host já saudou.
     pub upstream_tag: Option<String>,
     pub last_error: Option<String>,
+    /// Bytes que faltam baixar para abrir: o runtime, se não estiver no disco,
+    /// e o Node.js portátil, se também não estiver (o do Node é o medido para a
+    /// versão pinada). Zero quando abrir não baixa nada — é o que decide se a
+    /// tela pede consentimento antes.
+    pub download_bytes: u64,
+    /// O Node.js portátil já está instalado (o runtime precisa dele).
+    pub node_installed: bool,
     /// Modelos no último catálogo entregue (None antes do primeiro). Zero é o
     /// caso que a tela explica: sem servidor local nem provedor, o AgenticOw
     /// abre sem modelo e o upstream oferece a conta da DeepSeek.
@@ -134,6 +141,22 @@ fn registrar_erro(state: &AppState, erro: Option<String>) {
         .unwrap_or_else(|e| e.into_inner()) = erro;
 }
 
+/// O que abrir ainda baixa. O tamanho do runtime vem do pin (assinado com o
+/// app); o do Node, da tabela medida do `lr_nodejs`.
+fn download_pendente(state: &AppState, runtime_instalado: bool) -> u64 {
+    let runtime = if runtime_instalado {
+        0
+    } else {
+        lr_agenticow::pins::asset_atual().map_or(0, |(_, a)| a.size)
+    };
+    let node = if state.node.state().installed {
+        0
+    } else {
+        lr_nodejs::tamanho_do_download(std::env::consts::OS, std::env::consts::ARCH).unwrap_or(0)
+    };
+    runtime + node
+}
+
 async fn status_atual(state: &AppState) -> AgenticowStatus {
     let fontes = crate::catalogo::estado_das_fontes(state);
     let l = layout(state);
@@ -157,6 +180,8 @@ async fn status_atual(state: &AppState) -> AgenticowStatus {
         tag: pins.tag.clone(),
         revision: pins.revision.clone(),
         upstream_tag: saudacao,
+        download_bytes: download_pendente(state, l.instalado()),
+        node_installed: state.node.state().installed,
         last_error: state
             .agenticow_erro
             .lock()

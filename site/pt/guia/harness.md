@@ -22,6 +22,10 @@ e o confere contra o sha256 e o tamanho **gravados no binário do app** antes de
 rodar qualquer coisa. Pacote que não bate é recusado. Ele roda no Node portátil
 do app, nunca no do seu sistema.
 
+A tela diz **quanto vai baixar** (o runtime e, se ainda não estiver na máquina,
+o Node.js portátil) e espera você clicar no botão antes de começar. Nada é
+baixado sozinho.
+
 Depois disso, abre em segundos. Você pode sair da tela enquanto ele se prepara:
 o progresso está lá quando você voltar.
 

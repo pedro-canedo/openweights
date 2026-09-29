@@ -21,6 +21,10 @@ system into an app folder, once, and checks it against the sha256 and size
 **built into the app binary** before running anything. A package that does not
 match is refused. It runs on the app's portable Node, never your system's.
 
+The screen says **how much it will download** (the runtime, plus the portable
+Node.js if it is not on this machine yet) and waits for you to click the button
+before starting. Nothing is downloaded on its own.
+
 After that it opens in seconds. You can leave the screen while it prepares;
 the progress is there when you come back.
 

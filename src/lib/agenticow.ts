@@ -30,6 +30,10 @@ export interface AgenticowStatus {
   /** Tag do DeepSeek Harness em que a revisão se baseia (depois da saudação). */
   upstreamTag: string | null;
   lastError: string | null;
+  /** Bytes que abrir ainda baixa (runtime e Node.js); 0 = nada a baixar. */
+  downloadBytes: number;
+  /** O Node.js portátil já está instalado. */
+  nodeInstalled: boolean;
   /** Modelos no último catálogo entregue (null antes do primeiro). */
   models: number | null;
   /** O que cada fonte do OpenWeights tem agora. */

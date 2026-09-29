@@ -27,6 +27,37 @@ use std::path::{Path, PathBuf};
 /// llama.cpp.
 pub const PINNED_NODE: &str = "v22.20.0";
 
+/// Tamanho, em bytes, do pacote do Node de cada alvo, medido no servidor do
+/// Node para `TAMANHOS_MEDIDOS_EM`. Serve só para dizer à pessoa quanto vai
+/// baixar antes de baixar; a integridade vem do SHASUMS, não daqui.
+const TAMANHOS_MEDIDOS_EM: &str = "v22.20.0";
+const TAMANHOS_MEDIDOS: [(&str, u64); 4] = [
+    ("linux-x64", 56_645_685),
+    ("win-x64", 35_500_968),
+    ("darwin-arm64", 49_838_299),
+    ("darwin-x64", 51_010_329),
+];
+
+/// Quanto pesa o pacote do Node desta máquina, quando o tamanho foi medido para
+/// a versão pinada; `None` para um alvo sem medida (a tela então não promete
+/// um número).
+pub fn tamanho_do_download(os: &str, arch: &str) -> Option<u64> {
+    if PINNED_NODE != TAMANHOS_MEDIDOS_EM {
+        return None;
+    }
+    let alvo = match (os, arch) {
+        ("windows", "x86_64") => "win-x64",
+        ("macos", "aarch64") => "darwin-arm64",
+        ("macos", "x86_64") => "darwin-x64",
+        ("linux", "x86_64") => "linux-x64",
+        _ => return None,
+    };
+    TAMANHOS_MEDIDOS
+        .iter()
+        .find(|(a, _)| *a == alvo)
+        .map(|(_, bytes)| *bytes)
+}
+
 const USER_AGENT: &str = concat!("OpenWeights/", env!("CARGO_PKG_VERSION"));
 
 /// Sanidade pós-extração: uma distribuição completa passa fácil disso.
@@ -393,6 +424,25 @@ impl NodeManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn os_tamanhos_medidos_valem_para_a_versao_pinada() {
+        // Subir o Node pede medir de novo os pacotes: este teste é o lembrete.
+        assert_eq!(PINNED_NODE, TAMANHOS_MEDIDOS_EM);
+        for (os, arch) in [
+            ("linux", "x86_64"),
+            ("windows", "x86_64"),
+            ("macos", "aarch64"),
+            ("macos", "x86_64"),
+        ] {
+            let bytes = tamanho_do_download(os, arch).expect("alvo medido");
+            assert!(
+                (20_000_000..100_000_000).contains(&bytes),
+                "{os}/{arch}: {bytes}"
+            );
+        }
+        assert_eq!(tamanho_do_download("linux", "aarch64"), None);
+    }
 
     #[test]
     fn the_windows_asset_is_a_zip_and_the_others_are_tar_gz() {

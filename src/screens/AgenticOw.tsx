@@ -43,6 +43,9 @@ export default function AgenticOw() {
   useEffect(() => {
     void refreshStatus().then((st) => {
       if (!st || !st.supported || st.ready || autoTentado) return;
+      // Abrir que baixaria alguma coisa espera a pessoa concordar, com o
+      // tamanho na frente (o botão da tela). Só abre sozinho o que já está aqui.
+      if (st.downloadBytes > 0) return;
       if (agenticowStore.get().busy !== null) return;
       autoTentado = true;
       void iniciar(i18n.language);
@@ -255,6 +258,13 @@ function Controle() {
                     : instalado
                       ? t("agenticow.readyHint")
                       : t("agenticow.firstRunHint")}
+                  {suportado && (st?.downloadBytes ?? 0) > 0 && s.busy === null && (
+                    <span className="mt-1 block text-ink">
+                      {t(st?.nodeInstalled ? "agenticow.downloadSize" : "agenticow.downloadSizeWithNode", {
+                        size: formatBytes(st?.downloadBytes ?? 0),
+                      })}
+                    </span>
+                  )}
                 </p>
               </div>
               {suportado && (
@@ -268,7 +278,9 @@ function Controle() {
                       ? t("common.loading")
                       : erro
                         ? t("agenticow.retry")
-                        : t("agenticow.start")}
+                        : (st?.downloadBytes ?? 0) > 0
+                          ? t("agenticow.downloadAndStart", { size: formatBytes(st?.downloadBytes ?? 0) })
+                          : t("agenticow.start")}
                   </button>
                 </div>
               )}
