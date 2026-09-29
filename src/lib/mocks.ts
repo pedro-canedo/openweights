@@ -263,6 +263,14 @@ export async function startDownload(
   return id;
 }
 
+/** Cancelar: o download some da lista e o evento `removed` avisa a tela. */
+export async function cancelDownload(id: string): Promise<void> {
+  const g = globalThis as { __downloadCancelFalha?: string };
+  if (g.__downloadCancelFalha) throw g.__downloadCancelFalha;
+  downloads.delete(id);
+  emitirMock("download", { kind: "removed", id });
+}
+
 export async function listDownloads(): Promise<DownloadStatus[]> {
   if (downloads.size === 0) {
     downloads.set("unsloth/Qwen3-8B-GGUF::Qwen3-8B-Q4_K_M.gguf", {

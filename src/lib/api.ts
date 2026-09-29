@@ -173,7 +173,7 @@ export const pauseDownload = (id: string) =>
 export const resumeDownload = (id: string) =>
   invoke<void>("download_resume", { id });
 export const cancelDownload = (id: string) =>
-  invoke<void>("download_cancel", { id });
+  isTauri ? invoke<void>("download_cancel", { id }) : mocks.cancelDownload(id);
 
 export const listDownloads = () =>
   isTauri ? invoke<DownloadStatus[]>("downloads_list") : mocks.listDownloads();

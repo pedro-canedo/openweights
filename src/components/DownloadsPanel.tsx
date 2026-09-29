@@ -4,12 +4,12 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
+import { agirNoDownload, descartarDownload } from "../lib/downloads";
 import { useDismiss } from "./ui/camada";
 import type { DownloadStatus } from "../lib/types";
 import { cancelarPrism, carregarPrism, prismStore } from "../lib/prism";
 import { assinarDecisor, decisionStore } from "../lib/decision";
 import {
-  cancelDownload,
   listDownloads,
   onDownloadEvent,
   pauseDownload,
@@ -76,8 +76,7 @@ function DownloadRow({ status }: { status: DownloadStatus }) {
       ? formatEta(remaining / status.bytesPerSec)
       : null;
 
-  // Erros nas ações são registrados; o estado real volta pelos eventos.
-  const act = (p: Promise<void>) => void p.catch(console.error);
+  const act = agirNoDownload;
 
   const barColor =
     status.state === "done"
@@ -118,7 +117,7 @@ function DownloadRow({ status }: { status: DownloadStatus }) {
               label={t("downloadsPanel.cancel")}
               path={ICONS.cancel}
               danger
-              onClick={() => act(cancelDownload(status.id))}
+              onClick={() => void descartarDownload(status)}
             />
           )}
         </div>

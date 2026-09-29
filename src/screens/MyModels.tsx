@@ -88,7 +88,7 @@ function ModelCard({
         {confirming ? (
           <div className="flex flex-col gap-2">
             <span className="text-xs text-bad">
-              {t("models.deleteConfirm", { name: model.name })}
+              {t("models.deleteConfirm", { name: model.name, size: formatBytes(model.totalBytes) })}
             </span>
             <div className="flex gap-2">
               <button

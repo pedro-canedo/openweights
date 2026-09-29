@@ -10,7 +10,9 @@
 
 import { useSyncExternalStore } from "react";
 import i18n from "../i18n";
-import { listDownloads, onDownloadEvent } from "./api";
+import { cancelDownload, listDownloads, onDownloadEvent } from "./api";
+import { confirmar } from "../components/ui/Dialog";
+import { toast } from "../components/ui/Toast";
 import { formatBytes } from "./format";
 import type { DownloadEvent, DownloadStatus } from "./types";
 
@@ -105,6 +107,47 @@ export function motivoDoDownload(erro: unknown): string {
     });
   }
   return i18n.t("discover.downloadFailed", { error: texto });
+}
+
+/**
+ * Cancela ou descarta um download. O que já foi baixado se perde, então, com
+ * bytes no disco, pergunta antes e diz quanto; sem nada baixado, cancela
+ * direto. Devolve se o download foi mesmo cancelado (para a tela se atualizar).
+ */
+export async function descartarDownload(s: DownloadStatus): Promise<boolean> {
+  if (s.receivedBytes > 0) {
+    const sim = await confirmar({
+      title: i18n.t("downloadsPanel.discardTitle", { name: s.artifactName }),
+      message: i18n.t("downloadsPanel.discardMessage", {
+        size: formatBytes(s.receivedBytes),
+      }),
+      confirmLabel: i18n.t("models.discard"),
+      tone: "danger",
+    });
+    if (!sim) return false;
+  }
+  try {
+    await cancelDownload(s.id);
+    return true;
+  } catch (e) {
+    toast({
+      tone: "bad",
+      message: i18n.t("downloadsPanel.cancelFailed", { error: String(e) }),
+      duration: 0,
+    });
+    return false;
+  }
+}
+
+/** Pausar e retomar: se falhar, diz em vez de só registrar no console. */
+export function agirNoDownload(p: Promise<void>): void {
+  void p.catch((e) =>
+    toast({
+      tone: "bad",
+      message: i18n.t("downloadsPanel.actionFailed", { error: String(e) }),
+      duration: 0,
+    }),
+  );
 }
 
 /** Para os testes: começa do zero. */

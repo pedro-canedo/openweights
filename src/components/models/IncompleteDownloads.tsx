@@ -3,9 +3,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { agirNoDownload, descartarDownload } from "../../lib/downloads";
 import type { DownloadState, DownloadStatus } from "../../lib/types";
 import {
-  cancelDownload,
   listDownloads,
   onDownloadEvent,
   pauseDownload,
@@ -50,7 +50,7 @@ function MiniCard({
       ? formatEta(remaining / status.bytesPerSec)
       : null;
 
-  const act = (p: Promise<void>) => void p.catch(console.error);
+  const act = agirNoDownload;
 
   const stateLabel =
     status.state === "running"
@@ -117,7 +117,7 @@ function MiniCard({
         )}
         <button
           type="button"
-          onClick={() => act(cancelDownload(status.id).then(onGone))}
+          onClick={() => void descartarDownload(status).then((feito) => feito && onGone())}
           className="rounded-lg border border-edge px-2.5 py-1 text-[11px] font-medium text-dim transition-colors hover:border-bad/60 hover:text-bad"
         >
           {t("models.discard")}
