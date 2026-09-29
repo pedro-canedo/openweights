@@ -42,3 +42,30 @@ test("comparison is discoverable and explains the desktop requirement", async ({
   await page.getByRole("tab", { name: "Desempenho", exact: true }).click();
   await expect(page.getByRole("button", { name: "Otimizar para meu computador", exact: true })).toBeVisible();
 });
+
+test("apagar a última resposta some na hora e dá cinco segundos para desfazer", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  const input = page.getByRole("textbox", { name: "O que você quer saber... (@arquivo)" });
+  await input.fill("Escreva uma função em TypeScript");
+  await page.getByRole("button", { name: "Enviar", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Enviar", exact: true })).toBeVisible({ timeout: 20000 });
+  const resposta = page.getByText("Claro!", { exact: false });
+  await expect(resposta).toBeVisible();
+
+  await page.getByRole("button", { name: "Apagar mensagem" }).last().click({ force: true });
+  await expect(resposta).toHaveCount(0);
+  const aviso = page.getByText("Mensagem apagada.");
+  await expect(aviso).toBeVisible();
+
+  // Desfazer devolve a resposta no mesmo lugar.
+  await aviso.locator("..").getByRole("button", { name: "Desfazer" }).click();
+  await expect(resposta).toBeVisible();
+  await expect(aviso).toHaveCount(0);
+
+  // Sem desfazer, o aviso sai sozinho e a resposta continua apagada.
+  await page.getByRole("button", { name: "Apagar mensagem" }).last().click({ force: true });
+  await expect(resposta).toHaveCount(0);
+  await expect(aviso).toBeHidden({ timeout: 8000 });
+  await expect(resposta).toHaveCount(0);
+});

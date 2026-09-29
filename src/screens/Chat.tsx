@@ -20,6 +20,7 @@ import {
 } from "../lib/api";
 import { type ChatMessage, type ContentPart } from "../lib/llama";
 import { chatStore } from "../lib/chatStore";
+import { apagarComDesfazer, confirmarApagadosPendentes } from "../lib/desfazer";
 import { generationStore } from "../lib/generationStore";
 import {
   listLoadedModels,
@@ -597,6 +598,7 @@ export default function Chat() {
     if (generationStore.isBusy(activeChatId)) return;
     const text = draft.trim();
     if (!text && attachments.length === 0) return;
+    confirmarApagadosPendentes();
 
     // Monta o conteúdo final: texto + blocos de arquivo + marcadores de imagem.
     const textAtts = attachments.filter((a) => a.kind === "text");
@@ -749,6 +751,7 @@ export default function Chat() {
     if (!last || last.role !== "assistant") return;
     const history = prev.slice(0, -1);
     if (history[history.length - 1]?.role !== "user") return;
+    confirmarApagadosPendentes();
 
     busyRef.current = true;
     const epoch = convEpochRef.current;
@@ -782,15 +785,29 @@ export default function Chat() {
   const removeMessage = async (index: number) => {
     if (busyRef.current || generating) return;
     const epoch = convEpochRef.current;
+    const chatId = activeChatId;
     const msg = messages[index];
     if (!msg) return;
-    if (msg.rowId != null && canPersistId(activeChatId)) {
-      await deleteMessage(msg.rowId).catch(() => {});
-    }
-    if (convEpochRef.current === epoch) {
-      setMessages((prev) => prev.filter((_, i) => i !== index));
-      setEditingIdx((cur) => (cur === index ? null : cur));
-    }
+    // Some da tela já; o banco só apaga se ninguém desfizer (ver `desfazer.ts`).
+    setMessages((prev) => prev.filter((_, i) => i !== index));
+    setEditingIdx((cur) => (cur === index ? null : cur));
+    apagarComDesfazer({
+      message: t("chat.messageDeleted"),
+      undoLabel: t("common.undo"),
+      confirmar: async () => {
+        if (msg.rowId != null && canPersistId(chatId)) await deleteMessage(msg.rowId);
+      },
+      desfazer: () => {
+        // Outra conversa aberta nesse meio-tempo: a mensagem nunca saiu do
+        // banco e volta sozinha quando a conversa for aberta.
+        if (convEpochRef.current !== epoch) return;
+        setMessages((prev) => {
+          const volta = [...prev];
+          volta.splice(Math.min(index, volta.length), 0, msg);
+          return volta;
+        });
+      },
+    });
   };
 
   // ---------------------------------------------------------------- UI ---

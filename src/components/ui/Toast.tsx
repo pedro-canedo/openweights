@@ -20,7 +20,14 @@ export interface ToastOptions {
   action?: { label: string; run: () => void };
   /** Milissegundos na tela; 0 = até alguém fechar. */
   duration?: number;
+  /**
+   * Chamado uma vez quando o aviso sai: `acao` (clicaram na ação), `fechado`
+   * (o "x", ou substituído) ou `expirou` (acabou o tempo).
+   */
+  onClose?: (motivo: MotivoDoFim) => void;
 }
+
+export type MotivoDoFim = "acao" | "fechado" | "expirou";
 
 interface Aviso extends ToastOptions {
   id: number;
@@ -36,14 +43,21 @@ const avisar = () => ouvintes.forEach((f) => f());
 
 export function toast(opcoes: ToastOptions): number {
   const id = proximo++;
-  avisos = [...avisos, { ...opcoes, id }].slice(-MAXIMO);
+  const todos = [...avisos, { ...opcoes, id }];
+  // O que sai pela fila cheia também termina: quem espera o fim não fica pendurado.
+  const excedente = todos.slice(0, Math.max(0, todos.length - MAXIMO));
+  avisos = todos.slice(-MAXIMO);
+  excedente.forEach((a) => a.onClose?.("fechado"));
   avisar();
   return id;
 }
 
-export function dismissToast(id: number) {
+export function dismissToast(id: number, motivo: MotivoDoFim = "fechado") {
+  const aviso = avisos.find((a) => a.id === id);
+  if (!aviso) return;
   avisos = avisos.filter((a) => a.id !== id);
   avisar();
+  aviso.onClose?.(motivo);
 }
 
 const COR: Record<ToastTone, string> = {
@@ -66,7 +80,7 @@ function Item({ aviso }: { aviso: Aviso }) {
       const agora = Date.now();
       if (!pausado.current) restante -= agora - ultimo;
       ultimo = agora;
-      if (restante <= 0) dismissToast(aviso.id);
+      if (restante <= 0) dismissToast(aviso.id, "expirou");
     }, 200);
     return () => window.clearInterval(relogio);
   }, [aviso.id, duracao]);
@@ -85,7 +99,7 @@ function Item({ aviso }: { aviso: Aviso }) {
         <button
           type="button"
           onClick={() => {
-            dismissToast(aviso.id);
+            dismissToast(aviso.id, "acao");
             aviso.action!.run();
           }}
           className="shrink-0 rounded-lg px-2 py-1 text-sm font-medium text-accent-ink hover:bg-panel2"
@@ -122,4 +136,9 @@ export function ToastHost() {
       ))}
     </div>
   );
+}
+
+/** Para os testes: os avisos na tela agora. */
+export function _avisos(): readonly Aviso[] {
+  return avisos;
 }
