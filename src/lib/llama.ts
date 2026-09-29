@@ -255,6 +255,57 @@ export async function streamChat(
   }
 }
 
+/**
+ * O corpo do `/v1/chat/completions` que o chat envia. É a MESMA função que
+ * "Copiar requisição" usa (com `stream: false`), então o que se copia é o que
+ * o app manda de verdade.
+ */
+export function buildChatBody(o: {
+  model: string;
+  messages: ChatMessage[];
+  params?: ChatParams;
+  templateEffort?: string | null;
+  stream?: boolean;
+}): Record<string, unknown> {
+  const { model, messages, params, templateEffort, stream = true } = o;
+  const body: Record<string, unknown> = {
+    model,
+    messages: withSystemPrompt(messages, params),
+    stream,
+  };
+  if (stream) body.stream_options = { include_usage: true };
+  if (params) {
+    // "Padrões do servidor": o app não decide a amostragem.
+    if (!params.serverDefaults) {
+      body.temperature = params.temperature;
+      body.top_p = params.topP;
+      body.top_k = params.topK;
+    }
+    if (params.maxTokens != null) body.max_tokens = params.maxTokens;
+    if (params.minP != null) body.min_p = params.minP;
+    if (params.repeatPenalty != null) body.repeat_penalty = params.repeatPenalty;
+    if (params.presencePenalty != null) body.presence_penalty = params.presencePenalty;
+    if (params.frequencyPenalty != null) body.frequency_penalty = params.frequencyPenalty;
+    if (params.seed != null) body.seed = params.seed;
+    if (params.stop && params.stop.length > 0) body.stop = params.stop;
+    const schema = params.jsonSchema?.trim();
+    if (schema) {
+      try {
+        body.response_format = {
+          type: "json_schema",
+          json_schema: { name: "resposta", schema: JSON.parse(schema) },
+        };
+      } catch {
+        // Esquema que não é JSON: a tela já avisou; não vai lixo ao servidor.
+      }
+    } else if (params.jsonMode) {
+      body.response_format = { type: "json_object" };
+    }
+    applyEffort(body, params.effort, templateEffort);
+  }
+  return body;
+}
+
 async function streamReal({
   baseUrl,
   headers,
@@ -267,19 +318,7 @@ async function streamReal({
   onDelta,
   onReasoningDelta,
 }: StreamChatOptions): Promise<StreamChatResult> {
-  const body: Record<string, unknown> = {
-    model,
-    messages: withSystemPrompt(messages, params),
-    stream: true,
-    stream_options: { include_usage: true },
-  };
-  if (params) {
-    body.temperature = params.temperature;
-    body.top_p = params.topP;
-    body.top_k = params.topK;
-    if (params.maxTokens != null) body.max_tokens = params.maxTokens;
-    applyEffort(body, params.effort, templateEffort);
-  }
+  const body = buildChatBody({ model, messages, params, templateEffort });
 
   const send = () =>
     fetch(`${baseUrl}/v1/chat/completions`, {

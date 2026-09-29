@@ -11,6 +11,10 @@ import { sanitizeChatParams } from "../../lib/types";
 import { navigate } from "../../lib/nav";
 import Icon from "../ui/Icon";
 import { formatNumber } from "../../lib/format";
+import AdvancedParams from "./AdvancedParams";
+import CopyRequest from "./CopyRequest";
+import { useModo } from "../../lib/mode";
+import type { ChatMessage } from "../../lib/llama";
 
 function Slider({
   label,
@@ -52,14 +56,18 @@ export default function ParamsPanel({
   params,
   onChange,
   model,
+  messages = [],
 }: {
   params: ChatParams;
   onChange: (p: ChatParams) => void;
   model: string;
+  /** A conversa como a API a recebe: o que "Copiar requisição" reproduz. */
+  messages?: ChatMessage[];
   /** Aceito e ignorado: a configuração de carga mudou para a tela Servidor. */
   generating?: boolean;
 }) {
   const { t } = useTranslation();
+  const modo = useModo();
   const [presets, setPresets] = useState<PresetRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [naming, setNaming] = useState(false);
@@ -282,6 +290,13 @@ export default function ParamsPanel({
           </label>
         </div>
       </div>
+
+      {modo === "avancado" && (
+        <>
+          <AdvancedParams params={params} patch={patch} />
+          <CopyRequest model={model} messages={messages} params={params} />
+        </>
+      )}
     </aside>
   );
 }

@@ -416,7 +416,33 @@
     "cutOffAnswer": "A resposta foi cortada no limite de {{n}} tokens.",
     "cutOffThinkingContext": "O contexto acabou enquanto o modelo pensava, e nada foi respondido.",
     "cutOffAnswerContext": "A resposta foi cortada: o contexto acabou.",
-    "notSaved": "Não consegui guardar esta resposta — ela não volta ao reabrir a conversa."
+    "notSaved": "Não consegui guardar esta resposta — ela não volta ao reabrir a conversa.",
+    "advanced": {
+      "title": "Amostragem avançada",
+      "serverDefaults": "Usar os padrões do servidor",
+      "serverDefaultsHint": "Não envia temperatura, top_p nem top_k: vale o que o servidor tem como padrão.",
+      "minP": "min_p",
+      "repeatPenalty": "Penalidade de repetição",
+      "repeatPenaltyHint": "1 = sem penalidade; 1,1 costuma bastar.",
+      "presencePenalty": "Penalidade de presença",
+      "frequencyPenalty": "Penalidade de frequência",
+      "seed": "Semente (seed)",
+      "seedHint": "Com a mesma semente e os mesmos parâmetros, a resposta se repete.",
+      "stop": "Parar em",
+      "stopPlaceholder": "uma sequência por linha",
+      "jsonMode": "Pedir a resposta em JSON",
+      "jsonSchema": "Esquema JSON da resposta (opcional)",
+      "jsonSchemaInvalid": "Isto não é um JSON válido: o esquema não será enviado.",
+      "effortTokens": "O esforço {{effort}} sugere o teto de {{tokens}} tokens (Máximo de tokens, acima).",
+      "localOnly": "Campo vazio não é enviado. Alguns provedores remotos não aceitam todos estes parâmetros."
+    },
+    "copyRequest": {
+      "title": "Copiar requisição",
+      "hint": "A chamada que o chat faria agora. A chave de API vai como variável de ambiente OPENWEIGHTS_API_KEY.",
+      "copied": "Requisição copiada ({{format}}).",
+      "failed": "Não deu para copiar a requisição: {{error}}",
+      "sample": "Olá!"
+    }
   },
   "agenticow": {
     "title": "AgenticOw",

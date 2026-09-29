@@ -59,6 +59,16 @@ decision model looks at the message and turns the local model's thinking off,
 to medium or up to your setting. The run details of the answer say what it
 decided and how confident it was; when it kept your setting, nothing is shown.
 
+**Advanced sampling** (Advanced mode) — a collapsible section with `min_p`,
+repeat, presence and frequency penalties, a seed (same seed and parameters,
+same answer), stop sequences, and a request for the answer as JSON (optionally
+with a JSON schema). An empty field is not sent, and **Use the server's
+defaults** stops sending temperature, Top-P and Top-K altogether. Below them,
+**Copy request** puts the call the chat would make right now on the clipboard
+as cURL, Python or JavaScript — the same body the chat sends, minus streaming.
+The API key never goes in the copy: the code reads it from the
+`OPENWEIGHTS_API_KEY` environment variable.
+
 **Load-time settings** — context window, KV cache, flash attention, speculation
 (MTP), vision and the rest of the llama.cpp knobs — moved house: they now live
 in **Local Server**, next to the model that uses them. The shortcut in the panel

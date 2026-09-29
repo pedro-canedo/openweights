@@ -416,7 +416,33 @@
     "cutOffAnswer": "The answer was cut off at the {{n}}-token limit.",
     "cutOffThinkingContext": "The context ran out while the model was thinking, so nothing was answered.",
     "cutOffAnswerContext": "The answer was cut off: the context ran out.",
-    "notSaved": "Couldn't save this answer — it won't come back when you reopen the chat."
+    "notSaved": "Couldn't save this answer — it won't come back when you reopen the chat.",
+    "advanced": {
+      "title": "Advanced sampling",
+      "serverDefaults": "Use the server's defaults",
+      "serverDefaultsHint": "Does not send temperature, top_p or top_k: the server's own defaults apply.",
+      "minP": "min_p",
+      "repeatPenalty": "Repeat penalty",
+      "repeatPenaltyHint": "1 = no penalty; 1.1 is usually enough.",
+      "presencePenalty": "Presence penalty",
+      "frequencyPenalty": "Frequency penalty",
+      "seed": "Seed",
+      "seedHint": "With the same seed and parameters, the answer repeats.",
+      "stop": "Stop at",
+      "stopPlaceholder": "one sequence per line",
+      "jsonMode": "Ask for the answer as JSON",
+      "jsonSchema": "JSON schema for the answer (optional)",
+      "jsonSchemaInvalid": "This is not valid JSON: the schema will not be sent.",
+      "effortTokens": "The {{effort}} effort suggests a cap of {{tokens}} tokens (Max tokens, above).",
+      "localOnly": "Empty fields are not sent. Some remote providers do not accept all of these parameters."
+    },
+    "copyRequest": {
+      "title": "Copy request",
+      "hint": "The call the chat would make now. The API key goes as the OPENWEIGHTS_API_KEY environment variable.",
+      "copied": "Request copied ({{format}}).",
+      "failed": "Could not copy the request: {{error}}",
+      "sample": "Hello!"
+    }
   },
   "agenticow": {
     "title": "AgenticOw",

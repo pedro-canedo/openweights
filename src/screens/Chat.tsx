@@ -968,6 +968,7 @@ export default function Chat() {
               onChange={setParams}
               model={selectedModel}
               generating={generating}
+              messages={toApiMessages(displayMessages)}
             />
           )}
         </div>

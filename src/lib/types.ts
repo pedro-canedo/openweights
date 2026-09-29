@@ -470,6 +470,22 @@ export interface ChatParams {
    * Ausente/`null` = cair para `ChatRow.modelId`.
    */
   model?: string | null;
+  /**
+   * Amostragem avançada (modo Avançado). Ausente/`null` = não enviar: quem
+   * decide é o padrão do servidor. Só o llama-server local entende todos.
+   */
+  minP?: number | null;
+  repeatPenalty?: number | null;
+  presencePenalty?: number | null;
+  frequencyPenalty?: number | null;
+  seed?: number | null;
+  /** Sequências que interrompem a resposta. */
+  stop?: string[];
+  /** Resposta em JSON: `true` pede JSON qualquer; `jsonSchema` (texto) pede este formato. */
+  jsonMode?: boolean;
+  jsonSchema?: string | null;
+  /** Não enviar temperatura, top_p e top_k: valem os padrões do servidor. */
+  serverDefaults?: boolean;
 }
 
 export interface WorkspaceFile {
@@ -541,6 +557,15 @@ const CHAT_PARAM_KEYS = [
   "effort",
   "workspaceDir",
   "model",
+  "minP",
+  "repeatPenalty",
+  "presencePenalty",
+  "frequencyPenalty",
+  "seed",
+  "stop",
+  "jsonMode",
+  "jsonSchema",
+  "serverDefaults",
 ] as const satisfies readonly (keyof ChatParams)[];
 
 /**

@@ -59,6 +59,16 @@ de decisão olha a mensagem e desliga o raciocínio do modelo local, põe no mé
 ou deixa no que você escolheu. Os detalhes da execução da resposta dizem o que
 foi decidido e com que confiança; quando o seu valor foi mantido, nada aparece.
 
+**Amostragem avançada** (modo Avançado) — uma seção recolhida com `min_p`,
+penalidades de repetição, de presença e de frequência, uma semente (mesma
+semente e mesmos parâmetros, mesma resposta), sequências de parada e o pedido de
+resposta em JSON (com um esquema JSON, se quiser). Campo vazio não é enviado, e
+**Usar os padrões do servidor** para de mandar a temperatura, o Top-P e o Top-K.
+Logo abaixo, **Copiar requisição** põe na área de transferência a chamada que o
+chat faria agora, como cURL, Python ou JavaScript — o mesmo corpo que o chat
+manda, sem o streaming. A chave de API nunca vai na cópia: o código a lê da
+variável de ambiente `OPENWEIGHTS_API_KEY`.
+
 **Na carga** — janela de contexto, cache KV, flash attention, especulação
 (MTP), visão e o resto dos botões do llama.cpp — mudaram de casa: agora moram
 em **Servidor Local**, junto do modelo que os usa. O atalho no painel leva
