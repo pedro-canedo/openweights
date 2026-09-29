@@ -22,6 +22,7 @@ import ChipsDeCategoria from "./ChipsDeCategoria";
 import FlagControl from "../form/FlagControl";
 import Icon from "../ui/Icon";
 import { Chips } from "../form/controls";
+import Modificada from "../form/Modificada";
 
 const SETTING = "server_extra_flags";
 const SETTING_ENV = "server_env_vars";
@@ -218,6 +219,11 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
                       {t("server.engineConfig.default", { v: f.default })}
                     </span>
                   )}
+                  <Modificada
+                    modificada={value(f.key) !== null}
+                    padrao={f.default}
+                    onReset={() => setFlag(f, null)}
+                  />
                 </div>
                 {(f.curated || f.helpText) && (
                   <p className="mt-1 text-[11px] leading-relaxed text-dim">

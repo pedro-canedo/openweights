@@ -1577,7 +1577,10 @@
       "GGML_CUDA_ENABLE_UNIFIED_MEMORY": {
         "hint": "Deixa o CUDA transbordar da VRAM para a memória do sistema em vez de falhar ao carregar. Nunca falha — e pode ficar muito lento sem avisar."
       }
-    }
+    },
+    "modified": "Modificada",
+    "reset": "Padrão",
+    "resetTo": "Voltar ao padrão do llama.cpp ({{v}})"
   },
   "power": {
     "title": "Energia da GPU",

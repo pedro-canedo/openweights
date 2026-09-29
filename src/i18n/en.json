@@ -1577,7 +1577,10 @@
       "GGML_CUDA_ENABLE_UNIFIED_MEMORY": {
         "hint": "Lets CUDA spill past VRAM into system memory instead of failing to load. It never fails — and it can get very slow without saying so."
       }
-    }
+    },
+    "modified": "Modified",
+    "reset": "Default",
+    "resetTo": "Back to the llama.cpp default ({{v}})"
   },
   "power": {
     "title": "GPU power",

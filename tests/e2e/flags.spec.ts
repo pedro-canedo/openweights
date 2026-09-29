@@ -30,3 +30,21 @@ test("a busca acha a flag pelo que ela faz, no texto de ajuda", async ({ page })
   await page.getByRole("textbox", { name: "Buscar flag (ex.: mtp, rope, cache-reuse, jinja…)" }).first().fill("full-size cache");
   await expect(page.getByText("swa-full").first()).toBeVisible();
 });
+
+test("uma flag alterada diz que foi modificada e volta ao padrão com um clique", async ({ page }) => {
+  await page
+    .getByRole("textbox", { name: "Buscar flag (ex.: mtp, rope, cache-reuse, jinja…)" })
+    .first()
+    .fill("swa-full");
+  const linha = page.locator("div.rounded-lg").filter({ hasText: "--swa-full" }).first();
+  await expect(linha).toBeVisible();
+  // De fábrica não há ponto de "modificada".
+  await expect(linha.getByText("Modificada", { exact: true })).toHaveCount(0);
+
+  // Escolher "ligado" (o padrão do llama.cpp é desligado) acende o ponto.
+  await linha.getByRole("button", { name: "ligado", exact: true }).first().click();
+  await expect(linha.getByText("Modificada", { exact: true })).toBeVisible();
+
+  await linha.getByRole("button", { name: /Padrão/ }).click();
+  await expect(linha.getByText("Modificada", { exact: true })).toHaveCount(0);
+});

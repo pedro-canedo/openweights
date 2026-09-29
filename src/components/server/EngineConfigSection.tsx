@@ -64,6 +64,7 @@ import Icon from "../ui/Icon";
 import { useProfileRevision } from "../../lib/profileChanges";
 import Termo from "../ui/Termo";
 import CommandPreview from "./CommandPreview";
+import Modificada from "../form/Modificada";
 
 const CTX_CHIPS = [8192, 16384, 32768, 65536];
 
@@ -1032,6 +1033,12 @@ function FlagRow({
             {t("server.engineConfig.default", { v: spec.default })}
           </span>
         )}
+        <Modificada
+          modificada={value !== null && !managed && !typed && !wrongScope}
+          padrao={spec.default}
+          disabled={disabled}
+          onReset={() => onChange(null)}
+        />
       </div>
       {(curatedHint || spec.helpText) && (
         <p className="mt-1 text-[11px] leading-relaxed text-dim">
