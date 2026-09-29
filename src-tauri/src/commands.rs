@@ -1428,7 +1428,14 @@ pub(crate) fn router_preset_entries(state: &AppState) -> Vec<lr_engine::PresetEn
 /// A seção `[*]` do INI: as flags globais herdáveis. Qualquer chave igual na
 /// seção do modelo vence — que é o contrato de "padrão do usuário".
 pub(crate) fn router_star_section(state: &AppState) -> Vec<(String, String)> {
-    split_global_flags(&server_prefs(state).extra_flags).1
+    let prefs = server_prefs(state);
+    let mut star = split_global_flags(&prefs.extra_flags).1;
+    // As conversas simultâneas são o padrão herdável da `[*]`; ver
+    // `ServerConfig::star_section` para o porquê de não irem na CLI.
+    if !star.iter().any(|(k, _)| k == "parallel") {
+        star.push(("parallel".into(), prefs.parallel.max(1).to_string()));
+    }
+    star
 }
 
 /// Reescreve `router-models.ini` com o perfil gravado de cada modelo.

@@ -362,7 +362,7 @@ pub(crate) async fn arm(
         .ngl
         .map(|n| lr_types::tuning::ngl_para_o_motor(n, meta.n_layers));
     model_entry.extras = profile.to_ini_extras();
-    lr_engine::write_models_preset(&preset, &cfg.global_ini_extras, &[model_entry])
+    lr_engine::write_models_preset(&preset, &config.star_section(), &[model_entry])
         .map_err(|e| e.to_string())?;
     drop(listener);
     let mut server = LlamaServer::new(config.clone());

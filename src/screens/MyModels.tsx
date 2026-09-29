@@ -10,7 +10,6 @@ import { navigate } from "../lib/nav";
 import { autorDoRepo } from "../lib/authorAvatars";
 import AuthorAvatar from "../components/discover/AuthorAvatar";
 import IncompleteDownloads from "../components/models/IncompleteDownloads";
-import TunePanel from "../components/models/TunePanel";
 import PrismEngineCard from "../components/models/PrismEngineCard";
 import ErroAcionavel from "../components/ErroAcionavel";
 import { Page } from "../components/ui/Shell";
@@ -19,14 +18,9 @@ import Icon from "../components/ui/Icon";
 function ModelCard({
   model,
   onDeleted,
-  tuning,
-  onToggleTune,
 }: {
   model: LocalModel;
   onDeleted: () => void;
-  /** O painel de ajuste deste modelo está aberto? */
-  tuning: boolean;
-  onToggleTune: () => void;
 }) {
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
@@ -118,8 +112,14 @@ function ModelCard({
               <Icon name="arrow-right" />
             </button>
             <button
-              onClick={onToggleTune}
-              aria-expanded={tuning}
+              // A otimização mora num lugar só: Servidor Local › Desempenho.
+              onClick={() =>
+                navigate("server", {
+                  serverTab: "performance",
+                  serverModel: model.name,
+                  serverTune: true,
+                })
+              }
               className="rounded-lg border border-edge px-3 py-1.5 text-xs font-medium text-dim transition-colors hover:border-accent hover:text-ink"
             >
               {t("tune.open")}
@@ -144,10 +144,6 @@ export default function MyModels() {
   // a pessoa achar que os arquivos sumiram.
   const [loadError, setLoadError] = useState<unknown>(null);
   const [query, setQuery] = useState("");
-  // Qual modelo está com o painel de ajuste aberto. Mora aqui, e não no
-  // cartão, porque o painel ocupa a LINHA inteira da grade: dentro de uma
-  // célula ele nasce espremido e transborda por cima do cartão vizinho.
-  const [tuning, setTuning] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     listLocalModels()
@@ -211,21 +207,7 @@ export default function MyModels() {
             {visibleModels?.length === 0 && <p role="status" className="col-span-full rounded-xl border border-dashed border-edge p-10 text-center text-sm text-dim">{t("interface.noModels")}</p>}
             {visibleModels?.map((m) => (
               <Fragment key={m.primaryPath}>
-                <ModelCard
-                  model={m}
-                  onDeleted={refresh}
-                  tuning={tuning === m.name}
-                  onToggleTune={() =>
-                    setTuning((atual) => (atual === m.name ? null : m.name))
-                  }
-                />
-                {/* `col-span-full` empurra o painel para uma linha só dele:
-                    é o que dá espaço às quatro propostas lado a lado. */}
-                {tuning === m.name && (
-                  <div className="col-span-full">
-                    <TunePanel model={m.name} onClose={() => setTuning(null)} />
-                  </div>
-                )}
+                <ModelCard model={m} onDeleted={refresh} />
               </Fragment>
             ))}
           </div>

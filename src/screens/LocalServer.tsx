@@ -19,6 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { painelDeLogs, useLogs } from "../lib/logs";
+import TunePanel from "../components/models/TunePanel";
 import { useTranslation } from "react-i18next";
 import {
   getHardwareProfile,
@@ -31,7 +32,7 @@ import {
   stopServer,
 } from "../lib/api";
 import { routerModels } from "../lib/flags";
-import { takePendingServerTab } from "../lib/nav";
+import { takePendingServerTab, takePendingServerTune } from "../lib/nav";
 import type { ServerStatus } from "../lib/types";
 import { Chips, NumChips, Select } from "../components/form/controls";
 import { Card, Collapse, Page, Tabs, useTab, type TabDef } from "../components/ui/Shell";
@@ -87,6 +88,8 @@ export default function LocalServer() {
     const pedida = takePendingServerTab();
     if (pedida) setTab(pedida);
   }, [setTab]);
+  // Chegou pelo "Ajustar para esta máquina" de Meus Modelos: o painel já abre.
+  const [tuneAberto, setTuneAberto] = useState(() => takePendingServerTune());
 
   useEffect(() => {
     let un: (() => void) | undefined;
@@ -216,6 +219,7 @@ export default function LocalServer() {
 
       {tab === "performance" && (
         <div className="space-y-4">
+          <TuneCard model={selectedModel} aberto={tuneAberto} aoMudar={setTuneAberto} />
           <EngineConfigSection
             compact
             running={running}
@@ -224,7 +228,9 @@ export default function LocalServer() {
             selected={selectedModel}
             onSelect={setSelectedModel}
           />
-          <ComparisonCard model={selectedModel} />
+          <ConcurrencyCard running={running} />
+          {/* O painel de ajuste já traz a comparação dentro dele. */}
+          {!(tuneAberto && selectedModel) && <ComparisonCard model={selectedModel} />}
           <BenchHistoryCard model={selectedModel} running={running} />
           <SpecCard model={selectedModel} />
           <PowerCard />
@@ -249,7 +255,8 @@ export default function LocalServer() {
 }
 
 /**
- * Porta, acesso pela rede e os dois números que dividem a placa.
+ * Porta e acesso pela rede. (Os dois números que dividem a placa moram em
+ * Desempenho: `ConcurrencyCard`.)
  *
  * Continua sendo um formulário com botão de salvar — mudar a porta de um
  * servidor no ar por acidente seria pior que um clique a mais.
@@ -258,8 +265,6 @@ function ServerConfig({ running }: { running: boolean }) {
   const { t } = useTranslation();
   const [port, setPort] = useState("11711");
   const [lan, setLan] = useState(false);
-  const [modelsMax, setModelsMax] = useState("1");
-  const [parallel, setParallel] = useState("1");
   const [saved, setSaved] = useState(false);
 
   // A chave de API NÃO passa por aqui: quem a escreve é só o card Conectar.
@@ -267,26 +272,18 @@ function ServerConfig({ running }: { running: boolean }) {
   useEffect(() => {
     getSetting("server_port").then((v) => v && setPort(v));
     getSetting("server_lan").then((v) => setLan(v === "true"));
-    getSetting("server_models_max").then((v) => v && setModelsMax(v));
-    getSetting("server_parallel").then((v) => v && setParallel(v));
   }, []);
 
   async function save() {
     await Promise.all([
       setSetting("server_port", port.trim()),
       setSetting("server_lan", String(lan)),
-      setSetting("server_models_max", modelsMax.trim()),
-      setSetting("server_parallel", parallel.trim()),
     ]);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
 
   const label = "text-[12px] text-dim";
-  const oneToEight = Array.from({ length: 8 }, (_, i) => ({
-    value: String(i + 1),
-    label: String(i + 1),
-  }));
 
   return (
     <Card title={t("server.network.title")} hint={t("server.network.hint")}>
@@ -322,38 +319,6 @@ function ServerConfig({ running }: { running: boolean }) {
           </div>
           <p className="mt-1 text-[11px] leading-relaxed text-dim">
             {t("server.lanHint")}
-          </p>
-        </div>
-        <div>
-          <div className={label}>{t("server.modelsMax")}</div>
-          <div className="mt-1">
-            <Select
-              value={modelsMax}
-              options={oneToEight}
-              onChange={setModelsMax}
-              label={t("server.modelsMax")}
-            />
-          </div>
-          {/* Sem esta frase o número parece "quantos você tem"; ele é quanto
-              a placa vai segurar ao mesmo tempo. */}
-          <p className="mt-1 text-[11px] leading-relaxed text-dim">
-            {t("server.modelsMaxHint")}
-          </p>
-        </div>
-        <div>
-          <div className={label}>{t("server.parallel")}</div>
-          <div className="mt-1">
-            <Select
-              value={parallel}
-              options={oneToEight}
-              onChange={setParallel}
-              label={t("server.parallel")}
-            />
-          </div>
-          {/* Sem esta frase o número parece "quantas abas posso abrir"; ele
-              divide a janela de contexto entre as conversas. */}
-          <p className="mt-1 text-[11px] leading-relaxed text-dim">
-            {t("server.parallelHint")}
           </p>
         </div>
       </div>
@@ -427,5 +392,113 @@ function LogLines({ lines }: { lines: string[] }) {
     >
       {lines.length ? lines.map((l, i) => <div key={i}>{l}</div>) : <div>—</div>}
     </div>
+  );
+}
+
+
+/**
+ * Os dois números que dividem a placa: quantos modelos ficam carregados e
+ * quantas conversas cada um atende ao mesmo tempo.
+ *
+ * O `parallel` daqui é o PADRÃO de todos os modelos (vai para a seção `[*]`
+ * do INI do Router). Um modelo que pediu outro número na configuração do
+ * motor (por modelo) recebe o dele: a seção do modelo vence a `[*]`.
+ */
+function ConcurrencyCard({ running }: { running: boolean }) {
+  const { t } = useTranslation();
+  const [modelsMax, setModelsMax] = useState("1");
+  const [parallel, setParallel] = useState("1");
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    getSetting("server_models_max").then((v) => v && setModelsMax(v));
+    getSetting("server_parallel").then((v) => v && setParallel(v));
+  }, []);
+  async function save() {
+    await Promise.all([
+      setSetting("server_models_max", modelsMax.trim()),
+      setSetting("server_parallel", parallel.trim()),
+    ]);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+  const label = "text-[12px] text-dim";
+  const oneToEight = Array.from({ length: 8 }, (_, i) => ({
+    value: String(i + 1),
+    label: String(i + 1),
+  }));
+  return (
+    <Card title={t("server.concurrency.title")} hint={t("server.concurrency.hint")}>
+      <div className="mt-4 grid grid-cols-2 gap-4">
+        <div>
+          <div className={label}>{t("server.modelsMax")}</div>
+          <div className="mt-1">
+            <Select
+              value={modelsMax}
+              options={oneToEight}
+              onChange={setModelsMax}
+              label={t("server.modelsMax")}
+            />
+          </div>
+          {/* Sem esta frase o número parece "quantos você tem"; ele é quanto
+              a placa vai segurar ao mesmo tempo. */}
+          <p className="mt-1 text-[11px] leading-relaxed text-dim">{t("server.modelsMaxHint")}</p>
+        </div>
+        <div>
+          <div className={label}>{t("server.parallel")}</div>
+          <div className="mt-1">
+            <Select
+              value={parallel}
+              options={oneToEight}
+              onChange={setParallel}
+              label={t("server.parallel")}
+            />
+          </div>
+          {/* Sem esta frase o número parece "quantas abas posso abrir"; ele
+              divide a janela de contexto entre as conversas. */}
+          <p className="mt-1 text-[11px] leading-relaxed text-dim">{t("server.parallelHint")}</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-dim">
+            {t("server.concurrency.precedence")}
+          </p>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center gap-3">
+        <button
+          onClick={() => void save()}
+          className="flex items-center gap-1.5 rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white"
+        >
+          {saved && <Icon name="check" className="h-3.5 w-3.5" />}
+          {t("common.save")}
+        </button>
+        {running && <span className="text-[11px] text-warn">{t("server.applyHint")}</span>}
+      </div>
+    </Card>
+  );
+}
+
+/** "Ajustar para esta máquina": a recomendação para o modelo em foco. */
+function TuneCard({
+  model,
+  aberto,
+  aoMudar,
+}: {
+  model: string;
+  aberto: boolean;
+  aoMudar: (aberto: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  if (!model) return null;
+  if (aberto) return <TunePanel key={model} model={model} onClose={() => aoMudar(false)} />;
+  return (
+    <Card title={t("tune.title")} hint={t("server.tuneHint", { model })}>
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => aoMudar(true)}
+          className="rounded-lg bg-accent-fill px-4 py-2 text-sm font-medium text-white"
+        >
+          {t("tune.open")}
+        </button>
+      </div>
+    </Card>
   );
 }

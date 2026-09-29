@@ -12,9 +12,9 @@ geração. O resto vem em quatro abas:
 | Aba | O que tem |
 |---|---|
 | **Visão geral** | Conectar (endereço, chave, teste de conexão), abrir em outro app e o que já foi servido |
-| **Desempenho** | Configurar o llama.cpp, especulação medida, histórico de benchmark e energia da GPU |
-| **Rede** | Porta, acesso pela rede local, modelos simultâneos, conversas ao mesmo tempo e GPU extra na rede |
-| **Avançado** | Flags globais e o log do servidor |
+| **Desempenho** | "Ajustar para esta máquina" (a recomendação para um modelo), configurar o llama.cpp, concorrência, especulação medida, histórico de benchmark e energia da GPU |
+| **Rede** | Porta, acesso pela rede local e GPU extra na rede |
+| **Avançado** | Flags globais e o log do servidor (as mesmas linhas do painel de logs, `Ctrl+Shift+L`, que também traz o decisor, o 9router e o gateway) |
 
 Na primeira visita, a Visão geral abre com três passos — ligar, copiar o
 endereço, colar no app que vai usar. Eles somem sozinhos quando o servidor
@@ -23,16 +23,17 @@ atende a primeira requisição.
 ## Ligando
 
 Aperte **Iniciar** no topo e o endereço aparece com um botão de copiar. Os
-ajustes de rede ficam na aba **Rede**, e valem no momento de iniciar — mudar um
-deles exige parar e iniciar o motor de novo. A tela diz isso.
+porta e o acesso pela rede ficam na aba **Rede**, e os números de concorrência
+em **Desempenho**; todos valem no momento de iniciar — mudar um deles exige
+parar e iniciar o motor de novo. A tela diz isso.
 
 | Ajuste | O que faz |
 |---|---|
 | **Porta** | Onde ele escuta |
 | **Permitir acesso da rede local** | Outros aparelhos da sua rede alcançam a API |
 | **Chave de API** | Opcional; quando definida, as requisições precisam apresentá-la (fica em Conectar, na Visão geral) |
-| **Modelos simultâneos** | Com 1, trocar de modelo descarrega o anterior — o que a maioria das GPUs aguenta. Acima disso, os modelos ficam carregados juntos e podem não caber na memória de vídeo |
-| **Conversas ao mesmo tempo** | Cada conversa simultânea leva uma fatia da janela de contexto. Com 1, a janela que você pediu é a janela que você tem |
+| **Modelos simultâneos** (Desempenho › Concorrência) | Com 1, trocar de modelo descarrega o anterior — o que a maioria das GPUs aguenta. Acima disso, os modelos ficam carregados juntos e podem não caber na memória de vídeo |
+| **Conversas ao mesmo tempo** (Desempenho › Concorrência) | Cada conversa simultânea leva uma fatia da janela de contexto. Com 1, a janela que você pediu é a janela que você tem. É o padrão de todos os modelos; um modelo com número próprio na configuração do motor usa o dele |
 
 O log do servidor fica na aba **Avançado**.
 

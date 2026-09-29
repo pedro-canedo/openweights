@@ -218,6 +218,23 @@ impl ServerConfig {
         }
     }
 
+    /// A seção `[*]` do INI: as flags globais herdáveis e as conversas
+    /// simultâneas (`parallel`).
+    ///
+    /// O `parallel` mora aqui, e não na linha de comando, de propósito: a
+    /// precedência do Router é CLI > seção do modelo > `[*]`, e na CLI ele
+    /// atropelava o `parallel` escolhido para um modelo (medido no b10441: o
+    /// filho recebia só o `--parallel` da CLI). Na `[*]` ele é o padrão, e o
+    /// modelo que pediu outro número o recebe. Cada conversa leva uma fatia da
+    /// janela de contexto: com 4, quem pedia 32k recebia 8k por conversa.
+    pub fn star_section(&self) -> Vec<(String, String)> {
+        let mut star = self.global_ini_extras.clone();
+        if !star.iter().any(|(k, _)| k == "parallel") {
+            star.push(("parallel".into(), self.parallel.max(1).to_string()));
+        }
+        star
+    }
+
     /// Argumentos de linha de comando (sem o executável).
     pub fn to_args(&self) -> Vec<String> {
         let mut args = vec![
@@ -229,10 +246,6 @@ impl ServerConfig {
             self.port.to_string(),
             "--models-max".into(),
             self.models_max.to_string(),
-            // Slots de KV no mesmo processo (mesmo load de pesos). A janela
-            // pedida é dividida entre eles.
-            "--parallel".into(),
-            self.parallel.max(1).to_string(),
             // O padrão do servidor responde `Access-Control-Allow-Headers: *`,
             // e pela spec Fetch o wildcard NÃO cobre `Authorization` — sem
             // isto o preflight do webview quebra ao mandar Bearer. Inócuo
@@ -247,6 +260,10 @@ impl ServerConfig {
         if let Some(preset) = &self.models_preset {
             args.push("--models-preset".into());
             args.push(preset.to_string_lossy().into_owned());
+        } else {
+            // Sem INI não há seção de modelo para respeitar: vai na CLI.
+            args.push("--parallel".into());
+            args.push(self.parallel.max(1).to_string());
         }
         if self.sleep_idle_seconds > 0 {
             args.push("--sleep-idle-seconds".into());
@@ -823,7 +840,8 @@ mod tests {
         // Um modelo por vez: trocar de modelo descarrega o anterior em vez
         // de tentar caber os dois na placa.
         assert!(joined.contains("--models-max 1"));
-        // Uma conversa por vez: a janela pedida chega inteira a ela.
+        // Uma conversa por vez: a janela pedida chega inteira a ela. Sem INI
+        // do Router o número vai na CLI.
         assert!(joined.contains("--parallel 1"));
         // CORS liberando `Authorization` vai SEMPRE: sem ele o webview não
         // consegue mandar Bearer quando a chave existir.
@@ -881,6 +899,30 @@ mod tests {
         // Zero seria um servidor sem slot nenhum.
         cfg.parallel = 0;
         assert!(cfg.to_args().join(" ").contains("--parallel 1"));
+    }
+
+    /// Com o INI do Router o número vai para a `[*]`, nunca para a CLI: a CLI
+    /// vence a seção do modelo, e o `parallel` de um modelo seria ignorado.
+    #[test]
+    fn with_a_router_preset_parallel_goes_to_the_star_section_not_the_cli() {
+        let mut cfg = ServerConfig::new(PathBuf::from("srv"), PathBuf::from("m"), 9000);
+        cfg.models_preset = Some(PathBuf::from("router-models.ini"));
+        cfg.parallel = 3;
+        assert!(!cfg.to_args().iter().any(|a| a == "--parallel"));
+        assert_eq!(
+            cfg.star_section(),
+            vec![("parallel".to_string(), "3".to_string())]
+        );
+
+        // Zero vira um; e um `parallel` que a pessoa pôs nas flags globais
+        // (Both → `[*]`) vale mais que o do campo.
+        cfg.parallel = 0;
+        assert_eq!(cfg.star_section()[0].1, "1");
+        cfg.global_ini_extras = vec![("parallel".into(), "2".into())];
+        assert_eq!(
+            cfg.star_section(),
+            vec![("parallel".to_string(), "2".to_string())]
+        );
     }
 
     #[test]

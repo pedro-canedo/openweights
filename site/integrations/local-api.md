@@ -12,9 +12,9 @@ rest comes in four tabs:
 | Tab | What's in it |
 |---|---|
 | **Overview** | Connect (address, key, connection test), use it in another app, and what has been served so far |
-| **Performance** | Configure llama.cpp, measured speculation, benchmark history and GPU power |
-| **Network** | Port, local-network access, concurrent models, conversations at once and extra GPU on the network |
-| **Advanced** | Global flags and the server log |
+| **Performance** | "Adjust for this machine" (the recommendation for a model), configure llama.cpp, concurrency, measured speculation, benchmark history and GPU power |
+| **Network** | Port, local-network access and extra GPU on the network |
+| **Advanced** | Global flags and the server log (the same lines as the logs panel, `Ctrl+Shift+L`, which also has the decider, 9router and the gateway) |
 
 On the first visit, Overview opens with three steps — start it, copy the
 address, paste it into the app that will use it. They disappear on their own
@@ -23,16 +23,17 @@ once the server answers its first request.
 ## Starting it
 
 Press **Start** at the top and the address appears with a copy button. The
-network settings live in the **Network** tab and apply at start time — change
-one and the engine has to be stopped and started again. The screen says so.
+port and network access live in the **Network** tab, and the concurrency
+numbers in **Performance**; all of them apply at start time — change one and
+the engine has to be stopped and started again. The screen says so.
 
 | Setting | What it does |
 |---|---|
 | **Port** | Where it listens |
 | **Allow access from local network** | Other devices on your network can reach the API |
 | **API key** | Optional; when set, requests must present it (it lives in Connect, under Overview) |
-| **Concurrent models** | With 1, switching models unloads the previous one — what most GPUs can take. Above that, models stay loaded together and may not fit in video memory |
-| **Conversations at once** | Each simultaneous conversation takes a slice of the context window. With 1, the window you ask for is the window you get |
+| **Concurrent models** (Performance › Concurrency) | With 1, switching models unloads the previous one — what most GPUs can take. Above that, models stay loaded together and may not fit in video memory |
+| **Conversations at once** (Performance › Concurrency) | Each simultaneous conversation takes a slice of the context window. With 1, the window you ask for is the window you get. It is the default for every model; a model with its own number in the engine configuration uses its own |
 
 The server log lives in the **Advanced** tab.
 

@@ -743,7 +743,13 @@
       "copiedIni": "INI copiado.",
       "revealFailed": "Não deu para abrir a pasta: {{error}}",
       "maskedNote": "A chave de API aparece mascarada; troque •••  pela sua ao usar o comando fora do app."
-    }
+    },
+    "concurrency": {
+      "title": "Concorrência",
+      "hint": "Quantos modelos ficam na placa e quantas conversas cada um atende ao mesmo tempo.",
+      "precedence": "É o padrão de todos os modelos. Se um modelo tem um número próprio na configuração do motor, o dele vale sobre este."
+    },
+    "tuneHint": "Mede o que cabe na sua placa e recomenda a configuração de {{model}}."
   },
   "settings": {
     "title": "Configurações",

@@ -25,6 +25,8 @@ export interface NavPayload {
    * aba lembrada — sem sinal nenhum de que o que veio buscar está em outra.
    */
   serverTab?: "overview" | "performance" | "network" | "advanced";
+  /** Abrir já o painel "Ajustar para esta máquina" do `serverModel`. */
+  serverTune?: boolean;
   /** Aba da tela Fontes a abrir (a tela também lembra a última visitada). */
   providersTab?: "local" | "openrouter" | "decisions" | "9router" | "gateway";
 }
@@ -69,6 +71,12 @@ export function takePendingServerTab(): NavPayload["serverTab"] | undefined {
   const t = pendingNav.serverTab;
   delete pendingNav.serverTab;
   return t ?? (pendingNav.serverModel ? "performance" : undefined);
+}
+
+export function takePendingServerTune(): boolean {
+  const v = !!pendingNav.serverTune;
+  delete pendingNav.serverTune;
+  return v;
 }
 
 export function takePendingProvidersTab(): NavPayload["providersTab"] | undefined {

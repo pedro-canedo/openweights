@@ -743,7 +743,13 @@
       "copiedIni": "INI copied.",
       "revealFailed": "Could not open the folder: {{error}}",
       "maskedNote": "The API key is masked; replace ••• with yours when using the command outside the app."
-    }
+    },
+    "concurrency": {
+      "title": "Concurrency",
+      "hint": "How many models stay on the card and how many conversations each one serves at once.",
+      "precedence": "This is the default for every model. If a model has its own number in the engine configuration, its number wins over this one."
+    },
+    "tuneHint": "Measures what fits on your card and recommends the setup for {{model}}."
   },
   "settings": {
     "title": "Settings",
