@@ -902,7 +902,8 @@
       "restartNote": "O servidor de pé só usa a configuração nova depois de reiniciar.",
       "errInvalid": "O texto não é um JSON válido.",
       "errNotOw": "Este texto não é uma exportação do OpenWeights.",
-      "errFormat": "O arquivo é do formato {{n}}, que esta versão não lê."
+      "errFormat": "O arquivo é do formato {{n}}, que esta versão não lê.",
+      "ignored": "{{n}} itens do arquivo não foram aplicados por não serem válidos ou seguros (por exemplo, uma variável que mudaria o que o motor carrega, ou o acesso pela rede)."
     }
   },
   "onboarding": {
@@ -1628,7 +1629,8 @@
     },
     "modified": "Modificada",
     "reset": "Padrão",
-    "resetTo": "Voltar ao padrão do llama.cpp ({{v}})"
+    "resetTo": "Voltar ao padrão do llama.cpp ({{v}})",
+    "resetOf": "Voltar {{name}} ao padrão"
   },
   "power": {
     "title": "Energia da GPU",
@@ -2112,8 +2114,8 @@
       "hint": "Nada chegou dentro do prazo. Pode ser o servidor travado ou a placa sem memória. Tentar de novo costuma resolver."
     },
     "chave": {
-      "title": "A chave desta fonte não foi aceita",
-      "hint": "A fonte recusou o acesso: a chave está ausente, errada ou expirou. Confira em Fontes."
+      "title": "A chave não foi aceita",
+      "hint": "A fonte recusou o acesso: a chave está ausente, errada ou expirou. Confira em Fontes — ou, se for o Servidor Local, a chave de API em Conectar."
     },
     "creditos": {
       "title": "Sem créditos nesta fonte",
@@ -2180,7 +2182,8 @@
     "sources": "Origens",
     "filter": "Filtrar o texto",
     "lines": "Linhas do log",
-    "count": "{{n}} linhas",
+    "count_one": "{{count}} linha",
+    "count_other": "{{count}} linhas",
     "pause": "Pausar",
     "resume": "Retomar",
     "copy": "Copiar",

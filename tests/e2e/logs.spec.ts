@@ -14,17 +14,17 @@ test("Ctrl+Shift+L abre o painel com o que já passou, e filtra por origem e tex
   await expect(painel).toBeVisible();
   await expect(painel).toContainText("[servidor] llama-server: carregando o modelo Qwen3-8B");
   await expect(painel).toContainText("[decisor] decisor pronto na porta 11713");
-  await expect(painel.getByRole("status")).toHaveText("4 linhas");
+  await expect(painel.getByTestId("log-count")).toHaveText("4 linhas");
 
   // Desligar uma origem tira as linhas dela.
   await painel.getByRole("button", { name: "Decisor" }).click();
   await expect(painel).not.toContainText("decisor pronto");
-  await expect(painel.getByRole("status")).toHaveText("3 linhas");
+  await expect(painel.getByTestId("log-count")).toHaveText("3 linhas");
   await painel.getByRole("button", { name: "Decisor" }).click();
 
   // A busca ignora a caixa.
   await painel.getByRole("textbox", { name: "Filtrar o texto" }).fill("ERRO DE EXEMPLO");
-  await expect(painel.getByRole("status")).toHaveText("1 linhas");
+  await expect(painel.getByTestId("log-count")).toHaveText("1 linha");
   await expect(painel).toContainText("alocar o KV cache");
 });
 

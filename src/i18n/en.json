@@ -902,7 +902,8 @@
       "restartNote": "A running server only uses the new configuration after a restart.",
       "errInvalid": "The text is not valid JSON.",
       "errNotOw": "This text is not an OpenWeights export.",
-      "errFormat": "The file is format {{n}}, which this version cannot read."
+      "errFormat": "The file is format {{n}}, which this version cannot read.",
+      "ignored": "{{n}} items in the file were not applied because they were invalid or unsafe (for example, a variable that would change what the engine loads, or network access)."
     }
   },
   "onboarding": {
@@ -1628,7 +1629,8 @@
     },
     "modified": "Modified",
     "reset": "Default",
-    "resetTo": "Back to the llama.cpp default ({{v}})"
+    "resetTo": "Back to the llama.cpp default ({{v}})",
+    "resetOf": "Back {{name}} to the default"
   },
   "power": {
     "title": "GPU power",
@@ -2112,8 +2114,8 @@
       "hint": "Nothing arrived in time. It may be a stuck server or a card out of memory. Trying again usually fixes it."
     },
     "chave": {
-      "title": "This source did not accept the key",
-      "hint": "The source refused access: the key is missing, wrong or expired. Check it in Sources."
+      "title": "The key was not accepted",
+      "hint": "The source refused access: the key is missing, wrong or expired. Check it in Sources — or, for the Local Server, the API key under Connect."
     },
     "creditos": {
       "title": "No credits on this source",
@@ -2180,7 +2182,8 @@
     "sources": "Sources",
     "filter": "Filter the text",
     "lines": "Log lines",
-    "count": "{{n}} lines",
+    "count_one": "{{count}} line",
+    "count_other": "{{count}} lines",
     "pause": "Pause",
     "resume": "Resume",
     "copy": "Copy",

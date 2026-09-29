@@ -1036,6 +1036,7 @@ function FlagRow({
         <Modificada
           modificada={value !== null && !managed && !typed && !wrongScope}
           padrao={spec.default}
+          nome={`--${spec.key}`}
           disabled={disabled}
           onReset={() => onChange(null)}
         />

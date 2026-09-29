@@ -383,6 +383,7 @@ export default function Chat() {
   const selectChat = async (chat: ChatRow) => {
     const sameChat = activeChatId === chat.id;
     convEpochRef.current++;
+    confirmarApagadosPendentes();
     const epoch = convEpochRef.current;
     setActiveChatId(chat.id);
     resetComposer();
@@ -427,6 +428,7 @@ export default function Chat() {
 
   const newChat = () => {
     convEpochRef.current++;
+    confirmarApagadosPendentes();
     setActiveChatId(null);
     setMessages([]);
     resetComposer();
@@ -788,6 +790,9 @@ export default function Chat() {
     const chatId = activeChatId;
     const msg = messages[index];
     if (!msg) return;
+    // Volta depois de quem estava antes dela, e não num índice que outras
+    // exclusões podem ter deslocado.
+    const anterior = messages[index - 1];
     // Some da tela já; o banco só apaga se ninguém desfizer (ver `desfazer.ts`).
     setMessages((prev) => prev.filter((_, i) => i !== index));
     setEditingIdx((cur) => (cur === index ? null : cur));
@@ -803,7 +808,8 @@ export default function Chat() {
         if (convEpochRef.current !== epoch) return;
         setMessages((prev) => {
           const volta = [...prev];
-          volta.splice(Math.min(index, volta.length), 0, msg);
+          const depoisDe = anterior ? volta.indexOf(anterior) : -1;
+          volta.splice(anterior ? (depoisDe >= 0 ? depoisDe + 1 : volta.length) : 0, 0, msg);
           return volta;
         });
       },

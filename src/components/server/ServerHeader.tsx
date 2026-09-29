@@ -133,7 +133,7 @@ export default function ServerHeader({
           <ErroAcionavel
             erro={error}
             ocultar={["servidor"]}
-            acoes={{ tentar: onToggle }}
+            acoes={{ tentar: status?.running ? undefined : onToggle }}
             className="mt-3"
           />
         )}

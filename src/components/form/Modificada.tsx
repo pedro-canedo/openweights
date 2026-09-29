@@ -8,10 +8,13 @@ import { Badge } from "../ui/Button";
 export default function Modificada({
   modificada,
   padrao,
+  nome,
   disabled,
   onReset,
 }: {
   modificada: boolean;
+  /** A flag, para o leitor de tela saber o que o botão devolve ao padrão. */
+  nome?: string;
   /** O padrão do llama.cpp, quando conhecido. */
   padrao?: string | null;
   disabled?: boolean;
@@ -27,6 +30,7 @@ export default function Modificada({
         disabled={disabled}
         onClick={onReset}
         title={padrao ? t("flags.resetTo", { v: padrao }) : t("flags.reset")}
+        aria-label={nome ? t("flags.resetOf", { name: nome }) : t("flags.reset")}
         className="rounded px-1 text-[11px] text-dim transition-colors hover:text-ink disabled:opacity-40"
       >
         ↺ {t("flags.reset")}

@@ -100,7 +100,7 @@ test("o botão principal do erro leva à tela que resolve", async ({ page }) => 
   await page.getByRole("button", { name: "Chat", exact: true }).click();
   await page.getByRole("textbox", { name: "O que você quer saber... (@arquivo)" }).fill("Olá");
   await page.getByRole("button", { name: "Enviar", exact: true }).click();
-  const cartao = page.getByRole("alert").filter({ hasText: "A chave desta fonte não foi aceita" });
+  const cartao = page.getByRole("alert").filter({ hasText: "A chave não foi aceita" });
   await cartao.getByRole("button", { name: "Abrir Fontes" }).click();
   await expect(
     page.getByRole("navigation").getByRole("button", { name: "Fontes", exact: true }),

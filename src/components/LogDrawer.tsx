@@ -60,9 +60,10 @@ export default function LogDrawer() {
     });
 
   const copiar = () => {
-    void navigator.clipboard.writeText(textoDosLogs(visiveis)).then(() =>
-      toast({ tone: "ok", message: t("logs.copied", { n: visiveis.length }), duration: 2500 }),
-    );
+    void navigator.clipboard
+      .writeText(textoDosLogs(visiveis))
+      .then(() => toast({ tone: "ok", message: t("logs.copied", { n: visiveis.length }), duration: 2500 }))
+      .catch((e) => toast({ tone: "bad", message: t("logs.saveFailed", { error: String(e) }), duration: 6000 }));
   };
   const salvar = async () => {
     try {
@@ -110,8 +111,8 @@ export default function LogDrawer() {
           placeholder={t("logs.filter")}
           className="min-w-32 flex-1 rounded-lg border border-edge bg-panel2 px-2 py-1 text-[12px] outline-none focus-visible:border-accent"
         />
-        <span className="text-[11px] tabular-nums text-dim" role="status">
-          {t("logs.count", { n: visiveis.length })}
+        <span className="text-[11px] tabular-nums text-dim" data-testid="log-count">
+          {t("logs.count", { count: visiveis.length })}
         </span>
         <Button size="sm" aria-pressed={pausado} onClick={() => setPausado((p) => !p)}>
           {pausado ? t("logs.resume") : t("logs.pause")}
@@ -136,6 +137,7 @@ export default function LogDrawer() {
         ref={rolagem}
         tabIndex={0}
         role="log"
+        aria-live="off"
         aria-label={t("logs.lines")}
         onScroll={(e) => {
           const el = e.currentTarget;

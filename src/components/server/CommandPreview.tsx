@@ -29,7 +29,8 @@ export default function CommandPreview({
   const copiar = (texto: string, msg: string) =>
     void navigator.clipboard
       .writeText(texto)
-      .then(() => toast({ tone: "ok", message: msg, duration: 2500 }));
+      .then(() => toast({ tone: "ok", message: msg, duration: 2500 }))
+      .catch((e) => toast({ tone: "bad", message: String(e), duration: 6000 }));
 
   // A pasta e o arquivo do INI, sem depender do separador do sistema.
   const mostrarIni = () => {

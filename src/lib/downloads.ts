@@ -126,6 +126,9 @@ export async function descartarDownload(s: DownloadStatus): Promise<boolean> {
     });
     if (!sim) return false;
   }
+  // O diálogo pode ter ficado aberto até o download terminar: cancelar um que
+  // já acabou apagaria o modelo inteiro.
+  if (porId.get(s.id)?.state === "done") return false;
   try {
     await cancelDownload(s.id);
     return true;

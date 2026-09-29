@@ -45,6 +45,6 @@ test("uma flag alterada diz que foi modificada e volta ao padrão com um clique"
   await linha.getByRole("button", { name: "ligado", exact: true }).first().click();
   await expect(linha.getByText("Modificada", { exact: true })).toBeVisible();
 
-  await linha.getByRole("button", { name: /Padrão/ }).click();
+  await linha.getByRole("button", { name: /ao padrão/ }).click();
   await expect(linha.getByText("Modificada", { exact: true })).toHaveCount(0);
 });

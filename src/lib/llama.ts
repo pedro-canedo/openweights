@@ -298,7 +298,9 @@ export function buildChatBody(o: {
       } catch {
         // Esquema que não é JSON: a tela já avisou; não vai lixo ao servidor.
       }
-    } else if (params.jsonMode) {
+    }
+    // Pediu JSON e o esquema não serve (ou não há): JSON qualquer.
+    if (!body.response_format && params.jsonMode) {
       body.response_format = { type: "json_object" };
     }
     applyEffort(body, params.effort, templateEffort);

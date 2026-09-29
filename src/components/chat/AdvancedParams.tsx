@@ -3,7 +3,7 @@
 // Também: usar os padrões do servidor de uma vez, pedir JSON e ver como o
 // esforço fixa o teto de tokens.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EFFORT_MAX_TOKENS, type ChatParams } from "../../lib/types";
 
@@ -49,7 +49,9 @@ function NumeroOpcional({
             const bruto = e.target.value.trim();
             if (bruto === "") return onChange(null);
             const n = Number(bruto);
-            if (Number.isFinite(n)) onChange(inteiro ? Math.round(n) : n);
+            if (!Number.isFinite(n)) return;
+            const preso = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, n));
+            onChange(inteiro ? Math.round(preso) : preso);
           }}
           className={campo}
         />
@@ -70,6 +72,14 @@ export default function AdvancedParams({
   // O esquema é texto livre enquanto se digita: o erro aparece, o valor fica.
   const [esquemaInvalido, setEsquemaInvalido] = useState(false);
   const tetoDoEsforco = EFFORT_MAX_TOKENS[params.effort];
+  // O texto do campo é do campo: `stop` é derivado dele. Reescrever o campo a
+  // partir de `stop` engolia a linha em branco logo depois do Enter.
+  const [textoStop, setTextoStop] = useState(() => (params.stop ?? []).join("\n"));
+  const stopAtual = (params.stop ?? []).join("\n");
+  useEffect(() => {
+    // Mudou por fora (um preset, outra conversa): o campo acompanha.
+    setTextoStop((t) => (t.split("\n").filter((l) => l !== "").join("\n") === stopAtual ? t : stopAtual));
+  }, [stopAtual]);
 
   return (
     <details className="rounded-lg border border-edge bg-panel2/40 px-2.5 py-2">
@@ -138,11 +148,11 @@ export default function AdvancedParams({
           <textarea
             rows={2}
             spellCheck={false}
-            value={(params.stop ?? []).join("\n")}
+            value={textoStop}
             placeholder={t("chat.advanced.stopPlaceholder")}
             onChange={(e) => {
-              const linhas = e.target.value.split("\n").filter((l) => l !== "");
-              patch({ stop: linhas });
+              setTextoStop(e.target.value);
+              patch({ stop: e.target.value.split("\n").filter((l) => l !== "") });
             }}
             className="resize-y rounded-lg border border-edge bg-panel2 px-2.5 py-1.5 font-mono text-[11px] outline-none select-text focus-visible:border-accent"
           />

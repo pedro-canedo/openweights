@@ -30,3 +30,21 @@ describe("textoDosLogs", () => {
     expect(partes[1]).toMatch(/\[decisor\] pronto$/);
   });
 });
+
+const { fundirLinhas } = await import("./logs");
+
+describe("fundirLinhas", () => {
+  it("põe em ordem de seq o que chegou fora de ordem, sem perder nenhuma", () => {
+    const a = fundirLinhas([l(1, "servidor", "a"), l(4, "servidor", "d")], [l(3, "servidor", "c"), l(2, "servidor", "b")], 100);
+    expect(a.map((x) => x.seq)).toEqual([1, 2, 3, 4]);
+  });
+  it("não repete um seq que já está na lista", () => {
+    const base = [l(1, "app", "a"), l(2, "app", "b")];
+    expect(fundirLinhas(base, [l(2, "app", "b"), l(2, "app", "b")], 100)).toBe(base);
+    expect(fundirLinhas(base, [l(2, "app", "b"), l(3, "app", "c")], 100).map((x) => x.seq)).toEqual([1, 2, 3]);
+  });
+  it("guarda só as mais novas quando passa do máximo", () => {
+    const muitas = Array.from({ length: 10 }, (_, i) => l(i + 1, "app", String(i)));
+    expect(fundirLinhas([], muitas, 4).map((x) => x.seq)).toEqual([7, 8, 9, 10]);
+  });
+});

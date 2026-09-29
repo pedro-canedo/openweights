@@ -55,6 +55,11 @@ describe("buildChatBody", () => {
     expect(b).not.toHaveProperty("stream_options");
   });
 
+  it("pediu JSON e o esquema não serve: cai em JSON qualquer, em vez de nenhum formato", () => {
+    const b = buildChatBody({ model: "m", messages: msgs, params: { ...base, jsonMode: true, jsonSchema: "{ quebrado" } });
+    expect(b.response_format).toEqual({ type: "json_object" });
+  });
+
   it("seed 0 é um valor (não some), esquema inválido não vai, e jsonMode pede JSON", () => {
     expect(buildChatBody({ model: "m", messages: msgs, params: { ...base, seed: 0 } })).toHaveProperty("seed", 0);
     const invalido = buildChatBody({ model: "m", messages: msgs, params: { ...base, jsonSchema: "{ não é json" } });

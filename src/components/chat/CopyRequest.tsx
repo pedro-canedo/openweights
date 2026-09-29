@@ -7,23 +7,51 @@ import { toast } from "../ui/Toast";
 import { getServerStatus, getSetting } from "../../lib/api";
 import { buildChatBody, type ChatMessage } from "../../lib/llama";
 import { providerEndpoint, splitModelRef } from "../../lib/providers";
+import { chatReasoningEffort } from "../../lib/jev";
+import { listLoadedModels, matchServerModel, visionModelFor } from "../../lib/serverSession";
 import { gerarRequisicao, type FormatoDaRequisicao } from "../../lib/requisicao";
 import type { ChatParams } from "../../lib/types";
 
 const PADRAO_LOCAL = "http://127.0.0.1:11711";
 
-/** Para onde a requisição iria e se essa fonte pede chave. */
-async function destino(modelRef: string): Promise<{ baseUrl: string; usaChave: boolean }> {
-  const { provider } = splitModelRef(modelRef);
-  if (provider === "local") {
-    const [status, chave] = await Promise.all([
-      getServerStatus().catch(() => null),
-      getSetting("server_api_key").catch(() => null),
-    ]);
-    return { baseUrl: status?.baseUrl ?? PADRAO_LOCAL, usaChave: !!chave };
+interface Destino {
+  baseUrl: string;
+  usaChave: boolean;
+  /** O nome do modelo como o servidor o conhece. */
+  modelo: string;
+  /** O esforço no vocabulário do template (o Bonsai 2 só aceita `xhigh`). */
+  templateEffort: string | null;
+}
+
+/**
+ * Para onde a requisição iria, com o que o envio real também resolve: o id do
+ * modelo no Router e o nível de esforço que o template aceita. Servidor
+ * parado: fica o nome do seletor. (A decisão do Jev, quando ligada, ajusta o
+ * esforço por mensagem e não entra aqui.)
+ */
+async function destino(modelRef: string, messages: ChatMessage[], params: ChatParams): Promise<Destino> {
+  const { provider, model } = splitModelRef(modelRef);
+  if (provider !== "local") {
+    const ep = await providerEndpoint(modelRef);
+    return { baseUrl: ep.baseUrl, usaChave: true, modelo: model, templateEffort: null };
   }
-  const ep = await providerEndpoint(modelRef);
-  return { baseUrl: ep.baseUrl, usaChave: true };
+  const [status, chave] = await Promise.all([
+    getServerStatus().catch(() => null),
+    getSetting("server_api_key").catch(() => null),
+  ]);
+  const baseUrl = status?.baseUrl ?? PADRAO_LOCAL;
+  let modelo = model;
+  if (status?.running) {
+    try {
+      const carregados = await listLoadedModels(baseUrl, chave ? { Authorization: `Bearer ${chave}` } : {});
+      const imagem = messages.some((m) => Array.isArray(m.content) && m.content.some((p) => p.type === "image_url"));
+      modelo = matchServerModel(imagem ? visionModelFor(modelRef, carregados) : modelRef, carregados);
+    } catch {
+      /* sem a lista, vale o nome do seletor */
+    }
+  }
+  const templateEffort = params.effort ? await chatReasoningEffort(model, params.effort) : null;
+  return { baseUrl, usaChave: !!chave, modelo, templateEffort };
 }
 
 const FORMATOS: { id: FormatoDaRequisicao; rotulo: string }[] = [
@@ -45,15 +73,10 @@ export default function CopyRequest({
 
   const copiar = async (formato: FormatoDaRequisicao) => {
     try {
-      const { baseUrl, usaChave } = await destino(model);
       const mensagens: ChatMessage[] =
         messages.length > 0 ? messages : [{ role: "user", content: t("chat.copyRequest.sample") }];
-      const body = buildChatBody({
-        model: splitModelRef(model).model,
-        messages: mensagens,
-        params,
-        stream: false,
-      });
+      const { baseUrl, usaChave, modelo, templateEffort } = await destino(model, mensagens, params);
+      const body = buildChatBody({ model: modelo, messages: mensagens, params, templateEffort, stream: false });
       await navigator.clipboard.writeText(gerarRequisicao(formato, { baseUrl, body, usaChave }));
       toast({
         tone: "ok",

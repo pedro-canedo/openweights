@@ -99,6 +99,9 @@ export default function ConfigBackupCard() {
         }),
         duration: 8000,
       });
+      if (r.ignored > 0) {
+        toast({ tone: "warn", message: t("settings.backup.ignored", { n: r.ignored }), duration: 0 });
+      }
       setTexto("");
     } catch (e) {
       setErro(motivo(t, e));

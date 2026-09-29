@@ -127,6 +127,11 @@ export default function LocalServer() {
         })
         .catch(() => {});
       if (status?.running) {
+        // "Configuração nova: reinicie" nasce de mudanças que a tela não vê
+        // acontecer (uma flag alterada em outra aba): relê o status.
+        getServerStatus()
+          .then((s) => alive && setStatus((atual) => (atual && atual.configStale === s.configStale && atual.running === s.running ? atual : s)))
+          .catch(() => {});
         routerModels()
           .then((ms) => {
             if (alive) {
@@ -144,6 +149,12 @@ export default function LocalServer() {
       alive = false;
       window.clearInterval(id);
     };
+  }, [status?.running]);
+
+  // Subiu por outro caminho (o auto-start do Chat): o erro de uma tentativa
+  // anterior não fica ali oferecendo "tentar de novo".
+  useEffect(() => {
+    if (status?.running) setError(null);
   }, [status?.running]);
 
   const toggle = useCallback(async () => {

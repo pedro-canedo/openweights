@@ -80,7 +80,8 @@ export default function ModelsTable({
       }
     }
     setApagando(false);
-    setMarcados(new Set());
+    const apagados = new Set(alvo.filter((m) => !falhas.some((f) => f.startsWith(`${m.name}:`))).map(idDoModelo));
+    setMarcados((atual) => new Set([...atual].filter((id) => !apagados.has(id))));
     aoMudar();
     if (falhas.length > 0) {
       toast({
@@ -183,6 +184,14 @@ export default function ModelsTable({
                   <div className="flex justify-end gap-1.5">
                     <Button size="sm" variant="primary" onClick={() => navigate("chat", { chatModel: m.name })}>
                       {t("models.chatWith")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        navigate("server", { serverTab: "performance", serverModel: m.name, serverTune: true })
+                      }
+                    >
+                      {t("tune.open")}
                     </Button>
                     <Button size="sm" onClick={() => abrirPasta(m)} aria-label={t("models.table.openFolderOf", { name: m.name })}>
                       {t("models.table.openFolder")}

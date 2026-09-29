@@ -110,14 +110,48 @@ fn agora_ms() -> u64 {
         .unwrap_or(0)
 }
 
+thread_local! {
+    /// Estamos dentro de `registrar` nesta thread: um `log::` disparado pelo
+    /// próprio `emit` (com `RUST_LOG=debug`) entraria em laço.
+    static REGISTRANDO: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Esconde o que parece chave: `sk-…`, `hf_…`, `ghp_…` e o que vem depois de
+/// `Bearer`. O log de um motor em `--verbose` pode carregar cabeçalhos, e o
+/// texto sai para a tela, para a área de transferência e para o arquivo salvo.
+pub fn mascarar(texto: &str) -> String {
+    let mut saida = String::with_capacity(texto.len());
+    let mut depois_de_bearer = false;
+    for parte in texto.split_inclusive(char::is_whitespace) {
+        let palavra = parte.trim_end();
+        let resto = &parte[palavra.len()..];
+        let parece_chave = ["sk-", "hf_", "ghp_", "gho_", "xoxb-"]
+            .iter()
+            .any(|p| palavra.starts_with(p) && palavra.len() >= p.len() + 8);
+        if depois_de_bearer && !palavra.is_empty() || parece_chave {
+            saida.push_str("•••");
+        } else {
+            saida.push_str(palavra);
+        }
+        saida.push_str(resto);
+        depois_de_bearer = palavra.eq_ignore_ascii_case("bearer");
+    }
+    saida
+}
+
 pub fn registrar(origem: &str, texto: &str) {
-    let linha =
-        anel()
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .empurrar(origem, texto, agora_ms());
-    if let Some(app) = APP_HANDLE.get() {
-        let _ = app.emit("log-line", &linha);
+    let texto = mascarar(texto);
+    let reentrante = REGISTRANDO.with(|r| r.replace(true));
+    {
+        // O `emit` sai com o lock seguro: as linhas chegam à tela na ordem do `seq`.
+        let mut anel = anel().lock().unwrap_or_else(|e| e.into_inner());
+        let linha = anel.empurrar(origem, &texto, agora_ms());
+        if !reentrante && let Some(app) = APP_HANDLE.get() {
+            let _ = app.emit("log-line", &linha);
+        }
+    }
+    if !reentrante {
+        REGISTRANDO.with(|r| r.set(false));
     }
 }
 
@@ -211,6 +245,29 @@ mod tests {
         let l = a.empurrar("app", &"é".repeat(MAX_LINHA), 0);
         assert!(l.texto.ends_with('…'));
         assert!(l.texto.len() <= MAX_LINHA + '…'.len_utf8());
+    }
+
+    #[test]
+    fn o_que_parece_chave_e_mascarado() {
+        assert_eq!(
+            mascarar("Authorization: Bearer abc123def456 ok"),
+            "Authorization: Bearer ••• ok"
+        );
+        assert_eq!(
+            mascarar("key=sk-or-v1-abcdef123456"),
+            "key=sk-or-v1-abcdef123456"
+        );
+        assert_eq!(
+            mascarar("usando sk-or-v1-abcdef123456 aqui"),
+            "usando ••• aqui"
+        );
+        assert_eq!(mascarar("token hf_abcdefghijk1234"), "token •••");
+        // Texto comum e palavras curtas com o mesmo começo ficam como estão.
+        assert_eq!(
+            mascarar("srv load_model: sk-1 hf_x"),
+            "srv load_model: sk-1 hf_x"
+        );
+        assert_eq!(mascarar("linha\tcom\ttabs"), "linha\tcom\ttabs");
     }
 
     #[test]

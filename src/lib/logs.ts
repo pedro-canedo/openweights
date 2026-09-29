@@ -30,10 +30,47 @@ function publicar(novas: readonly LinhaDeLog[]) {
   ouvintes.forEach((f) => f());
 }
 
+/**
+ * Junta linhas novas às que já há: sem repetir um `seq`, em ordem de `seq`
+ * (dois leitores — stdout e stderr — podem entregar fora de ordem) e sem passar
+ * de `maximo`.
+ */
+export function fundirLinhas(
+  atuais: readonly LinhaDeLog[],
+  novas: readonly LinhaDeLog[],
+  maximo: number,
+): readonly LinhaDeLog[] {
+  if (novas.length === 0) return atuais;
+  const vistos = new Set(atuais.map((l) => l.seq));
+  const bem = novas.filter((l) => !vistos.has(l.seq) && vistos.add(l.seq));
+  if (bem.length === 0) return atuais;
+  const junto = [...atuais, ...bem];
+  // Quase sempre já está em ordem; só ordena quando não está.
+  for (let i = 1; i < junto.length; i++) {
+    if (junto[i].seq < junto[i - 1].seq) {
+      junto.sort((a, b) => a.seq - b.seq);
+      break;
+    }
+  }
+  return junto.length > maximo ? junto.slice(junto.length - maximo) : junto;
+}
+
+// As linhas chegam em rajada (um motor verboso): juntam-se por quadro em vez de
+// refazer a lista inteira a cada linha.
+let fila: LinhaDeLog[] = [];
+let agendado = false;
+function descarregar() {
+  agendado = false;
+  const lote = fila;
+  fila = [];
+  publicar(fundirLinhas(linhas, lote, MAXIMO));
+}
 function acrescentar(l: LinhaDeLog) {
-  const ultimo = linhas[linhas.length - 1];
-  if (ultimo && l.seq <= ultimo.seq) return;
-  publicar(linhas.length >= MAXIMO ? [...linhas.slice(1), l] : [...linhas, l]);
+  fila.push(l);
+  if (agendado) return;
+  agendado = true;
+  if (typeof requestAnimationFrame === "function") requestAnimationFrame(descarregar);
+  else setTimeout(descarregar, 16);
 }
 
 const lerDoBackend = (since: number) =>
@@ -50,10 +87,13 @@ export function iniciarLogs(): Promise<void> {
     const antigas = await lerDoBackend(0).catch(() => [] as LinhaDeLog[]);
     // O evento que chegou durante a leitura pode já estar na lista: o `seq`
     // decide, sem duplicar nem perder.
-    publicar([]);
-    [...antigas, ...espera].sort((a, b) => a.seq - b.seq).forEach(acrescentar);
+    publicar(fundirLinhas([], [...antigas, ...espera], MAXIMO));
     pronto = true;
-  })();
+  })().catch((e) => {
+    // Não fica preso na falha: a próxima chamada tenta de novo.
+    iniciado = null;
+    throw e;
+  });
   return iniciado;
 }
 
@@ -72,6 +112,7 @@ export function useLogs(): readonly LinhaDeLog[] {
 export async function limparLogs(): Promise<void> {
   if (isTauri) await invoke<void>("logs_clear", { source: null });
   else await mocks.logsClear();
+  fila = [];
   publicar([]);
 }
 
@@ -129,6 +170,8 @@ export function filtrarLogs(
 /** Para os testes: começa do zero. */
 export function _reiniciarLogs() {
   linhas = [];
+  fila = [];
+  agendado = false;
   iniciado = null;
   aberto = false;
 }

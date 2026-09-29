@@ -31,11 +31,13 @@ pub const PINNED_NODE: &str = "v22.20.0";
 /// Node para `TAMANHOS_MEDIDOS_EM`. Serve só para dizer à pessoa quanto vai
 /// baixar antes de baixar; a integridade vem do SHASUMS, não daqui.
 const TAMANHOS_MEDIDOS_EM: &str = "v22.20.0";
-const TAMANHOS_MEDIDOS: [(&str, u64); 4] = [
+const TAMANHOS_MEDIDOS: [(&str, u64); 6] = [
     ("linux-x64", 56_645_685),
     ("win-x64", 35_500_968),
     ("darwin-arm64", 49_838_299),
     ("darwin-x64", 51_010_329),
+    ("linux-arm64", 56_494_115),
+    ("win-arm64", 31_250_974),
 ];
 
 /// Quanto pesa o pacote do Node desta máquina, quando o tamanho foi medido para
@@ -50,6 +52,8 @@ pub fn tamanho_do_download(os: &str, arch: &str) -> Option<u64> {
         ("macos", "aarch64") => "darwin-arm64",
         ("macos", "x86_64") => "darwin-x64",
         ("linux", "x86_64") => "linux-x64",
+        ("linux", "aarch64") => "linux-arm64",
+        ("windows", "aarch64") => "win-arm64",
         _ => return None,
     };
     TAMANHOS_MEDIDOS
@@ -441,7 +445,12 @@ mod tests {
                 "{os}/{arch}: {bytes}"
             );
         }
-        assert_eq!(tamanho_do_download("linux", "aarch64"), None);
+        // Todo alvo que `node_asset` sabe baixar tem tamanho: senão a tela
+        // não pediria consentimento antes de baixar.
+        for (os, arch) in [("linux", "aarch64"), ("windows", "aarch64")] {
+            assert!(tamanho_do_download(os, arch).is_some(), "{os}/{arch}");
+        }
+        assert_eq!(tamanho_do_download("freebsd", "x86_64"), None);
     }
 
     #[test]

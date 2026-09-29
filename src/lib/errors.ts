@@ -98,7 +98,7 @@ const REGRAS: {
   {
     tipo: "chave",
     quando: (t, s) => s === 401 || s === 403 || /missing api key|invalid api key|unauthorized/i.test(t),
-    acoes: ["fontes"],
+    acoes: ["fontes", "servidor"],
   },
   {
     tipo: "creditos",

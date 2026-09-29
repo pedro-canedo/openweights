@@ -133,7 +133,7 @@ test("o ? de ajuda abre a explicação", async ({ page }) => {
 });
 
 test("o erro diz o que fazer e guarda o texto original recolhido", async ({ page }) => {
-  const cartao = page.getByRole("alert").filter({ hasText: "A chave desta fonte não foi aceita" });
+  const cartao = page.getByRole("alert").filter({ hasText: "A chave não foi aceita" });
   await expect(cartao).toContainText("Confira em Fontes");
   // Chave é problema de Fontes: o botão principal leva para lá; "tentar" só
   // aparece nos erros em que refazer adianta.

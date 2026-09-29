@@ -4,6 +4,8 @@ import { invoke, isTauri } from "./tauri";
 
 /** O que um import aplicou (espelho de `config_io::Resumo`). */
 export interface ResumoDoImport {
+  /** Itens do arquivo que não foram aplicados por não serem seguros ou válidos. */
+  ignored: number;
   settings: number;
   profiles: number;
   presets: number;
@@ -73,6 +75,7 @@ export async function importarConfiguracao(
   if (isTauri) return invoke<ResumoDoImport>("config_import", { text: texto, includeSecrets: incluirSegredos });
   const c = lerArquivo(texto);
   return {
+    ignored: 0,
     settings: c.settings,
     profiles: c.profiles,
     presets: c.presets,

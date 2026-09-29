@@ -47,3 +47,16 @@ test("um esquema JSON inválido avisa e não vai na requisição", async ({ page
   await page.getByRole("button", { name: "cURL", exact: true }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).not.toContain("response_format");
 });
+
+test("dá para digitar mais de uma sequência de parada, uma por linha", async ({ page }) => {
+  await page.getByText("Amostragem avançada").click();
+  const campo = page.getByRole("textbox", { name: "Parar em" });
+  await campo.click();
+  await page.keyboard.type("FIM");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("###");
+  await expect(campo).toHaveValue("FIM\n###");
+  await page.getByRole("button", { name: "cURL", exact: true }).click();
+  const curl = await page.evaluate(() => navigator.clipboard.readText());
+  expect(curl).toMatch(/"stop": \[\s*"FIM",\s*"###"\s*\]/);
+});

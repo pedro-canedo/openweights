@@ -26,12 +26,22 @@ pub fn nome_seguro(nome: &str) -> String {
             c => c,
         })
         .collect();
-    let limpo = limpo.trim().trim_start_matches('.').trim_end_matches('.');
+    let limpo = limpo
+        .trim()
+        .trim_start_matches('.')
+        .trim_end_matches(['.', ' ']);
     if limpo.is_empty() {
-        "export.txt".to_string()
-    } else {
-        limpo.chars().take(120).collect()
+        return "export.txt".to_string();
     }
+    let nome: String = limpo.chars().take(120).collect();
+    // Nomes de dispositivo do Windows (`CON`, `NUL`, `COM1`…): abrir um deles
+    // "dá certo" e o texto se perde.
+    let antes_do_ponto = nome.split('.').next().unwrap_or("").to_ascii_uppercase();
+    let reservado = matches!(antes_do_ponto.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (antes_do_ponto.len() == 4
+            && (antes_do_ponto.starts_with("COM") || antes_do_ponto.starts_with("LPT"))
+            && antes_do_ponto.as_bytes()[3].is_ascii_digit());
+    if reservado { format!("_{nome}") } else { nome }
 }
 
 pub fn pasta(data_dir: &Path) -> PathBuf {
@@ -60,11 +70,16 @@ pub fn salvar(data_dir: &Path, nome: &str, conteudo: &str) -> Result<PathBuf, St
         let destino = dir.join(&candidato);
         // `create_new`: se outro salvar pegou o nome entre a checagem e a
         // escrita, tenta o próximo em vez de sobrescrever.
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&destino)
+        let mut abrir = std::fs::OpenOptions::new();
+        abrir.write(true).create_new(true);
+        // Só o dono lê: um backup com chaves não pode ficar aberto aos outros
+        // usuários da máquina.
+        #[cfg(unix)]
         {
+            use std::os::unix::fs::OpenOptionsExt as _;
+            abrir.mode(0o600);
+        }
+        match abrir.open(&destino) {
             Ok(mut f) => {
                 use std::io::Write as _;
                 f.write_all(conteudo.as_bytes())
@@ -112,6 +127,11 @@ mod tests {
         assert_eq!(nome_seguro("..."), "export.txt");
         assert_eq!(nome_seguro(""), "export.txt");
         assert_eq!(nome_seguro(".oculto"), "oculto");
+        assert_eq!(nome_seguro("NUL"), "_NUL");
+        assert_eq!(nome_seguro("com1.txt"), "_com1.txt");
+        assert_eq!(nome_seguro("lpt9"), "_lpt9");
+        assert_eq!(nome_seguro("CONFIG.txt"), "CONFIG.txt");
+        assert_eq!(nome_seguro("a . "), "a");
     }
 
     #[test]

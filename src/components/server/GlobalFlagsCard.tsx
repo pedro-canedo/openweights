@@ -222,6 +222,7 @@ export default function GlobalFlagsCard({ running }: { running: boolean }) {
                   <Modificada
                     modificada={value(f.key) !== null}
                     padrao={f.default}
+                    nome={`--${f.key}`}
                     onReset={() => setFlag(f, null)}
                   />
                 </div>

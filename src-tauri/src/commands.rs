@@ -1607,6 +1607,9 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         env_vars,
     } = server_prefs(state);
 
+    // Os perfis agênticos entram no INI ao subir; a assinatura tem de vê-los,
+    // senão a primeira subida com um modelo novo já nasceria "desatualizada".
+    crate::commands_tuning::ensure_agent_profiles(state);
     // Fora do lock do servidor: a assinatura fala com o cluster.
     let assinatura = crate::commands_flags::assinatura_da_configuracao(state).await;
     let config_stale_agora = config_desatualizada(state).await;
@@ -1737,10 +1740,6 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                 .config_no_boot
                 .lock()
                 .unwrap_or_else(|e| e.into_inner()) = None;
-            *state
-                .config_no_boot
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()) = None;
             let _ = app.emit(
                 "server-status",
                 &ServerStatusView {
@@ -1806,6 +1805,11 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
     crate::commands_jev::sincronizar_decisor_local(app, state).await;
     crate::commands_jev::sincronizar_shim(app, state).await;
     *state.motor_ativo.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    // Parado não há o que comparar (e `server_status` não recalcula a assinatura).
+    *state
+        .config_no_boot
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = None;
     let prefs = server_prefs(state);
     let (port, lan) = (prefs.port, prefs.lan);
     let _ = app.emit(
