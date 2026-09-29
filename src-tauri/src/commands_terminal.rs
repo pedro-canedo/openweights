@@ -170,25 +170,12 @@ pub async fn terminal_abrir_owcli(
         Some(s @ ("read-only" | "danger-full-access" | "workspace-write")) => s.to_string(),
         _ => "workspace-write".to_string(),
     };
-    let mut args: Vec<OsString> = Vec::new();
-    if let Some(id) = retomar {
-        args.extend(["resume".into(), id.into()]);
-    }
-    match pedido.modelo {
-        Some(m) if crate::commands_owcli::modelo_valido(&m) => {
-            args.extend(["--model".into(), m.into()]);
-        }
+    let modelo = match pedido.modelo {
+        Some(m) if crate::commands_owcli::modelo_valido(&m) => Some(m),
         Some(_) => return Err("modelo inválido".to_string()),
-        None => {}
-    }
-    args.extend::<[OsString; 6]>([
-        "--cd".into(),
-        pasta.clone().into_os_string(),
-        "--ask-for-approval".into(),
-        aprovacao.into(),
-        "--sandbox".into(),
-        sandbox.into(),
-    ]);
+        None => None,
+    };
+    let args = argumentos_do_agente(retomar, modelo, &pasta, &aprovacao, &sandbox);
     let gerente = state.terminais.clone();
     tauri::async_runtime::spawn_blocking(move || {
         gerente.abrir(lr_pty::Pedido {
@@ -213,6 +200,38 @@ pub async fn terminal_abrir_owcli(
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e| format!("não foi possível abrir o OwCLI: {e}"))
+}
+
+/// A linha de comando do agente numa aba. O `-c` vem antes de tudo (inclusive
+/// de `resume`): é opção global.
+///
+/// `show_raw_agent_reasoning`: os modelos locais pensam antes de responder, às
+/// vezes por minutos, e sem isto a TUI só diz "Working". Com ele, o raciocínio
+/// aparece à medida que o modelo o escreve — o llama-server manda esses
+/// eventos (`response.reasoning_text.delta`) e o agente já sabe mostrá-los.
+fn argumentos_do_agente(
+    retomar: Option<String>,
+    modelo: Option<String>,
+    pasta: &std::path::Path,
+    aprovacao: &str,
+    sandbox: &str,
+) -> Vec<OsString> {
+    let mut args: Vec<OsString> = vec!["-c".into(), "show_raw_agent_reasoning=true".into()];
+    if let Some(id) = retomar {
+        args.extend(["resume".into(), id.into()]);
+    }
+    if let Some(m) = modelo {
+        args.extend(["--model".into(), m.into()]);
+    }
+    args.extend::<[OsString; 6]>([
+        "--cd".into(),
+        pasta.as_os_str().to_owned(),
+        "--ask-for-approval".into(),
+        aprovacao.into(),
+        "--sandbox".into(),
+        sandbox.into(),
+    ]);
+    args
 }
 
 /// Liga a tela à sessão a partir do byte `desde` (`None`: tudo o que o anel
@@ -327,4 +346,47 @@ pub async fn area_de_transferencia_escrever(texto: String) -> CmdResult<()> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod testes_do_agente {
+    use super::argumentos_do_agente;
+    use std::path::Path;
+
+    fn texto(v: Vec<std::ffi::OsString>) -> Vec<String> {
+        v.into_iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn o_agente_abre_mostrando_o_raciocinio_antes_de_qualquer_subcomando() {
+        let a = texto(argumentos_do_agente(
+            Some("019a-x".into()),
+            Some("local:m.gguf".into()),
+            Path::new("/p"),
+            "on-request",
+            "workspace-write",
+        ));
+        assert_eq!(
+            &a[..4],
+            ["-c", "show_raw_agent_reasoning=true", "resume", "019a-x"]
+        );
+        assert!(a.windows(2).any(|w| w == ["--model", "local:m.gguf"]));
+        assert!(a.windows(2).any(|w| w == ["--cd", "/p"]));
+        assert!(a.windows(2).any(|w| w == ["--sandbox", "workspace-write"]));
+    }
+
+    #[test]
+    fn sem_retomar_nem_modelo_so_o_essencial() {
+        let a = texto(argumentos_do_agente(
+            None,
+            None,
+            Path::new("/p"),
+            "never",
+            "read-only",
+        ));
+        assert_eq!(&a[..2], ["-c", "show_raw_agent_reasoning=true"]);
+        assert!(!a.contains(&"resume".to_string()) && !a.contains(&"--model".to_string()));
+    }
 }

@@ -1,5 +1,13 @@
 # Novidades
 
+## 0.27.1
+
+**O OwCLI mostra o modelo pensando.** Modelos locais pensam antes de responder,
+às vezes por minutos, e a tela do agente só dizia "Working". As sessões abertas
+pelo app agora mostram o raciocínio do modelo à medida que ele o escreve, para
+você acompanhar o que ele está pesando em vez de esperar no escuro. Veja o
+[OwCLI](/pt/guia/owcli).
+
 ## 0.27.0
 
 **Dá para ver o que está rodando, os erros dizem o que fazer, e o número de

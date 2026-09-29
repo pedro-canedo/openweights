@@ -10,6 +10,11 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.27.1] — 2026-09-29
+
+- **OwCLI shows the model's reasoning while it works.** Local models think before they answer, sometimes for minutes, and the screen only said "Working (3m 30s)". Sessions opened by the app now display the reasoning as the model writes it, so you can follow what it is weighing. Tested with Ternary Bonsai 2: the reasoning shows up before the answer.
+- The logs panel (`Ctrl+Shift+L`) keeps showing the engine's side, with tokens generated and speed.
+
 ## [0.27.0] — 2026-09-29
 
 **Fixed**

@@ -71,6 +71,13 @@ e nenhuma fonte remota está ligada), o diálogo vira **Escolha o cérebro do
 OwCLI** e mostra o próximo passo de cada fonte. **Iniciar o Servidor Local**
 sobe o motor ali mesmo, e o diálogo volta com os modelos.
 
+**Você vê o modelo pensando.** Modelos locais pensam antes de responder, às
+vezes por minutos, e o agente só mostrava "Working". As sessões abertas pelo app
+agora mostram o raciocínio do modelo à medida que ele o escreve, para você
+acompanhar o que ele está pesando e para onde vai. O
+[painel de logs](/pt/integracoes/api-local#vendo-o-que-esta-rodando)
+(`Ctrl+Shift+L`) mostra o lado do motor: tokens gerados e velocidade.
+
 ## Histórico
 
 Abaixo das sessões abertas ficam as conversas que o OwCLI gravou. Cada uma

@@ -72,6 +72,12 @@ no remote source is on), the dialog turns into **Choose OwCLI's brain** and
 shows the next step for each source. **Start the Local Server** brings the
 engine up right there, and the dialog comes back with the models.
 
+**You see the model thinking.** Local models think before they answer, sometimes
+for minutes, and the agent used to show only "Working". Sessions opened by the
+app now show the model's reasoning as it writes it, so you can follow what it is
+weighing and where it is heading. The [logs panel](/integrations/local-api#seeing-what-is-running)
+(`Ctrl+Shift+L`) shows the engine's own side: tokens generated and speed.
+
 ## History
 
 Below the open sessions are the conversations OwCLI saved. Each shows its name

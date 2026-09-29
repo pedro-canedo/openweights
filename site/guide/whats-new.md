@@ -1,5 +1,12 @@
 # What's new
 
+## 0.27.1
+
+**OwCLI shows the model thinking.** Local models think before they answer,
+sometimes for minutes, and the agent screen only said "Working". Sessions opened
+by the app now show the model's reasoning as it writes it, so you can follow what
+it is weighing instead of waiting in the dark. See [OwCLI](/guide/owcli).
+
 ## 0.27.0
 
 **You can see what is running, errors say what to do, and a model's own
