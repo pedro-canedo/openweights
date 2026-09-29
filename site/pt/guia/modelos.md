@@ -88,6 +88,13 @@ Tudo que foi baixado aparece em **Meus Modelos**, com tamanho e quantização,
 atalho para conversar e apagar. Modelos importados na mão — jogados na pasta sem
 passar pelo Descobrir — aparecem marcados como tal.
 
+A visão em **Tabela** (ao lado da busca, e lembrada) lista os mesmos modelos por
+coluna — nome, origem, quantização, tamanho — ordenáveis com um clique. Marque
+várias linhas para excluir de uma vez: o diálogo diz quanto espaço volta antes
+de tirar qualquer coisa. **Abrir pasta** mostra o arquivo no gerenciador de
+arquivos. Descartar um download, ou excluir um modelo, sempre diz antes
+quantos gigabytes estão em jogo.
+
 Downloads que pararam no meio ficam listados à parte, com **Retomar** e
 **Descartar**. Retomar sobrevive a fechar o app e reiniciar a máquina.
 
@@ -134,7 +141,8 @@ start — a tela avisa.
 
 ### Quando você quiser ver os números
 
-**Meus Modelos → Ajustar para esta máquina** abre o painel: cada candidato com
+**Meus Modelos → Ajustar para esta máquina** leva a Servidor Local › Desempenho
+com o painel já aberto para aquele modelo: cada candidato com
 a memória que custa por dispositivo, qual foi escolhido e por quê, e a opção de
 medir tokens/s de verdade com o `llama-bench` em vez de confiar na estimativa.
 Está lá para quando você quiser olhar, não porque o app precise de você.

@@ -14,6 +14,7 @@ import PrismEngineCard from "../components/models/PrismEngineCard";
 import ErroAcionavel from "../components/ErroAcionavel";
 import { Page } from "../components/ui/Shell";
 import Icon from "../components/ui/Icon";
+import ModelsTable from "../components/models/ModelsTable";
 
 function ModelCard({
   model,
@@ -144,6 +145,22 @@ export default function MyModels() {
   // a pessoa achar que os arquivos sumiram.
   const [loadError, setLoadError] = useState<unknown>(null);
   const [query, setQuery] = useState("");
+  // Cartões ou tabela: a escolha fica lembrada.
+  const [visao, setVisao] = useState<"cards" | "table">(() => {
+    try {
+      return localStorage.getItem("ow.library.view") === "table" ? "table" : "cards";
+    } catch {
+      return "cards";
+    }
+  });
+  const escolherVisao = (v: "cards" | "table") => {
+    setVisao(v);
+    try {
+      localStorage.setItem("ow.library.view", v);
+    } catch {
+      /* sem armazenamento: vale só nesta sessão */
+    }
+  };
 
   const refresh = useCallback(() => {
     listLocalModels()
@@ -170,6 +187,19 @@ export default function MyModels() {
 
       <div className="library-toolbar">
         <div className="flex flex-wrap items-center gap-4 text-xs text-dim"><span>{t("interface.modelCount", { count: models?.length ?? 0 })}</span><span className="flex items-center gap-2"><Icon name="disk" />{models ? formatBytes(models.reduce((sum, m) => sum + m.totalBytes, 0)) : "—"}</span></div>
+        <div role="group" aria-label={t("models.table.view")} className="flex rounded-lg border border-edge p-0.5 text-xs">
+          {(["cards", "table"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={visao === v}
+              onClick={() => escolherVisao(v)}
+              className={`rounded-md px-2.5 py-1 transition-colors ${visao === v ? "bg-panel2 text-ink" : "text-dim hover:text-ink"}`}
+            >
+              {t(`models.table.${v}`)}
+            </button>
+          ))}
+        </div>
         <label className="flex w-full items-center gap-2 rounded-xl border border-edge bg-panel px-3 py-2.5 sm:w-80"><Icon name="search" className="h-4 w-4 text-dim" /><input aria-label={t("interface.searchModels")} placeholder={t("interface.searchModels")} value={query} onChange={e => setQuery(e.target.value)} className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></label>
       </div>
 
@@ -202,6 +232,8 @@ export default function MyModels() {
               {t("nav.discover")}
             </button>
           </div>
+        ) : visao === "table" && (visibleModels?.length ?? 0) > 0 ? (
+          <ModelsTable models={visibleModels ?? []} aoMudar={refresh} />
         ) : (
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
             {visibleModels?.length === 0 && <p role="status" className="col-span-full rounded-xl border border-dashed border-edge p-10 text-center text-sm text-dim">{t("interface.noModels")}</p>}

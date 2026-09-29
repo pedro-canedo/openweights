@@ -320,17 +320,37 @@ export async function localModels(): Promise<LocalModel[]> {
     throw mensagem;
   }
   if ((globalThis as { __owInstalacaoNova?: boolean }).__owInstalacaoNova) return [];
-  return [
-    {
-      repoId: "unsloth/Qwen3-8B-GGUF",
-      name: "Qwen3-8B-UD-Q4_K_XL.gguf",
-      primaryPath: "C:/fake/models/unsloth/Qwen3-8B-GGUF/Qwen3-8B-UD-Q4_K_XL.gguf",
-      totalBytes: 5.1 * 2 ** 30,
-      files: ["C:/fake/models/unsloth/Qwen3-8B-GGUF/Qwen3-8B-UD-Q4_K_XL.gguf"],
-      quantLabel: "UD-Q4_K_XL",
-      requiresPrism: false,
-    },
-  ];
+  return [...bibliotecaDoMock()];
+}
+
+// A biblioteca simulada: um modelo, ou três com `__modelosVarios` (para a
+// tabela e a exclusão em lote). Excluir de verdade tira da lista.
+let bibliotecaMock: LocalModel[] | null = null;
+function bibliotecaDoMock(): LocalModel[] {
+  if (bibliotecaMock) return bibliotecaMock;
+  const modelo = (repo: string, name: string, quant: string, gb: number): LocalModel => ({
+    repoId: repo,
+    name,
+    primaryPath: `C:/fake/models/${repo}/${name}`,
+    totalBytes: gb * 2 ** 30,
+    files: [`C:/fake/models/${repo}/${name}`],
+    quantLabel: quant,
+    requiresPrism: false,
+  });
+  bibliotecaMock = [modelo("unsloth/Qwen3-8B-GGUF", "Qwen3-8B-UD-Q4_K_XL.gguf", "UD-Q4_K_XL", 5.1)];
+  if ((globalThis as { __modelosVarios?: boolean }).__modelosVarios) {
+    bibliotecaMock.push(
+      modelo("bartowski/Llama-3.2-3B-GGUF", "Llama-3.2-3B-Q8_0.gguf", "Q8_0", 3.2),
+      modelo("unsloth/Qwen3-30B-A3B-GGUF", "Qwen3-30B-A3B-Q4_K_M.gguf", "Q4_K_M", 18.6),
+    );
+  }
+  return bibliotecaMock;
+}
+
+export async function deleteModel(repoId: string, name: string): Promise<void> {
+  const g = globalThis as { __modeloNaoApaga?: string };
+  if (g.__modeloNaoApaga && name.includes(g.__modeloNaoApaga)) throw "arquivo em uso";
+  bibliotecaMock = bibliotecaDoMock().filter((m) => !(m.repoId === repoId && m.name === name));
 }
 
 /// As fotos dos autores no navegador: consulta o Hub de verdade.

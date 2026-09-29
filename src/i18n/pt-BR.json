@@ -216,7 +216,29 @@
     "resume": "Continuar",
     "discard": "Descartar",
     "paused": "Pausado",
-    "queued": "Na fila"
+    "queued": "Na fila",
+    "table": {
+      "view": "Visão da biblioteca",
+      "cards": "Cartões",
+      "table": "Tabela",
+      "name": "Modelo",
+      "source": "Origem",
+      "quant": "Quantização",
+      "actions": "Ações",
+      "openFolder": "Abrir pasta",
+      "openFolderOf": "Abrir a pasta de {{name}}",
+      "deleteOf": "Excluir {{name}}",
+      "select": "Selecionar {{name}}",
+      "selectAll": "Selecionar todos",
+      "selected": "{{n}} selecionados ({{size}})",
+      "deleteSelected": "Excluir selecionados",
+      "clear": "Limpar seleção",
+      "deleteOne": "Excluir {{name}} do disco?",
+      "deleteMany": "Excluir {{n}} modelos do disco?",
+      "deleteFrees": "Isso libera {{size}} e não tem volta.",
+      "deleted": "{{n}} modelos excluídos ({{size}} liberados).",
+      "deleteFailed": "Não deu para excluir {{n}}: {{details}}"
+    }
   },
   "chat": {
     "title": "Chat",

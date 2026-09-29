@@ -87,6 +87,13 @@ Everything downloaded shows up in **My Models**, with size and quantization, a
 shortcut to chat, and delete. Models imported by hand — dropped into the folder
 without going through Discover — appear marked as such.
 
+The **Table** view (next to the search box, and remembered) lists the same
+models by column — name, source, quantization, size — sortable with a click.
+Tick several rows to delete them at once: the dialog says how much space comes
+back before anything is removed. **Open folder** shows the file in your file
+manager. Discarding a download, or deleting a model, always says how many
+gigabytes are involved first.
+
 Downloads that stopped halfway are listed apart, with **Resume** and
 **Discard**. Resuming survives closing the app and rebooting the machine.
 
@@ -131,7 +138,8 @@ time it starts — the screen says so.
 
 ### When you want to see the numbers
 
-**My Models → Tune for this machine** opens the panel: every candidate with the
+**My Models → Tune for this machine** takes you to Local Server › Performance
+with the panel already open for that model: every candidate with the
 memory it costs per device, which one was picked and why, and the option to
 measure real tokens/s with `llama-bench` instead of trusting the estimate. It
 is there for when you want to look, not because the app needs you to.

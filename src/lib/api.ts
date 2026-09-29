@@ -187,7 +187,7 @@ export const listLocalModels = () =>
   isTauri ? invoke<LocalModel[]>("local_models") : mocks.localModels();
 
 export const deleteModel = (repoId: string, name: string) =>
-  invoke<void>("model_delete", { repoId, name });
+  isTauri ? invoke<void>("model_delete", { repoId, name }) : mocks.deleteModel(repoId, name);
 
 // -------------------------------------------------------------- servidor ---
 

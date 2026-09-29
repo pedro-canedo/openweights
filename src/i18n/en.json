@@ -216,7 +216,29 @@
     "resume": "Resume",
     "discard": "Discard",
     "paused": "Paused",
-    "queued": "Queued"
+    "queued": "Queued",
+    "table": {
+      "view": "Library view",
+      "cards": "Cards",
+      "table": "Table",
+      "name": "Model",
+      "source": "Source",
+      "quant": "Quantization",
+      "actions": "Actions",
+      "openFolder": "Open folder",
+      "openFolderOf": "Open the folder of {{name}}",
+      "deleteOf": "Delete {{name}}",
+      "select": "Select {{name}}",
+      "selectAll": "Select all",
+      "selected": "{{n}} selected ({{size}})",
+      "deleteSelected": "Delete selected",
+      "clear": "Clear selection",
+      "deleteOne": "Delete {{name}} from disk?",
+      "deleteMany": "Delete {{n}} models from disk?",
+      "deleteFrees": "This frees {{size}} and cannot be undone.",
+      "deleted": "{{n}} models deleted ({{size}} freed).",
+      "deleteFailed": "Could not delete {{n}}: {{details}}"
+    }
   },
   "chat": {
     "title": "Chat",
