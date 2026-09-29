@@ -27,6 +27,7 @@ import {
 } from "../../lib/providers";
 import { errorMessage } from "../../lib/serverSession";
 import { Card, StatusDot } from "../ui/Shell";
+import ErroAcionavel from "../ErroAcionavel";
 
 const input =
   "rounded-lg border border-edge bg-panel2 px-3 py-2 text-sm outline-none placeholder:text-dim focus:border-accent";
@@ -201,11 +202,7 @@ export default function OpenRouterCard() {
           </div>
         )}
 
-        {error && (
-          <p className="mt-2 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-[12px] text-bad">
-            {error}
-          </p>
-        )}
+        {error && <ErroAcionavel erro={error} ocultar={["fontes"]} className="mt-2" />}
       </Card>
 
       {/* ----------------------------------------------------- o catálogo */}

@@ -386,6 +386,13 @@ export async function clusterStatus(): Promise<ClusterSnapshot> {
 
 export async function startServer(): Promise<ServerStatus> {
   await delay(600);
+  // Os testes ligam `__servidorFalha` (o texto do erro): a próxima subida falha.
+  const g = globalThis as { __servidorFalha?: string };
+  if (g.__servidorFalha) {
+    const mensagem = g.__servidorFalha;
+    delete g.__servidorFalha;
+    throw mensagem;
+  }
   mockServer = {
     running: true,
     baseUrl: "http://127.0.0.1:11711",

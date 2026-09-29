@@ -14,7 +14,8 @@ export type AcoesDoChamador = Partial<Record<"tentar" | "novaConversa", () => vo
 
 const NAVEGACAO: Partial<Record<AcaoDoErro, () => void>> = {
   servidor: () => navigate("server", { serverTab: "overview" }),
-  motor: () => navigate("server", { serverTab: "overview" }),
+  // O motor se instala em Configurações (o cartão "Motor").
+  motor: () => navigate("settings"),
   fontes: () => navigate("providers"),
   descobrir: () => navigate("discover"),
   modelos: () => navigate("models"),
@@ -23,11 +24,14 @@ const NAVEGACAO: Partial<Record<AcaoDoErro, () => void>> = {
 export default function ErroAcionavel({
   erro,
   acoes = {},
+  ocultar = [],
   className = "",
 }: {
   /** O erro cru (qualquer coisa que se possa lançar) ou já classificado. */
   erro: unknown;
   acoes?: AcoesDoChamador;
+  /** Botões que não fazem sentido aqui (um "abrir Fontes" dentro de Fontes). */
+  ocultar?: AcaoDoErro[];
   className?: string;
 }) {
   const { t } = useTranslation();
@@ -37,6 +41,7 @@ export default function ErroAcionavel({
       : classificarErro(erro);
 
   const botoes = c.acoes
+    .filter((id) => !ocultar.includes(id))
     .map((id) => {
       const run = id === "tentar" || id === "novaConversa" ? acoes[id] : NAVEGACAO[id];
       return run ? { id, run } : null;

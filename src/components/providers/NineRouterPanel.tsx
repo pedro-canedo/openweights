@@ -15,6 +15,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { nineRouterOpenPanel } from "../../lib/providers";
 import { openUrl } from "../../lib/openExternal";
+import ErroAcionavel from "../ErroAcionavel";
 
 export default function NineRouterPanel({ url }: { url: string }) {
   const { t } = useTranslation();
@@ -45,11 +46,7 @@ export default function NineRouterPanel({ url }: { url: string }) {
         {t("providers.nineRouter.panelHint")}
       </p>
 
-      {erro && (
-        <p className="mt-2 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-[12px] text-bad">
-          {erro}
-        </p>
-      )}
+      {erro && <ErroAcionavel erro={erro} ocultar={["fontes"]} className="mt-2" />}
     </div>
   );
 }

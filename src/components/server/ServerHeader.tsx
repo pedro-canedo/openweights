@@ -13,6 +13,7 @@ import { variantLabel } from "../../lib/prism";
 import type { ServerStatus } from "../../lib/types";
 import { StatusDot } from "../ui/Shell";
 import { CopyValue } from "../ui/Copy";
+import ErroAcionavel from "../ErroAcionavel";
 
 export default function ServerHeader({
   status,
@@ -120,7 +121,14 @@ export default function ServerHeader({
           </div>
         )}
 
-        {error && <p className="mt-2 text-[12px] text-bad">{error}</p>}
+        {error && (
+          <ErroAcionavel
+            erro={error}
+            ocultar={["servidor"]}
+            acoes={{ tentar: onToggle }}
+            className="mt-3"
+          />
+        )}
       </div>
     </div>
   );

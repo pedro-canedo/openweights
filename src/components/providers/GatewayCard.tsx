@@ -18,6 +18,7 @@ import {
   type GatewayStatus,
 } from "../../lib/providers";
 import { errorMessage } from "../../lib/serverSession";
+import ErroAcionavel from "../ErroAcionavel";
 
 const botao =
   "rounded-lg border border-edge px-3 py-2 text-sm text-dim hover:text-ink disabled:opacity-50";
@@ -165,11 +166,7 @@ export default function GatewayCard() {
         </div>
       )}
 
-      {error && (
-        <p className="mt-2 rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-[12px] text-bad">
-          {error}
-        </p>
-      )}
+      {error && <ErroAcionavel erro={error} ocultar={["fontes"]} className="mt-2" />}
 
       {status?.installed && !status.running && (
         <button
