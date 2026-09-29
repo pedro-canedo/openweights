@@ -100,6 +100,25 @@ another app**: the app starts the program in a session on this screen, pointed
 at your local API and with the chosen model. On Windows, the card also offers
 **External terminal**, which opens the program in a window of its own.
 
+## The `owcli` command in the system terminal
+
+In **Settings → OwCLI in the system terminal** (Advanced mode), **Turn on the
+owcli command** makes the agent available in any terminal, with the same models as
+the OwCLI screen and the same home (`~/.owcli`), where conversations are kept. Nothing changes in your terminal
+without that click, and **Turn off** undoes only what the app did.
+
+- **Linux and macOS:** a link at `~/.local/bin/owcli` to the installed version.
+  If a file with that name already exists and is not OpenWeights', the app says
+  so and leaves it alone. On macOS, and on some Linux setups, `~/.local/bin` is
+  not on the PATH: the card shows the line to put in `~/.zshrc` or `~/.bashrc`.
+- **Windows:** the agent's folder is added to your user `Path` (the machine's is
+  not touched). Open a new terminal after turning it on.
+
+When the agent is updated, the command points to the new version, and the old
+one is only deleted when no session runs from it. Since the agent thinks with
+OpenWeights' models, **the app has to be open** when you use the command; when
+it is closed, `owcli` says so and exits.
+
 ## Privacy
 
 - OwCLI talks only to OpenWeights, on `127.0.0.1`, and proves who it is with a

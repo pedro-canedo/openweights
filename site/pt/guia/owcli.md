@@ -99,6 +99,25 @@ Claude Code, Aider e OpenCode abrem aqui também, a partir de **Servidor Local
 para a sua API local e com o modelo escolhido. No Windows, o cartão oferece
 ainda **Terminal externo**, que abre o programa numa janela à parte.
 
+## O comando `owcli` no terminal do sistema
+
+Em **Configurações → OwCLI no terminal do sistema** (modo Avançado), **Ativar o
+comando owcli** deixa o agente disponível em qualquer terminal, com os mesmos
+modelos da tela OwCLI e a mesma casa (`~/.owcli`), onde ficam as conversas. Nada muda no seu terminal sem esse
+clique, e **Desativar** desfaz só o que o app fez.
+
+- **Linux e macOS:** um link em `~/.local/bin/owcli` para a versão instalada. Se
+  já existir um arquivo com esse nome que não é do OpenWeights, o app avisa e não
+  mexe nele. No macOS, e em alguns Linux, `~/.local/bin` não está no PATH: o
+  cartão mostra a linha para pôr no `~/.zshrc` ou `~/.bashrc`.
+- **Windows:** a pasta do agente entra no `Path` do seu usuário (o da máquina não
+  é tocado). Abra um terminal novo depois de ativar.
+
+Quando o agente é atualizado, o comando passa a apontar para a versão nova, e a
+versão antiga só é apagada quando nenhuma sessão roda dela. Como o agente pensa
+com os modelos do OpenWeights, **o app precisa estar aberto** quando você usa o
+comando; fechado, o `owcli` diz isso e sai.
+
 ## Privacidade
 
 - O OwCLI conversa só com o OpenWeights, em `127.0.0.1`, e prova quem é com um

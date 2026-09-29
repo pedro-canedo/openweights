@@ -419,17 +419,92 @@ async fn conferir_executavel(exe: &Path, layout: &lr_owcli::Layout) -> Result<()
     }
 }
 
-/// Tira as versões do runtime que não são a pinada. Seguro no boot e depois
-/// de instalar: este processo só abre sessões com o executável do pin atual
-/// (ou com o de desenvolvimento), nunca com o de uma pasta antiga.
+/// Depois de instalar e no boot: o `owcli` do terminal do sistema (se ligado)
+/// passa a apontar para a versão atual e só então as antigas saem — as que
+/// ainda têm uma sessão rodando ficam. Este processo só abre sessões com o
+/// executável do pin atual (ou o de desenvolvimento), nunca o de uma pasta
+/// antiga.
 pub fn podar_em_segundo_plano(data_dir: &Path) {
     let layout = lr_owcli::Layout::new(data_dir);
     tokio::task::spawn_blocking(move || {
-        let n = lr_owcli::install::podar(&layout);
+        let n = lr_owcli::install::manter_versoes(&layout);
         if n > 0 {
             log::info!("OwCLI: {n} versão(ões) antiga(s) do runtime removida(s)");
         }
     });
+}
+
+/// O `owcli` no terminal do sistema, para a tela de Configurações.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwcliNoTerminal {
+    /// Este sistema tem como pôr o comando no terminal (Linux, macOS, Windows).
+    pub supported: bool,
+    /// O runtime pinado está instalado: sem ele não há o que apontar.
+    pub installed: bool,
+    #[serde(flatten)]
+    pub estado: lr_owcli::noterminal::Estado,
+}
+
+fn status_no_terminal(data_dir: &Path) -> OwcliNoTerminal {
+    let layout = lr_owcli::Layout::new(data_dir);
+    let exe = layout.executavel();
+    OwcliNoTerminal {
+        supported: cfg!(any(unix, windows)),
+        installed: exe.is_some(),
+        estado: lr_owcli::noterminal::estado(layout.raiz(), exe.as_deref()),
+    }
+}
+
+#[tauri::command]
+pub async fn owcli_terminal_status(state: State<'_, AppState>) -> Result<OwcliNoTerminal, String> {
+    let dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || status_no_terminal(&dir))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Liga o `owcli` no terminal do sistema, apontando para o runtime instalado.
+///
+/// O comando do terminal só funciona com o gateway de pé e o `openweights.json`
+/// na casa do OwCLI, e isso só nasce na primeira sessão: sem ligar aqui, quem
+/// ativa o comando antes de abrir o agente no app teria um `owcli` que se
+/// recusa a abrir enquanto o cartão diz "ativo".
+#[tauri::command]
+pub async fn owcli_terminal_ativar(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<OwcliNoTerminal, String> {
+    let dir = state.data_dir.clone();
+    let dir2 = dir.clone();
+    tokio::task::spawn_blocking(move || {
+        let layout = lr_owcli::Layout::new(&dir2);
+        let exe = layout.executavel().ok_or_else(|| {
+            "owcli-not-installed: instale o agente na tela OwCLI primeiro.".to_string()
+        })?;
+        lr_owcli::noterminal::ativar(layout.raiz(), &exe).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    ativar(&app).await;
+    tokio::task::spawn_blocking(move || status_no_terminal(&dir))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Tira o `owcli` do terminal do sistema: só o que o app pôs.
+#[tauri::command]
+pub async fn owcli_terminal_desativar(
+    state: State<'_, AppState>,
+) -> Result<OwcliNoTerminal, String> {
+    let dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        let layout = lr_owcli::Layout::new(&dir);
+        lr_owcli::noterminal::desativar(layout.raiz()).map_err(|e| e.to_string())?;
+        Ok(status_no_terminal(&dir))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// A tela liga o OwCLI ao abrir a primeira sessão dele.

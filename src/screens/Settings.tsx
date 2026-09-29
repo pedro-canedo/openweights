@@ -31,6 +31,7 @@ import { Card, Page, Row, StatusDot } from "../components/ui/Shell";
 import Icon from "../components/ui/Icon";
 import { CopyValue } from "../components/ui/Copy";
 import EngineCard from "../components/settings/EngineCard";
+import OwcliNoTerminalCard from "../components/settings/OwcliNoTerminal";
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
@@ -129,6 +130,8 @@ export default function Settings() {
           </Row>
         </div>
       </Card>
+
+      <OwcliNoTerminalCard />
 
       <div className="settings-hardware"><HardwareCard profile={profile} modelsDir={paths?.modelsDir} /></div>
       </div>

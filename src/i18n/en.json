@@ -1945,5 +1945,25 @@
       "firstHint": "A single file is already a starting point.",
       "create": "Create project"
     }
+  },
+  "owcliTerminal": {
+    "title": "OwCLI in the system terminal",
+    "hint": "Makes the owcli command available in any terminal, with the app's models. Without the click, nothing changes in your terminal.",
+    "needsAgent": "Install the OwCLI agent first: it is what this command opens.",
+    "openOwcli": "Open the OwCLI screen",
+    "turnOn": "Turn on the owcli command",
+    "turnOff": "Turn off",
+    "on": "On: owcli opens the installed version.",
+    "onOutdated": "On, but it points to an old version: the app fixes this when it opens or when the agent is reinstalled. To fix it now, turn it off and on again.",
+    "where": "The command is this link:",
+    "whereWindows": "The command's folder, in your user Path:",
+    "conflict": "There is already a file at {{path}} that is not OpenWeights', and the app leaves it alone. Rename or delete it and try again.",
+    "newTerminal": "Open a new terminal: the ones already open do not see the change.",
+    "notOnPath": "The link's folder is not on the PATH this app reads. If owcli already works in your terminal, ignore this. Otherwise, put this line in your shell profile (~/.bashrc or ~/.zshrc) and open a new terminal; on fish, use fish_add_path ~/.local/bin.",
+    "appOpen": "The agent thinks with OpenWeights' models, so the app has to be open when you use the command.",
+    "notInstalled": "Install the OwCLI agent on the OwCLI screen first.",
+    "failed": "Could not change the terminal command: {{error}}",
+    "unsupported": "This system has no home folder to put the command in.",
+    "installedOff": "The agent is not installed right now, but the terminal command is still on. Install the agent again on the OwCLI screen, or turn it off."
   }
 }

@@ -188,6 +188,45 @@ antes de publicar, só em build de desenvolvimento: `OW_OWCLI_PINS=<outro pins.j
 3. Copiar esse `pins.json` para `src-tauri/crates/owcli/pins.json`. O teste
    `os_pins_embutidos_sao_validos` confere tag, revisão, nomes, hashes e tamanhos.
 
+## O comando no terminal do sistema
+
+Opt-in, em Configurações (modo Avançado), pelo módulo `lr_owcli::noterminal`. O app mantém um
+ponto estável que aponta para o executável da versão pinada:
+
+- **Linux e macOS:** `~/.local/bin/owcli`, um link simbólico trocado de uma vez (link
+  temporário + `rename`). O link é "nosso" quando o destino está sob `runtimes/owcli/`
+  (o ancestral mais fundo que existe é canonicalizado, então `/home` e `/var/home` são o mesmo
+  lugar; `..` desqualifica; o nome sozinho nunca basta, porque o link de outro perfil ou de um
+  build de desenvolvimento tem o mesmo formato). Um `owcli` que não é nosso é conflito
+  (`owcli-path-conflict:<caminho>`) e nunca é tocado, nem ao desativar. Sem nada no lugar, o link
+  é criado direto (o `EEXIST` do kernel é a resposta se a pessoa puser um arquivo no meio do
+  caminho); só a troca de um link nosso usa link temporário + `rename`.
+- **Windows:** a pasta `bin` da versão na entrada `Path` de `HKCU\Environment`, gravada como
+  `REG_EXPAND_SZ`, mais o aviso `WM_SETTINGCHANGE`. Só sai a entrada que mora em `runtimes\owcli`
+  (`editar_path`, função pura testada: as outras entradas ficam byte a byte, inclusive as com
+  `%VARIÁVEL%`), mais as entradas órfãs de outra pasta de dados (o formato
+  `…\runtimes\owcli\owcli-runtime-…`). Um `Path` que não é texto, com caractere nulo ou com par
+  substituto solto não é regravado (a leitura é estrita: nada de `from_utf16_lossy`), e um que
+  passaria de 8000 unidades UTF-16 só é recusado se cresceu — tirar a nossa entrada nunca fica
+  preso. Ler, editar e gravar rodam sob uma trava, e o aviso de ambiente sai numa thread à parte.
+  Nada de `.cmd` (Ctrl+C perguntaria "Terminate batch job?"). O desinstalador não limpa o
+  `Path`: a entrada que sobra é inofensiva, e o cartão mostra "Desativar" também sem o agente
+  instalado.
+
+`manter_versoes` roda depois de instalar e no boot: aponta o link para a versão atual **antes** de
+podar, e não poda nada se a atual ainda não está instalada (o app atualizou e o agente não foi
+reinstalado: a versão antiga continua servindo o terminal) nem se apontar falhou. A poda também
+deixa de fora a pasta que ainda tem um processo rodando (`lr_owcli::uso`: `/proc/*/exe` no Linux,
+`ps` com o caminho canonicalizado no macOS, o `.exe` não abrir para escrita no Windows) — o
+`auth.command` de uma sessão aberta antes da atualização é o caminho dela, chamado a cada minuto.
+
+Ativar o comando também liga o OwCLI (`owcli.ativo`, o gateway e o `openweights.json`): sem isso,
+quem ativa antes de abrir o agente no app teria um `owcli` que se recusa a abrir.
+
+Sem o app aberto, o `owcli` do terminal se recusa com a mensagem do lançador (não há gateway).
+O que não foi verificado numa máquina de verdade: o `Path` do Windows e o `ps` do macOS (só
+compilam, com o clippy cruzado).
+
 ## Histórico
 
 Quem lê as conversas gravadas é o próprio OwCLI: `owcli app-server` fala JSON-RPC, uma

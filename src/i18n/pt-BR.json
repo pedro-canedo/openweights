@@ -1945,5 +1945,25 @@
       "firstHint": "Um único arquivo já é um ponto de partida.",
       "create": "Criar projeto"
     }
+  },
+  "owcliTerminal": {
+    "title": "OwCLI no terminal do sistema",
+    "hint": "Deixa o comando owcli disponível em qualquer terminal, com os modelos do app. Sem o clique, nada muda no seu terminal.",
+    "needsAgent": "Instale o agente OwCLI primeiro: é ele que este comando abre.",
+    "openOwcli": "Abrir a tela OwCLI",
+    "turnOn": "Ativar o comando owcli",
+    "turnOff": "Desativar",
+    "on": "Ativo: o owcli abre a versão instalada.",
+    "onOutdated": "Ativo, mas aponta para uma versão antiga: o app corrige isso ao abrir ou ao reinstalar o agente. Para corrigir agora, desative e ative de novo.",
+    "where": "O comando é este link:",
+    "whereWindows": "A pasta do comando, no Path do seu usuário:",
+    "conflict": "Já existe um arquivo em {{path}} que não é do OpenWeights, e o app não mexe nele. Renomeie-o ou apague-o e tente de novo.",
+    "newTerminal": "Abra um terminal novo: os que já estavam abertos não enxergam a mudança.",
+    "notOnPath": "A pasta do link não está no PATH lido por este app. Se o owcli já funciona no seu terminal, ignore. Senão, ponha esta linha no perfil do seu shell (~/.bashrc ou ~/.zshrc) e abra um terminal novo; no fish, use fish_add_path ~/.local/bin.",
+    "appOpen": "O agente pensa com os modelos do OpenWeights, então o app precisa estar aberto quando você usar o comando.",
+    "notInstalled": "Instale o agente OwCLI na tela OwCLI primeiro.",
+    "failed": "Não deu para mudar o comando do terminal: {{error}}",
+    "unsupported": "Este sistema não tem uma pasta pessoal onde pôr o comando.",
+    "installedOff": "O agente não está instalado neste momento, mas o comando do terminal continua ligado. Instale o agente de novo na tela OwCLI, ou desative."
   }
 }

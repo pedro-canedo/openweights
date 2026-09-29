@@ -199,9 +199,9 @@ pub async fn instalar(
     Ok(destino.join(entrada))
 }
 
-/// Remove versões que não são a pinada. Chamar quando nenhuma sessão do
-/// OwCLI está aberta: o `auth.command` de uma sessão aponta para o executável
-/// dela, e no Windows um `.exe` em uso nem sai. Devolve quantas pastas saíram.
+/// Remove versões que não são a pinada, menos as que ainda têm uma sessão
+/// rodando (o `auth.command` de uma sessão aponta para o executável dela).
+/// Devolve quantas pastas saíram.
 pub fn podar(layout: &Layout) -> usize {
     let atual = pins::pins().tag.as_str();
     let Ok(entradas) = std::fs::read_dir(layout.raiz()) else {
@@ -214,12 +214,45 @@ pub fn podar(layout: &Layout) -> usize {
         if nome == atual || nome.starts_with('.') || !entrada.path().is_dir() {
             continue;
         }
+        // Uma sessão que abriu antes de a atualização ainda roda desta pasta.
+        if crate::uso::em_uso(&entrada.path()) {
+            log::info!("OwCLI antigo {nome} ainda está em uso; fica até a próxima poda");
+            continue;
+        }
         match lr_fetch::remove_dir_all_retrying(&entrada.path()) {
             Ok(()) => removidas += 1,
             Err(e) => log::warn!("não consegui remover o OwCLI antigo {nome}: {e}"),
         }
     }
     removidas
+}
+
+/// Depois de instalar, e no boot: o `owcli` do terminal do sistema (se a pessoa
+/// o ligou) passa a apontar para a versão atual, e só então as antigas saem.
+///
+/// Sem a versão atual instalada — o app atualizou e o agente ainda não foi
+/// reinstalado — nada é tocado: a versão antiga continua servindo o terminal, e
+/// apagá-la deixaria o comando pendurado. Devolve quantas pastas saíram.
+pub fn manter_versoes(layout: &Layout) -> usize {
+    let Some(exe) = layout.executavel() else {
+        return 0;
+    };
+    match crate::noterminal::repontar(layout.raiz(), &exe) {
+        Ok(true) => log::info!(
+            "OwCLI: o comando do terminal agora aponta para {}",
+            exe.display()
+        ),
+        Ok(false) => {}
+        // Sem apontar para a nova, a antiga é o que o terminal ainda usa: fica
+        // até a próxima instalação ou abertura tentar de novo.
+        Err(e) => {
+            log::warn!(
+                "OwCLI: não deu para atualizar o comando do terminal ({e}); as versões antigas ficam"
+            );
+            return 0;
+        }
+    }
+    podar(layout)
 }
 
 #[cfg(test)]

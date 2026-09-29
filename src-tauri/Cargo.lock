@@ -2690,11 +2690,13 @@ version = "0.26.1"
 dependencies = [
  "log",
  "lr_fetch",
+ "lr_proc",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "windows 0.61.3",
 ]
 
 [[package]]
