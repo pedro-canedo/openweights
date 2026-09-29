@@ -10,6 +10,11 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.26.1] — 2026-09-29
+
+- **OwCLI answers with Ternary Bonsai 2 and Qwen3.8.** With these models the agent showed "We're currently experiencing high demand, which may cause temporary errors" on every message, even with the model loaded and working in chat. It was not demand: the engine refused the request, because the model accepts a single system message, at the start, and the agent sends several. The app now merges them before the request reaches the engine. Tested with Bonsai, on a greeting and on a turn where the agent reads a file.
+- **9router models work in OwCLI right after 9router starts.** Before, the "401 Unauthorized: Missing API key" error showed up when 9router had just been installed: its key only exists after its first boot, and the app built the model list before that and never redid it. Now a source without a key is left out, and the app tries again every few seconds until the key shows up.
+
 ## [0.26.0] — 2026-09-29
 
 - **Terminal or agent, in every new session.** On the OwCLI screen, the **+**, the empty screen, every empty pane of the grid and the palette (Ctrl+K, "Open the OwCLI agent") offer both ways in: a plain terminal or the **OwCLI agent**, our fork of OpenAI's Codex CLI, which reads, writes and runs code in the folder you choose, thinking only with the app's models.

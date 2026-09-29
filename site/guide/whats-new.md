@@ -1,5 +1,16 @@
 # What's new
 
+## 0.26.1
+
+**The OwCLI agent now answers with Ternary Bonsai 2 and Qwen3.8.** With those
+models it showed "We're currently experiencing high demand" on every message,
+even with the model working in chat: the model accepts a single system message,
+and the agent sends several, so the engine refused the request. The app now
+merges them before the request reaches the engine. 9router models also stop
+giving "401 Missing API key" right after 9router starts: the app waits for the
+key to appear and rebuilds the list by itself. See
+[troubleshooting](/guide/troubleshooting).
+
 ## 0.26.0
 
 **The OwCLI agent arrives in the app, and Discover says what is happening with

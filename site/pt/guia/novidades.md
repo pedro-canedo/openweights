@@ -1,5 +1,16 @@
 # Novidades
 
+## 0.26.1
+
+**O agente OwCLI passa a responder com o Ternary Bonsai 2 e o Qwen3.8.** Com
+esses modelos ele mostrava "We're currently experiencing high demand" a cada
+mensagem, mesmo com o modelo funcionando no chat: o modelo aceita uma única
+mensagem de sistema, e o agente manda várias, então o motor recusava o pedido.
+O app agora as reúne antes de o pedido chegar ao motor. Os modelos do 9router
+também deixam de dar "401 Missing API key" logo depois de o 9router subir: o app
+espera a chave aparecer e refaz a lista sozinho. Veja
+[solução de problemas](/pt/guia/solucao-de-problemas).
+
 ## 0.26.0
 
 **O agente OwCLI chega ao app, e o Descobrir passa a dizer o que acontece com
