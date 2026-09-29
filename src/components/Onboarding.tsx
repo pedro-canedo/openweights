@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import ErroAcionavel from "./ErroAcionavel";
 import { motivoDoDownload, silenciarDownload } from "../lib/downloads";
 import {
   ensureRuntime,
@@ -172,9 +173,7 @@ export default function Onboarding() {
           )}
 
           {error && (
-            <div role="alert" className="mt-4 select-text text-[12px] text-bad">
-              {error}
-            </div>
+            <ErroAcionavel erro={error} className="mt-4 text-left" />
           )}
 
           {step === "welcome" && (
@@ -384,9 +383,7 @@ function PrimeiroModelo({ aoFechar }: { aoFechar: () => void }) {
       )}
 
       {erro && (
-        <div role="alert" className="mt-3 select-text text-[12px] text-bad">
-          {erro}
-        </div>
+        <ErroAcionavel erro={erro} className="mt-3 text-left" />
       )}
 
       <div className="mt-6 flex flex-wrap justify-center gap-3">

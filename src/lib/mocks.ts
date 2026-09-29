@@ -288,6 +288,14 @@ export async function listDownloads(): Promise<DownloadStatus[]> {
 }
 
 export async function localModels(): Promise<LocalModel[]> {
+  // Os testes ligam `__modelosFalha` (o texto do erro) já com o app aberto; a
+  // próxima leitura da biblioteca falha uma vez e as seguintes respondem.
+  const g = globalThis as { __modelosFalha?: string };
+  if (g.__modelosFalha) {
+    const mensagem = g.__modelosFalha;
+    delete g.__modelosFalha;
+    throw mensagem;
+  }
   if ((globalThis as { __owInstalacaoNova?: boolean }).__owInstalacaoNova) return [];
   return [
     {

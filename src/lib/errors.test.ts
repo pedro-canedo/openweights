@@ -87,6 +87,19 @@ describe("classificarErro", () => {
   });
 });
 
+describe("resumoDoErro", () => {
+  let resumoDoErro: typeof import("./errors").resumoDoErro;
+  beforeAll(async () => {
+    ({ resumoDoErro } = await import("./errors"));
+  });
+
+  it("uma linha: o título do que conhece, o texto original do que não", () => {
+    expect(resumoDoErro("HTTP 401: Missing API key")).toBe("A chave desta fonte não foi aceita");
+    expect(resumoDoErro("error sending request for url (https://huggingface.co/x)")).toBe("Sem conexão");
+    expect(resumoDoErro("verificação falhou: sha256 diferente")).toBe("verificação falhou: sha256 diferente");
+  });
+});
+
 describe("textoDoErro", () => {
   it("aceita Error, string e objeto", () => {
     expect(textoDoErro(new Error("a"))).toBe("a");

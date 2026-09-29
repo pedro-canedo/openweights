@@ -134,7 +134,7 @@ const REGRAS: {
   },
   {
     tipo: "rede",
-    quando: (t) => /falha de rede|timed? ?out|dns/i.test(t),
+    quando: (t) => /falha de rede|timed? ?out|dns|error sending request|connection (reset|closed)/i.test(t),
     acoes: ["tentar"],
   },
 ];
@@ -169,6 +169,16 @@ export function classificarErro(e: unknown): ErroClassificado {
     acoes: ["tentar"],
     detalhe,
   };
+}
+
+/**
+ * Uma linha para onde não cabe o cartão (um download que falhou, uma lista):
+ * o título do erro conhecido, ou o texto original quando não o reconhecemos —
+ * dizer "algo deu errado" onde havia um motivo específico seria pior.
+ */
+export function resumoDoErro(e: unknown): string {
+  const c = classificarErro(e);
+  return c.tipo === "desconhecido" ? c.detalhe : c.titulo;
 }
 
 function escapar(s: string): string {

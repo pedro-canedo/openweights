@@ -12,6 +12,7 @@ import AuthorAvatar from "../components/discover/AuthorAvatar";
 import IncompleteDownloads from "../components/models/IncompleteDownloads";
 import TunePanel from "../components/models/TunePanel";
 import PrismEngineCard from "../components/models/PrismEngineCard";
+import ErroAcionavel from "../components/ErroAcionavel";
 import { Page } from "../components/ui/Shell";
 import Icon from "../components/ui/Icon";
 
@@ -139,6 +140,9 @@ function ModelCard({
 export default function MyModels() {
   const { t } = useTranslation();
   const [models, setModels] = useState<LocalModel[] | null>(null);
+  // A lista que falha não é uma biblioteca vazia: dizer "nenhum modelo" faria
+  // a pessoa achar que os arquivos sumiram.
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [query, setQuery] = useState("");
   // Qual modelo está com o painel de ajuste aberto. Mora aqui, e não no
   // cartão, porque o painel ocupa a LINHA inteira da grade: dentro de uma
@@ -147,9 +151,13 @@ export default function MyModels() {
 
   const refresh = useCallback(() => {
     listLocalModels()
-      .then(setModels)
+      .then((lista) => {
+        setLoadError(null);
+        setModels(lista);
+      })
       .catch((err) => {
         console.error(err);
+        setLoadError(err);
         setModels([]);
       });
   }, []);
@@ -183,6 +191,11 @@ export default function MyModels() {
               </div>
             ))}
           </div>
+        ) : loadError != null ? (
+          <ErroAcionavel
+            erro={loadError}
+            acoes={{ tentar: () => { setModels(null); refresh(); } }}
+          />
         ) : models.length === 0 ? (
           <div className="rounded-xl border border-dashed border-edge p-10 text-center">
             <p className="text-sm text-dim">{t("models.empty")}</p>

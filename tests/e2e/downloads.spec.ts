@@ -45,3 +45,20 @@ test("excluir um modelo diz o tamanho que volta ao disco", async ({ page }) => {
   await page.locator(".model-library-card").getByRole("button", { name: "Excluir", exact: true }).click();
   await expect(page.locator(".model-library-card")).toContainText(/\(5,1 GB\) do disco\?/);
 });
+
+test("a biblioteca que não carrega diz isso, em vez de parecer vazia, e recarrega", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => {
+    (globalThis as { __modelosFalha?: string }).__modelosFalha = "falha de E/S: permissão negada";
+  });
+  await page.getByRole("button", { name: "Meus Modelos", exact: true }).click();
+
+  const cartao = page.getByRole("alert").filter({ hasText: "Algo deu errado" });
+  await expect(cartao).toBeVisible();
+  await expect(page.getByText("Nenhum modelo baixado ainda")).toHaveCount(0);
+  await cartao.locator("summary").click();
+  await expect(cartao.locator("pre")).toContainText("permissão negada");
+
+  await cartao.getByRole("button", { name: "Tentar de novo" }).click();
+  await expect(page.locator(".model-library-card")).toHaveCount(1);
+});

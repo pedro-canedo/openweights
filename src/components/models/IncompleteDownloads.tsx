@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { agirNoDownload, descartarDownload } from "../../lib/downloads";
+import { resumoDoErro } from "../../lib/errors";
 import type { DownloadState, DownloadStatus } from "../../lib/types";
 import {
   listDownloads,
@@ -80,7 +81,7 @@ function MiniCard({
       <div className="mt-1.5 flex items-center gap-2 text-[11px] tabular-nums text-dim">
         {status.state === "error" ? (
           <span className="truncate font-medium text-bad" title={status.error ?? undefined}>
-            {status.error || t("downloadsPanel.error")}
+            {status.error ? resumoDoErro(status.error) : t("downloadsPanel.error")}
           </span>
         ) : (
           <>

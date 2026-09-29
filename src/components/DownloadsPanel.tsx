@@ -5,6 +5,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import { agirNoDownload, descartarDownload } from "../lib/downloads";
+import { resumoDoErro } from "../lib/errors";
 import { useDismiss } from "./ui/camada";
 import type { DownloadStatus } from "../lib/types";
 import { cancelarPrism, carregarPrism, prismStore } from "../lib/prism";
@@ -139,7 +140,7 @@ function DownloadRow({ status }: { status: DownloadStatus }) {
             title={status.error ?? undefined}
           >
             {t("downloadsPanel.error")}
-            {status.error ? ` — ${status.error}` : ""}
+            {status.error ? ` — ${resumoDoErro(status.error)}` : ""}
           </span>
         ) : (
           <>
