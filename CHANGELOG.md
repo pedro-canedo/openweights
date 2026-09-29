@@ -10,6 +10,11 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.27.2] — 2026-09-29
+
+- **The OwCLI agent recovers when the model is cut off in the middle of a tool call.** On a big task (a whole file written at once), generation could stop in the middle of a call's arguments. The engine hands that call back as if it were complete, the agent keeps it in its history and, from then on, every request got HTTP 500 (`Failed to parse tool call arguments as JSON`): the screen sat on "We're currently experiencing high demand" and even "continue" did nothing. Now the app replaces the cut-off call, in the history, with a notice that keeps the start of what the model wrote; the model sees the call did not run and redoes it in smaller pieces. Reproduced with the real llama-server.
+- The logs panel (`Ctrl+Shift+L`) records when this happens.
+
 ## [0.27.1] — 2026-09-29
 
 - **OwCLI shows the model's reasoning while it works.** Local models think before they answer, sometimes for minutes, and the screen only said "Working (3m 30s)". Sessions opened by the app now display the reasoning as the model writes it, so you can follow what it is weighing. Tested with Ternary Bonsai 2: the reasoning shows up before the answer.

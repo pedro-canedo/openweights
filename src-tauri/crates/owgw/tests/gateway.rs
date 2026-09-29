@@ -253,6 +253,64 @@ fn token_novo_tem_64_hex_e_nao_se_repete() {
     assert_ne!(a, b);
 }
 
+/// Uma chamada de ferramenta cortada no histórico (o llama.cpp a devolve como
+/// `completed`) faria todo pedido seguinte dar HTTP 500 no llama.cpp.
+#[tokio::test]
+async fn a_fonte_local_recebe_argumentos_de_ferramenta_sempre_validos_e_as_outras_o_pedido_como_veio()
+ {
+    let (base, vistos) = fonte_falsa().await;
+    let gw = gateway(&base).await;
+    let cortado = format!(
+        "{{\"command\":\"cat > js/main.js <<'JSEOF'\\n{}",
+        "x".repeat(12_000)
+    );
+    let corpo = |modelo: &str| {
+        serde_json::json!({
+            "model": modelo,
+            "stream": true,
+            "input": [
+                { "type": "message", "role": "user", "content": "oi" },
+                { "type": "function_call", "call_id": "c1", "name": "shell", "arguments": cortado },
+                { "type": "function_call_output", "call_id": "c1", "output": "falhou" },
+                { "type": "function_call", "call_id": "c2", "name": "shell",
+                  "arguments": "{\"command\":\"ls\"}" },
+            ],
+        })
+    };
+    for modelo in ["local:qwen3-coder", "openrouter:openai/gpt-oss-20b:free"] {
+        let r = reqwest::Client::new()
+            .post(format!("{}/responses", gw.base_url()))
+            .bearer_auth("tok-certo")
+            .json(&corpo(modelo))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        let _ = r.bytes().await;
+    }
+    let v = vistos.lock().unwrap().clone();
+
+    // Local: a chamada cortada chega como objeto válido; a boa e o resto, iguais.
+    let local = &v[0].corpo["input"];
+    let obj: Value = serde_json::from_str(local[1]["arguments"].as_str().unwrap())
+        .expect("o llama.cpp recebe JSON válido");
+    assert!(obj["_ow_notice"].is_string());
+    assert!(
+        obj["_ow_start"]
+            .as_str()
+            .unwrap()
+            .starts_with("{\"command\":\"cat > js/main.js")
+    );
+    assert_eq!(local[3]["arguments"], "{\"command\":\"ls\"}");
+    assert_eq!(local[2]["output"], "falhou");
+
+    // Fonte remota: o pedido chega como veio.
+    assert_eq!(
+        v[1].corpo["input"][1]["arguments"].as_str().unwrap(),
+        cortado
+    );
+}
+
 /// O Codex manda mensagens `developer` dentro de `input`; o llama.cpp as vira em
 /// `system`, e o template do Ternary Bonsai 2 recusa a segunda com HTTP 500.
 #[tokio::test]

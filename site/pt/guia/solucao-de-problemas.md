@@ -182,6 +182,12 @@ tinha acabado de ser instalado e a chave dele ainda não existia; desde a 0.26.1
 app espera por ela e tenta de novo sozinho, então dê alguns segundos depois de o
 9router subir.
 
+A mesma mensagem aparecia também em tarefas longas: se o modelo era parado no
+meio de uma chamada de ferramenta (um arquivo inteiro de uma vez), o motor
+devolvia a chamada cortada mas marcada como completa, e todo pedido seguinte
+falhava. Desde a 0.27.2 o app conserta essa chamada no histórico e o modelo
+refaz em partes menores. O painel de logs (`Ctrl+Shift+L`) mostra o conserto.
+
 ## Relatar outra coisa
 
 Abra uma [issue](https://github.com/pedro-canedo/openweights/issues) com o seu

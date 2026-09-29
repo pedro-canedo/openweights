@@ -1,5 +1,15 @@
 # Novidades
 
+## 0.27.2
+
+**O OwCLI não fica mais preso em "high demand" depois de uma chamada de
+ferramenta cortada.** Numa tarefa grande, o modelo podia parar no meio dos
+argumentos de uma chamada; o motor a entrega como completa, o agente a guarda e
+todo pedido seguinte falhava com HTTP 500 — até o "continue". O app agora troca,
+no histórico, a chamada cortada por um aviso que guarda o começo dela: o modelo
+vê que a chamada não rodou e refaz em partes menores. Veja
+[solução de problemas](/pt/guia/solucao-de-problemas).
+
 ## 0.27.1
 
 **O OwCLI mostra o modelo pensando.** Modelos locais pensam antes de responder,

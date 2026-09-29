@@ -1,5 +1,15 @@
 # What's new
 
+## 0.27.2
+
+**OwCLI no longer gets stuck on "high demand" after a cut-off tool call.** On a
+big task, the model could be stopped in the middle of writing a tool call's
+arguments; the engine hands that call back as complete, the agent keeps it, and
+every later request failed with HTTP 500 — even "continue". The app now swaps
+the cut-off call in the history for a notice that keeps its beginning, so the
+model sees the call did not run and redoes it in smaller pieces. See
+[troubleshooting](/guide/troubleshooting).
+
 ## 0.27.1
 
 **OwCLI shows the model thinking.** Local models think before they answer,

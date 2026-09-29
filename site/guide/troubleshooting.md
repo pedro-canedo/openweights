@@ -180,6 +180,12 @@ the 9router had just been installed and its key did not exist yet; since 0.26.1
 the app waits for it and retries by itself, so give it a few seconds after the
 9router starts.
 
+The same message also showed up on long tasks: if the model was stopped in the
+middle of writing a tool call (a whole file in one go), the engine returned the
+call cut off but marked complete, and every later request failed. Since 0.27.2
+the app repairs that call in the history and the model redoes it in smaller
+pieces. The logs panel (`Ctrl+Shift+L`) shows the repair.
+
 ## Reporting something else
 
 Open an [issue](https://github.com/pedro-canedo/openweights/issues) with your

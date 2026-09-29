@@ -168,6 +168,16 @@ async fn encaminhar(
     {
         log::debug!("gateway: mensagens de sistema reunidas em `instructions`");
     }
+    // Uma chamada de ferramenta cortada no histórico faria o llama.cpp
+    // responder 500 a toda requisição seguinte (ver `reescritas`).
+    if prefixo == "local" && resto == "/responses" {
+        let n = crate::reescritas::reparar_chamadas(&mut corpo);
+        if n > 0 {
+            log::warn!(
+                "gateway: {n} chamada(s) de ferramenta com argumentos cortados reparada(s) no histórico"
+            );
+        }
+    }
     let url = format!("{}{resto}{consulta}", rota.base_url.trim_end_matches('/'));
 
     let mut pedido = http
