@@ -15,9 +15,11 @@ mod commands_terminal;
 mod commands_tuning;
 mod comparison;
 mod desktop_host;
+mod exportar;
 mod externo;
 mod gpu_lease;
 mod janela;
+mod logs;
 mod optimization;
 mod owcli_historico;
 mod serve_stats;
@@ -34,7 +36,7 @@ mod workspace;
 use tauri::{Emitter, Manager};
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    logs::iniciar_logger();
     // SAFETY: primeira coisa do `main`: nenhuma outra thread existe ainda e o
     // GTK (que carrega o fontconfig) só sobe no `Builder` abaixo.
     unsafe { lr_proc::esconder_fontes_colrv1_do_webkit() };
@@ -52,6 +54,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            logs::ligar(app.handle());
             // A janela principal nasce em código: nua, com a interface do app
             // numa webview filha — o que deixa a UI do AgenticOw entrar noutra.
             janela::criar(app)?;
@@ -179,6 +182,10 @@ fn main() {
             commands::local_models,
             commands::model_delete,
             commands::server_status,
+            exportar::export_save,
+            exportar::export_reveal,
+            logs::server_logs,
+            logs::logs_clear,
             commands::server_start,
             commands::server_stop,
             commands::server_restart,

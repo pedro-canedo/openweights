@@ -17,13 +17,13 @@
 // O estado do servidor fica fora das abas, grudado no topo: ele é premissa
 // das quatro.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { painelDeLogs, useLogs } from "../lib/logs";
 import { useTranslation } from "react-i18next";
 import {
   getHardwareProfile,
   getServerStatus,
   getSetting,
-  onServerLog,
   onServerStatus,
   serveStats,
   setSetting,
@@ -219,6 +219,7 @@ export default function LocalServer() {
           <EngineConfigSection
             compact
             running={running}
+            configStale={status?.configStale ?? false}
             hasGpu={hasGpu}
             selected={selectedModel}
             onSelect={setSelectedModel}
@@ -372,29 +373,22 @@ function ServerConfig({ running }: { running: boolean }) {
   );
 }
 
-/** O log do motor, em bruto — fechado até alguém precisar dele. */
+/**
+ * O log do motor, em bruto — fechado até alguém precisar dele. Vem do mesmo
+ * anel do painel de logs (Ctrl+Shift+L), então quem abre a tela depois do boot
+ * ainda vê o que a subida disse.
+ */
 function Logs() {
   const { t } = useTranslation();
-  const [lines, setLines] = useState<string[]>([]);
-
-  useEffect(() => {
-    let un: (() => void) | undefined;
-    let cancelled = false;
-    onServerLog((line) => {
-      setLines((prev) => {
-        const next = prev.length >= MAX_LOG_LINES ? prev.slice(1) : prev.slice();
-        next.push(line);
-        return next;
-      });
-    }).then((f) => {
-      if (cancelled) f();
-      else un = f;
-    });
-    return () => {
-      cancelled = true;
-      un?.();
-    };
-  }, []);
+  const todas = useLogs();
+  const lines = useMemo(
+    () =>
+      todas
+        .filter((l) => l.origem === "servidor" || l.origem === "decisor")
+        .slice(-MAX_LOG_LINES)
+        .map((l) => (l.origem === "decisor" ? `[decisor] ${l.texto}` : l.texto)),
+    [todas],
+  );
 
   return (
     <Collapse
@@ -409,6 +403,13 @@ function Logs() {
       }
     >
       <LogLines lines={lines} />
+      <button
+        type="button"
+        onClick={() => painelDeLogs.definir(true)}
+        className="mt-2 text-[11px] text-accent-ink hover:underline"
+      >
+        {t("server.logsOpenPanel")}
+      </button>
     </Collapse>
   );
 }

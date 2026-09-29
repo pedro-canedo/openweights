@@ -473,6 +473,7 @@ async fn ninerouter_start_inner(
                 use tokio::io::AsyncBufReadExt as _;
                 let mut linhas = tokio::io::BufReader::new(saida).lines();
                 while let Ok(Some(line)) = linhas.next_line().await {
+                    crate::logs::registrar(crate::logs::NINEROUTER, &line);
                     let _ = app2.emit(EVENTO, &NineRouterEvent::Log { line });
                 }
             });
@@ -483,6 +484,7 @@ async fn ninerouter_start_inner(
                 use tokio::io::AsyncBufReadExt as _;
                 let mut linhas = tokio::io::BufReader::new(saida).lines();
                 while let Ok(Some(line)) = linhas.next_line().await {
+                    crate::logs::registrar(crate::logs::NINEROUTER, &line);
                     let _ = app2.emit(EVENTO, &NineRouterEvent::Log { line });
                 }
             });

@@ -648,12 +648,14 @@ pub(crate) async fn sincronizar_decisor_local(app: &tauri::AppHandle, state: &Ap
                         Saida::Out(o) => {
                             let mut lines = tokio::io::BufReader::new(o).lines();
                             while let Ok(Some(line)) = lines.next_line().await {
+                                crate::logs::registrar(crate::logs::DECISOR, &line);
                                 let _ = app2.emit("server-log", &format!("[decisor] {line}"));
                             }
                         }
                         Saida::Err(e) => {
                             let mut lines = tokio::io::BufReader::new(e).lines();
                             while let Ok(Some(line)) = lines.next_line().await {
+                                crate::logs::registrar(crate::logs::DECISOR, &line);
                                 let _ = app2.emit("server-log", &format!("[decisor] {line}"));
                             }
                         }

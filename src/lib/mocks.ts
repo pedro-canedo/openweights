@@ -211,6 +211,29 @@ export async function modelQuants(_repoId: string): Promise<QuantsView> {
 
 const downloads = new Map<string, DownloadStatus>();
 
+// ---- logs simulados: as linhas que o backend teria guardado. Os testes
+// acrescentam mais por `window.__owLog(origem, texto)`.
+type LinhaMock = { seq: number; ts: number; origem: string; texto: string };
+let logsMock: LinhaMock[] = [
+  { seq: 1, ts: Date.UTC(2026, 8, 29, 12, 0, 0), origem: "servidor", texto: "llama-server: carregando o modelo Qwen3-8B" },
+  { seq: 2, ts: Date.UTC(2026, 8, 29, 12, 0, 1), origem: "servidor", texto: "srv  load_model: erro de exemplo ao alocar o KV cache" },
+  { seq: 3, ts: Date.UTC(2026, 8, 29, 12, 0, 2), origem: "decisor", texto: "decisor pronto na porta 11713" },
+  { seq: 4, ts: Date.UTC(2026, 8, 29, 12, 0, 3), origem: "9router", texto: "9router ouvindo em 127.0.0.1:20128" },
+];
+export async function serverLogs(since: number): Promise<LinhaMock[]> {
+  return logsMock.filter((l) => l.seq > since);
+}
+export async function logsClear(): Promise<void> {
+  logsMock = [];
+}
+if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
+  (window as unknown as { __owLog?: (o: string, t: string) => void }).__owLog = (origem, texto) => {
+    const l = { seq: (logsMock.at(-1)?.seq ?? 0) + 1, ts: Date.now(), origem, texto };
+    logsMock.push(l);
+    emitirMock("log-line", l);
+  };
+}
+
 // Os eventos que o backend mandaria (`listen` no navegador cai aqui). Só o
 // "download" por enquanto: a telemetria tem o timer dela em tauri.ts.
 type OuvinteMock = (payload: unknown) => void;
@@ -347,10 +370,17 @@ let mockServer: ServerStatus = {
   port: 11711,
   lan: false,
   keyStale: false,
+    configStale: false,
 };
 
+function statusDoMock(): ServerStatus {
+  // Os testes ligam `__configPendente`: o servidor de pé tem configuração nova esperando.
+  const pendente = !!(globalThis as { __configPendente?: boolean }).__configPendente;
+  return { ...mockServer, configStale: mockServer.running && pendente };
+}
+
 export async function serverStatus(): Promise<ServerStatus> {
-  return mockServer;
+  return statusDoMock();
 }
 
 export async function clusterStatus(): Promise<ClusterSnapshot> {
@@ -399,8 +429,9 @@ export async function startServer(): Promise<ServerStatus> {
     port: 11711,
     lan: false,
     keyStale: false,
+    configStale: false,
   };
-  return mockServer;
+  return statusDoMock();
 }
 
 export async function stopServer(): Promise<void> {
@@ -410,6 +441,7 @@ export async function stopServer(): Promise<void> {
     port: 11711,
     lan: false,
     keyStale: false,
+    configStale: false,
   };
 }
 

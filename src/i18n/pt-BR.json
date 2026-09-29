@@ -704,7 +704,8 @@
       "noModel": "Nenhum modelo carregado",
       "tps": "{{n}} tokens/s",
       "lanOn": "aberto para a rede local",
-      "keyStale": "chave nova pendente — reinicie"
+      "keyStale": "chave nova pendente — reinicie",
+      "configStale": "Configuração nova: reinicie para aplicar"
     },
     "guide": {
       "title": "Como usar",
@@ -728,7 +729,21 @@
       "title": "Endereço e acesso",
       "hint": "Em que porta o servidor atende e quem alcança essa porta."
     },
-    "logsHint": "A saída bruta do llama-server, para quando algo não sobe."
+    "logsHint": "A saída bruta do llama-server, para quando algo não sobe.",
+    "logsOpenPanel": "Abrir o painel de logs (todas as origens)",
+    "preview": {
+      "running": "Rodando com esta configuração",
+      "pending": "Mudanças pendentes",
+      "next": "O que vai rodar ao iniciar",
+      "pendingHint": "O que está configurado difere do que o servidor de pé usa. Reinicie o servidor para aplicar.",
+      "copyShell": "Copiar como comando",
+      "copyIni": "Copiar o INI",
+      "revealIni": "Mostrar o INI na pasta",
+      "copiedShell": "Comando copiado.",
+      "copiedIni": "INI copiado.",
+      "revealFailed": "Não deu para abrir a pasta: {{error}}",
+      "maskedNote": "A chave de API aparece mascarada; troque •••  pela sua ao usar o comando fora do app."
+    }
   },
   "settings": {
     "title": "Configurações",
@@ -1740,7 +1755,8 @@
       "actions": "Ações",
       "server": "Servidor",
       "preferences": "Preferências"
-    }
+    },
+    "logs": "Abrir ou fechar os logs"
   },
   "shortcuts": {
     "title": "Atalhos de teclado",
@@ -1755,7 +1771,8 @@
     "newLine": "Quebrar a linha (no compositor)",
     "attach": "Anexar arquivo (no compositor)",
     "terminalCopy": "Copiar a seleção (no terminal)",
-    "terminalPaste": "Colar (no terminal)"
+    "terminalPaste": "Colar (no terminal)",
+    "logs": "Abrir ou fechar os logs"
   },
   "studio": {
     "title": "Studio de treinamento",
@@ -2074,6 +2091,32 @@
     "slot": {
       "name": "slot",
       "text": "Uma conversa simultânea no servidor. Mais slots atendem mais gente ao mesmo tempo, mas dividem o contexto e a memória entre elas."
+    }
+  },
+  "logs": {
+    "title": "Logs",
+    "sources": "Origens",
+    "filter": "Filtrar o texto",
+    "lines": "Linhas do log",
+    "count": "{{n}} linhas",
+    "pause": "Pausar",
+    "resume": "Retomar",
+    "copy": "Copiar",
+    "save": "Salvar",
+    "clear": "Limpar",
+    "close": "Fechar os logs",
+    "copied": "{{n}} linhas copiadas.",
+    "saved": "Logs salvos em {{path}}",
+    "showFolder": "Mostrar a pasta",
+    "saveFailed": "Não deu para salvar os logs: {{error}}",
+    "empty": "Nada foi registrado ainda. As linhas do servidor, do decisor, do 9router e do gateway aparecem aqui.",
+    "noMatch": "Nenhuma linha combina com o filtro.",
+    "source": {
+      "servidor": "Servidor",
+      "decisor": "Decisor",
+      "9router": "9router",
+      "gateway": "Gateway",
+      "app": "App"
     }
   }
 }

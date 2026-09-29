@@ -9,6 +9,7 @@ import { telemetryStore } from "./monitor/telemetryStore";
 import { ClusterChip } from "./server/ClusterPanel";
 import { getServerLive, type ServerLive } from "../lib/api";
 import ModelosDoServidor from "./ModelosDoServidor";
+import { painelDeLogs, usePainelDeLogs } from "../lib/logs";
 
 function Meter({ percent }: { percent: number }) {
   const p = Math.max(0, Math.min(100, percent));
@@ -66,6 +67,7 @@ export default function StatusBar() {
   );
   const gen = useSyncExternalStore(genStats.subscribe, genStats.get);
   const [monitorOpen, setMonitorOpen] = useState(false);
+  const logsAbertos = usePainelDeLogs();
   // Esc e clique fora fecham; o foco volta ao botão do monitor.
   // Fixado, o monitor fica aberto enquanto a pessoa trabalha: nem o clique
   // fora nem o Esc o fecham, e ele atravessa a troca de tela.
@@ -233,6 +235,31 @@ export default function StatusBar() {
               : t("chat.generating")}
           </span>
         )}
+
+        <button
+          type="button"
+          onClick={() => painelDeLogs.alternar()}
+          title={t("logs.title")}
+          aria-label={t("logs.title")}
+          aria-pressed={logsAbertos}
+          className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${
+            logsAbertos ? "bg-panel2 text-ink" : "text-dim hover:bg-panel2 hover:text-ink"
+          }`}
+        >
+          <svg
+            className="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="m5 8 4 4-4 4m7 0h7" />
+            <rect x="2" y="3" width="20" height="18" rx="2" />
+          </svg>
+        </button>
 
         <div ref={monitorRef} className="relative">
           <button

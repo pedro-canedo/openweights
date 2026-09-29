@@ -32,6 +32,8 @@ import LocalServer from "./screens/LocalServer";
 import Providers from "./screens/Providers";
 import Studio from "./screens/Studio";
 import Settings from "./screens/Settings";
+import LogDrawer from "./components/LogDrawer";
+import { iniciarLogs, painelDeLogs, usePainelDeLogs } from "./lib/logs";
 
 const icons: Record<Screen, string> = {
   studio: "M9 3h6m-5 0v7L4 20h16l-6-10V3M8 15h8",
@@ -93,6 +95,11 @@ export default function App() {
 
   // A paleta de comandos e os atalhos de teclado.
   const tema = useTema();
+  const logsAbertos = usePainelDeLogs();
+  // Escuta desde o boot: o que a subida do servidor disser não se perde.
+  useEffect(() => {
+    void iniciarLogs();
+  }, []);
   const [paleta, setPaleta] = useState(false);
   const [folha, setFolha] = useState(false);
   const comandos = useMemo(
@@ -125,6 +132,11 @@ export default function App() {
       // O resto do teclado é do programa no terminal — e, com um diálogo
       // aberto, de quem está nele.
       if (noTerminal || document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (mod && e.shiftKey && k === "l") {
+        e.preventDefault();
+        painelDeLogs.alternar();
+        return;
+      }
       if (mod && !e.shiftKey) {
         if (k === "n") {
           e.preventDefault();
@@ -419,6 +431,7 @@ export default function App() {
         </main>
       </div>
 
+      {logsAbertos && <LogDrawer />}
       <StatusBar />
       <GenerationPanel />
       <DownloadsPanel />

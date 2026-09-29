@@ -154,6 +154,7 @@ export function FolhaDeAtalhos({ aberta, aoFechar }: { aberta: boolean; aoFechar
     ["Ctrl+N", t("shortcuts.newChat")],
     ["Ctrl+,", t("shortcuts.settings")],
     ["Ctrl+1…9", t("shortcuts.screens")],
+    ["Ctrl+Shift+L", t("shortcuts.logs")],
     ["?", t("shortcuts.sheet")],
     ["Enter", t("shortcuts.send")],
     ["Shift+Enter", t("shortcuts.newLine")],

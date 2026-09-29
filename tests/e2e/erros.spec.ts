@@ -38,3 +38,26 @@ test("um erro do servidor que dá para refazer oferece tentar de novo", async ({
   await expect(page.getByRole("button", { name: "Parar", exact: true })).toBeVisible({ timeout: 10000 });
   await expect(cartao).toHaveCount(0);
 });
+
+test("a prévia do comando diz se o que roda é o que está configurado, e copia como shell", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.addInitScript(() => {
+    (globalThis as { __configPendente?: boolean }).__configPendente = true;
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Servidor Local", exact: true }).click();
+  await page.getByRole("tab", { name: "Desempenho" }).click();
+
+  const previa = page.getByRole("region", { name: "Prévia do comando" });
+  // Parado: é o que vai rodar.
+  await expect(previa).toContainText("O que vai rodar ao iniciar");
+  await page.getByRole("button", { name: "Iniciar", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Parar", exact: true })).toBeVisible();
+  await expect(previa).toContainText("Mudanças pendentes");
+  await expect(previa).toContainText("Reinicie o servidor para aplicar");
+
+  await previa.getByRole("button", { name: "Copiar como comando" }).click();
+  await expect(page.getByText("Comando copiado.")).toBeVisible();
+  const colado = await page.evaluate(() => navigator.clipboard.readText());
+  expect(colado).toContain("GGML_OP_OFFLOAD_MIN_BATCH=32 \\\nllama-server --models-dir /dados/models");
+});

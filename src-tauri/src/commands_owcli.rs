@@ -179,6 +179,10 @@ pub async fn sincronizar(app: &AppHandle) {
     }
     if let Err(e) = sincronizar_ja(app, &state).await {
         log::warn!("OwCLI: não foi possível atualizar o gateway ou o openweights.json: {e}");
+        crate::logs::registrar(
+            crate::logs::GATEWAY,
+            &format!("não foi possível atualizar o gateway ou o openweights.json: {e}"),
+        );
     }
 }
 
@@ -201,6 +205,10 @@ async fn sincronizar_ja(app: &AppHandle, state: &AppState) -> Result<(), String>
                     .await
                     .map_err(|e| format!("gateway: {e}"))?;
                 let base = gw.base_url();
+                crate::logs::registrar(
+                    crate::logs::GATEWAY,
+                    &format!("gateway do OwCLI ouvindo em {base}"),
+                );
                 *guard = Some(gw);
                 base
             }

@@ -10,6 +10,7 @@ import { definirModo, type Modo } from "./mode";
 import { navigate, type NavPayload, type Screen } from "./nav";
 import { openUrl } from "./openExternal";
 import { aplicarTema, type Tema } from "./tema";
+import { painelDeLogs } from "./logs";
 
 /** O guia do site, no idioma da interface. */
 export function enderecoDaAjuda(idioma: string): string {
@@ -120,6 +121,14 @@ export function montarComandos(t: TFunction, ctx: ContextoDosComandos): Comando[
       rotulo: t("palette.help"),
       palavras: "ajuda help documentação docs guia guide site",
       executar: () => void openUrl(enderecoDaAjuda(ctx.idioma)),
+    },
+    {
+      id: "logs.toggle",
+      grupo: "actions",
+      rotulo: t("palette.logs"),
+      palavras: "logs registro log saída output servidor erro diagnóstico",
+      atalho: "Ctrl+Shift+L",
+      executar: () => painelDeLogs.alternar(),
     },
     {
       id: "shortcuts",

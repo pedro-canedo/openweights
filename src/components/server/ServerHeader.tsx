@@ -114,6 +114,12 @@ export default function ServerHeader({
                 <span className="text-accent">{t("server.header.engineMoe")}</span>
               </>
             )}
+            {status?.configStale && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="text-warn">{t("server.header.configStale")}</span>
+              </>
+            )}
             {status?.keyStale && (
               <>
                 <span aria-hidden>·</span>

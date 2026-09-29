@@ -1011,6 +1011,10 @@ pub struct ServerStatusView {
     /// settings — a tela mostra "reinicie para aplicar" a partir daqui, e não
     /// de estado local que se perde ao trocar de aba.
     pub key_stale: bool,
+    /// A configuração de agora (flags, variáveis, INI dos modelos) difere da
+    /// que o processo de pé usou ao subir: há mudança esperando um reinício.
+    /// Sempre `false` parado.
+    pub config_stale: bool,
     /// O motor com que o processo subiu (`None` parado). É a resposta a "por
     /// que o `/v1/models` diz build 10709?": o modelo selecionado pediu o
     /// motor da PrismML.
@@ -1491,6 +1495,8 @@ pub async fn server_status(state: State<'_, AppState>) -> CmdResult<ServerStatus
 /// A visão de status que o `server_status` devolve, alcançável de dentro do
 /// processo (a tela de carga de modelo também precisa dela).
 pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
+    // Antes de pegar o lock do servidor: a assinatura fala com o cluster.
+    let config_stale = config_desatualizada(state).await;
     let prefs = server_prefs(state);
     let (port, lan) = (prefs.port, prefs.lan);
     let guard = state.server.lock().await;
@@ -1503,6 +1509,7 @@ pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
             port: srv.config().port,
             lan: srv.config().host != "127.0.0.1",
             key_stale: srv.config().api_key != prefs.api_key,
+            config_stale,
             engine: motor_em_execucao(state),
             engine_variant: variante_do_exe(&srv.config().exe_path),
         },
@@ -1512,6 +1519,7 @@ pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
             port,
             lan,
             key_stale: false,
+            config_stale: false,
             engine: None,
             engine_variant: None,
         },
@@ -1523,6 +1531,19 @@ pub(crate) async fn current_status_view(state: &AppState) -> ServerStatusView {
 /// Duas diferenças deliberadas para o boot de verdade: o executável pode não
 /// existir ainda (o preview não spawna nada), e a chave de API sai mascarada
 /// — o bloco copiável da tela não pode virar vazamento de segredo.
+/// Há mudança de configuração que o processo de pé ainda não usa? Parado, ou
+/// sem assinatura de boot (subiu por outro caminho), não há o que comparar.
+pub(crate) async fn config_desatualizada(state: &AppState) -> bool {
+    let no_boot = *state
+        .config_no_boot
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    match no_boot {
+        Some(boot) => boot != crate::commands_flags::assinatura_da_configuracao(state).await,
+        None => false,
+    }
+}
+
 pub(crate) async fn preview_server_config(state: &AppState) -> lr_engine::ServerConfig {
     let prefs = server_prefs(state);
     let exe = active_runtime(state)
@@ -1579,6 +1600,10 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
         env_vars,
     } = server_prefs(state);
 
+    // Fora do lock do servidor: a assinatura fala com o cluster.
+    let assinatura = crate::commands_flags::assinatura_da_configuracao(state).await;
+    let config_stale_agora = config_desatualizada(state).await;
+
     // Spawn + instalação no slot acontecem sob o lock; a espera do /health
     // fica FORA dele para não travar server_status/stop/exit por até 30 s.
     let view = {
@@ -1592,6 +1617,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                 port: srv.config().port,
                 lan: srv.config().host != "127.0.0.1",
                 key_stale: srv.config().api_key != api_key,
+                config_stale: config_stale_agora,
                 engine: motor_em_execucao(state),
                 engine_variant: variante_do_exe(&srv.config().exe_path),
             });
@@ -1638,6 +1664,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             tauri::async_runtime::spawn(async move {
                 let mut lines = tokio::io::BufReader::new(out).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    crate::logs::registrar(crate::logs::SERVIDOR, &line);
                     let _ = app2.emit("server-log", &line);
                 }
             });
@@ -1647,12 +1674,17 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             tauri::async_runtime::spawn(async move {
                 let mut lines = tokio::io::BufReader::new(err).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
+                    crate::logs::registrar(crate::logs::SERVIDOR, &line);
                     let _ = app2.emit("server-log", &line);
                 }
             });
         }
 
         *state.motor_ativo.lock().unwrap_or_else(|e| e.into_inner()) = Some(motor);
+        *state
+            .config_no_boot
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(assinatura);
         let view = ServerStatusView {
             running: true,
             base_url: Some(srv.config().connect_url()),
@@ -1660,6 +1692,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
             lan,
             // Acabou de subir com as prefs de agora: nada pendente.
             key_stale: false,
+            config_stale: false,
             engine: Some(motor),
             engine_variant: variante_do_exe(&srv.config().exe_path),
         };
@@ -1693,6 +1726,14 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                 .server_pid
                 .store(0, std::sync::atomic::Ordering::SeqCst);
             *state.motor_ativo.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            *state
+                .config_no_boot
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = None;
+            *state
+                .config_no_boot
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()) = None;
             let _ = app.emit(
                 "server-status",
                 &ServerStatusView {
@@ -1701,6 +1742,7 @@ pub(crate) async fn start_engine(app: &AppHandle, state: &AppState) -> CmdResult
                     port,
                     lan,
                     key_stale: false,
+                    config_stale: false,
                     engine: None,
                     engine_variant: None,
                 },
@@ -1767,6 +1809,7 @@ pub(crate) async fn stop_engine(app: &AppHandle, state: &AppState) -> CmdResult<
             port,
             lan,
             key_stale: false,
+            config_stale: false,
             engine: None,
             engine_variant: None,
         },

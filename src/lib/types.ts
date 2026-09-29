@@ -321,6 +321,9 @@ export interface ServerStatus {
   /** Processo de pé com chave de API diferente da gravada no setting —
    *  "reinicie para aplicar" (serde `key_stale`). Sempre `false` parado. */
   keyStale: boolean;
+  /** A configuração de agora difere da que o processo de pé usou ao subir
+   *  (flags, variáveis, INI dos modelos): há mudança esperando reinício. */
+  configStale: boolean;
   /** O motor com que o processo subiu; `null`/ausente quando parado. */
   engine?: EngineSource | null;
   /**

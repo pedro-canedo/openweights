@@ -123,6 +123,21 @@ pub struct EnginePreview {
     pub env: Vec<String>,
 }
 
+/// Uma impressão da configuração que o próximo `server_start` usaria: os
+/// argumentos, o ambiente (a chave de API já vem mascarada) e o INI do Router.
+/// Só vale para comparar duas leituras no mesmo processo, não para guardar.
+pub(crate) async fn assinatura_da_configuracao(state: &AppState) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let cfg = crate::commands::preview_server_config(state).await;
+    let ini =
+        lr_engine::render_models_preset(&router_star_section(state), &router_preset_entries(state));
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    cfg.to_args().hash(&mut h);
+    cfg.env_vars().hash(&mut h);
+    ini.hash(&mut h);
+    h.finish()
+}
+
 #[tauri::command]
 pub async fn engine_preview(
     state: State<'_, AppState>,

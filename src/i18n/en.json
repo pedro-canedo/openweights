@@ -704,7 +704,8 @@
       "noModel": "No model loaded",
       "tps": "{{n}} tokens/s",
       "lanOn": "open to the local network",
-      "keyStale": "new key pending — restart"
+      "keyStale": "new key pending — restart",
+      "configStale": "New configuration: restart to apply"
     },
     "guide": {
       "title": "How to use it",
@@ -728,7 +729,21 @@
       "title": "Address and access",
       "hint": "Which port the server answers on, and who can reach it."
     },
-    "logsHint": "Raw llama-server output, for when something won't start."
+    "logsHint": "Raw llama-server output, for when something won't start.",
+    "logsOpenPanel": "Open the logs panel (all sources)",
+    "preview": {
+      "running": "Running with this configuration",
+      "pending": "Pending changes",
+      "next": "What will run on start",
+      "pendingHint": "What is configured differs from what the running server uses. Restart the server to apply.",
+      "copyShell": "Copy as a command",
+      "copyIni": "Copy the INI",
+      "revealIni": "Show the INI in its folder",
+      "copiedShell": "Command copied.",
+      "copiedIni": "INI copied.",
+      "revealFailed": "Could not open the folder: {{error}}",
+      "maskedNote": "The API key is masked; replace ••• with yours when using the command outside the app."
+    }
   },
   "settings": {
     "title": "Settings",
@@ -1740,7 +1755,8 @@
       "actions": "Actions",
       "server": "Server",
       "preferences": "Preferences"
-    }
+    },
+    "logs": "Open or close the logs"
   },
   "shortcuts": {
     "title": "Keyboard shortcuts",
@@ -1755,7 +1771,8 @@
     "newLine": "New line (in the composer)",
     "attach": "Attach a file (in the composer)",
     "terminalCopy": "Copy the selection (in a terminal)",
-    "terminalPaste": "Paste (in a terminal)"
+    "terminalPaste": "Paste (in a terminal)",
+    "logs": "Open or close the logs"
   },
   "studio": {
     "title": "Training Studio",
@@ -2074,6 +2091,32 @@
     "slot": {
       "name": "slot",
       "text": "One simultaneous conversation on the server. More slots serve more people at once, but split the context and memory between them."
+    }
+  },
+  "logs": {
+    "title": "Logs",
+    "sources": "Sources",
+    "filter": "Filter the text",
+    "lines": "Log lines",
+    "count": "{{n}} lines",
+    "pause": "Pause",
+    "resume": "Resume",
+    "copy": "Copy",
+    "save": "Save",
+    "clear": "Clear",
+    "close": "Close the logs",
+    "copied": "{{n}} lines copied.",
+    "saved": "Logs saved to {{path}}",
+    "showFolder": "Show the folder",
+    "saveFailed": "Could not save the logs: {{error}}",
+    "empty": "Nothing logged yet. Lines from the server, the decider, 9router and the gateway show up here.",
+    "noMatch": "No line matches the filter.",
+    "source": {
+      "servidor": "Server",
+      "decisor": "Decider",
+      "9router": "9router",
+      "gateway": "Gateway",
+      "app": "App"
     }
   }
 }

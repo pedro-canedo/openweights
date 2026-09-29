@@ -147,7 +147,7 @@ async function mockInvoke(cmd: string, _args?: Record<string, unknown>) {
 }
 
 function mockListen(event: string, handler: (payload: unknown) => void) {
-  if (event === "download") return ouvirMock(event, handler);
+  if (event === "download" || event === "log-line") return ouvirMock(event, handler);
   if (event !== "telemetry") return () => {};
   let t = 0;
   const timer = setInterval(() => {

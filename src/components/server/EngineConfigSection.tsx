@@ -63,6 +63,7 @@ import FlagControl, { RequirementBadges } from "../form/FlagControl";
 import Icon from "../ui/Icon";
 import { useProfileRevision } from "../../lib/profileChanges";
 import Termo from "../ui/Termo";
+import CommandPreview from "./CommandPreview";
 
 const CTX_CHIPS = [8192, 16384, 32768, 65536];
 
@@ -92,8 +93,11 @@ export default function EngineConfigSection({
   selected: selectedProp,
   onSelect,
   compact = false,
+  configStale = false,
 }: {
   running: boolean;
+  /** Há configuração nova que o servidor de pé ainda não usa. */
+  configStale?: boolean;
   hasGpu: boolean;
   compact?: boolean;
   /** Seleção elevada: com o par `selected`/`onSelect`, o pai é o dono do
@@ -115,7 +119,6 @@ export default function EngineConfigSection({
   const [presets, setPresets] = useState<EnginePresetView[]>([]);
   const [routerState, setRouterState] = useState<Map<string, string>>(new Map());
   const [preview, setPreview] = useState<EnginePreview | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const [issues, setIssues] = useState<FlagIssue[]>([]);
   const [search, setSearch] = useState("");
   const [categoria, setCategoria] = useState<string | null>(null);
@@ -127,7 +130,6 @@ export default function EngineConfigSection({
   const [error, setError] = useState<string | null>(null);
   const [advising, setAdvising] = useState(false);
   const [presetName, setPresetName] = useState("");
-  const [copied, setCopied] = useState(false);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const saveTimer = useRef<number | null>(null);
@@ -965,48 +967,11 @@ export default function EngineConfigSection({
         )}
       </div>
 
-      {/* preview */}
-      <div className="mt-4 flex flex-col gap-2 border-t border-edge pt-4">
-        <button
-          type="button"
-          onClick={() => setPreviewOpen((v) => !v)}
-          className="flex items-center justify-between text-sm"
-        >
-          {t("server.engineConfig.preview")}
-          <span className="text-dim">
-            <Icon name={previewOpen ? "chevron-down" : "chevron-right"} />
-          </span>
-        </button>
-        {previewOpen && preview && (
-          <div className="relative">
-            <pre className="select-text overflow-x-auto rounded-lg border border-edge bg-panel2 p-3 font-mono text-[11.5px] leading-relaxed text-dim">
-              {[
-                `# llama-server ${preview.args.join(" ")}`,
-                preview.env.length > 0
-                  ? `\n# ${t("server.engineConfig.envPreview")}\n${preview.env.join("\n")}`
-                  : "",
-                `\n# ${preview.iniPath}\n${preview.ini}`,
-              ].join("\n")}
-            </pre>
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard
-                  .writeText(`llama-server ${preview.args.join(" ")}\n\n${preview.ini}`)
-                  .then(() => {
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1200);
-                  });
-              }}
-              className="absolute right-2 top-2 rounded-md border border-edge bg-panel px-2 py-1 text-[11px] text-dim hover:text-ink"
-            >
-              {copied ? t("server.copied") : t("server.copy")}
-            </button>
-          </div>
-        )}
-      </div>
-
       </details>
+
+      {/* A prévia mora fora do <details>: é o que o servidor vai rodar. */}
+      <CommandPreview preview={preview} running={running} configStale={configStale} />
+
       {/* estado de aplicação */}
       {busyWith.length > 0 && (
         <p className="mt-3 text-[11px] leading-relaxed text-warn">
