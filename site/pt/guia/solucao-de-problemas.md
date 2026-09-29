@@ -171,6 +171,17 @@ quadradinhos, e uma fonte monocromática como a Noto Emoji resolve. O log do app
 diz quando a proteção está ligada (`fontes COLRv1 escondidas da interface`). O
 pacote `.deb` usa o navegador do sistema e não tem esse problema.
 
+## O OwCLI responde "We're currently experiencing high demand"
+
+É o jeito do OwCLI mostrar um HTTP 500 do modelo. Antes da 0.26.1 acontecia com
+modelos cujo template de chat aceita uma única mensagem de sistema, no começo
+(Ternary Bonsai 2, Qwen3.8): o agente manda várias, e o motor recusava o pedido.
+Agora o app as reúne antes de chegarem ao motor, então atualize para a 0.26.1 ou
+mais nova. Se um modelo do 9router responde `401 Missing API key`, o 9router
+tinha acabado de ser instalado e a chave dele ainda não existia; desde a 0.26.1 o
+app espera por ela e tenta de novo sozinho, então dê alguns segundos depois de o
+9router subir.
+
 ## Relatar outra coisa
 
 Abra uma [issue](https://github.com/pedro-canedo/openweights/issues) com o seu

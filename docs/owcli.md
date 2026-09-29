@@ -89,8 +89,21 @@ O OwCLI não conhece chave nem endereço de fonte nenhuma. Ele fala com
 `http://127.0.0.1:<porta>/owcli/v1` e prova quem é com um token (comparação em tempo
 constante). O gateway lê o prefixo do modelo, o que vem antes do **primeiro** `:`
 (`local:`, `openrouter:`, `ninerouter:`), troca pelo id que a fonte conhece, injeta a chave
-daquela fonte e repassa a resposta em streaming, byte a byte. O resto do corpo passa
-intacto: o spike não precisou de reescrita. `GET /models` lista os ids com prefixo.
+daquela fonte e repassa a resposta em streaming, byte a byte. `GET /models` lista os ids com
+prefixo.
+
+O corpo passa intacto, com uma exceção, só na fonte `local` (`lr_owgw::reescritas`): o Codex
+manda as instruções em `instructions` e mensagens `developer` (permissões, ambiente, troca de
+modelo) dentro de `input`, o llama.cpp as converte todas em `system`, e o chat template do
+Ternary Bonsai 2 e do Qwen3.8 exige uma só, na primeira posição (`raise_exception('System
+message must be at the beginning.')`). Isso chega ao Codex como HTTP 500, que ele traduz na
+frase "We're currently experiencing high demand" — o spike não pegou porque o Qwen3-Coder e o
+Qwen3-8B toleram. O gateway tira as mensagens `developer` e `system` de `input` e põe o texto
+delas no fim de `instructions`, na ordem. O OpenRouter e o 9router recebem o pedido como veio.
+
+Uma fonte sem chave não entra no catálogo: o 9router só tem a chave depois do primeiro boot
+dele (a chave vem de arquivos que ele escreve), e sem ela todo pedido volta 401 "Missing API
+key". Enquanto ela falta, o catálogo é refeito a cada poucos segundos, até oito vezes.
 
 Nada disso nasce para quem nunca usou o OwCLI: o gateway e a casa só aparecem depois da
 primeira sessão (setting `owcli.ativo`). Daí em diante o gateway sobe com o app e, a cada

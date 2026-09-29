@@ -199,6 +199,7 @@ pub async fn fontes(state: &AppState) -> Vec<Fonte> {
     }
 
     let nove_rodando = state.ninerouter.lock().await.is_some();
+    state.ninerouter_sem_chave.store(false, Ordering::SeqCst);
     if cfg.nine_router.installed && nove_rodando {
         let porta = cfg.nine_router.port;
         let modelos9 = lr_ninerouter::listar_modelos(porta)
@@ -220,11 +221,19 @@ pub async fn fontes(state: &AppState) -> Vec<Fonte> {
                     Err(e) => log::warn!("9router sem chave de API utilizável: {e}"),
                 }
             }
+            // Sem chave o 9router responde 401 ("Missing API key") a todo
+            // pedido, e uma fonte que só falha é pior do que fonte nenhuma. A
+            // chave nasce com o primeiro boot do 9router, então esta é uma
+            // espera: o catálogo é refeito daqui a pouco (`agendar`).
+            if chave9.is_empty() {
+                state.ninerouter_sem_chave.store(true, Ordering::SeqCst);
+                return fontes;
+            }
             fontes.push(Fonte {
                 id: NINEROUTER,
                 nome: "9Router",
                 base_url: format!("http://127.0.0.1:{porta}/v1"),
-                chave: (!chave9.is_empty()).then_some(chave9),
+                chave: Some(chave9),
                 modelos: modelos9
                     .into_iter()
                     .map(|m| ModeloDaFonte {
@@ -263,5 +272,54 @@ pub fn agendar(app: &AppHandle) {
         }
         // O OwCLI: rotas do gateway e o openweights.json (só se já foi usado).
         crate::commands_owcli::sincronizar(&app).await;
+
+        // O 9router acabou de subir e ainda não tem a chave que o app usa: tenta
+        // de novo daqui a pouco, algumas vezes, em vez de deixar a fonte de fora
+        // até a próxima mudança.
+        if state.ninerouter_sem_chave.load(Ordering::SeqCst) {
+            let tentativas = state
+                .ninerouter_espera_da_chave
+                .fetch_add(1, Ordering::SeqCst)
+                + 1;
+            if let Some(espera) = espera_pela_chave(tentativas) {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(espera).await;
+                    agendar(&app);
+                });
+            }
+        } else {
+            state.ninerouter_espera_da_chave.store(0, Ordering::SeqCst);
+        }
     });
+}
+
+/// Quanto esperar para tentar de novo a chave do 9router, dada a quantidade de
+/// tentativas sem ela. Zero tentativas: a chave veio (ou não há 9router). Depois
+/// de `TENTATIVAS_DA_CHAVE` o app desiste até a próxima mudança de fontes.
+const TENTATIVAS_DA_CHAVE: u32 = 8;
+
+fn espera_pela_chave(tentativas: u32) -> Option<std::time::Duration> {
+    (1..=TENTATIVAS_DA_CHAVE)
+        .contains(&tentativas)
+        .then(|| std::time::Duration::from_secs(u64::from(tentativas.min(4)) * 3))
+}
+
+#[cfg(test)]
+mod testes_da_chave {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn a_chave_do_9router_e_esperada_com_pausa_crescente_e_por_pouco_tempo() {
+        assert_eq!(espera_pela_chave(0), None, "sem espera: a chave veio");
+        assert_eq!(espera_pela_chave(1), Some(Duration::from_secs(3)));
+        assert_eq!(espera_pela_chave(4), Some(Duration::from_secs(12)));
+        assert_eq!(
+            espera_pela_chave(8),
+            Some(Duration::from_secs(12)),
+            "a pausa para de crescer"
+        );
+        assert_eq!(espera_pela_chave(9), None, "depois de oito, desiste");
+    }
 }

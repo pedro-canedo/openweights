@@ -160,6 +160,14 @@ async fn encaminhar(
             )
         })?;
     corpo["model"] = Value::String(id.to_string());
+    // O llama.cpp entrega o chat template do modelo mensagens de sistema em
+    // posições que vários templates recusam (ver `reescritas`).
+    if prefixo == "local"
+        && resto == "/responses"
+        && crate::reescritas::unificar_sistema(&mut corpo)
+    {
+        log::debug!("gateway: mensagens de sistema reunidas em `instructions`");
+    }
     let url = format!("{}{resto}{consulta}", rota.base_url.trim_end_matches('/'));
 
     let mut pedido = http

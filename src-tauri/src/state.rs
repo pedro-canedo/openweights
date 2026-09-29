@@ -81,6 +81,11 @@ pub struct AppState {
     pub owcli_instalando: std::sync::atomic::AtomicBool,
     /// Último erro da instalação do runtime do OwCLI, para a tela.
     pub owcli_erro: std::sync::Mutex<Option<String>>,
+    /// O último catálogo deixou o 9router de fora por falta de chave de API (ela
+    /// só existe depois do primeiro boot dele).
+    pub ninerouter_sem_chave: std::sync::atomic::AtomicBool,
+    /// Quantas vezes o catálogo foi refeito à espera dessa chave. Zera quando ela vem.
+    pub ninerouter_espera_da_chave: std::sync::atomic::AtomicU32,
     /// Ponto de entrada único (Traefik), quando ligado. Opcional: nada no
     /// chat depende dele.
     pub gateway: tokio::sync::Mutex<Option<lr_gateway::Gateway>>,
@@ -293,6 +298,8 @@ impl AppState {
             owcli_operacao: tokio::sync::Mutex::new(()),
             owcli_instalando: std::sync::atomic::AtomicBool::new(false),
             owcli_erro: std::sync::Mutex::new(None),
+            ninerouter_sem_chave: std::sync::atomic::AtomicBool::new(false),
+            ninerouter_espera_da_chave: std::sync::atomic::AtomicU32::new(0),
             terminais: Arc::new(lr_pty::Gerente::new({
                 let app = app.clone();
                 Arc::new(move |id, aviso| {

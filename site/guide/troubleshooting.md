@@ -169,6 +169,17 @@ monochrome font such as Noto Emoji fixes that. The app log says when the
 protection is on (`fontes COLRv1 escondidas da interface`). The `.deb` package
 uses the system's browser engine and does not have this problem.
 
+## OwCLI answers "We're currently experiencing high demand"
+
+That is OwCLI's way of showing an HTTP 500 from the model. Before 0.26.1 it
+happened with models whose chat template accepts only one system message at the
+start (Ternary Bonsai 2, Qwen3.8): the agent sends several, and the engine
+refused the request. The app now merges them before they reach the engine, so
+update to 0.26.1 or later. If a 9router model answers `401 Missing API key`,
+the 9router had just been installed and its key did not exist yet; since 0.26.1
+the app waits for it and retries by itself, so give it a few seconds after the
+9router starts.
+
 ## Reporting something else
 
 Open an [issue](https://github.com/pedro-canedo/openweights/issues) with your

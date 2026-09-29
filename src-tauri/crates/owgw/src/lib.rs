@@ -19,6 +19,7 @@
 //! O spike mediu o Codex contra o llama-server b10441 sem nenhuma reescrita de
 //! corpo além do `model`: o gateway não mexe em mais nada.
 
+mod reescritas;
 mod servico;
 
 use std::sync::{Arc, RwLock};

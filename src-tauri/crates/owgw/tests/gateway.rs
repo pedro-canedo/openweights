@@ -21,6 +21,7 @@ struct Visto {
     caminho: String,
     autorizacao: Option<String>,
     modelo: Option<String>,
+    corpo: Value,
 }
 
 const SSE: [&str; 3] = [
@@ -54,6 +55,7 @@ async fn fonte_falsa() -> (String, Arc<Mutex<Vec<Visto>>>) {
                             caminho,
                             autorizacao,
                             modelo: json["model"].as_str().map(str::to_string),
+                            corpo: json,
                         });
                         let (tx, rx) =
                             tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(4);
@@ -249,4 +251,52 @@ fn token_novo_tem_64_hex_e_nao_se_repete() {
     assert_eq!(a.len(), 64);
     assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
     assert_ne!(a, b);
+}
+
+/// O Codex manda mensagens `developer` dentro de `input`; o llama.cpp as vira em
+/// `system`, e o template do Ternary Bonsai 2 recusa a segunda com HTTP 500.
+#[tokio::test]
+async fn a_fonte_local_recebe_uma_so_mensagem_de_sistema_e_as_outras_fontes_o_pedido_como_veio() {
+    let (base, vistos) = fonte_falsa().await;
+    let gw = gateway(&base).await;
+    let corpo = |modelo: &str| {
+        serde_json::json!({
+            "model": modelo,
+            "instructions": "Você é o OwCLI.",
+            "stream": true,
+            "input": [
+                { "type": "message", "role": "developer",
+                  "content": [{ "type": "input_text", "text": "permissões" }] },
+                { "type": "message", "role": "user",
+                  "content": [{ "type": "input_text", "text": "Olá" }] },
+            ],
+        })
+    };
+    for modelo in ["local:qwen3-coder", "openrouter:openai/gpt-oss-20b:free"] {
+        let r = reqwest::Client::new()
+            .post(format!("{}/responses", gw.base_url()))
+            .bearer_auth("tok-certo")
+            .json(&corpo(modelo))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200);
+        let _ = r.bytes().await;
+    }
+    let v = vistos.lock().unwrap().clone();
+
+    let local = &v[0].corpo;
+    assert_eq!(local["instructions"], "Você é o OwCLI.\n\npermissões");
+    let papeis: Vec<&str> = local["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["role"].as_str().unwrap())
+        .collect();
+    assert_eq!(papeis, ["user"]);
+
+    // O OpenRouter entende `developer`: chega intacto.
+    let remoto = &v[1].corpo;
+    assert_eq!(remoto["instructions"], "Você é o OwCLI.");
+    assert_eq!(remoto["input"].as_array().unwrap().len(), 2);
 }
