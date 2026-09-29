@@ -1,5 +1,33 @@
 # What's new
 
+## 0.27.0
+
+**You can see what is running, errors say what to do, and a model's own
+number of conversations finally counts.** `Ctrl+Shift+L` opens a logs panel
+with everything under the app — the server, the decider, 9router, the OwCLI
+gateway and OpenWeights itself — with filters, pause, copy and save; what the
+server said while it started is still there when you open it later. In Local
+Server › Performance, the command preview shows whether what is running is what
+is configured, copies as a shell command with the API key masked, and sits next
+to the recommendation ("Adjust for this machine") and the concurrency numbers,
+now all in one place. Along the way we fixed a real bug: the global
+`--parallel` went on the command line, which wins over a model's own section in
+the Router, so a per-model number was silently ignored; now it is the default
+in the INI and the model's number wins.
+
+Errors turn into a card saying what happened and giving the button that fixes it
+(install the engine, open Sources, start a new conversation, try again), with the
+original text collapsed and copyable. Deleting a message can be undone for five
+seconds; cancelling a download or deleting a model says how many gigabytes are at
+stake first; AgenticOw only downloads after you click, with the size up front.
+Settings gets a configuration backup (JSON, keys out unless you tick the box),
+My Models a sortable table with multi-select delete, the chat's Advanced mode
+`min_p`, penalties, seed, stop sequences, JSON answers and **Copy request**
+(cURL, Python, JavaScript), and technical terms a **?** that explains them. The
+`owcli` command can now be put on the PATH of any terminal (opt-in). See
+[Local Server](/integrations/local-api), [Chat](/guide/chat),
+[models](/guide/models) and [OwCLI](/guide/owcli).
+
 ## 0.26.1
 
 **The OwCLI agent now answers with Ternary Bonsai 2 and Qwen3.8.** With those

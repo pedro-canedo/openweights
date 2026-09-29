@@ -1,5 +1,33 @@
 # Novidades
 
+## 0.27.0
+
+**Dá para ver o que está rodando, os erros dizem o que fazer, e o número de
+conversas de cada modelo finalmente vale.** `Ctrl+Shift+L` abre um painel de logs
+com tudo que roda por baixo do app — o servidor, o decisor, o 9router, o gateway
+do OwCLI e o próprio OpenWeights — com filtros, pausa, copiar e salvar; o que o
+servidor disse enquanto subia continua lá quando você abre depois. Em Servidor
+Local › Desempenho, a prévia do comando mostra se o que está rodando é o que está
+configurado, copia como comando de shell com a chave da API mascarada e fica ao
+lado da recomendação ("Ajustar para esta máquina") e dos números de concorrência,
+agora todos num lugar só. No caminho corrigimos um defeito real: o `--parallel`
+global ia na linha de comando, que vence a seção do próprio modelo no Router, e o
+número escolhido por modelo era ignorado em silêncio; agora ele é o padrão no INI
+e o número do modelo vale.
+
+Os erros viram um cartão que diz o que houve e traz o botão que resolve (instalar
+o motor, abrir as Fontes, começar uma conversa nova, tentar de novo), com o texto
+original recolhido e copiável. Apagar uma mensagem dá cinco segundos para
+desfazer; cancelar um download ou excluir um modelo diz antes quantos gigabytes
+estão em jogo; o AgenticOw só baixa depois do seu clique, com o tamanho na frente.
+Configurações ganha um backup da configuração (JSON, sem as chaves a menos que
+você marque), Meus Modelos uma tabela ordenável com exclusão em lote, o modo
+Avançado do chat `min_p`, penalidades, semente, sequências de parada, resposta em
+JSON e **Copiar requisição** (cURL, Python, JavaScript), e os termos técnicos
+ganham um **?** que os explica. O comando `owcli` pode agora ir para o PATH de
+qualquer terminal (opt-in). Veja [Servidor Local](/pt/integracoes/api-local),
+[Chat](/pt/guia/chat), [modelos](/pt/guia/modelos) e [OwCLI](/pt/guia/owcli).
+
 ## 0.26.1
 
 **O agente OwCLI passa a responder com o Ternary Bonsai 2 e o Qwen3.8.** Com

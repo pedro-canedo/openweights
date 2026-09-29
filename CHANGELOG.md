@@ -10,6 +10,37 @@ which is the single source this file, the GitHub release body and the site all
 come from. Entries below the marker further down were recovered from the
 published releases and the version commits, and are kept as history.
 
+## [0.27.0] — 2026-09-29
+
+**Fixed**
+
+- **A model's number of simultaneous conversations now takes effect.** The global `--parallel` went on the server command line, and the command line wins over a model's section in the Router: the value chosen for a model was ignored (measured on llama.cpp b10441). Now, with the Router INI, the global number goes to the `[*]` section and a model that asked for another gets its own.
+
+**Seeing what is running**
+
+- **Logs panel** (`Ctrl+Shift+L`, the status bar button or the palette): llama-server, the decider, 9router, the OwCLI gateway and OpenWeights itself in one place. It filters by source and text, pauses, copies, saves to the app's `exports` folder and clears. What the server said while it started is still there when you open the panel later.
+- **The command preview** in Local Server › Performance leaves its collapsed section: it shows the exact command, the environment and the INI, says whether what is running is what is configured (**Pending changes** means a restart will change something), copies as a shell command with the API key masked and opens the INI in its folder.
+- **Adjust for this machine** and the concurrency numbers (concurrent models, conversations at once) live in Local Server › Performance, in one place. The button in My Models takes you there with the panel already open.
+- Every manual flag in the catalog that differs from the llama.cpp default gets a **Modified** badge and a **↺ Default** that undoes it.
+
+**Errors that say what to do**
+
+- Raw text (`HTTP 500: …`) gives way to a card saying what happened, why and the button that fixes it: install the engine, open Local Server or Sources, start a new conversation, try again. The original text stays collapsed and copyable. It applies in Chat, in the library (which used to fail looking empty), in downloads, on first run, in Local Server and in Sources.
+- **Deleting a message** removes it at once and gives five seconds to **Undo**; only then does the app really delete it.
+- **Cancelling or discarding a download** asks first and says how many gigabytes are lost. Deleting a model also shows its size.
+- **AgenticOw only downloads after your click**, with the size up front (the runtime and, if needed, the portable Node.js).
+
+**Configuration and library**
+
+- **Configuration backup** (Settings): exports server, per-model profiles, presets and provider choices as JSON, and imports on another machine, confirming first and saying what the file brings. Keys and passwords only go if you tick the box.
+- **My Models as a table**: sorts by name, source, quantization or size; select several and delete them at once, with the total that returns to disk; open each model's folder.
+- **Chat, in Advanced mode**: `min_p`, repeat, presence and frequency penalties, seed, stop sequences, JSON answers (with an optional schema) and **Use the server's defaults**. **Copy request** gives the chat's call as cURL, Python or JavaScript, without the API key.
+- **Glossary**: a **?** next to quantization, GGUF, context, VRAM, tok/s, MoE, KV cache and slot explains each term in plain words.
+
+**OwCLI**
+
+- **The `owcli` command in any system terminal** (Settings, opt-in): puts `owcli` on the PATH without touching anything that is not the app's. When the agent updates, the command moves to the new version before the old one is deleted, and a version in use is never deleted.
+
 ## [0.26.1] — 2026-09-29
 
 - **OwCLI answers with Ternary Bonsai 2 and Qwen3.8.** With these models the agent showed "We're currently experiencing high demand, which may cause temporary errors" on every message, even with the model loaded and working in chat. It was not demand: the engine refused the request, because the model accepts a single system message, at the start, and the agent sends several. The app now merges them before the request reaches the engine. Tested with Bonsai, on a greeting and on a turn where the agent reads a file.
