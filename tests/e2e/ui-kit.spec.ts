@@ -132,6 +132,22 @@ test("o ? de ajuda abre a explicação", async ({ page }) => {
   );
 });
 
+test("o erro diz o que fazer e guarda o texto original recolhido", async ({ page }) => {
+  const cartao = page.getByRole("alert").filter({ hasText: "A chave desta fonte não foi aceita" });
+  await expect(cartao).toContainText("Confira em Fontes");
+  // Chave é problema de Fontes: o botão principal leva para lá; "tentar" só
+  // aparece nos erros em que refazer adianta.
+  await expect(cartao.getByRole("button", { name: "Abrir Fontes" })).toBeVisible();
+  await expect(cartao.getByRole("button", { name: "Tentar de novo" })).toHaveCount(0);
+
+  // O texto técnico fica recolhido, selecionável e copiável.
+  const detalhes = cartao.locator("details");
+  await expect(detalhes).not.toHaveAttribute("open", "");
+  await detalhes.locator("summary").click();
+  await expect(detalhes.locator("pre")).toContainText("Missing API key");
+  await expect(cartao.getByRole("button", { name: "Copiar o erro" })).toBeVisible();
+});
+
 for (const tema of ["escuro", "claro"]) {
   test(`sem violação séria de acessibilidade no tema ${tema}`, async ({ page }) => {
     await page.goto(`/tests/ui-kit.html${tema === "claro" ? "?tema=claro" : ""}`);

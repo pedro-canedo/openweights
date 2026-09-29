@@ -12,6 +12,7 @@ import { Tooltip } from "../src/components/ui/Tooltip";
 import { ToastHost, toast } from "../src/components/ui/Toast";
 import { Split } from "../src/components/ui/Split";
 import { HelpTip } from "../src/components/ui/HelpTip";
+import ErroAcionavel from "../src/components/ErroAcionavel";
 
 if (new URLSearchParams(location.search).get("tema") === "claro") {
   document.documentElement.dataset.theme = "light";
@@ -135,6 +136,13 @@ function Kit() {
           minSecond={120}
           first={<div className="h-full bg-panel p-3 text-sm">Lista</div>}
           second={<div className="h-full bg-panel2 p-3 text-sm">Detalhe</div>}
+        />
+      </section>
+
+      <section className="max-w-xl">
+        <ErroAcionavel
+          erro="Algo deu errado: HTTP 401: Missing API key, url: http://127.0.0.1:11740/owcli/v1/responses"
+          acoes={{ tentar: () => setResposta("tentou de novo") }}
         />
       </section>
 

@@ -1974,5 +1974,71 @@
     "failed": "Não deu para mudar o comando do terminal: {{error}}",
     "unsupported": "Este sistema não tem uma pasta pessoal onde pôr o comando.",
     "installedOff": "O agente não está instalado neste momento, mas o comando do terminal continua ligado. Instale o agente de novo na tela OwCLI, ou desative."
+  },
+  "actionableError": {
+    "details": "Detalhes técnicos",
+    "copy": "Copiar o erro",
+    "copied": "Copiado",
+    "actions": {
+      "tentar": "Tentar de novo",
+      "servidor": "Abrir o Servidor Local",
+      "fontes": "Abrir Fontes",
+      "descobrir": "Buscar o modelo",
+      "modelos": "Abrir Meus Modelos",
+      "novaConversa": "Nova conversa",
+      "motor": "Instalar o motor"
+    },
+    "motor-ausente": {
+      "title": "O motor de inferência ainda não está instalado",
+      "hint": "O OpenWeights usa o llama.cpp para rodar os modelos aqui, e ele ainda não foi baixado. A instalação é de um clique e acontece uma vez só."
+    },
+    "sem-servidor": {
+      "title": "O servidor local não respondeu",
+      "hint": "O motor que roda o modelo não está no ar (ou caiu). Abra o Servidor Local para ver o que aconteceu e ligá-lo de novo."
+    },
+    "sem-memoria": {
+      "title": "O modelo não coube na memória de vídeo",
+      "hint": "Feche o que estiver usando a placa de vídeo, escolha uma quantização menor ou diminua o contexto do modelo. O Servidor Local mostra o que cabe."
+    },
+    "contexto": {
+      "title": "A conversa ficou maior que o contexto do modelo",
+      "hint": "O texto passou do limite que o modelo consegue ler de uma vez. Comece uma conversa nova ou aumente o contexto no Servidor Local."
+    },
+    "modelo-nao-carregou": {
+      "title": "O modelo não carregou",
+      "hint": "O servidor não conseguiu abrir o arquivo do modelo. Tente de novo; se repetir, veja o modelo em Meus Modelos."
+    },
+    "travou": {
+      "title": "O modelo parou de responder",
+      "hint": "Nada chegou dentro do prazo. Pode ser o servidor travado ou a placa sem memória. Tentar de novo costuma resolver."
+    },
+    "chave": {
+      "title": "A chave desta fonte não foi aceita",
+      "hint": "A fonte recusou o acesso: a chave está ausente, errada ou expirou. Confira em Fontes."
+    },
+    "creditos": {
+      "title": "Sem créditos nesta fonte",
+      "hint": "A fonte exige saldo para responder. Adicione créditos lá ou escolha outro modelo."
+    },
+    "limite": {
+      "title": "Muitos pedidos seguidos",
+      "hint": "A fonte limitou o uso por um tempo. Espere alguns segundos e tente de novo, ou troque de modelo."
+    },
+    "modelo-inexistente": {
+      "title": "Essa fonte não tem esse modelo",
+      "hint": "O nome do modelo não existe na fonte escolhida (ele pode ter sido removido ou renomeado). Escolha outro."
+    },
+    "disco": {
+      "title": "Falta espaço em disco",
+      "hint": "Precisa de {{need}} e só há {{free}} livres. Libere espaço ou apague modelos que não usa."
+    },
+    "rede": {
+      "title": "Sem conexão",
+      "hint": "Não deu para falar com a rede. Confira a internet e tente de novo."
+    },
+    "desconhecido": {
+      "title": "Algo deu errado",
+      "hint": "Não reconheci este erro. Os detalhes abaixo dizem o que o sistema informou; dá para copiá-los."
+    }
   }
 }

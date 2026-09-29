@@ -1974,5 +1974,71 @@
     "failed": "Could not change the terminal command: {{error}}",
     "unsupported": "This system has no home folder to put the command in.",
     "installedOff": "The agent is not installed right now, but the terminal command is still on. Install the agent again on the OwCLI screen, or turn it off."
+  },
+  "actionableError": {
+    "details": "Technical details",
+    "copy": "Copy the error",
+    "copied": "Copied",
+    "actions": {
+      "tentar": "Try again",
+      "servidor": "Open Local Server",
+      "fontes": "Open Sources",
+      "descobrir": "Find the model",
+      "modelos": "Open My Models",
+      "novaConversa": "New conversation",
+      "motor": "Install the engine"
+    },
+    "motor-ausente": {
+      "title": "The inference engine is not installed yet",
+      "hint": "OpenWeights runs models here with llama.cpp, and it has not been downloaded yet. Installing takes one click and happens once."
+    },
+    "sem-servidor": {
+      "title": "The local server did not answer",
+      "hint": "The engine that runs the model is not up (or it crashed). Open Local Server to see what happened and start it again."
+    },
+    "sem-memoria": {
+      "title": "The model did not fit in video memory",
+      "hint": "Close whatever is using the graphics card, pick a smaller quantization, or lower the model's context. Local Server shows what fits."
+    },
+    "contexto": {
+      "title": "The conversation outgrew the model's context",
+      "hint": "The text went past what the model can read at once. Start a new conversation or raise the context in Local Server."
+    },
+    "modelo-nao-carregou": {
+      "title": "The model did not load",
+      "hint": "The server could not open the model file. Try again; if it repeats, check the model in My Models."
+    },
+    "travou": {
+      "title": "The model stopped answering",
+      "hint": "Nothing arrived in time. It may be a stuck server or a card out of memory. Trying again usually fixes it."
+    },
+    "chave": {
+      "title": "This source did not accept the key",
+      "hint": "The source refused access: the key is missing, wrong or expired. Check it in Sources."
+    },
+    "creditos": {
+      "title": "No credits on this source",
+      "hint": "The source needs a balance to answer. Add credits there or pick another model."
+    },
+    "limite": {
+      "title": "Too many requests in a row",
+      "hint": "The source limited usage for a while. Wait a few seconds and try again, or switch models."
+    },
+    "modelo-inexistente": {
+      "title": "This source does not have that model",
+      "hint": "The model name does not exist on the chosen source (it may have been removed or renamed). Pick another."
+    },
+    "disco": {
+      "title": "Not enough disk space",
+      "hint": "It needs {{need}} and only {{free}} is free. Free up space or delete models you do not use."
+    },
+    "rede": {
+      "title": "No connection",
+      "hint": "Could not reach the network. Check your internet and try again."
+    },
+    "desconhecido": {
+      "title": "Something went wrong",
+      "hint": "I did not recognize this error. The details below say what the system reported; you can copy them."
+    }
   }
 }
