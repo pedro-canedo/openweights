@@ -231,3 +231,27 @@ The same screen carries the pairing panel for
 [**Extra GPU on the network**](/integrations/cluster): another OpenWeights on
 your network lends its card so the two of them can load a model neither could
 hold alone. It is off by default.
+
+## Seeing what is running
+
+**Logs.** `Ctrl+Shift+L` (or the logs button in the status bar, or the command
+palette) opens a panel with everything that runs under the app: the server, the
+decider, 9router, the OwCLI gateway and OpenWeights itself. It filters by source
+and text, pauses so you can read, copies, saves to a file in the app's
+`exports` folder and clears. What the server said while it started is still
+there when you open the panel later.
+
+**The command it runs.** In **Performance**, the preview shows the exact
+`llama-server` command, the environment and the INI of the models, and says
+whether what is running is what is configured ("Pending changes" means a restart
+will change something). **Copy as a command** gives a shell line with the API
+key masked; **Show the INI in its folder** opens the file.
+
+## Backing up the configuration
+
+**Settings › Configuration backup** exports what you set up — server, per-model
+profiles, presets, sources — as JSON, and imports it on another machine.
+Importing merges (what the file brings replaces what exists) and asks first,
+saying what is in the file. API keys, the OpenRouter key and the Hugging Face
+token stay out unless you tick the box, and then the file is as sensitive as the
+keys themselves. A running server uses the imported configuration after a restart.

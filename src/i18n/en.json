@@ -830,6 +830,31 @@
         "broken": "The files are there, but the executable won't start — usually part of the package is missing. Reinstalling fixes it."
       },
       "navAlert": "The AI engine needs attention"
+    },
+    "backup": {
+      "title": "Configuration backup",
+      "hint": "Take what you set up (server, per-model profiles, presets, sources) to another machine, or keep a copy.",
+      "export": "Export",
+      "includeSecrets": "Include keys and passwords (the local API key, the OpenRouter key and the Hugging Face token)",
+      "secretsWarning": "The file becomes as sensitive as your keys: do not share it.",
+      "copy": "Copy",
+      "save": "Save file",
+      "copied": "Configuration copied.",
+      "saved": "Configuration saved to {{path}}",
+      "import": "Import",
+      "pasteLabel": "Paste the exported JSON here",
+      "importSecrets": "Also apply the file's keys and passwords (unchecked, yours stay as they are)",
+      "check": "Check and apply",
+      "confirmTitle": "Apply this configuration?",
+      "confirmMerge": "What the file brings replaces what exists; the rest stays as it is.",
+      "confirmSecrets": "The file's {{n}} keys will be applied too.",
+      "contents": "The file has {{profiles}} model profiles, {{presets}} presets and {{settings}} server settings.",
+      "apply": "Apply",
+      "done": "Configuration applied: {{profiles}} profiles, {{presets}} presets and {{settings}} settings.",
+      "restartNote": "A running server only uses the new configuration after a restart.",
+      "errInvalid": "The text is not valid JSON.",
+      "errNotOw": "This text is not an OpenWeights export.",
+      "errFormat": "The file is format {{n}}, which this version cannot read."
     }
   },
   "onboarding": {

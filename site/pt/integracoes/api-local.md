@@ -233,3 +233,28 @@ A mesma tela abriga o painel de emparelhamento da
 [**GPU extra na rede**](/pt/integracoes/cluster): outro OpenWeights na sua rede
 empresta a placa dele para os dois carregarem juntos um modelo que nenhum
 segurava sozinho. Vem desligado.
+
+## Vendo o que está rodando
+
+**Logs.** `Ctrl+Shift+L` (ou o botão de logs na barra de status, ou a paleta de
+comandos) abre um painel com tudo que roda por baixo do app: o servidor, o
+decisor, o 9router, o gateway do OwCLI e o próprio OpenWeights. Filtra por
+origem e por texto, pausa para você ler, copia, salva num arquivo na pasta
+`exports` do app e limpa. O que o servidor disse enquanto subia continua lá
+quando você abre o painel depois.
+
+**O comando que ele roda.** Em **Desempenho**, a prévia mostra o comando exato
+do `llama-server`, o ambiente e o INI dos modelos, e diz se o que está rodando é
+o que está configurado ("Mudanças pendentes" quer dizer que reiniciar vai mudar
+alguma coisa). **Copiar como comando** entrega uma linha de shell com a chave da
+API mascarada; **Mostrar o INI na pasta** abre o arquivo.
+
+## Backup da configuração
+
+**Configurações › Backup da configuração** exporta o que você ajustou — servidor,
+perfis por modelo, presets, fontes — em JSON, e importa em outra máquina.
+Importar mescla (o que o arquivo traz substitui o que existe) e pergunta antes,
+dizendo o que há no arquivo. A chave da API, a da OpenRouter e o token do
+Hugging Face ficam de fora, a menos que você marque a caixa; aí o arquivo é tão
+sensível quanto as próprias chaves. O servidor de pé usa a configuração
+importada depois de reiniciar.

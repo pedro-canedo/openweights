@@ -32,6 +32,7 @@ import Icon from "../components/ui/Icon";
 import { CopyValue } from "../components/ui/Copy";
 import EngineCard from "../components/settings/EngineCard";
 import OwcliNoTerminalCard from "../components/settings/OwcliNoTerminal";
+import ConfigBackupCard from "../components/settings/ConfigBackup";
 
 export default function Settings() {
   const { t, i18n } = useTranslation();
@@ -130,6 +131,8 @@ export default function Settings() {
           </Row>
         </div>
       </Card>
+
+      <ConfigBackupCard />
 
       <OwcliNoTerminalCard />
 

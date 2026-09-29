@@ -830,6 +830,31 @@
         "broken": "Os arquivos estão lá, mas o executável não sobe — normalmente falta parte do pacote. Reinstalar resolve."
       },
       "navAlert": "O motor de IA precisa de atenção"
+    },
+    "backup": {
+      "title": "Backup da configuração",
+      "hint": "Leve o que você ajustou (servidor, perfis por modelo, presets, fontes) para outra máquina ou guarde de reserva.",
+      "export": "Exportar",
+      "includeSecrets": "Incluir chaves e senhas (a chave da API local, a da OpenRouter e o token do Hugging Face)",
+      "secretsWarning": "O arquivo passa a ser tão sensível quanto as suas chaves: não o compartilhe.",
+      "copy": "Copiar",
+      "save": "Salvar arquivo",
+      "copied": "Configuração copiada.",
+      "saved": "Configuração salva em {{path}}",
+      "import": "Importar",
+      "pasteLabel": "Cole aqui o JSON exportado",
+      "importSecrets": "Aplicar também as chaves e senhas do arquivo (sem marcar, as suas ficam como estão)",
+      "check": "Conferir e aplicar",
+      "confirmTitle": "Aplicar esta configuração?",
+      "confirmMerge": "O que o arquivo traz substitui o que existe; o resto fica como está.",
+      "confirmSecrets": "As {{n}} chaves do arquivo também serão aplicadas.",
+      "contents": "O arquivo tem {{profiles}} perfis de modelo, {{presets}} presets e {{settings}} ajustes do servidor.",
+      "apply": "Aplicar",
+      "done": "Configuração aplicada: {{profiles}} perfis, {{presets}} presets e {{settings}} ajustes.",
+      "restartNote": "O servidor de pé só usa a configuração nova depois de reiniciar.",
+      "errInvalid": "O texto não é um JSON válido.",
+      "errNotOw": "Este texto não é uma exportação do OpenWeights.",
+      "errFormat": "O arquivo é do formato {{n}}, que esta versão não lê."
     }
   },
   "onboarding": {

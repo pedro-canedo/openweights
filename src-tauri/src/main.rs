@@ -14,6 +14,7 @@ mod commands_providers;
 mod commands_terminal;
 mod commands_tuning;
 mod comparison;
+mod config_io;
 mod desktop_host;
 mod exportar;
 mod externo;
@@ -182,6 +183,8 @@ fn main() {
             commands::local_models,
             commands::model_delete,
             commands::server_status,
+            config_io::config_export,
+            config_io::config_import,
             exportar::export_save,
             exportar::export_reveal,
             logs::server_logs,
