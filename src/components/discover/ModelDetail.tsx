@@ -34,6 +34,7 @@ import { useHfAccess } from "../../lib/hfAccess";
 import CapBadges from "./CapBadges";
 import GateNotice from "./GateNotice";
 import VerdictBadge from "./VerdictBadge";
+import Termo from "../ui/Termo";
 
 async function abrirNoHub(repoId: string) {
   await openUrl(`https://huggingface.co/${repoId}`);
@@ -167,10 +168,16 @@ function QuantRow({
             ctx: (ctxLen / 1024).toFixed(0),
           })}
         </span>
+        {quant.recommended && <Termo id="vram" />}
       </div>
 
       {quant.verdict.kind === "partial" && (
         <p className="mt-1.5 text-[11px] text-warn/90">{t("badge.partialWarn")}</p>
+      )}
+      {quant.verdict.kind === "moeOffload" && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-dim">
+          {t("badge.moeOffloadHint")} <Termo id="moe" />
+        </p>
       )}
       {status?.state === "error" && status.error && (
         <p role="alert" className="mt-1.5 text-[11px] text-bad select-text">
@@ -424,7 +431,11 @@ export default function ModelDetail({ model }: { model: ModelSummary }) {
             />
           )}
 
-          <div className="mt-3">
+          <h3 className="mt-4 flex items-center gap-1 text-[12px] font-medium text-dim">
+            {t("discover.quantsTitle")}
+            <Termo id="quantization" />
+          </h3>
+          <div className="mt-2">
             {failed ? (
               <div className="rounded-xl border border-dashed border-edge p-8 text-center text-sm text-dim">
                 {t("common.error")}

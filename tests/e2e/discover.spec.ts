@@ -111,3 +111,14 @@ test("a lista mostra só os extremos que dá para estimar sem abrir o modelo", a
   await expect(moe).not.toContainText("Cabe na GPU");
   await expect(moe).not.toContainText("Grande demais");
 });
+
+test("os termos técnicos têm um ? que explica em palavras comuns", async ({ page }) => {
+  await abrirDescobrir(page);
+  await page.getByRole("button", { name: "O que é quantização?" }).click();
+  await expect(page.getByRole("dialog", { name: "O que é quantização?" })).toContainText(
+    "Uma versão comprimida do modelo",
+  );
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "O que é GGUF?" }).click();
+  await expect(page.getByRole("dialog", { name: "O que é GGUF?" })).toContainText("llama.cpp");
+});

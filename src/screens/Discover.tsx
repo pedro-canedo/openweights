@@ -18,6 +18,7 @@ import { errorMessage } from "../lib/serverSession";
 import ModelListItem from "../components/discover/ModelListItem";
 import ModelDetail from "../components/discover/ModelDetail";
 import { Split } from "../components/ui/Split";
+import Termo from "../components/ui/Termo";
 
 const SORTS: SearchSort[] = ["trending", "downloads", "likes", "updated"];
 
@@ -90,7 +91,7 @@ export default function Discover() {
       <div className="shrink-0 px-4 pt-5 pb-3">
         <h1 className="text-base font-semibold">{t("discover.title")}</h1>
         <p className="mt-0.5 text-[12px] leading-relaxed text-dim">
-          {t("discover.subtitle")}
+          {t("discover.subtitle")} <Termo id="gguf" />
         </p>
 
         <input

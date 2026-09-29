@@ -62,6 +62,7 @@ import {
 import FlagControl, { RequirementBadges } from "../form/FlagControl";
 import Icon from "../ui/Icon";
 import { useProfileRevision } from "../../lib/profileChanges";
+import Termo from "../ui/Termo";
 
 const CTX_CHIPS = [8192, 16384, 32768, 65536];
 
@@ -548,7 +549,10 @@ export default function EngineConfigSection({
       {/* essenciais */}
       <div className="mt-5 grid gap-5 sm:grid-cols-2">
         <div className="flex flex-col gap-2 sm:col-span-2">
-          <span className={label}>{t("chat.ctx.label")}</span>
+          <span className={`${label} flex items-center gap-1`}>
+            {t("chat.ctx.label")}
+            <Termo id="context" />
+          </span>
           <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
@@ -595,7 +599,10 @@ export default function EngineConfigSection({
         </div>
 
         <div className="flex flex-col gap-2">
-          <span className={label}>{t("chat.engine.kv.label")}</span>
+          <span className={`${label} flex items-center gap-1`}>
+            {t("chat.engine.kv.label")}
+            <Termo id="kvcache" />
+          </span>
           <p className={hintCls}>{t("chat.engine.kv.hint")}</p>
           <Chips
             value={kvChoice}
@@ -820,7 +827,10 @@ export default function EngineConfigSection({
             />
           </div>
           <div className="flex flex-col gap-2">
-            <span className={label}>{t("chat.engine.parallel")}</span>
+            <span className={`${label} flex items-center gap-1`}>
+              {t("chat.engine.parallel")}
+              <Termo id="slot" />
+            </span>
             <p className={hintCls}>{t("chat.engine.parallelHint")}</p>
             <NumChips
               value={draft.parallel ?? null}

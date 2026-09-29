@@ -2040,5 +2040,40 @@
       "title": "Algo deu errado",
       "hint": "Não reconheci este erro. Os detalhes abaixo dizem o que o sistema informou; dá para copiá-los."
     }
+  },
+  "glossary": {
+    "ask": "O que é {{term}}?",
+    "quantization": {
+      "name": "quantização",
+      "text": "Uma versão comprimida do modelo: menos bits por número, arquivo menor e mais rápido, com alguma perda de qualidade. Q4 costuma ser o melhor equilíbrio; Q8 é quase igual ao original."
+    },
+    "gguf": {
+      "name": "GGUF",
+      "text": "O formato de arquivo que o llama.cpp lê: um único arquivo com o modelo já pronto para rodar aqui, geralmente em várias quantizações."
+    },
+    "context": {
+      "name": "contexto",
+      "text": "Quanto texto o modelo consegue ler de uma vez (a conversa inteira, mais a resposta), medido em tokens. Contexto maior gasta mais memória."
+    },
+    "vram": {
+      "name": "VRAM",
+      "text": "A memória da placa de vídeo. O modelo roda muito mais rápido quando cabe inteiro nela; o que sobra vai para a RAM e fica mais lento."
+    },
+    "tokps": {
+      "name": "tok/s",
+      "text": "Tokens por segundo: a velocidade com que o modelo escreve. Um token é um pedaço de palavra; cerca de 10 tok/s já acompanha a leitura."
+    },
+    "moe": {
+      "name": "MoE",
+      "text": "Modelo de especialistas: só uma parte dele trabalha em cada palavra. Por isso roda mais rápido do que o tamanho sugere, e os especialistas parados podem ficar na RAM."
+    },
+    "kvcache": {
+      "name": "cache KV",
+      "text": "A memória de trabalho da conversa. Cresce com o contexto; quantizá-lo (q8_0) economiza memória com perda mínima."
+    },
+    "slot": {
+      "name": "slot",
+      "text": "Uma conversa simultânea no servidor. Mais slots atendem mais gente ao mesmo tempo, mas dividem o contexto e a memória entre elas."
+    }
   }
 }

@@ -14,6 +14,7 @@ import type { ServerStatus } from "../../lib/types";
 import { StatusDot } from "../ui/Shell";
 import { CopyValue } from "../ui/Copy";
 import ErroAcionavel from "../ErroAcionavel";
+import Termo from "../ui/Termo";
 
 export default function ServerHeader({
   status,
@@ -87,6 +88,7 @@ export default function ServerHeader({
                 <span className="tabular-nums">
                   {t("server.header.tps", { n: genTps.toFixed(1) })}
                 </span>
+                <Termo id="tokps" />
               </>
             )}
             {status?.lan && (

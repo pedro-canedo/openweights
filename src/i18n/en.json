@@ -2040,5 +2040,40 @@
       "title": "Something went wrong",
       "hint": "I did not recognize this error. The details below say what the system reported; you can copy them."
     }
+  },
+  "glossary": {
+    "ask": "What is {{term}}?",
+    "quantization": {
+      "name": "quantization",
+      "text": "A compressed version of the model: fewer bits per number, a smaller and faster file, and some loss of quality. Q4 is usually the best balance; Q8 is nearly the original."
+    },
+    "gguf": {
+      "name": "GGUF",
+      "text": "The file format llama.cpp reads: a single file with the model ready to run here, usually offered in several quantizations."
+    },
+    "context": {
+      "name": "context",
+      "text": "How much text the model can read at once (the whole conversation plus the answer), measured in tokens. A larger context uses more memory."
+    },
+    "vram": {
+      "name": "VRAM",
+      "text": "The graphics card's memory. The model runs much faster when it fits entirely; what does not fit goes to RAM and is slower."
+    },
+    "tokps": {
+      "name": "tok/s",
+      "text": "Tokens per second: how fast the model writes. A token is a piece of a word; around 10 tok/s already keeps up with reading."
+    },
+    "moe": {
+      "name": "MoE",
+      "text": "Mixture of experts: only part of the model works on each word. That is why it runs faster than its size suggests, and idle experts can live in RAM."
+    },
+    "kvcache": {
+      "name": "KV cache",
+      "text": "The conversation's working memory. It grows with context; quantizing it (q8_0) saves memory with minimal loss."
+    },
+    "slot": {
+      "name": "slot",
+      "text": "One simultaneous conversation on the server. More slots serve more people at once, but split the context and memory between them."
+    }
   }
 }
